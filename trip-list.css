@@ -1,0 +1,135 @@
+.trip-list-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--s6);
+}
+
+.trip-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: var(--s6);
+}
+
+.trip-list-title {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+.trip-list-sub {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: var(--s1);
+}
+
+.trip-list-actions {
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+}
+
+/* Grid */
+.trip-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.trip-grid-loading {
+  text-align: center;
+  padding: var(--s10) 0;
+  color: var(--text-tertiary);
+  font-size: 14px;
+}
+
+/* Card — 2컬럼 (좌: 정보, 우: 이미지) */
+.trip-card {
+  display: flex;
+  align-items: stretch;
+  min-height: 100px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow var(--duration) var(--ease);
+}
+
+.trip-card:hover {
+  box-shadow: var(--shadow);
+}
+
+.trip-card-info {
+  width: 240px;
+  flex-shrink: 0;
+  padding: var(--s4) var(--s5);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+}
+
+.trip-card-name {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trip-card-meta {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.trip-card-img {
+  flex: 1;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  background-color: var(--border-light);
+}
+
+/* Empty state */
+.trip-empty {
+  text-align: center;
+  padding: var(--s10) var(--s6);
+}
+
+.trip-empty-emoji {
+  font-size: 48px;
+  margin-bottom: var(--s4);
+}
+
+.trip-empty-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: var(--s2);
+}
+
+.trip-empty-hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* Mobile */
+@media (max-width: 600px) {
+  .trip-list-page { padding: var(--s4); }
+
+  .trip-list-header {
+    flex-direction: column;
+    gap: var(--s3);
+  }
+
+  .trip-card-info {
+    width: 38%;
+    padding: var(--s3) var(--s4);
+  }
+
+  .trip-card-name { font-size: 18px; }
+}
