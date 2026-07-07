@@ -43,7 +43,7 @@ export function renderLogin(): void {
         <button class="lp-nav-cta" id="nav-login">시작하기</button>
       </nav>
 
-      <!-- 고정 히어로 (실사진 예정) -->
+      <!-- 고정 히어로 -->
       <section class="lp-hero" id="lp-hero">
         <div class="lp-hero-inner">
           ${ICON_PLANE}
@@ -64,7 +64,6 @@ export function renderLogin(): void {
       <!-- 스크롤 오버레이 패널 -->
       <div class="lp-scroll">
 
-        <!-- 3단계 플로우 -->
         <section class="lp-section bg-white">
           <div class="lp-section-inner">
             <div class="reveal" style="text-align:center;margin-bottom:48px;">
@@ -105,7 +104,6 @@ export function renderLogin(): void {
           </div>
         </section>
 
-        <!-- 실시간 협업 -->
         <section class="lp-section bg-light">
           <div class="lp-section-inner">
             <div class="lp-split reveal">
@@ -129,7 +127,6 @@ export function renderLogin(): void {
           </div>
         </section>
 
-        <!-- 보드 목업 -->
         <section class="lp-section bg-white">
           <div class="lp-section-inner">
             <div class="lp-split reverse reveal">
@@ -157,7 +154,6 @@ export function renderLogin(): void {
           </div>
         </section>
 
-        <!-- 지도/일정 (실사진 예정) -->
         <section class="lp-section bg-light">
           <div class="lp-section-inner">
             <div class="lp-split reveal">
@@ -176,7 +172,6 @@ export function renderLogin(): void {
           </div>
         </section>
 
-        <!-- 기능 3열 -->
         <section class="lp-section bg-white">
           <div class="lp-section-inner">
             <div class="reveal" style="text-align:center;">
@@ -200,7 +195,6 @@ export function renderLogin(): void {
           </div>
         </section>
 
-        <!-- CTA 밴드 -->
         <section class="lp-section bg-navy lp-cta-band">
           <h2 class="lp-cta-band-title">이제, 같이 떠날<br>차례예요.</h2>
           <p class="lp-cta-band-desc">친구들을 초대하고 첫 여행 보드를 만들어보세요.</p>
@@ -209,7 +203,6 @@ export function renderLogin(): void {
           </button>
         </section>
 
-        <!-- 푸터 -->
         <footer class="lp-footer">
           <div class="lp-footer-inner">
             <div class="lp-footer-top">
@@ -242,21 +235,7 @@ export function renderLogin(): void {
   document.getElementById('hero-login')!.addEventListener('click', signInWithGoogle);
   document.getElementById('band-login')!.addEventListener('click', signInWithGoogle);
 
-  /* 스크롤 시 네비 배경 전환 + 가려진 히어로 inert 처리 */
-function setupScrollEffects(): void {
-  const nav = document.getElementById('lp-nav');
-  const hero = document.getElementById('lp-hero');
-  if (!nav) return;
-  const onScroll = () => {
-    if (window.scrollY > window.innerHeight * 0.7) nav.classList.add('solid');
-    else nav.classList.remove('solid');
-
-    // 🔧 FIX: 패널이 히어로를 완전히 덮으면 키보드 포커스에서 제외
-    if (hero) hero.inert = window.scrollY > window.innerHeight;
-  };
-  window.addEventListener('scroll', onScroll, { passive: true });
-  onScroll();
-}
+  setupScrollEffects();
   observeReveals();
 }
 
@@ -270,13 +249,18 @@ function demoCol(itemCount: number, accent: boolean): string {
   return `<div class="demo-col"><div class="demo-col-head"></div>${items}</div>`;
 }
 
-/* 스크롤 시 네비 배경 전환 (패널이 히어로를 덮기 시작하면 solid) */
+/* 스크롤 시 네비 배경 전환 + 가려진 히어로 inert 처리 */
 function setupScrollEffects(): void {
   const nav = document.getElementById('lp-nav');
+  const hero = document.getElementById('lp-hero');
   if (!nav) return;
+
   const onScroll = () => {
     if (window.scrollY > window.innerHeight * 0.7) nav.classList.add('solid');
     else nav.classList.remove('solid');
+
+    // 패널이 히어로를 완전히 덮으면 키보드 포커스에서 제외
+    if (hero) hero.inert = window.scrollY > window.innerHeight;
   };
   window.addEventListener('scroll', onScroll, { passive: true });
   onScroll();
