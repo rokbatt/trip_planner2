@@ -1,0 +1,14 @@
+# .env.local 로 복사한 뒤 실제 값을 채워주세요
+# (Vite는 VITE_ 접두사가 붙은 변수만 클라이언트 번들에 노출합니다)
+
+# ── Supabase (클라이언트에서 사용, anon key라 노출되어도 안전) ──
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJ...
+
+# ── 서버리스 함수(/api) 전용 — 절대 VITE_ 접두사 붙이지 말 것 ──
+SUPABASE_SERVICE_ROLE_KEY=
+GEMINI_API_KEY=
+UNSPLASH_ACCESS_KEY=
+SCRAPER_ADMIN_TOKEN=
+GOOGLE_PLACES_API_KEY=
+GOOGLE_ROUTES_API_KEY=
