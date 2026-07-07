@@ -1,107 +1,66 @@
 /**
  * 해시 라우터
  *
- * URL 형식: /#/trips, /#/board/abc123, /#/itinerary/abc123
- * 새로고침·배포 에러 없음 (서버는 항상 index.html만 반환)
+ * URL 형식: /#login, /#trips, /#board/abc123
+ * - 새로고침 안전 (서버는 항상 index.html만 반환하면 됨)
+ * - Vercel rewrite 설정 불필요
  */
 
-export interface Route {
-  /** 패턴: 'board/:tripId' 같은 형식 */
-  path: string;
-  /** 뷰 렌더 함수 — #app 내부를 그린다 */
-  render: (params: Record<string, string>) => void | Promise<void>;
+export interface RouteParams {
+  tripId?: string;
 }
 
-let routes: Route[] = [];
-let notFound: (() => void) | null = null;
-let beforeEach: ((to: string) => boolean | string) | null = null;
+type RenderFn = (params: RouteParams) => void | Promise<void>;
 
-/**
- * 라우터 초기화
- */
-export function createRouter(config: {
-  routes: Route[];
-  notFound?: () => void;
-  beforeEach?: (to: string) => boolean | string;
-}): void {
-  routes = config.routes;
-  notFound = config.notFound ?? null;
-  beforeEach = config.beforeEach ?? null;
+const routes = new Map<string, RenderFn>();
+let notFoundRender: RenderFn | null = null;
 
-  // 해시 변경 감지
-  window.addEventListener('hashchange', () => resolve());
-  // 최초 로드
-  resolve();
+/** 라우트 등록 */
+export function addRoute(path: string, render: RenderFn): void {
+  routes.set(path, render);
 }
 
-/**
- * 프로그래밍 방식 이동
- */
+/** 404 렌더러 등록 */
+export function setNotFound(render: RenderFn): void {
+  notFoundRender = render;
+}
+
+/** 프로그래밍 방식 이동 */
 export function navigate(path: string): void {
-  const hash = path.startsWith('#') ? path : `#/${path}`;
-  window.location.hash = hash;
-  // hashchange 이벤트가 자동으로 resolve() 호출
+  const hash = `#${path}`;
+  if (window.location.hash === hash) {
+    // 같은 경로면 해시 이벤트가 안 터지므로 직접 재실행
+    handleRoute();
+  } else {
+    window.location.hash = hash;
+  }
 }
 
-/**
- * 현재 해시에서 매칭되는 라우트 찾아 렌더
- */
-function resolve(): void {
-  // '#/board/abc123' → 'board/abc123'
-  const hash = window.location.hash.replace(/^#\/?/, '');
-
-  // 가드
-  if (beforeEach) {
-    const result = beforeEach(hash);
-    if (result === false) return;
-    if (typeof result === 'string' && result !== hash) {
-      navigate(result);
-      return;
-    }
-  }
-
-  const segments = hash.split('/').filter(Boolean);
-
-  for (const route of routes) {
-    const params = matchRoute(route.path, segments);
-    if (params !== null) {
-      route.render(params);
-      return;
-    }
-  }
-
-  notFound?.();
+/** 현재 해시 파싱 → { path, params } */
+function parseHash(): { path: string; params: RouteParams } {
+  const raw = window.location.hash.replace(/^#\/?/, '');
+  const [path = '', tripId] = raw.split('/');
+  return { path, params: tripId ? { tripId } : {} };
 }
 
-/**
- * 패턴 매칭: 'board/:tripId' vs ['board', 'abc123']
- * 매칭 시 { tripId: 'abc123' } 반환, 실패 시 null
- */
-function matchRoute(
-  pattern: string,
-  segments: string[]
-): Record<string, string> | null {
-  const patternParts = pattern.split('/').filter(Boolean);
+/** 현재 해시에 맞는 뷰 렌더 */
+async function handleRoute(): Promise<void> {
+  const { path, params } = parseHash();
+  const render = routes.get(path);
 
-  if (patternParts.length !== segments.length) return null;
-
-  const params: Record<string, string> = {};
-
-  for (let i = 0; i < patternParts.length; i++) {
-    const part = patternParts[i];
-    if (part.startsWith(':')) {
-      params[part.slice(1)] = decodeURIComponent(segments[i]);
-    } else if (part !== segments[i]) {
-      return null;
-    }
+  if (render) {
+    await render(params);
+  } else if (notFoundRender) {
+    await notFoundRender(params);
   }
-
-  return params;
 }
 
-/**
- * 현재 라우트 경로 반환 (해시 제거)
- */
-export function currentPath(): string {
-  return window.location.hash.replace(/^#\/?/, '');
+/** 라우터 시작 — main.ts가 자체 가드를 통과시킨 뒤 최초 1회 호출 */
+export function startRouter(): void {
+  handleRoute();
+}
+
+/** 현재 라우트를 다시 그리기 (auth 상태 바뀌었을 때 사용) */
+export function rerender(): void {
+  handleRoute();
 }
