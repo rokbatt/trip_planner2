@@ -242,7 +242,21 @@ export function renderLogin(): void {
   document.getElementById('hero-login')!.addEventListener('click', signInWithGoogle);
   document.getElementById('band-login')!.addEventListener('click', signInWithGoogle);
 
-  setupScrollEffects();
+  /* 스크롤 시 네비 배경 전환 + 가려진 히어로 inert 처리 */
+function setupScrollEffects(): void {
+  const nav = document.getElementById('lp-nav');
+  const hero = document.getElementById('lp-hero');
+  if (!nav) return;
+  const onScroll = () => {
+    if (window.scrollY > window.innerHeight * 0.7) nav.classList.add('solid');
+    else nav.classList.remove('solid');
+
+    // 🔧 FIX: 패널이 히어로를 완전히 덮으면 키보드 포커스에서 제외
+    if (hero) hero.inert = window.scrollY > window.innerHeight;
+  };
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+}
   observeReveals();
 }
 
