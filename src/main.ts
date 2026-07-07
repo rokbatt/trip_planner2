@@ -1,24 +1,17 @@
+// src/main.ts
 /**
  * main.ts — 앱 엔트리포인트
- *
- * 부팅 순서:
- * 1. 글로벌 CSS
- * 2. Supabase 클라이언트 (import 시 자동 생성)
- * 3. 모든 라우트 등록
- * 4. onAuthStateChange 등록 — 세션 상태가 바뀔 때마다 화면을 다시 그림
- * 5. 라우터 시작
  */
 
 import './styles/global.css';
 
 import { supabase } from './supabase';
 import { store } from './store';
-import { addRoute, setNotFound, startRouter, navigate, rerender } from './router';
+import { addRoute, setNotFound, startRouter, navigate, rerender, currentPath } from './router';
 
 import { renderLogin } from './auth/auth';
 import { renderTripList } from './trips/trip-list';
 
-// ─── 인증이 필요 없는 라우트 ───
 const PUBLIC_ROUTES = ['login'];
 
 // ─── 라우트 등록 ───
@@ -54,9 +47,9 @@ setNotFound(() => {
   document.getElementById('btn-go-home')!.addEventListener('click', () => navigate('trips'));
 });
 
-// ─── 라우트 가드: 로그인 안 됐으면 보호된 라우트 접근 차단 ───
-const originalHandleRoute = () => {
-  const path = window.location.hash.replace(/^#\/?/, '').split('/')[0] || 'login';
+// ─── 라우트 가드: router.ts의 currentPath()를 그대로 사용 (판단 기준 이원화 방지) ───
+const guardAndMaybeRender = (): boolean => {
+  const path = currentPath();
   const isPublic = PUBLIC_ROUTES.includes(path);
 
   if (!store.get('authChecked')) {
@@ -83,25 +76,23 @@ const originalHandleRoute = () => {
 };
 
 // ─── 인증 상태 감지 ───
-// 핵심: createClient() 이후, 모든 함수가 정의된 뒤에 등록해야
-// 새로고침 시 발생하는 INITIAL_SESSION 이벤트를 놓치지 않음
 supabase.auth.onAuthStateChange((event, session) => {
   console.log('[Auth]', event, session?.user?.email ?? '(no user)');
 
   store.set('user', session?.user ?? null);
   store.set('authChecked', true);
 
-  if (originalHandleRoute()) {
+  if (guardAndMaybeRender()) {
     rerender();
   }
 });
 
 // ─── 라우터 시작 ───
 window.addEventListener('hashchange', () => {
-  if (originalHandleRoute()) rerender();
+  if (guardAndMaybeRender()) rerender();
 });
 
-if (originalHandleRoute()) {
+if (guardAndMaybeRender()) {
   startRouter();
 }
 
@@ -111,6 +102,6 @@ setTimeout(() => {
     console.warn('[Auth] 세션 확인 타임아웃 — 로그인 화면으로 전환');
     store.set('authChecked', true);
     store.set('user', null);
-    if (originalHandleRoute()) rerender();
+    if (guardAndMaybeRender()) rerender();
   }
 }, 5000);
