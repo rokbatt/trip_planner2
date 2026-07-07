@@ -153,7 +153,7 @@
   z-index: 10;
   /* 히어로 높이만큼 아래에서 시작 → 스크롤하면 위로 덮으며 올라옴 */
   margin-top: 100vh;
-  margin-top: 100dvh;
+  margin-top: 100svh; /* 🔧 FIX: dvh→svh, 주소창 접힘 시 시작 위치 출렁임 방지 */
   background: #ffffff;
   border-radius: 28px 28px 0 0;
   box-shadow: 0 -12px 40px rgba(20, 40, 80, 0.14);
