@@ -3,11 +3,44 @@
 .login-page {
   --auth-accent: #000000; /* 딥블루로 바꾸려면 #0052D4 로 교체 */
 
+  position: relative;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+/* ── 배경 블러 블롭 ── */
+.login-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.login-blob-top {
+  top: -160px;
+  right: -120px;
+  width: 480px;
+  height: 480px;
+  background: radial-gradient(circle, rgba(28, 42, 90, 0.14) 0%, rgba(28, 42, 90, 0) 70%);
+}
+
+.login-blob-bottom {
+  bottom: -180px;
+  left: -140px;
+  width: 520px;
+  height: 520px;
+  background: radial-gradient(circle, rgba(20, 40, 100, 0.10) 0%, rgba(20, 40, 100, 0) 70%);
+}
+
+/* ── 히어로 섹션 (첫 화면) ── */
+.login-hero {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 100dvh;
-  background: #ffffff;
   padding: 40px 24px;
 }
 
@@ -18,19 +51,12 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
-
   animation: login-rise 0.8s ease-out both;
 }
 
 @keyframes login-rise {
-  from {
-    opacity: 0;
-    transform: translateY(15px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(15px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .login-title {
@@ -45,7 +71,7 @@
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  color: #000000; /* 그라디언트 미지원 브라우저용 fallback */
+  color: #000000;
 }
 
 .login-subtitle {
@@ -81,16 +107,135 @@
   transition: all 0.3s ease;
 }
 
-.login-btn:hover {
-  opacity: 0.85;
-}
-
-.login-btn:active {
-  opacity: 0.7;
-}
+.login-btn:hover { opacity: 0.85; }
+.login-btn:active { opacity: 0.7; }
 
 .login-btn-icon {
   width: 18px;
   height: 18px;
   flex-shrink: 0;
+}
+
+/* 스크롤 유도 힌트 */
+.login-scroll-hint {
+  position: absolute;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: #b5b5ba;
+  animation: login-rise 0.8s ease-out both;
+  animation-delay: 0.3s;
+}
+
+.login-scroll-hint span {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.login-scroll-hint svg {
+  width: 14px;
+  height: 14px;
+  animation: scroll-bounce 1.8s ease-in-out infinite;
+}
+
+@keyframes scroll-bounce {
+  0%, 100% { transform: translateY(0); opacity: 0.5; }
+  50% { transform: translateY(5px); opacity: 1; }
+}
+
+/* ── 하단 목업 섹션 ── */
+.login-preview {
+  position: relative;
+  z-index: 1;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 24px 120px;
+
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.8s ease-out, transform 0.8s ease-out;
+}
+
+.login-preview.in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.login-preview-title {
+  text-align: center;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #1d1d1f;
+  margin-bottom: 48px;
+}
+
+/* 목업 스케치 프레임 */
+.mockup {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 1px;
+  background: #ececec;
+  border: 1px solid #ececec;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.mockup-panel {
+  background: #ffffff;
+  padding: 20px;
+}
+
+.mockup-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mockup-card {
+  height: 44px;
+  border: 1px solid #e5e5ea;
+  border-radius: 10px;
+}
+
+.mockup-card.is-accent {
+  border-color: #c7d0e8;
+  background: #f7f9fd;
+}
+
+.mockup-board {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.mockup-board-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mockup-board-label {
+  height: 8px;
+  width: 60%;
+  border-radius: 4px;
+  background: #eeeef0;
+  margin-bottom: 4px;
+}
+
+.mockup-board-item {
+  height: 56px;
+  border: 1px solid #e5e5ea;
+  border-radius: 8px;
+}
+
+/* 모바일 대응 */
+@media (max-width: 560px) {
+  .login-title { font-size: 28px; }
+  .mockup { grid-template-columns: 1fr; }
+  .mockup-board { grid-template-columns: repeat(2, 1fr); }
 }
