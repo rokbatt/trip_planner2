@@ -60,7 +60,6 @@ const originalHandleRoute = () => {
   const isPublic = PUBLIC_ROUTES.includes(path);
 
   if (!store.get('authChecked')) {
-    // 세션 확인이 아직 안 끝났으면 로딩 화면만 보여주고 라우팅은 보류
     const app = document.getElementById('app')!;
     app.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:center;min-height:100dvh;color:var(--text-tertiary);font-size:13px;">
@@ -92,14 +91,12 @@ supabase.auth.onAuthStateChange((event, session) => {
   store.set('user', session?.user ?? null);
   store.set('authChecked', true);
 
-  // 세션 확인이 끝났으니 현재 라우트를 다시 그린다
   if (originalHandleRoute()) {
     rerender();
   }
 });
 
 // ─── 라우터 시작 ───
-// hashchange 리스너 등록 + 최초 진입 시 originalHandleRoute()로 가드 체크 후 라우팅
 window.addEventListener('hashchange', () => {
   if (originalHandleRoute()) rerender();
 });
