@@ -87,6 +87,7 @@
   gap: 10px;
   padding: 16px 30px;
   min-width: 280px;
+  max-width: 100%; /* 🔧 FIX: 320px 초소형 기기에서 버튼이 화면을 넘지 않게 */
   background: #ffffff;
   color: #0a0a0a;
   border: none;
@@ -190,7 +191,7 @@
 .flow-step { font-size: 12px; font-weight: 700; color: #5a7bb0; margin-bottom: 12px; letter-spacing: 0.03em; }
 .flow-icon { width: 26px; height: 26px; color: #4a5b70; margin-bottom: 12px; }
 .flow-card-title { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; }
-.flow-card-desc { font-size: 13px; color: #8a95a3; line-height: 1.5; margin-bottom: 16px; }
+.flow-card-desc { font-size: 13px; color: #6b7684; line-height: 1.5; margin-bottom: 16px; } /* 🔧 FIX: #8a95a3 → #6b7684 (WCAG AA 대비) */
 .flow-chips { display: flex; flex-direction: column; gap: 7px; }
 .flow-chip { font-size: 12px; color: #5a6675; background: #f4f6fa; border-radius: 8px; padding: 8px 11px; border: 1px solid #e8ecf2; }
 .flow-arrow { display: flex; align-items: center; color: #c2cdda; padding: 0 6px; flex-shrink: 0; }
@@ -260,7 +261,7 @@
 .feature-card { background: #fff; border: 1px solid #e8ecf2; border-radius: 18px; padding: 28px 24px; text-align: left; }
 .feature-icon { width: 30px; height: 30px; color: #5a7bb0; margin-bottom: 16px; }
 .feature-title { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 8px; }
-.feature-desc { font-size: 14px; color: #8a95a3; line-height: 1.55; }
+.feature-desc { font-size: 14px; color: #6b7684; line-height: 1.55; } /* 🔧 FIX: #8a95a3 → #6b7684 (WCAG AA 대비) */
 
 /* ── CTA 밴드 ── */
 .lp-cta-band { text-align: center; padding: 104px 24px; }
@@ -269,6 +270,7 @@
 .lp-cta-band-btn {
   display: inline-flex; align-items: center; gap: 10px; justify-content: center;
   padding: 16px 34px; min-width: 260px;
+  max-width: 100%; /* 🔧 FIX: 히어로 버튼과 동일한 오버플로우 방지 */
   background: #fff; color: #0a0a0a; border: none; border-radius: 26px;
   font-size: 15px; font-weight: 700; cursor: pointer;
   transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
@@ -285,12 +287,10 @@
 .lp-footer-links a { color: #aeb4bc; text-decoration: none; font-weight: 500; }
 .lp-footer-links a:hover { color: #fff; }
 .lp-footer-links a.strong { font-weight: 700; color: #d4d8dd; }
-.lp-footer-biz { line-height: 1.9; color: #7f868f; font-size: 12px; }
-.lp-footer-copy { margin-top: 22px; padding-top: 20px; border-top: 1px solid #34383f; font-size: 12px; color: #6b727b; }
+.lp-footer-biz { line-height: 1.9; color: #9299a2; font-size: 12px; } /* 🔧 FIX: #7f868f → #9299a2 (다크 배경 대비) */
+.lp-footer-copy { margin-top: 22px; padding-top: 20px; border-top: 1px solid #34383f; font-size: 12px; color: #7f868f; } /* 🔧 FIX: #6b727b → #7f868f */
 
-/* ── ✨ NEW: 모션 최소화 사용자 대응 (접근성) ──
-   시스템 설정에서 '동작 줄이기'를 켠 사용자에게는
-   모든 등장/반복 애니메이션 없이 즉시 표시합니다. */
+/* ── ✨ NEW: 모션 최소화 사용자 대응 (접근성) ── */
 @media (prefers-reduced-motion: reduce) {
   .reveal,
   .reveal .chat-bubble {
@@ -318,6 +318,7 @@
   .lp-cta-band-title { font-size: 28px; }
   .demo-board { grid-template-columns: 1fr; }
   .demo-sidebar { flex-direction: row; border-right: none; border-bottom: 1px solid #ebeef3; }
+  .demo-sidebar .demo-slot { flex: 1; height: 30px; } /* 🔧 FIX: 모바일에서 슬롯 폭 0 렌더링 버그 수정 */
   .demo-main { grid-template-columns: repeat(2, 1fr); }
   .lp-footer-top { flex-direction: column; }
 }
