@@ -1,4 +1,3 @@
-// src/auth/auth.ts
 import { supabase } from '../supabase';
 import { store } from '../store';
 import { navigate } from '../router';
@@ -18,8 +17,6 @@ export async function signOut(): Promise<void> {
   store.set('user', null);
   navigate('login');
 }
-
-/* ── SVG 모음 ── */
 
 const ICON_PLANE = `
 <svg class="login-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -53,11 +50,6 @@ const ICON_MAP = `
 <svg class="slot-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
   <path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3V7z"/>
   <path d="M9 4v13M15 7v13"/>
-</svg>`;
-
-const ICON_SCROLL = `
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M12 5v14M5 12l7 7 7-7"/>
 </svg>`;
 
 function slotLine(count: number): string {
@@ -122,11 +114,6 @@ export function renderLogin(): void {
             <span>Google 계정으로 계속하기</span>
           </button>
 
-        </div>
-
-        <div class="scroll-hint seq seq-5">
-          <span>Scroll</span>
-          ${ICON_SCROLL}
         </div>
       </section>
 
