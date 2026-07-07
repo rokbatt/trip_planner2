@@ -119,10 +119,10 @@ export function renderLogin(): void {
               </div>
               <div class="lp-split-demo">
                 <div class="demo-chat">
-                  <div class="chat-bubble them">도쿄 왔는데 혼술이 쓸쓸하네요 🥲</div>
-                  <div class="chat-bubble me">시간 맞으면 한잔해요!</div>
-                  <div class="chat-bubble them">좋아요! 시부야역 7시 어때요</div>
-                  <div class="chat-bubble me">📍 방금 일정에 추가했어요</div>
+                  <div class="chat-bubble them">현지인 오코노미야키 맛집 찾음 🔥 보드에 올렸어</div>
+                  <div class="chat-bubble me">오 봤어! AI 팁 보니까 18:30부터 웨이팅 피크라는데?</div>
+                  <div class="chat-bubble them">아 진짜? 그럼 오픈런으로 동선 최신화할게</div>
+                  <div class="chat-bubble me">인당 2.2만이면 가성비도 OK. Day 2 저녁 확정! 📍</div>
                 </div>
               </div>
             </div>
