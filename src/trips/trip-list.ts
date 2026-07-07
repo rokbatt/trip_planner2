@@ -82,7 +82,7 @@ async function loadCityImage(cityKo: string): Promise<string | null> {
     .from('city_images')
     .select('image_url')
     .eq('city_ko', cityKo)
-    .single();
+    .single<{ image_url: string }>();
 
   const url = data?.image_url ?? null;
   if (url) localStorage.setItem(cacheKey, JSON.stringify({ url, ts: Date.now() }));
