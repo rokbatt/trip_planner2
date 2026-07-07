@@ -1,47 +1,91 @@
 /* src/auth/auth.css */
 
+/* ── 페이지 컨테이너 ── */
 .login-page {
-  --auth-accent: #000000; /* 딥블루로 바꾸려면 #0052D4 로 교체 */
-
   position: relative;
-  overflow: hidden;
+  overflow-x: hidden;
   background: #ffffff;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
 }
 
-/* ── 배경 블러 블롭 ── */
-.login-blob {
+/* ── 구름 안개 배경 레이어 ── */
+.cloud-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+
+  opacity: 0;
+  animation: cloud-appear 2s ease-out forwards;
+}
+
+@keyframes cloud-appear {
+  to { opacity: 1; }
+}
+
+.cloud {
   position: absolute;
   border-radius: 50%;
-  filter: blur(90px);
-  pointer-events: none;
-  z-index: 0;
+  filter: blur(140px);
 }
 
-.login-blob-top {
-  top: -160px;
-  right: -120px;
-  width: 480px;
-  height: 480px;
-  background: radial-gradient(circle, rgba(28, 42, 90, 0.14) 0%, rgba(28, 42, 90, 0) 70%);
+.cloud-a {
+  top: -20%;
+  right: -10%;
+  width: 700px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(140, 180, 230, 0.09) 0%, transparent 70%);
 }
 
-.login-blob-bottom {
-  bottom: -180px;
-  left: -140px;
-  width: 520px;
-  height: 520px;
-  background: radial-gradient(circle, rgba(20, 40, 100, 0.10) 0%, rgba(20, 40, 100, 0) 70%);
+.cloud-b {
+  bottom: -15%;
+  left: -15%;
+  width: 800px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(100, 150, 220, 0.07) 0%, transparent 70%);
 }
 
-/* ── 히어로 섹션 (첫 화면) ── */
+.cloud-c {
+  top: 30%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 600px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(120, 160, 230, 0.05) 0%, transparent 70%);
+}
+
+.cloud-d {
+  top: 10%;
+  left: -8%;
+  width: 400px;
+  height: 350px;
+  background: radial-gradient(circle, rgba(80, 130, 200, 0.06) 0%, transparent 70%);
+}
+
+.cloud-e {
+  bottom: 10%;
+  right: -5%;
+  width: 500px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(100, 140, 210, 0.06) 0%, transparent 65%);
+}
+
+/* ── 히어로 섹션 ── */
 .login-hero {
   position: relative;
   z-index: 1;
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 60px 24px 40px;
   min-height: 100dvh;
-  padding: 40px 24px;
 }
 
 .login-inner {
@@ -51,23 +95,46 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
-  animation: login-rise 0.8s ease-out both;
 }
 
-@keyframes login-rise {
-  from { opacity: 0; transform: translateY(15px); }
-  to   { opacity: 1; transform: translateY(0); }
+/* ── 순차 페이드인 시스템 ── */
+.seq {
+  opacity: 0;
+  transform: translateY(18px);
+  animation: seq-in 0.7s ease-out forwards;
 }
 
+.seq-1 { animation-delay: 0.3s; }
+.seq-2 { animation-delay: 0.45s; }
+.seq-3 { animation-delay: 0.6s; }
+.seq-4 { animation-delay: 0.75s; }
+.seq-5 { animation-delay: 0.9s; }
+
+@keyframes seq-in {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── SVG 아이콘 ── */
+.login-icon {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 28px;
+  color: #8eafd4;
+}
+
+/* ── 타이포그래피 ── */
 .login-title {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
-  font-size: 36px;
+  font-size: 40px;
   font-weight: 800;
-  letter-spacing: -0.03em;
-  line-height: 1.4;
+  letter-spacing: -0.04em;
+  line-height: 1.25;
   margin-bottom: 16px;
 
-  background: linear-gradient(135deg, #000000 0%, #1a2a4a 55%, #2c3e6b 100%);
+  background: linear-gradient(135deg, #0a0a0a 0%, #1c2d4a 60%, #2a3f6b 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -75,15 +142,86 @@
 }
 
 .login-subtitle {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
   font-size: 15px;
   font-weight: 400;
-  line-height: 1.4;
+  line-height: 1.65;
   letter-spacing: -0.01em;
-  color: #515154;
-  max-width: 360px;
-  margin-bottom: 56px;
+  color: #6e7c8c;
+  max-width: 340px;
+  margin-bottom: 52px;
 }
 
+/* ── 워크플로우 슬롯 보드 ── */
+.slot-board {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  width: 100%;
+  max-width: 400px;
+  margin-bottom: 48px;
+}
+
+.slot-card {
+  flex: 1;
+  background: rgba(245, 247, 252, 0.7);
+  border-radius: 20px;
+  padding: 20px 14px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.slot-icon {
+  width: 24px;
+  height: 24px;
+  color: #94a8c4;
+  flex-shrink: 0;
+}
+
+.slot-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #4a5b70;
+}
+
+.slot-lines {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.slot-line {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.slot-line:nth-child(2) { width: 75%; }
+.slot-line:nth-child(3) { width: 50%; }
+
+/* 슬롯 사이 연결 도트 */
+.slot-connector {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  flex-shrink: 0;
+  gap: 3px;
+  padding-top: 6px;
+}
+
+.slot-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #c4cdd8;
+}
+
+/* ── CTA 버튼 ── */
 .login-btn {
   display: inline-flex;
   align-items: center;
@@ -91,151 +229,171 @@
   gap: 10px;
 
   width: 100%;
-  max-width: 320px;
-  padding: 16px 24px;
+  max-width: 300px;
+  padding: 16px 28px;
 
-  background: var(--auth-accent);
+  background: #000000;
   color: #ffffff;
   border: none;
   border-radius: 24px;
 
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
 
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
-.login-btn:hover { opacity: 0.85; }
-.login-btn:active { opacity: 0.7; }
+.login-btn:hover {
+  background: #111d36;
+  opacity: 0.92;
+}
+
+.login-btn:active {
+  opacity: 0.75;
+}
 
 .login-btn-icon {
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
   flex-shrink: 0;
 }
 
-/* 스크롤 유도 힌트 */
-.login-scroll-hint {
+/* ── 하단 섹션 ── */
+.login-footer {
+  position: relative;
+  z-index: 1;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 24px 100px;
+  text-align: center;
+
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.9s ease-out, transform 0.9s ease-out;
+}
+
+.login-footer.in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.login-footer-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #1d1d1f;
+  margin-bottom: 12px;
+}
+
+.login-footer-desc {
+  font-size: 14px;
+  color: #6e7c8c;
+  line-height: 1.6;
+  max-width: 360px;
+  margin: 0 auto 40px;
+}
+
+/* 목업 보드 */
+.mockup {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  background: #f5f7fa;
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.mockup-sidebar {
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-right: 1px solid #ebeef3;
+}
+
+.mockup-slot {
+  height: 40px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid #e8ecf1;
+}
+
+.mockup-slot.is-active {
+  border-color: #b8c8e0;
+  background: #edf2fa;
+}
+
+.mockup-main {
+  padding: 20px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  align-content: start;
+}
+
+.mockup-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mockup-col-label {
+  height: 6px;
+  width: 55%;
+  border-radius: 3px;
+  background: #dde1e8;
+  margin-bottom: 4px;
+}
+
+.mockup-item {
+  height: 48px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #e8ecf1;
+}
+
+/* 스크롤 유도 */
+.scroll-hint {
   position: absolute;
-  bottom: 32px;
+  bottom: 28px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  color: #b5b5ba;
-  animation: login-rise 0.8s ease-out both;
-  animation-delay: 0.3s;
+  gap: 5px;
+  color: #b0b8c4;
 }
 
-.login-scroll-hint span {
-  font-size: 11px;
-  letter-spacing: 0.02em;
+.scroll-hint span {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
-.login-scroll-hint svg {
-  width: 14px;
-  height: 14px;
-  animation: scroll-bounce 1.8s ease-in-out infinite;
+.scroll-hint svg {
+  width: 12px;
+  height: 12px;
+  animation: hint-bob 2s ease-in-out infinite;
 }
 
-@keyframes scroll-bounce {
-  0%, 100% { transform: translateY(0); opacity: 0.5; }
-  50% { transform: translateY(5px); opacity: 1; }
+@keyframes hint-bob {
+  0%, 100% { transform: translateY(0); opacity: 0.4; }
+  50% { transform: translateY(4px); opacity: 1; }
 }
 
-/* ── 하단 목업 섹션 ── */
-.login-preview {
-  position: relative;
-  z-index: 1;
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 0 24px 120px;
-
-  opacity: 0;
-  transform: translateY(24px);
-  transition: opacity 0.8s ease-out, transform 0.8s ease-out;
-}
-
-.login-preview.in-view {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.login-preview-title {
-  text-align: center;
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: #1d1d1f;
-  margin-bottom: 48px;
-}
-
-/* 목업 스케치 프레임 */
-.mockup {
-  display: grid;
-  grid-template-columns: 220px 1fr;
-  gap: 1px;
-  background: #ececec;
-  border: 1px solid #ececec;
-  border-radius: 16px;
-  overflow: hidden;
-}
-
-.mockup-panel {
-  background: #ffffff;
-  padding: 20px;
-}
-
-.mockup-card-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.mockup-card {
-  height: 44px;
-  border: 1px solid #e5e5ea;
-  border-radius: 10px;
-}
-
-.mockup-card.is-accent {
-  border-color: #c7d0e8;
-  background: #f7f9fd;
-}
-
-.mockup-board {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-
-.mockup-board-col {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.mockup-board-label {
-  height: 8px;
-  width: 60%;
-  border-radius: 4px;
-  background: #eeeef0;
-  margin-bottom: 4px;
-}
-
-.mockup-board-item {
-  height: 56px;
-  border: 1px solid #e5e5ea;
-  border-radius: 8px;
-}
-
-/* 모바일 대응 */
+/* ── 모바일 ── */
 @media (max-width: 560px) {
-  .login-title { font-size: 28px; }
+  .login-hero { padding: 48px 20px 32px; }
+  .login-title { font-size: 30px; }
+  .login-subtitle { font-size: 14px; margin-bottom: 36px; }
+  .slot-board { gap: 8px; }
+  .slot-card { padding: 16px 10px 14px; border-radius: 16px; }
+  .slot-label { font-size: 10px; }
   .mockup { grid-template-columns: 1fr; }
-  .mockup-board { grid-template-columns: repeat(2, 1fr); }
+  .mockup-sidebar { border-right: none; border-bottom: 1px solid #ebeef3; }
+  .mockup-main { grid-template-columns: repeat(2, 1fr); }
 }
