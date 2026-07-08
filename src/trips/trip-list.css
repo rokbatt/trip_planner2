@@ -186,7 +186,7 @@
 .trip-card {
   display: flex;
   align-items: stretch;
-  min-height: 156px;
+  min-height: 132px;
   background: #FFFFFF;
   border: 1px solid #CDEBFB;
   border-radius: 16px;
