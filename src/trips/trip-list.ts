@@ -120,10 +120,12 @@ function createTripCard(trip: Trip, index: number): HTMLElement {
   card.innerHTML = `
     <div class="trip-card-clip">
       <div class="trip-card-info">
+        <span class="trip-pass-label">TRAVEL PASS</span>
         <div class="trip-card-route">
           <span>ICN</span>${ICON_ROUTE_ARROW}<span>${escapeHtml(destCode)}</span>
         </div>
         <div class="trip-card-name">${escapeHtml(trip.name)}</div>
+        <div class="trip-info-divider"></div>
 
         <div class="trip-card-flightinfo">
           <div class="fi-col">
