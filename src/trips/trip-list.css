@@ -131,7 +131,7 @@
   font-weight: 700;
   letter-spacing: -0.03em;
   color: #0B2A5C;
-   margin-left: -3px; /* 필요한 만큼 음수값 조절 (-1px ~ -3px 사이 추천) */
+   margin-left: -5px; /* 필요한 만큼 음수값 조절 (-1px ~ -3px 사이 추천) */
 }
 
 .trip-list-sub {
