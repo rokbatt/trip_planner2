@@ -7,8 +7,9 @@ import './trip-list.css';
 
 type Trip = Database['public']['Tables']['trips']['Row'];
 
-/* ── SVG (랜딩과 동일한 직선형 안내판 아이콘 체계) ── */
+/* ── SVG ── */
 const ICON_SUITCASE = `<svg class="trip-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="7" width="18" height="14"/><path d="M8 7V4H16V7"/></svg>`;
+const ICON_PIN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" stroke-linejoin="miter"><path d="M12 21C12 21 19 14.5 19 9.5C19 5.9 15.9 3 12 3C8.1 3 5 5.9 5 9.5C5 14.5 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.2"/></svg>`;
 const DI = {
   trip: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="5" width="18" height="16"/><path d="M3 10H21M8 3V7M16 3V7"/></svg>`,
   setting: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="4" y="4" width="16" height="16"/><path d="M9 4V20M4 9H20"/></svg>`,
@@ -32,6 +33,35 @@ function escapeHtml(str: string): string {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+/* ── 날짜 포매팅: 연도(11px용) / MM.DD — MM.DD ── */
+function formatDateBlock(start: string | null, end: string | null): { year: string; range: string } {
+  if (!start) return { year: '', range: 'DATE TBD' };
+  const s = new Date(start);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const mmdd = (d: Date) => `${pad(d.getMonth() + 1)}.${pad(d.getDate())}`;
+
+  const year = String(s.getFullYear());
+  if (!end) return { year, range: mmdd(s) };
+
+  const e = new Date(end);
+  return { year, range: `${mmdd(s)}<span class="sep">—</span>${mmdd(e)}` };
+}
+
+/* ── D-Day 계산 ── */
+function formatDDay(start: string | null): string | null {
+  if (!start) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(start);
+  target.setHours(0, 0, 0, 0);
+
+  const diffDays = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return 'D-DAY';
+  if (diffDays > 0) return `D-${diffDays}`;
+  return `D+${Math.abs(diffDays)}`;
 }
 
 /* ── 내 여행 목록 로드 ── */
@@ -59,23 +89,29 @@ async function loadTrips(): Promise<Trip[]> {
     });
 }
 
-/* ── 여행 카드 ── */
-function createTripCard(trip: Trip): HTMLElement {
+/* ── 여행 카드 (보딩 패스 구조) ── */
+function createTripCard(trip: Trip, index: number): HTMLElement {
   const card = document.createElement('div');
   card.className = 'trip-card';
+  card.style.animationDelay = `${index * 0.1}s`;
 
-  const dateStr = trip.start_date && trip.end_date
-    ? `${trip.start_date} – ${trip.end_date}`
-    : 'DATE TBD';
-
-  const destinations = trip.destinations?.join(', ') || '';
+  const { year, range } = formatDateBlock(trip.start_date, trip.end_date);
+  const dday = formatDDay(trip.start_date);
+  const cityCode = trip.destinations?.join(' · ') || 'NO CITY';
 
   card.innerHTML = `
     <div class="trip-card-info">
+      <div class="trip-card-city">${ICON_PIN}<span>${escapeHtml(cityCode)}</span></div>
       <h3 class="trip-card-name">${escapeHtml(trip.name)}</h3>
-      <div class="trip-card-meta">${dateStr}${destinations ? ` · ${escapeHtml(destinations)}` : ''}</div>
+      <div class="trip-card-dates">
+        ${year ? `<span class="trip-card-year">${year}</span>` : ''}
+        <span class="trip-card-mmdd">${range}</span>
+      </div>
+      ${dday ? `<span class="trip-card-dday">${dday}</span>` : ''}
     </div>
-    <div class="trip-card-img" id="trip-img-${trip.id}"></div>
+    <div class="trip-card-img-wrap">
+      <div class="trip-card-img" id="trip-img-${trip.id}"></div>
+    </div>
   `;
 
   card.addEventListener('click', () => {
@@ -164,7 +200,6 @@ export async function renderTripList(): Promise<HTMLElement> {
     </div>
   `;
 
-  // 네비 이벤트
   page.querySelector('#tl-logo')!.addEventListener('click', () => navigate('trips'));
 
   const avatarBtn = page.querySelector('#tl-avatar');
@@ -183,13 +218,10 @@ export async function renderTripList(): Promise<HTMLElement> {
   page.querySelector('#tl-dd-help')?.addEventListener('click', () => alert('문의하기 기능은 곧 구현 예정이에요!'));
   page.querySelector('#tl-dd-logout')?.addEventListener('click', signOut);
 
-  // 여행 생성 버튼
   page.querySelector('#btn-new-trip')!.addEventListener('click', () => {
-    // TODO: 다음 단계에서 여행 생성 모달 구현
     alert('여행 생성 모달은 다음 단계에서 구현 예정!');
   });
 
-  // 데이터 로드
   const trips = await loadTrips();
   const grid = page.querySelector('#trip-grid')!;
 
@@ -203,7 +235,7 @@ export async function renderTripList(): Promise<HTMLElement> {
     `;
   } else {
     grid.innerHTML = '';
-    trips.forEach((trip) => grid.appendChild(createTripCard(trip)));
+    trips.forEach((trip, i) => grid.appendChild(createTripCard(trip, i)));
   }
 
   return page;
