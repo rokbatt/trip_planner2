@@ -1,19 +1,12 @@
 /**
- * Supabase 자동생성 타입
+ * Supabase 자동생성 타입 플레이스홀더
  *
- * 실제 타입은 아래 명령으로 덮어쓰세요:
+ * 실제 타입 생성:
  *   npx supabase gen types typescript --project-id YOUR_PROJECT_ID > src/types/database.ts
  *
- * 지금은 개발 시작용 수동 스텁입니다.
+ * 지금은 컴파일 에러를 막기 위한 최소 껍데기만 둡니다.
+ * (각 테이블에 Relationships 필드 필수 — 최신 @supabase/supabase-js 타입 요구사항)
  */
-
-export type Json =
-  | string
-  | number
-  | boolean
-  | null
-  | { [key: string]: Json | undefined }
-  | Json[];
 
 export interface Database {
   public: {
@@ -27,16 +20,17 @@ export interface Database {
           headcount: number | null;
           theme: string | null;
           destinations: string[] | null;
-          dest_coords: Json | null;
+          dest_coords: Record<string, unknown> | null;
           owner_id: string;
           invite_code: string | null;
           created_at: string;
         };
-        Insert: Omit<Database['public']['Tables']['trips']['Row'], 'id' | 'created_at'> & {
-          id?: string;
-          created_at?: string;
+        Insert: Partial<Database['public']['Tables']['trips']['Row']> & {
+          name: string;
+          owner_id: string;
         };
-        Update: Partial<Database['public']['Tables']['trips']['Insert']>;
+        Update: Partial<Database['public']['Tables']['trips']['Row']>;
+        Relationships: [];
       };
       trip_members: {
         Row: {
@@ -47,8 +41,16 @@ export interface Database {
           avatar_url: string | null;
           added_by: string | null;
         };
-        Insert: Database['public']['Tables']['trip_members']['Row'];
-        Update: Partial<Database['public']['Tables']['trip_members']['Insert']>;
+        Insert: {
+          trip_id: string;
+          user_id: string;
+          role?: string;
+          display_name?: string | null;
+          avatar_url?: string | null;
+          added_by?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['trip_members']['Row']>;
+        Relationships: [];
       };
       places: {
         Row: {
@@ -62,7 +64,7 @@ export interface Database {
           google_rating: number | null;
           category: string | null;
           photo_url: string | null;
-          opening_hours: Json | null;
+          opening_hours: Record<string, unknown> | null;
           added_by: string | null;
           mood: string | null;
           status: string;
@@ -71,71 +73,36 @@ export interface Database {
           likes_count: number;
           created_at: string;
         };
-        Insert: Omit<Database['public']['Tables']['places']['Row'], 'id' | 'created_at'> & {
-          id?: string;
-          created_at?: string;
-        };
-        Update: Partial<Database['public']['Tables']['places']['Insert']>;
-      };
-      itinerary_items: {
-        Row: {
-          id: string;
+        Insert: Partial<Database['public']['Tables']['places']['Row']> & {
           trip_id: string;
-          place_id: string | null;
-          title: string;
-          date: string;
-          start_time: string | null;
-          sort_order: number;
-          notes: string | null;
-          estimated_cost: number | null;
-          travel_distance_m: number | null;
-          travel_duration_s: number | null;
-          travel_polyline: string | null;
-          travel_mode: string | null;
+          name: string;
         };
-        Insert: Omit<Database['public']['Tables']['itinerary_items']['Row'], 'id'> & {
-          id?: string;
-        };
-        Update: Partial<Database['public']['Tables']['itinerary_items']['Insert']>;
-      };
-      place_reactions: {
-        Row: {
-          place_id: string;
-          user_id: string;
-          emoji: string;
-        };
-        Insert: Database['public']['Tables']['place_reactions']['Row'];
-        Update: Partial<Database['public']['Tables']['place_reactions']['Insert']>;
-      };
-      chat_messages: {
-        Row: {
-          id: string;
-          trip_id: string;
-          user_id: string;
-          message: string;
-          created_at: string;
-        };
-        Insert: Omit<Database['public']['Tables']['chat_messages']['Row'], 'id' | 'created_at'> & {
-          id?: string;
-          created_at?: string;
-        };
-        Update: Partial<Database['public']['Tables']['chat_messages']['Insert']>;
+        Update: Partial<Database['public']['Tables']['places']['Row']>;
+        Relationships: [];
       };
       city_images: {
         Row: {
           city_ko: string;
-          city_en: string | null;
+          city_en: string;
           image_url: string;
           image_position: string | null;
           image_credit: string | null;
           verified: boolean;
         };
         Insert: Database['public']['Tables']['city_images']['Row'];
-        Update: Partial<Database['public']['Tables']['city_images']['Insert']>;
+        Update: Partial<Database['public']['Tables']['city_images']['Row']>;
+        Relationships: [];
       };
     };
-    Views: {};
-    Functions: {};
-    Enums: {};
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
   };
 }
+
+/** 자주 쓰는 Row 타입 단축 alias */
+export type Trip = Database['public']['Tables']['trips']['Row'];
+export type TripMember = Database['public']['Tables']['trip_members']['Row'];
+export type Place = Database['public']['Tables']['places']['Row'];
+export type CityImage = Database['public']['Tables']['city_images']['Row'];
