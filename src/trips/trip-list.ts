@@ -9,13 +9,30 @@ type Trip = Database['public']['Tables']['trips']['Row'];
 
 /* ── SVG ── */
 const ICON_SUITCASE = `<svg class="trip-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="7" width="18" height="14"/><path d="M8 7V4H16V7"/></svg>`;
-const ICON_PIN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" stroke-linejoin="miter"><path d="M12 21C12 21 19 14.5 19 9.5C19 5.9 15.9 3 12 3C8.1 3 5 5.9 5 9.5C5 14.5 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.2"/></svg>`;
+const ICON_ROUTE_ARROW = `<svg class="route-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12H19M13 6L19 12L13 18"/></svg>`;
 const DI = {
   trip: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="5" width="18" height="16"/><path d="M3 10H21M8 3V7M16 3V7"/></svg>`,
   setting: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="4" y="4" width="16" height="16"/><path d="M9 4V20M4 9H20"/></svg>`,
   help: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5C9.5 8 10.5 7 12 7C13.5 7 14.5 8 14.5 9.5C14.5 11 12 11 12 13"/><circle cx="12" cy="16.5" r="0.5"/></svg>`,
   logout: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="4" width="10" height="16"/><path d="M21 12H9M17 8L21 12L17 16"/></svg>`,
 };
+
+/* ── 도시 → IATA 공항코드 매핑 (주요 목적지, 폴백 있음) ── */
+const AIRPORT_CODE: Record<string, string> = {
+  '서울': 'ICN', '인천': 'ICN', '뉴욕': 'JFK', '방콕': 'BKK', '도쿄': 'NRT',
+  '오사카': 'KIX', '파리': 'CDG', '런던': 'LHR', '로마': 'FCO', '바르셀로나': 'BCN',
+  '싱가포르': 'SIN', '홍콩': 'HKG', '타이베이': 'TPE', '하노이': 'HAN',
+  '다낭': 'DAD', '나트랑': 'CXR', '발리': 'DPS', '푸켓': 'HKT', '오키나와': 'OKA',
+  '시드니': 'SYD', '두바이': 'DXB', '로스앤젤레스': 'LAX', '샌프란시스코': 'SFO',
+  '미국': 'JFK', '베트남': 'HAN', '태국': 'BKK', '일본': 'NRT', '유럽': 'CDG',
+};
+
+function toAirportCode(city: string): string {
+  const cleaned = city.trim();
+  if (AIRPORT_CODE[cleaned]) return AIRPORT_CODE[cleaned];
+  // 폴백: 영문 없으면 앞 3글자를 대문자 코드처럼
+  return cleaned.slice(0, 3).toUpperCase();
+}
 
 /* ── 유저 정보 ── */
 function getUserInfo() {
@@ -36,17 +53,19 @@ function escapeHtml(str: string): string {
 }
 
 /* ── 날짜 포매팅 ── */
-function formatDateBlock(start: string | null, end: string | null): { year: string; range: string } {
-  if (!start) return { year: '', range: 'DATE TBD' };
-  const s = new Date(start);
+function formatMMDD(dateStr: string | null): string {
+  if (!dateStr) return '--.--';
+  const d = new Date(dateStr);
   const pad = (n: number) => String(n).padStart(2, '0');
-  const mmdd = (d: Date) => `${pad(d.getMonth() + 1)}.${pad(d.getDate())}`;
+  return `${pad(d.getMonth() + 1)}.${pad(d.getDate())}`;
+}
 
-  const year = String(s.getFullYear());
-  if (!end) return { year, range: mmdd(s) };
-
+function formatDays(start: string | null, end: string | null): string {
+  if (!start || !end) return '-';
+  const s = new Date(start);
   const e = new Date(end);
-  return { year, range: `${mmdd(s)}<span class="sep">—</span>${mmdd(e)}` };
+  const diff = Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
+  return `${diff + 1}일`;
 }
 
 function formatDDay(start: string | null): string | null {
@@ -88,28 +107,45 @@ async function loadTrips(): Promise<Trip[]> {
     });
 }
 
-/* ── 여행 카드 ── */
+/* ── 여행 카드 (보딩 패스) ── */
 function createTripCard(trip: Trip, index: number): HTMLElement {
   const card = document.createElement('div');
   card.className = 'trip-card';
   card.style.animationDelay = `${index * 0.1}s`;
 
-  const { year, range } = formatDateBlock(trip.start_date, trip.end_date);
+  const destCity = trip.destinations?.[0] ?? trip.name;
+  const destCode = toAirportCode(destCity);
   const dday = formatDDay(trip.start_date);
-  const cityCode = trip.destinations?.join(' · ') || 'NO CITY';
 
   card.innerHTML = `
-    <div class="trip-card-info">
-      <div class="trip-card-city">${ICON_PIN}<span>${escapeHtml(cityCode)}</span></div>
-      <h3 class="trip-card-name">${escapeHtml(trip.name)}</h3>
-      <div class="trip-card-dates">
-        ${year ? `<span class="trip-card-year">${year}</span>` : ''}
-        <span class="trip-card-mmdd">${range}</span>
+    <div class="trip-card-clip">
+      <div class="trip-card-info">
+        <div class="trip-card-route">
+          <span>ICN</span>${ICON_ROUTE_ARROW}<span>${escapeHtml(destCode)}</span>
+        </div>
+        <div class="trip-card-name">${escapeHtml(trip.name)}</div>
+
+        <div class="trip-card-flightinfo">
+          <div class="fi-col">
+            <span class="fi-label">DEPART</span>
+            <span class="fi-value">${formatMMDD(trip.start_date)}</span>
+          </div>
+          <div class="fi-col">
+            <span class="fi-label">ARRIVE</span>
+            <span class="fi-value">${formatMMDD(trip.end_date)}</span>
+          </div>
+          <div class="fi-col">
+            <span class="fi-label">DAYS</span>
+            <span class="fi-value">${formatDays(trip.start_date, trip.end_date)}</span>
+          </div>
+        </div>
+
+        ${dday ? `<span class="fi-dday">${dday}</span>` : ''}
       </div>
-      ${dday ? `<span class="trip-card-dday">${dday}</span>` : ''}
-    </div>
-    <div class="trip-card-img-wrap">
-      <div class="trip-card-img" id="trip-img-${trip.id}"></div>
+      <div class="trip-card-img-wrap">
+        <div class="trip-card-img" id="trip-img-${trip.id}"></div>
+        <div class="trip-card-barcode"></div>
+      </div>
     </div>
   `;
 
