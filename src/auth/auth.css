@@ -269,17 +269,40 @@
   z-index: 10;
   margin-top: 100vh;
   margin-top: 100svh;
-  background: var(--al-bg);
-  box-shadow: 0 -10px 36px rgba(23,33,43,0.06);
+  background: #FFFFFF;
+  box-shadow: 0 -10px 36px rgba(11,42,92,0.10);
 }
 
 /* ── 공통 섹션 ── */
 .lp-section { padding: 132px 24px; }
 .lp-section-inner { max-width: 1080px; margin: 0 auto; }
 
-.bg-white  { background: var(--al-bg); }
-.bg-light  { background: #EFF5FB; border-top: 1px solid var(--al-divider); border-bottom: 1px solid var(--al-divider); }
-.bg-navy   { background: linear-gradient(135deg, #101820 0%, #1B2733 55%, #2F3E4E 100%); color: #fff; }
+.bg-white  { background: #FFFFFF; }
+.bg-light  { background: #EAF6FD; border-top: 1px solid #CDEBFB; border-bottom: 1px solid #CDEBFB; }
+.bg-navy   {
+  position: relative;
+  background: linear-gradient(135deg, #081D42 0%, #0B2A5C 55%, #123B7A 100%);
+  color: #fff;
+  overflow: hidden;
+}
+/* 대한항공 기프트카드 특유의 대각선 스트라이프 장식 */
+.bg-navy::before,
+.bg-navy::after {
+  content: '';
+  position: absolute;
+  width: 260px;
+  height: 120px;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(143,216,248,0.55) 0px,
+    rgba(143,216,248,0.55) 10px,
+    transparent 10px,
+    transparent 22px
+  );
+  pointer-events: none;
+}
+.bg-navy::before { top: -20px; right: -40px; }
+.bg-navy::after { bottom: -20px; left: -40px; }
 
 .reveal { opacity: 0; transform: translateY(28px); transition: opacity 0.8s var(--al-ease), transform 0.8s var(--al-ease); }
 .reveal.in-view { opacity: 1; transform: translateY(0); }
@@ -290,7 +313,7 @@
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--al-action);
+  color: #0B7CC4;
   margin-bottom: 16px;
 }
 .lp-sec-title {
@@ -299,38 +322,36 @@
   letter-spacing: -0.03em;
   line-height: 1.3;
   margin-bottom: 18px;
-  color: var(--al-text);
+  color: #0B2A5C;
 }
-.lp-sec-desc { font-size: 15.5px; color: var(--al-text-secondary); line-height: 1.75; max-width: 480px; }
-.bg-navy .lp-sec-eyebrow { color: var(--al-primary); }
-.bg-navy .lp-sec-title { color: #fff; }
-.bg-navy .lp-sec-desc { color: rgba(255,255,255,0.72); }
+.lp-sec-desc { font-size: 15.5px; color: #4A5A72; line-height: 1.75; max-width: 480px; }
+.bg-navy .lp-sec-eyebrow { color: #8FD8F8; position: relative; z-index: 1; }
+.bg-navy .lp-sec-title { color: #fff; position: relative; z-index: 1; }
+.bg-navy .lp-sec-desc { color: rgba(255,255,255,0.72); position: relative; z-index: 1; }
 
-/* ── Part 1: 3단계 플로우 — Glass 카드 ── */
+/* ── Part 1: 3단계 플로우 ── */
 .lp-flow { display: flex; align-items: stretch; justify-content: center; gap: 0; margin-top: 12px; }
 .flow-card {
   flex: 1; max-width: 300px;
-  background: var(--al-surface);
-  backdrop-filter: saturate(140%) blur(12px);
-  -webkit-backdrop-filter: saturate(140%) blur(12px);
-  border: 1px solid var(--al-divider);
-  border-radius: var(--al-radius);
+  background: #FFFFFF;
+  border: 1px solid #CDEBFB;
+  border-radius: 16px;
   padding: 30px 26px;
   text-align: left;
   position: relative;
   overflow: hidden;
-  transition: border-color var(--al-duration) var(--al-ease);
+  transition: border-color 180ms var(--al-ease);
 }
 .flow-card::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(115deg, transparent 40%, rgba(255,255,255,0.4) 50%, transparent 60%);
+  background: linear-gradient(115deg, transparent 40%, rgba(255,255,255,0.5) 50%, transparent 60%);
   transform: translateX(-120%);
   transition: transform 600ms var(--al-ease);
   pointer-events: none;
 }
-.flow-card:hover { border-color: var(--al-primary); }
+.flow-card:hover { border-color: #8FD8F8; }
 .flow-card:hover::after { transform: translateX(120%); }
 
 .flow-step {
@@ -338,23 +359,23 @@
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.16em;
-  color: var(--al-action);
+  color: #0B7CC4;
   margin-bottom: 18px;
   text-transform: uppercase;
 }
-.flow-icon { width: 24px; height: 24px; color: var(--al-action); margin-bottom: 16px; }
-.flow-card-title { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; color: var(--al-text); margin-bottom: 7px; }
-.flow-card-desc { font-size: 13px; color: var(--al-text-secondary); line-height: 1.6; margin-bottom: 20px; }
+.flow-icon { width: 24px; height: 24px; color: #0B2A5C; margin-bottom: 16px; }
+.flow-card-title { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; color: #0B2A5C; margin-bottom: 7px; }
+.flow-card-desc { font-size: 13px; color: #64748B; line-height: 1.6; margin-bottom: 20px; }
 .flow-chips { display: flex; flex-direction: column; gap: 8px; }
 .flow-chip {
   font-size: 12px;
-  color: var(--al-text);
-  background: #fff;
-  border-radius: var(--al-radius-sm);
+  color: #0B2A5C;
+  background: #EAF6FD;
+  border-radius: 10px;
   padding: 10px 13px;
-  border: 1px solid var(--al-divider);
+  border: 1px solid #CDEBFB;
 }
-.flow-arrow { display: flex; align-items: center; color: rgba(130,150,170,0.4); padding: 0 10px; flex-shrink: 0; }
+.flow-arrow { display: flex; align-items: center; color: #A9D8F5; padding: 0 10px; flex-shrink: 0; }
 .flow-arrow svg { width: 20px; height: 20px; }
 
 /* ── 좌우 2단 ── */
@@ -363,14 +384,14 @@
 
 /* ── 이미지 자리 ── */
 .media-box {
-  border-radius: var(--al-radius);
-  background: #EFF5FB;
-  border: 1px solid var(--al-divider);
+  border-radius: 16px;
+  background: #EAF6FD;
+  border: 1px solid #CDEBFB;
   aspect-ratio: 4 / 3;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--al-text-secondary);
+  color: #0B7CC4;
   font-family: var(--font-sans);
   font-size: 12px;
   letter-spacing: 0.06em;
@@ -380,18 +401,18 @@
 
 /* ── Part 3: 보드 데모 ── */
 .demo-board {
-  background: var(--al-surface-solid); border: 1px solid var(--al-divider); border-radius: var(--al-radius); overflow: hidden;
+  background: #FFFFFF; border: 1px solid #CDEBFB; border-radius: 16px; overflow: hidden;
   display: grid; grid-template-columns: 180px 1fr;
 }
-.demo-sidebar { padding: 18px 14px; display: flex; flex-direction: column; gap: 9px; border-right: 1px solid var(--al-divider); background: #FAFCFE; }
-.demo-slot { height: 36px; border-radius: var(--al-radius-sm); background: var(--al-bg); border: 1px solid var(--al-divider); }
-.demo-slot.is-active { border-color: var(--al-action); background: #EAF3FC; }
+.demo-sidebar { padding: 18px 14px; display: flex; flex-direction: column; gap: 9px; border-right: 1px solid #CDEBFB; background: #F5FBFF; }
+.demo-slot { height: 36px; border-radius: 10px; background: #EAF6FD; border: 1px solid #CDEBFB; }
+.demo-slot.is-active { border-color: #0B2A5C; background: #DCEFFB; }
 .demo-main { padding: 18px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; align-content: start; }
 .demo-col { display: flex; flex-direction: column; gap: 7px; }
-.demo-col-head { height: 6px; width: 52%; border-radius: 3px; background: var(--al-divider); margin-bottom: 4px; }
-.demo-item { border-radius: var(--al-radius-sm); background: #fff; border: 1px solid var(--al-divider); padding: 10px; }
-.demo-item.accent { border-color: var(--al-action); background: #EAF3FC; }
-.demo-item-line { height: 5px; border-radius: 3px; background: var(--al-divider); }
+.demo-col-head { height: 6px; width: 52%; border-radius: 3px; background: #CDEBFB; margin-bottom: 4px; }
+.demo-item { border-radius: 10px; background: #fff; border: 1px solid #CDEBFB; padding: 10px; }
+.demo-item.accent { border-color: #0B2A5C; background: #EAF6FD; }
+.demo-item-line { height: 5px; border-radius: 3px; background: #CDEBFB; }
 .demo-item-line.short { width: 60%; margin-top: 5px; }
 
 /* ── Part 2: 채팅 섹션 ── */
@@ -399,19 +420,19 @@
 .chat-bubble {
   margin: 0;
   padding: 13px 17px;
-  border-radius: var(--al-radius);
+  border-radius: 16px;
   font-size: 13px;
   line-height: 1.55;
   max-width: 80%;
 }
 .chat-bubble.them {
   background: #FFFFFF;
-  border: 1px solid var(--al-divider);
-  color: var(--al-text);
+  border: 1px solid #CDEBFB;
+  color: #0B2A5C;
   align-self: flex-start;
 }
 .chat-bubble.me {
-  background: var(--al-action);
+  background: #0B2A5C;
   color: #FFFFFF;
   align-self: flex-end;
 }
@@ -430,44 +451,44 @@
 /* ── 기능 3열 ── */
 .lp-features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin-top: 56px; }
 .feature-card {
-  background: var(--al-surface-solid);
-  border: 1px solid var(--al-divider);
-  border-radius: var(--al-radius);
+  background: #FFFFFF;
+  border: 1px solid #CDEBFB;
+  border-radius: 16px;
   padding: 30px 26px;
   text-align: left;
-  transition: border-color var(--al-duration) var(--al-ease);
+  transition: border-color 180ms var(--al-ease);
 }
-.feature-card:hover { border-color: var(--al-primary); }
-.feature-icon { width: 26px; height: 26px; color: var(--al-action); margin-bottom: 18px; }
-.feature-title { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; color: var(--al-text); margin-bottom: 8px; }
-.feature-desc { font-size: 13.5px; color: var(--al-text-secondary); line-height: 1.65; }
+.feature-card:hover { border-color: #8FD8F8; }
+.feature-icon { width: 26px; height: 26px; color: #0B2A5C; margin-bottom: 18px; }
+.feature-title { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; color: #0B2A5C; margin-bottom: 8px; }
+.feature-desc { font-size: 13.5px; color: #64748B; line-height: 1.65; }
 
-/* ── CTA 밴드 ── */
-.lp-cta-band { text-align: center; padding: 140px 24px; }
+/* ── CTA 밴드 (기프트카드 톤 그대로) ── */
+.lp-cta-band { text-align: center; padding: 140px 24px; position: relative; z-index: 1; }
 .lp-cta-band-title { font-size: 36px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.28; margin-bottom: 20px; color: #fff; }
 .lp-cta-band-desc { font-size: 15.5px; color: rgba(255,255,255,0.72); line-height: 1.7; max-width: 440px; margin: 0 auto 36px; }
 .lp-cta-band-btn {
   display: inline-flex; align-items: center; gap: 10px; justify-content: center;
   padding: 15px 32px; min-width: 260px;
   max-width: 100%;
-  background: #fff; color: var(--al-text); border: none; border-radius: var(--al-radius-sm);
-  font-size: 14px; font-weight: 600; cursor: pointer;
-  transition: background var(--al-duration) var(--al-ease);
+  background: #fff; color: #0B2A5C; border: none; border-radius: 12px;
+  font-size: 14px; font-weight: 700; cursor: pointer;
+  transition: background 180ms var(--al-ease);
 }
-.lp-cta-band-btn:hover { background: #EAF3FC; }
+.lp-cta-band-btn:hover { background: #EAF6FD; }
 .lp-cta-band-btn-icon { width: 17px; height: 17px; }
 
 /* ── 푸터 ── */
-.lp-footer { background: #0E141B; padding: 60px 24px 68px; font-size: 13px; color: #8A97A8; }
+.lp-footer { background: #081D42; padding: 60px 24px 68px; font-size: 13px; color: #7C93B8; }
 .lp-footer-inner { max-width: 1080px; margin: 0 auto; }
 .lp-footer-top { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 24px; margin-bottom: 30px; }
-.lp-footer-brand { font-size: 17px; font-weight: 700; color: #E5E9EF; letter-spacing: -0.03em; }
+.lp-footer-brand { font-size: 17px; font-weight: 700; color: #E5F1FB; letter-spacing: -0.03em; }
 .lp-footer-links { display: flex; flex-wrap: wrap; gap: 8px 18px; }
-.lp-footer-links a { color: #94A3B8; text-decoration: none; font-weight: 500; }
-.lp-footer-links a:hover { color: var(--al-primary); }
-.lp-footer-links a.strong { font-weight: 700; color: #C7CFDA; }
-.lp-footer-biz { line-height: 1.9; color: #64748B; font-size: 12px; font-family: var(--font-sans); }
-.lp-footer-copy { margin-top: 24px; padding-top: 22px; border-top: 1px solid #1E2733; font-size: 11.5px; color: #4B5A70; }
+.lp-footer-links a { color: #8FA8C8; text-decoration: none; font-weight: 500; }
+.lp-footer-links a:hover { color: #8FD8F8; }
+.lp-footer-links a.strong { font-weight: 700; color: #BEE0F7; }
+.lp-footer-biz { line-height: 1.9; color: #64789E; font-size: 12px; font-family: var(--font-sans); }
+.lp-footer-copy { margin-top: 24px; padding-top: 22px; border-top: 1px solid #163156; font-size: 11.5px; color: #4A6082; }
 
 @media (prefers-reduced-motion: reduce) {
   .reveal, .reveal .chat-bubble { opacity: 1; transform: none; transition: none; }
@@ -493,8 +514,9 @@
   .lp-sec-title { font-size: 24px; }
   .lp-cta-band-title { font-size: 26px; }
   .demo-board { grid-template-columns: 1fr; }
-  .demo-sidebar { flex-direction: row; border-right: none; border-bottom: 1px solid var(--al-divider); }
+  .demo-sidebar { flex-direction: row; border-right: none; border-bottom: 1px solid #CDEBFB; }
   .demo-sidebar .demo-slot { flex: 1; height: 30px; }
   .demo-main { grid-template-columns: repeat(2, 1fr); }
   .lp-footer-top { flex-direction: column; }
+}
 }
