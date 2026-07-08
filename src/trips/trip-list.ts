@@ -35,7 +35,7 @@ function escapeHtml(str: string): string {
   return div.innerHTML;
 }
 
-/* ── 날짜 포매팅: 연도(11px용) / MM.DD — MM.DD ── */
+/* ── 날짜 포매팅 ── */
 function formatDateBlock(start: string | null, end: string | null): { year: string; range: string } {
   if (!start) return { year: '', range: 'DATE TBD' };
   const s = new Date(start);
@@ -49,7 +49,6 @@ function formatDateBlock(start: string | null, end: string | null): { year: stri
   return { year, range: `${mmdd(s)}<span class="sep">—</span>${mmdd(e)}` };
 }
 
-/* ── D-Day 계산 ── */
 function formatDDay(start: string | null): string | null {
   if (!start) return null;
   const today = new Date();
@@ -89,7 +88,7 @@ async function loadTrips(): Promise<Trip[]> {
     });
 }
 
-/* ── 여행 카드 (보딩 패스 구조) ── */
+/* ── 여행 카드 ── */
 function createTripCard(trip: Trip, index: number): HTMLElement {
   const card = document.createElement('div');
   card.className = 'trip-card';
