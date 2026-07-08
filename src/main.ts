@@ -11,6 +11,7 @@ import { addRoute, setNotFound, startRouter, navigate, rerender, currentPath } f
 
 import { renderLogin } from './auth/auth';
 import { renderTripList } from './trips/trip-list';
+import { renderBoard } from './board/board';
 
 const PUBLIC_ROUTES = ['login'];
 
@@ -27,12 +28,8 @@ addRoute('trips', async () => {
 
 addRoute('board', async (params) => {
   const app = document.getElementById('app')!;
-  app.innerHTML = `
-    <div style="padding:48px;text-align:center;color:var(--text-secondary);">
-      🧠 브레인스토밍 보드 — 다음 단계에서 구현 예정
-      <br><small>tripId: ${params.tripId ?? '없음'}</small>
-    </div>
-  `;
+  const el = await renderBoard(params.tripId);
+  app.replaceChildren(el);
 });
 
 setNotFound(() => {
