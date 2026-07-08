@@ -19,14 +19,13 @@ export async function signOut(): Promise<void> {
   navigate('login');
 }
 
-/* ── SVG: 직선·기하학적 안내판 스타일 ── */
+/* ── SVG ── */
 const ICON_PLANE = `<svg class="lp-hero-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M2 12L22 5L15 22L11 14L2 12Z"/><path d="M11 14L22 5"/></svg>`;
 const ICON_GOOGLE = `<svg class="lp-hero-btn-icon" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.9 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.1 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.1 29.5 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 10-2 13.6-5.2l-6.3-5.3C29.3 35.4 26.8 36 24 36c-5.3 0-9.6-3.1-11.3-7.6l-6.5 5C9.6 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.2 5.7l6.3 5.3C40.5 36.6 44 30.9 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>`;
 const ICON_GOOGLE_D = ICON_GOOGLE.replace('lp-hero-btn-icon', 'lp-cta-band-btn-icon');
 const ARROW = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" stroke-linejoin="miter"><path d="M4 12H20M13 5L20 12L13 19"/></svg>`;
 const CHEVRON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter"><path d="M5 8L12 15L19 8"/></svg>`;
 
-/* 안내판형 아이콘: 게이트(STEP1), 보드(STEP2), 경로(STEP3) */
 const ICON_GATE = `<svg class="flow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="4" y="3" width="16" height="18"/><path d="M4 9H20M9 21V9"/></svg>`;
 const ICON_GRID = `<svg class="flow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="3" width="7" height="8"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="11" width="7" height="10"/><rect x="3" y="14" width="7" height="7"/></svg>`;
 const ICON_ROUTE = `<svg class="flow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="18" r="2"/><path d="M5 8V14H19V16"/></svg>`;
@@ -34,7 +33,6 @@ const ICON_USERS = `<svg class="feature-icon" viewBox="0 0 24 24" fill="none" st
 const ICON_ZAP = `<svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M13 2L4 14H12L11 22L20 10H12L13 2Z"/></svg>`;
 const ICON_SPARK = `<svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M12 3V9M12 15V21M3 12H9M15 12H21"/></svg>`;
 
-/* 드롭다운 메뉴 아이콘 */
 const DI = {
   trip: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="5" width="18" height="16"/><path d="M3 10H21M8 3V7M16 3V7"/></svg>`,
   setting: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="4" y="4" width="16" height="16"/><path d="M9 4V20M4 9H20"/></svg>`,
@@ -137,7 +135,7 @@ export function renderLogin(): void {
 
         <section class="lp-section bg-white">
           <div class="lp-section-inner">
-            <div class="reveal" style="text-align:center;margin-bottom:48px;">
+            <div class="reveal" style="text-align:center;margin-bottom:56px;">
               <p class="lp-sec-eyebrow">HOW IT WORKS</p>
               <h2 class="lp-sec-title" style="margin-bottom:0;">아이디어가 여정이 되기까지</h2>
             </div>
@@ -187,11 +185,11 @@ export function renderLogin(): void {
                 </p>
               </div>
               <div class="lp-split-demo">
-              <div class="demo-chat">
-  <div class="chat-bubble them">현지인 오코노미야키 맛집 찾음 🔥 보드에 올렸어</div>
-  <div class="chat-bubble me">오 봤어! AI 팁 보니까 18:30부터 웨이팅 피크라는데?</div>
-  <div class="chat-bubble them">아 진짜? 그럼 오픈런으로 동선 최신화할게</div>
-  <div class="chat-bubble me">인당 2.2만이면 가성비도 OK. Day 2 저녁 확정! 📍</div>
+                <div class="demo-chat">
+                  <div class="chat-bubble them">현지인 오코노미야키 맛집 찾음 🔥 보드에 올렸어</div>
+                  <div class="chat-bubble me">오 봤어! AI 팁 보니까 18:30부터 웨이팅 피크라는데?</div>
+                  <div class="chat-bubble them">아 진짜? 그럼 오픈런으로 동선 최신화할게</div>
+                  <div class="chat-bubble me">인당 2.2만이면 가성비도 OK. Day 2 저녁 확정! 📍</div>
                 </div>
               </div>
             </div>
