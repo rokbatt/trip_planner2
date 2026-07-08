@@ -3,6 +3,36 @@
 
 /* ===== Design Tokens ===== */
 :root {
+  /* ── Airport Lounge Premium Light ── */
+  --al-bg: #F8FBFE;
+  --al-surface: rgba(255,255,255,0.82);
+  --al-surface-solid: #FFFFFF;
+  --al-primary: #79BDF8;
+  --al-action: #2F86D6;
+  --al-action-hover: #256FB5;
+  --al-divider: rgba(130,150,170,0.18);
+  --al-text: #17212B;
+  --al-text-secondary: #697586;
+  --al-text-tertiary: #94A3B8;
+
+  /* Glass */
+  --al-glass-blur: blur(20px);
+  --al-glass-border: 1px solid rgba(255,255,255,0.5);
+  --al-glass-shadow: 0 8px 32px rgba(23,33,43,0.06);
+
+  /* Radius */
+  --al-radius-sm: 10px;
+  --al-radius: 16px;
+  --al-radius-lg: 22px;
+
+  /* Motion */
+  --al-duration: 180ms;
+  --al-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* Sign label typography */
+  --al-sign-size: 11px;
+  --al-sign-tracking: 0.16em;
+  
   /* Brand */
   --coral: #FF7A6B;
   --coral-light: #FFF0EE;
