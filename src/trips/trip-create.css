@@ -187,3 +187,135 @@
   display: none;
 }
 .tc-error.show { display: block; }
+/* ── 카드 삭제 버튼 (호버 시에만 노출) ── */
+.trip-card-delete {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 5;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(11,42,92,0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 180ms cubic-bezier(0.2,0.8,0.2,1),
+              transform 180ms cubic-bezier(0.2,0.8,0.2,1),
+              background 150ms ease;
+}
+.trip-card:hover .trip-card-delete {
+  opacity: 1;
+  transform: scale(1);
+}
+.trip-card-delete:hover { background: #C0392B; }
+.trip-card-delete svg { width: 14px; height: 14px; }
+
+/* ── 삭제 확인 모달 ── */
+.tdel-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(11,42,92,0.32);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  opacity: 0;
+  transition: opacity 200ms cubic-bezier(0.2,0.8,0.2,1);
+}
+.tdel-overlay.open { opacity: 1; }
+
+.tdel-modal {
+  width: 100%;
+  max-width: 360px;
+  background: #FFFFFF;
+  border: 1px solid #CDEBFB;
+  border-radius: 18px;
+  box-shadow: 0 24px 64px rgba(11,42,92,0.22);
+  padding: 28px 26px 24px;
+  text-align: center;
+
+  transform: translateY(10px) scale(0.97);
+  opacity: 0;
+  transition: transform 200ms cubic-bezier(0.2,0.8,0.2,1), opacity 200ms cubic-bezier(0.2,0.8,0.2,1);
+}
+.tdel-overlay.open .tdel-modal {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+.tdel-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #FDEEEC;
+  color: #C0392B;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+}
+.tdel-icon svg { width: 22px; height: 22px; }
+
+.tdel-title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0B2A5C;
+  margin-bottom: 8px;
+}
+
+.tdel-desc {
+  font-size: 13px;
+  color: #64748B;
+  line-height: 1.55;
+  margin-bottom: 22px;
+}
+.tdel-desc strong { color: #0B2A5C; font-weight: 700; }
+
+.tdel-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.tdel-btn-cancel {
+  flex: 1;
+  padding: 11px;
+  border-radius: 10px;
+  border: 1px solid #CDEBFB;
+  background: #FFFFFF;
+  color: #64748B;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.tdel-btn-cancel:hover { background: #F8FBFE; }
+
+.tdel-btn-confirm {
+  flex: 1;
+  padding: 11px;
+  border-radius: 10px;
+  border: none;
+  background: #C0392B;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.tdel-btn-confirm:hover { background: #A93226; }
+.tdel-btn-confirm:disabled {
+  background: #D8AFAA;
+  cursor: not-allowed;
+}
