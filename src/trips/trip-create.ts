@@ -4,8 +4,6 @@ import './trip-create.css';
 
 const ICON_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6L18 18M6 18L18 6"/></svg>';
 
-let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-
 /**
  * 새 여행 생성 모달 열기
  * onCreated: 생성 성공 시 호출되는 콜백 (여행 목록 새로고침용)
@@ -31,10 +29,6 @@ export function openCreateTripModal(onCreated: () => void): void {
     '    <div class="tc-field">',
     '      <label class="tc-field-label">목적지 도시</label>',
     '      <input class="tc-input" id="tc-city" type="text" placeholder="예: 방콕" />',
-    '      <div class="tc-preview" id="tc-preview">',
-    '        <div class="tc-preview-img" id="tc-preview-img"></div>',
-    '        <span class="tc-preview-text" id="tc-preview-text"></span>',
-    '      </div>',
     '    </div>',
     '    <div class="tc-row">',
     '      <div class="tc-field">',
@@ -87,46 +81,11 @@ export function openCreateTripModal(onCreated: () => void): void {
   };
   document.addEventListener('keydown', escHandler);
 
-  const cityInput = overlay.querySelector('#tc-city') as HTMLInputElement;
-  cityInput.addEventListener('input', () => {
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => previewCityImage(overlay, cityInput.value.trim()), 400);
-  });
-
   const form = overlay.querySelector('#tc-form') as HTMLFormElement;
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     await handleSubmit(overlay, onCreated, close);
   });
-}
-
-async function previewCityImage(overlay: HTMLElement, cityKo: string): Promise<void> {
-  const preview = overlay.querySelector('#tc-preview') as HTMLElement;
-  const imgEl = overlay.querySelector('#tc-preview-img') as HTMLElement;
-  const textEl = overlay.querySelector('#tc-preview-text') as HTMLElement;
-
-  if (!cityKo) {
-    preview.classList.remove('show');
-    return;
-  }
-
-  const { data } = await supabase
-    .from('city_images')
-    .select('image_url')
-    .eq('city_ko', cityKo)
-    .single<{ image_url: string }>();
-
-  preview.classList.add('show');
-
-  if (data && data.image_url) {
-    imgEl.style.backgroundImage = "url('" + data.image_url + "')";
-    textEl.textContent = cityKo + ' 사진을 찾았어요';
-    textEl.classList.remove('none');
-  } else {
-    imgEl.style.backgroundImage = 'none';
-    textEl.textContent = '등록된 사진이 없어요 (기본 이미지로 표시돼요)';
-    textEl.classList.add('none');
-  }
 }
 
 function generateInviteCode(): string {
