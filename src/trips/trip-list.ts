@@ -4,6 +4,7 @@ import { navigate } from '../router';
 import { signOut } from '../auth/auth';
 import type { Database } from '../types/database';
 import './trip-list.css';
+import { openCreateTripModal } from './trip-create';
 
 type Trip = Database['public']['Tables']['trips']['Row'];
 
@@ -256,7 +257,11 @@ export async function renderTripList(): Promise<HTMLElement> {
   page.querySelector('#tl-dd-logout')?.addEventListener('click', signOut);
 
   page.querySelector('#btn-new-trip')!.addEventListener('click', () => {
-    alert('여행 생성 모달은 다음 단계에서 구현 예정!');
+    openCreateTripModal(async () => {
+      // 생성 성공 시 목록 새로고침
+      const newPage = await renderTripList();
+      document.getElementById('app')!.replaceChildren(newPage);
+    });
   });
 
   const trips = await loadTrips();
