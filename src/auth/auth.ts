@@ -32,6 +32,64 @@ const ICON_USERS = `<svg class="feature-icon" viewBox="0 0 24 24" fill="none" st
 const ICON_ZAP = `<svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>`;
 const ICON_SPARK = `<svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18"/></svg>`;
 
+/* ── 로그인 상태 분기 헬퍼 ── */
+function getUserInfo() {
+  const user = store.get('user');
+  if (!user) return null;
+  const meta = user.user_metadata ?? {};
+  return {
+    name: meta.full_name ?? meta.name ?? user.email?.split('@')[0] ?? '사용자',
+    avatar: meta.avatar_url ?? meta.picture ?? '',
+    email: user.email ?? '',
+  };
+}
+
+function navHtml(): string {
+  const info = getUserInfo();
+  if (info) {
+    const avatarImg = info.avatar
+      ? `<img class="lp-nav-avatar" src="${info.avatar}" alt="" referrerpolicy="no-referrer" />`
+      : `<div class="lp-nav-avatar" style="background:#5a7bb0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700;">${info.name.charAt(0)}</div>`;
+    return `
+      <div class="lp-nav-profile">
+        ${avatarImg}
+        <span class="lp-nav-name">${escapeHtml(info.name)}</span>
+        <button class="lp-nav-dashboard" id="nav-dashboard">내 여행 보기</button>
+      </div>`;
+  }
+  return `<button class="lp-nav-cta" id="nav-login">시작하기</button>`;
+}
+
+function heroBtnHtml(): string {
+  const info = getUserInfo();
+  if (info) {
+    return `<button class="lp-hero-btn" id="hero-dashboard"><span>내 여행 보러 가기</span></button>`;
+  }
+  return `<button class="lp-hero-btn" id="hero-login">${ICON_GOOGLE}<span>Google 계정으로 시작하기</span></button>`;
+}
+
+function heroNoteHtml(): string {
+  const info = getUserInfo();
+  if (info) {
+    return `<p class="lp-hero-note">${escapeHtml(info.name)}님, 환영해요!</p>`;
+  }
+  return `<p class="lp-hero-note">가입 30초 · 신용카드 필요 없음</p>`;
+}
+
+function ctaBandBtnHtml(): string {
+  const info = getUserInfo();
+  if (info) {
+    return `<button class="lp-cta-band-btn" id="band-dashboard"><span>여행 보드 만들기</span></button>`;
+  }
+  return `<button class="lp-cta-band-btn" id="band-login">${ICON_GOOGLE_D}<span>Google 계정으로 시작하기</span></button>`;
+}
+
+function escapeHtml(str: string): string {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
 /* ── 렌더 ── */
 export function renderLogin(): void {
   const app = document.getElementById('app')!;
@@ -40,10 +98,9 @@ export function renderLogin(): void {
 
       <nav class="lp-nav" id="lp-nav">
         <div class="lp-nav-logo">몽실이</div>
-        <button class="lp-nav-cta" id="nav-login">시작하기</button>
+        ${navHtml()}
       </nav>
 
-      <!-- 고정 히어로 -->
       <section class="lp-hero" id="lp-hero">
         <div class="lp-hero-inner">
           ${ICON_PLANE}
@@ -53,15 +110,12 @@ export function renderLogin(): void {
             파편화된 아이디어를 하나의 완성된 동선으로.<br>
             친구들과 실시간으로 조율하는 가장 직관적인 여행 플래너.
           </p>
-          <button class="lp-hero-btn" id="hero-login">
-            ${ICON_GOOGLE}<span>Google 계정으로 시작하기</span>
-          </button>
-          <p class="lp-hero-note">가입 30초 · 신용카드 필요 없음</p>
+          ${heroBtnHtml()}
+          ${heroNoteHtml()}
         </div>
         <div class="lp-hero-scroll">${CHEVRON}</div>
       </section>
 
-      <!-- 스크롤 오버레이 패널 -->
       <div class="lp-scroll">
 
         <section class="lp-section bg-white">
@@ -198,9 +252,7 @@ export function renderLogin(): void {
         <section class="lp-section bg-navy lp-cta-band">
           <h2 class="lp-cta-band-title">이제, 같이 떠날<br>차례예요.</h2>
           <p class="lp-cta-band-desc">친구들을 초대하고 첫 여행 보드를 만들어보세요.</p>
-          <button class="lp-cta-band-btn" id="band-login">
-            ${ICON_GOOGLE_D}<span>Google 계정으로 시작하기</span>
-          </button>
+          ${ctaBandBtnHtml()}
         </section>
 
         <footer class="lp-footer">
@@ -231,15 +283,19 @@ export function renderLogin(): void {
     </div>
   `;
 
-  document.getElementById('nav-login')!.addEventListener('click', signInWithGoogle);
-  document.getElementById('hero-login')!.addEventListener('click', signInWithGoogle);
-  document.getElementById('band-login')!.addEventListener('click', signInWithGoogle);
+  // 이벤트 바인딩 — 로그인 상태에 따라 존재하는 버튼만 바인딩
+  document.getElementById('nav-login')?.addEventListener('click', signInWithGoogle);
+  document.getElementById('hero-login')?.addEventListener('click', signInWithGoogle);
+  document.getElementById('band-login')?.addEventListener('click', signInWithGoogle);
+
+  document.getElementById('nav-dashboard')?.addEventListener('click', () => navigate('trips'));
+  document.getElementById('hero-dashboard')?.addEventListener('click', () => navigate('trips'));
+  document.getElementById('band-dashboard')?.addEventListener('click', () => navigate('trips'));
 
   setupScrollEffects();
   observeReveals();
 }
 
-/* 보드 데모 컬럼 */
 function demoCol(itemCount: number, accent: boolean): string {
   const items = Array.from({ length: itemCount }, (_, i) => `
     <div class="demo-item ${accent && i === 0 ? 'accent' : ''}">
@@ -249,7 +305,6 @@ function demoCol(itemCount: number, accent: boolean): string {
   return `<div class="demo-col"><div class="demo-col-head"></div>${items}</div>`;
 }
 
-/* 스크롤 시 네비 배경 전환 + 가려진 히어로 inert 처리 */
 function setupScrollEffects(): void {
   const nav = document.getElementById('lp-nav');
   const hero = document.getElementById('lp-hero');
@@ -259,14 +314,12 @@ function setupScrollEffects(): void {
     if (window.scrollY > window.innerHeight * 0.7) nav.classList.add('solid');
     else nav.classList.remove('solid');
 
-    // 패널이 히어로를 완전히 덮으면 키보드 포커스에서 제외
     if (hero) hero.inert = window.scrollY > window.innerHeight;
   };
   window.addEventListener('scroll', onScroll, { passive: true });
   onScroll();
 }
 
-/* 스크롤 등장 애니메이션 */
 function observeReveals(): void {
   const els = document.querySelectorAll<HTMLElement>('.reveal');
   if (!els.length) return;
