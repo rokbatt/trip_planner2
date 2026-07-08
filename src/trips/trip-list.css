@@ -274,6 +274,14 @@
 }
 
 /* 공항 코드 라인 */
+.trip-pass-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #79BDF8;
+  margin-bottom: 6px;
+}
 .trip-card-route {
   display: flex;
   align-items: center;
@@ -302,7 +310,11 @@
   text-overflow: ellipsis;
   margin-top: -8px;
 }
-
+.trip-info-divider {
+  height: 1px;
+  background: rgba(130,150,170,0.15);
+  margin: 6px 0 4px;
+}
 /* ── 탑승 정보 3열 그리드 ── */
 .trip-card-flightinfo {
   display: grid;
@@ -359,7 +371,13 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(11,42,92,0.05) 0%, rgba(11,42,92,0.22) 100%);
+  background: linear-gradient(
+    to bottom,
+    rgba(255,255,255,0.06) 0%,
+    rgba(255,255,255,0) 45%,
+    rgba(15,30,45,0.08) 100%
+  );
+  pointer-events: none;
   z-index: 1;
 }
 .trip-card-img {
@@ -375,11 +393,11 @@
 .trip-card-barcode {
   position: absolute;
   top: 0;
-  right: 0;
   bottom: 0;
-  width: 34px;
+  right: 14px;
+  width: 24px;
   z-index: 2;
-  opacity: 0.32;
+  opacity: 0.12;
   background: repeating-linear-gradient(
     90deg,
     #ffffff 0px, #ffffff 1px,
@@ -389,6 +407,7 @@
     #ffffff 5px, #ffffff 6px,
     transparent 6px, transparent 9px
   );
+  pointer-events: none;
   mix-blend-mode: overlay;
 }
 
