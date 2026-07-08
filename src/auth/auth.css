@@ -30,7 +30,7 @@
   /* 🔧 FIX A: 중앙 본문(subtitle)이 밝은 하늘/구름에 묻히는 문제 →
      텍스트 블록 뒤에만 방사형 어둠막을 한 겹 추가해 가독성 확보 */
   background-image:
-    radial-gradient(ellipse 80% 55% at 50% 50%, rgba(10,18,38,0.45) 0%, rgba(10,18,38,0) 70%),
+    radial-gradient(ellipse 80% 55% at 50% 50%, rgba(10,18,38,0.35) 0%, rgba(10,18,38,0) 70%),
     linear-gradient(180deg, rgba(10, 20, 40, 0.38) 0%, rgba(10, 20, 40, 0.14) 45%, rgba(10, 20, 40, 0.42) 100%),
     url('/hero.jpg');
   background-size: cover;
