@@ -1,135 +1,284 @@
+/* ============================================================
+   몽실이 대시보드 — Ice & Sky Spectrum
+   ============================================================ */
+
 .trip-list-page {
-  max-width: 720px;
+  min-height: 100dvh;
+  background: #FFFFFF;
+}
+
+/* ── 상단 네비 (랜딩과 동일 톤) ── */
+.tl-nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  padding: 0 max(24px, calc((100% - 1120px) / 2));
+  background: rgba(255,255,255,0.86);
+  backdrop-filter: saturate(180%) blur(18px);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+  border-bottom: 1px solid #BAE6FD;
+}
+
+.tl-nav-logo {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.05em;
+  color: #0F172A;
+  cursor: pointer;
+}
+
+.tl-nav-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+}
+
+.tl-nav-avatar-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1.5px solid #BAE6FD;
+  padding: 0;
+  cursor: pointer;
+  overflow: hidden;
+  background: #1D4ED8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  transition: border-color 0.25s ease;
+  flex-shrink: 0;
+}
+.tl-nav-avatar-btn:hover { border-color: #38BDF8; }
+.tl-nav-avatar-btn img { width: 100%; height: 100%; object-fit: cover; }
+
+.tl-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 220px;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #BAE6FD;
+  box-shadow: 0 16px 40px rgba(2,132,199,0.16);
+  padding: 10px 0;
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 100;
+}
+.tl-dropdown.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
+
+.tl-dropdown-header { padding: 8px 18px 14px; border-bottom: 1px solid #E0F2FE; margin-bottom: 4px; }
+.tl-dropdown-name { font-size: 14px; font-weight: 700; letter-spacing: -0.03em; color: #0F172A; }
+.tl-dropdown-email {
+  font-family: 'SF Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  color: #64748B;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tl-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 18px;
+  border: none;
+  background: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: #1E293B;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background 0.15s ease;
+}
+.tl-dropdown-item:hover { background: #F0F9FF; }
+.tl-dropdown-item svg { width: 17px; height: 17px; color: #0284C7; flex-shrink: 0; }
+
+.tl-dropdown-divider { height: 1px; background: #E0F2FE; margin: 6px 0; }
+.tl-dropdown-item.logout { color: #DC2626; }
+.tl-dropdown-item.logout svg { color: #DC2626; }
+
+/* ── 본문 ── */
+.trip-list-body {
+  max-width: 880px;
   margin: 0 auto;
-  padding: var(--s6);
+  padding: 48px 24px 80px;
 }
 
 .trip-list-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: var(--s6);
+  align-items: flex-end;
+  margin-bottom: 36px;
 }
 
 .trip-list-title {
-  font-family: var(--font-serif);
   font-size: 28px;
-  font-weight: 400;
-  letter-spacing: -0.02em;
+  font-weight: 700;
+  letter-spacing: -0.05em;
+  color: #0F172A;
 }
 
 .trip-list-sub {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin-top: var(--s1);
+  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #0284C7;
+  margin-top: 6px;
 }
 
 .trip-list-actions {
   display: flex;
-  gap: var(--s2);
+  gap: 10px;
   align-items: center;
 }
 
-/* Grid */
+.btn-new-trip {
+  padding: 11px 20px;
+  border-radius: 10px;
+  border: none;
+  background: #1D4ED8;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+.btn-new-trip:hover {
+  box-shadow: 0 0 0 3px rgba(56,189,248,0.22);
+}
+
+/* ── Grid ── */
 .trip-grid {
   display: flex;
   flex-direction: column;
-  gap: var(--s4);
+  gap: 16px;
 }
 
 .trip-grid-loading {
   text-align: center;
-  padding: var(--s10) 0;
-  color: var(--text-tertiary);
-  font-size: 14px;
+  padding: 80px 0;
+  color: #94A3B8;
+  font-family: 'SF Mono', ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
-/* Card — 2컬럼 (좌: 정보, 우: 이미지) */
+/* ── 여행 카드 (좌: 정보 / 우: 이미지) ── */
 .trip-card {
   display: flex;
   align-items: stretch;
-  min-height: 100px;
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  min-height: 108px;
+  background: #FFFFFF;
+  border: 1px solid #BAE6FD;
+  border-radius: 12px;
   overflow: hidden;
   cursor: pointer;
-  transition: box-shadow var(--duration) var(--ease);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
 .trip-card:hover {
-  box-shadow: var(--shadow);
+  border-color: #38BDF8;
+  box-shadow: 0 0 0 3px rgba(56,189,248,0.14);
 }
 
 .trip-card-info {
-  width: 240px;
+  width: 250px;
   flex-shrink: 0;
-  padding: var(--s4) var(--s5);
+  padding: 18px 22px;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 3px;
+  gap: 4px;
 }
 
 .trip-card-name {
-  font-family: var(--font-serif);
-  font-size: 22px;
-  font-weight: 400;
-  letter-spacing: -0.02em;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  color: #0F172A;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .trip-card-meta {
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 500;
+  font-family: 'SF Mono', ui-monospace, monospace;
+  color: #64748B;
+  font-size: 11px;
+  letter-spacing: 0.02em;
 }
 
 .trip-card-img {
   flex: 1;
-  background-size: 100% 100%;
+  background-size: cover;
+  background-position: center;
   background-repeat: no-repeat;
-  background-color: var(--border-light);
+  background-color: #F0F9FF;
 }
 
-/* Empty state */
+/* ── Empty state ── */
 .trip-empty {
   text-align: center;
-  padding: var(--s10) var(--s6);
+  padding: 88px 24px;
+  border: 1px dashed #BAE6FD;
+  border-radius: 12px;
+  background: #F8FBFF;
 }
 
-.trip-empty-emoji {
-  font-size: 48px;
-  margin-bottom: var(--s4);
+.trip-empty-icon {
+  width: 40px;
+  height: 40px;
+  color: #93C5FD;
+  margin: 0 auto 20px;
 }
 
 .trip-empty-text {
   font-size: 16px;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: var(--s2);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #0F172A;
+  margin-bottom: 6px;
 }
 
 .trip-empty-hint {
   font-size: 13px;
-  color: var(--text-secondary);
+  color: #64748B;
 }
 
-/* Mobile */
+/* ── 모바일 ── */
 @media (max-width: 600px) {
-  .trip-list-page { padding: var(--s4); }
+  .tl-nav { padding: 0 16px; }
+  .trip-list-body { padding: 32px 16px 60px; }
 
   .trip-list-header {
     flex-direction: column;
-    gap: var(--s3);
+    align-items: flex-start;
+    gap: 16px;
   }
 
   .trip-card-info {
-    width: 38%;
-    padding: var(--s3) var(--s4);
+    width: 42%;
+    padding: 14px 16px;
   }
 
-  .trip-card-name { font-size: 18px; }
+  .trip-card-name { font-size: 16px; }
 }
