@@ -187,11 +187,11 @@ export function renderLogin(): void {
                 </p>
               </div>
               <div class="lp-split-demo">
-                <div class="demo-chat">
-                  <div class="chat-bubble them">오코노미야키 맛집 찾았어요. 보드에 올렸어요.</div>
-                  <div class="chat-bubble me">확인했어요. 18:30부터 대기 피크라고 하네요.</div>
-                  <div class="chat-bubble them">그럼 오픈런으로 동선 조정할게요.</div>
-                  <div class="chat-bubble me">Day 2 저녁 일정으로 확정했어요.</div>
+              <div class="demo-chat">
+  <div class="chat-bubble them">현지인 오코노미야키 맛집 찾음 🔥 보드에 올렸어</div>
+  <div class="chat-bubble me">오 봤어! AI 팁 보니까 18:30부터 웨이팅 피크라는데?</div>
+  <div class="chat-bubble them">아 진짜? 그럼 오픈런으로 동선 최신화할게</div>
+  <div class="chat-bubble me">인당 2.2만이면 가성비도 OK. Day 2 저녁 확정! 📍</div>
                 </div>
               </div>
             </div>
