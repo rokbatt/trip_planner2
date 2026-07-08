@@ -252,10 +252,10 @@
 .trip-card-info {
   width: 280px;
   flex-shrink: 0;
-  padding: 20px 26px 18px;
+  padding: 16px 26px 14px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   position: relative;
   background-image: linear-gradient(rgba(130,150,170,0.28) 0 0);
   background-size: 1px 100%;
