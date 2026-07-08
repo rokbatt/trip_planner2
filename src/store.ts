@@ -1,20 +1,9 @@
-// src/store.ts
 /**
  * 전역 상태 — 간단한 pub/sub 스토어
  */
 
 import type { User } from '@supabase/supabase-js';
-
-export interface Trip {
-  id: string;
-  name: string;
-  start_date: string | null;
-  end_date: string | null;
-  headcount: number | null;
-  theme: string | null;
-  destinations: string[] | null;
-  [key: string]: unknown;
-}
+import type { Trip } from './types/database';
 
 export interface StoreState {
   user: User | null;
