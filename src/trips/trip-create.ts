@@ -145,9 +145,7 @@ async function handleSubmit(
         headcount: headcountRaw ? Number(headcountRaw) : null,
         theme: theme || null,
         destinations: city ? [city] : null,
-        dest_coords: null,
         owner_id: user.id,
-        invite_code: generateInviteCode(),
       })
       .select()
       .single();
@@ -165,7 +163,6 @@ async function handleSubmit(
       role: 'owner',
       display_name: metaFullName || metaName || user.email || '나',
       avatar_url: metaAvatar || metaPicture || null,
-      added_by: user.id,
     });
 
     if (memberError) throw memberError;
