@@ -19,25 +19,27 @@ export async function signOut(): Promise<void> {
   navigate('login');
 }
 
-/* ── SVG ── */
-const ICON_PLANE = `<svg class="lp-hero-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M42 6L22 26"/><path d="M42 6L28 42L22 26L6 20L42 6Z"/></svg>`;
+/* ── SVG: 직선·기하학적 안내판 스타일 ── */
+const ICON_PLANE = `<svg class="lp-hero-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M2 12L22 5L15 22L11 14L2 12Z"/><path d="M11 14L22 5"/></svg>`;
 const ICON_GOOGLE = `<svg class="lp-hero-btn-icon" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.9 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.1 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.1 29.5 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 10-2 13.6-5.2l-6.3-5.3C29.3 35.4 26.8 36 24 36c-5.3 0-9.6-3.1-11.3-7.6l-6.5 5C9.6 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.2 5.7l6.3 5.3C40.5 36.6 44 30.9 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>`;
 const ICON_GOOGLE_D = ICON_GOOGLE.replace('lp-hero-btn-icon', 'lp-cta-band-btn-icon');
-const ARROW = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>`;
-const CHEVRON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>`;
-const ICON_BULB = `<svg class="flow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>`;
-const ICON_BOARD = `<svg class="flow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>`;
-const ICON_MAP = `<svg class="flow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3V7z"/><path d="M9 4v13M15 7v13"/></svg>`;
-const ICON_USERS = `<svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>`;
-const ICON_ZAP = `<svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>`;
-const ICON_SPARK = `<svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18"/></svg>`;
+const ARROW = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" stroke-linejoin="miter"><path d="M4 12H20M13 5L20 12L13 19"/></svg>`;
+const CHEVRON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter"><path d="M5 8L12 15L19 8"/></svg>`;
+
+/* 안내판형 아이콘: 게이트(STEP1), 보드(STEP2), 경로(STEP3) */
+const ICON_GATE = `<svg class="flow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="4" y="3" width="16" height="18"/><path d="M4 9H20M9 21V9"/></svg>`;
+const ICON_GRID = `<svg class="flow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="3" width="7" height="8"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="11" width="7" height="10"/><rect x="3" y="14" width="7" height="7"/></svg>`;
+const ICON_ROUTE = `<svg class="flow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="18" r="2"/><path d="M5 8V14H19V16"/></svg>`;
+const ICON_USERS = `<svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="4" width="8" height="8"/><rect x="13" y="4" width="8" height="8"/><path d="M3 20V16H11V20M13 20V16H21V20"/></svg>`;
+const ICON_ZAP = `<svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M13 2L4 14H12L11 22L20 10H12L13 2Z"/></svg>`;
+const ICON_SPARK = `<svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M12 3V9M12 15V21M3 12H9M15 12H21"/></svg>`;
 
 /* 드롭다운 메뉴 아이콘 */
 const DI = {
-  trip: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>`,
-  setting: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`,
-  help: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r=".5"/></svg>`,
-  logout: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`,
+  trip: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="5" width="18" height="16"/><path d="M3 10H21M8 3V7M16 3V7"/></svg>`,
+  setting: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="4" y="4" width="16" height="16"/><path d="M9 4V20M4 9H20"/></svg>`,
+  help: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5C9.5 8 10.5 7 12 7C13.5 7 14.5 8 14.5 9.5C14.5 11 12 11 12 13"/><circle cx="12" cy="16.5" r="0.5"/></svg>`,
+  logout: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="4" width="10" height="16"/><path d="M21 12H9M17 8L21 12L17 16"/></svg>`,
 };
 
 /* ── 유저 정보 ── */
@@ -85,7 +87,6 @@ function navRightHtml(): string {
   return `<button class="lp-nav-cta" id="nav-login">시작하기</button>`;
 }
 
-/* ── 히어로/CTA 분기 ── */
 function heroBtnHtml(): string {
   if (getUserInfo()) {
     return `<button class="lp-hero-btn" id="hero-dashboard"><span>내 여행 보러 가기</span></button>`;
@@ -95,8 +96,8 @@ function heroBtnHtml(): string {
 
 function heroNoteHtml(): string {
   const info = getUserInfo();
-  if (info) return `<p class="lp-hero-note">${escapeHtml(info.name)}님, 환영해요!</p>`;
-  return `<p class="lp-hero-note">가입 30초 · 신용카드 필요 없음</p>`;
+  if (info) return `<p class="lp-hero-note">WELCOME, ${escapeHtml(info.name).toUpperCase()}</p>`;
+  return `<p class="lp-hero-note">GATE OPEN · NO CARD REQUIRED</p>`;
 }
 
 function ctaBandBtnHtml(): string {
@@ -142,32 +143,32 @@ export function renderLogin(): void {
             </div>
             <div class="lp-flow reveal">
               <div class="flow-card">
-                <div class="flow-step">STEP 1</div>${ICON_BULB}
+                <div class="flow-step">STEP 01</div>${ICON_GATE}
                 <div class="flow-card-title">아이디어를 던져요</div>
                 <div class="flow-card-desc">가고 싶은 곳을 자유롭게 쌓아두세요.</div>
                 <div class="flow-chips">
-                  <div class="flow-chip">🍜 방콕 로컬 맛집</div>
-                  <div class="flow-chip">🏯 아사쿠사 절 구경</div>
+                  <div class="flow-chip">방콕 로컬 맛집</div>
+                  <div class="flow-chip">아사쿠사 절 구경</div>
                 </div>
               </div>
               <div class="flow-arrow">${ARROW}</div>
               <div class="flow-card">
-                <div class="flow-step">STEP 2</div>${ICON_BOARD}
+                <div class="flow-step">STEP 02</div>${ICON_GRID}
                 <div class="flow-card-title">함께 골라내요</div>
-                <div class="flow-card-desc">하트와 투표로 자연스럽게 합의해요.</div>
+                <div class="flow-card-desc">투표로 자연스럽게 합의해요.</div>
                 <div class="flow-chips">
-                  <div class="flow-chip">❤️ 3명이 가고싶어요</div>
-                  <div class="flow-chip">💬 여기 야경 좋대!</div>
+                  <div class="flow-chip">3명이 가고싶어요</div>
+                  <div class="flow-chip">여기 야경 좋대요</div>
                 </div>
               </div>
               <div class="flow-arrow">${ARROW}</div>
               <div class="flow-card">
-                <div class="flow-step">STEP 3</div>${ICON_MAP}
+                <div class="flow-step">STEP 03</div>${ICON_ROUTE}
                 <div class="flow-card-title">일정으로 완성돼요</div>
                 <div class="flow-card-desc">확정한 장소가 동선이 되어 정리됩니다.</div>
                 <div class="flow-chips">
-                  <div class="flow-chip">📍 Day 1 · 시부야</div>
-                  <div class="flow-chip">🕒 이동 12분</div>
+                  <div class="flow-chip">Day 1 · 시부야</div>
+                  <div class="flow-chip">이동 12분</div>
                 </div>
               </div>
             </div>
@@ -187,10 +188,10 @@ export function renderLogin(): void {
               </div>
               <div class="lp-split-demo">
                 <div class="demo-chat">
-                  <div class="chat-bubble them">현지인 오코노미야키 맛집 찾음 🔥 보드에 올렸어</div>
-                  <div class="chat-bubble me">오 봤어! AI 팁 보니까 18:30부터 웨이팅 피크라는데?</div>
-                  <div class="chat-bubble them">아 진짜? 그럼 오픈런으로 동선 최신화할게</div>
-                  <div class="chat-bubble me">인당 2.2만이면 가성비도 OK. Day 2 저녁 확정! 📍</div>
+                  <div class="chat-bubble them">오코노미야키 맛집 찾았어요. 보드에 올렸어요.</div>
+                  <div class="chat-bubble me">확인했어요. 18:30부터 대기 피크라고 하네요.</div>
+                  <div class="chat-bubble them">그럼 오픈런으로 동선 조정할게요.</div>
+                  <div class="chat-bubble me">Day 2 저녁 일정으로 확정했어요.</div>
                 </div>
               </div>
             </div>
@@ -232,11 +233,11 @@ export function renderLogin(): void {
                 <h2 class="lp-sec-title">확정하면<br>바로 동선이 돼요.</h2>
                 <p class="lp-sec-desc">
                   장소를 확정하는 순간 지도 위 동선과 이동 시간까지
-                  자동으로 정리됩니다. 복잡한 계산은 몽실이가 대신할게요.
+                  자동으로 정리됩니다.
                 </p>
               </div>
               <div class="lp-split-demo">
-                <div class="media-box wide">여기에 지도·일정 스크린샷</div>
+                <div class="media-box wide">MAP PREVIEW</div>
               </div>
             </div>
           </div>
@@ -299,19 +300,14 @@ export function renderLogin(): void {
     </div>
   `;
 
-  /* ── 이벤트 바인딩 ── */
-
-  // 비로그인 버튼
   document.getElementById('nav-login')?.addEventListener('click', signInWithGoogle);
   document.getElementById('hero-login')?.addEventListener('click', signInWithGoogle);
   document.getElementById('band-login')?.addEventListener('click', signInWithGoogle);
 
-  // 로그인 상태 — 대시보드 이동
   document.getElementById('nav-dashboard')?.addEventListener('click', () => navigate('trips'));
   document.getElementById('hero-dashboard')?.addEventListener('click', () => navigate('trips'));
   document.getElementById('band-dashboard')?.addEventListener('click', () => navigate('trips'));
 
-  // 아바타 드롭다운 토글
   const avatarBtn = document.getElementById('nav-avatar');
   const dropdown = document.getElementById('nav-dropdown');
   if (avatarBtn && dropdown) {
@@ -319,13 +315,10 @@ export function renderLogin(): void {
       e.stopPropagation();
       dropdown.classList.toggle('open');
     });
-
-    // 바깥 클릭 시 닫기
     document.addEventListener('click', () => dropdown.classList.remove('open'));
     dropdown.addEventListener('click', (e) => e.stopPropagation());
   }
 
-  // 드롭다운 메뉴 항목
   document.getElementById('dd-trips')?.addEventListener('click', () => navigate('trips'));
   document.getElementById('dd-settings')?.addEventListener('click', () => alert('설정 페이지는 곧 구현 예정이에요!'));
   document.getElementById('dd-help')?.addEventListener('click', () => alert('문의하기 기능은 곧 구현 예정이에요!'));
@@ -348,11 +341,9 @@ function setupScrollEffects(): void {
   const nav = document.getElementById('lp-nav');
   const hero = document.getElementById('lp-hero');
   if (!nav) return;
-
   const onScroll = () => {
     if (window.scrollY > window.innerHeight * 0.7) nav.classList.add('solid');
     else nav.classList.remove('solid');
-
     if (hero) hero.inert = window.scrollY > window.innerHeight;
   };
   window.addEventListener('scroll', onScroll, { passive: true });
