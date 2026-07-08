@@ -293,7 +293,52 @@
   .lp-hero-scroll svg { animation: none; }
   .lp-hero-btn, .lp-cta-band-btn { transition: none; }
 }
+/* ── 로그인 상태 네비 프로필 ── */
+.lp-nav-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 
+.lp-nav-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255,255,255,0.5);
+  transition: border-color 0.3s ease;
+}
+.lp-nav.solid .lp-nav-avatar { border-color: #e0e0e0; }
+
+.lp-nav-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.9);
+  transition: color 0.3s ease;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lp-nav.solid .lp-nav-name { color: #1d1d1f; }
+
+.lp-nav-dashboard {
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: rgba(255,255,255,0.95);
+  color: #0a0a0a;
+}
+.lp-nav.solid .lp-nav-dashboard { background: #0a0a0a; color: #fff; }
+.lp-nav-dashboard:hover { opacity: 0.85; }
+
+@media (max-width: 620px) {
+  .lp-nav-name { display: none; }
+}
 /* ── 반응형 ── */
 @media (max-width: 820px) {
   .lp-split { grid-template-columns: 1fr; gap: 32px; }
