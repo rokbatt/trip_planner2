@@ -299,6 +299,7 @@
   align-items: center;
   gap: 8px;
   position: relative;
+   margin-left: auto; /* 🔧 우측 끝에 확실히 붙임 */
 }
 
 .lp-nav-dashboard {
