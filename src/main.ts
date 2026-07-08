@@ -66,12 +66,6 @@ const guardAndMaybeRender = (): boolean => {
     navigate('login');
     return false;
   }
-
-  if (path === 'login' && store.get('user')) {
-    navigate('trips');
-    return false;
-  }
-
   return true;
 };
 
