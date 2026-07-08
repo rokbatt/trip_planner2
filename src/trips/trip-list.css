@@ -80,8 +80,8 @@
 .tl-dropdown-header { padding: 8px 18px 14px; border-bottom: 1px solid #E0F2FE; margin-bottom: 4px; }
 .tl-dropdown-name { font-size: 14px; font-weight: 700; letter-spacing: -0.03em; color: #0F172A; }
 .tl-dropdown-email {
-  font-family: 'SF Mono', ui-monospace, monospace;
-  font-size: 10.5px;
+  font-family: var(--font-sans);
+  font-size: 11px;
   color: #64748B;
   margin-top: 3px;
   overflow: hidden;
@@ -134,7 +134,7 @@
 }
 
 .trip-list-sub {
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -176,10 +176,9 @@
   text-align: center;
   padding: 80px 0;
   color: #94A3B8;
-  font-family: 'SF Mono', ui-monospace, monospace;
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: 0.02em;
 }
 
 /* ── 보딩패스 카드 ── */
@@ -220,12 +219,12 @@
   border-right: 1px dashed #CBD5E1;
 }
 
-/* 도시 코드 라인 (핀 아이콘 + 대문자 코드) */
+/* 도시 코드 라인 */
 .trip-card-city {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -245,20 +244,20 @@
   line-height: 1.2;
 }
 
-/* 날짜 블록 — 연도 작게, 월.일 크고 진하게 */
+/* 날짜 블록 */
 .trip-card-dates {
   display: flex;
   align-items: baseline;
   gap: 6px;
 }
 .trip-card-year {
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 500;
   color: #94A3B8;
 }
 .trip-card-mmdd {
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -279,7 +278,7 @@
   border-radius: 4px;
   background: #E0F2FE;
   color: #0284C7;
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: -0.01em;
