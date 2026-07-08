@@ -134,10 +134,10 @@
 }
 
 .trip-list-sub {
-  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #1D4ED8;
   margin-top: 6px;
@@ -225,11 +225,10 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
-  font-size: 10.5px;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  letter-spacing: -0.01em;
   color: #64748B;
 }
 .trip-card-city svg { width: 12px; height: 12px; color: #1D4ED8; flex-shrink: 0; }
@@ -238,7 +237,7 @@
 .trip-card-name {
   font-size: 19px;
   font-weight: 700;
-  letter-spacing: -0.05em;
+  letter-spacing: -0.02em;
   color: #0F172A;
   white-space: nowrap;
   overflow: hidden;
@@ -253,14 +252,14 @@
   gap: 6px;
 }
 .trip-card-year {
-  font-family: 'SF Mono', ui-monospace, monospace;
-  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+  font-size: 12px;
   font-weight: 500;
   color: #94A3B8;
 }
 .trip-card-mmdd {
-  font-family: 'SF Mono', ui-monospace, monospace;
-  font-size: 15px;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+  font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.02em;
   color: #334155;
@@ -268,7 +267,7 @@
 .trip-card-mmdd .sep {
   color: #CBD5E1;
   font-weight: 400;
-  margin: 0 3px;
+  margin: 0 4px;
 }
 
 /* D-Day 뱃지 */
@@ -280,10 +279,10 @@
   border-radius: 4px;
   background: #E0F2FE;
   color: #0284C7;
-  font-family: 'SF Mono', ui-monospace, monospace;
-  font-size: 10.5px;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.03em;
+  letter-spacing: -0.01em;
 }
 
 /* 우측 이미지 영역 — 호버 시 이미지만 스케일업 */
