@@ -153,17 +153,16 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
     '<div class="bd-inbox-header">',
     '  <div class="bd-inbox-eyebrow">CHECK-IN COUNTER</div>',
     '  <div class="bd-inbox-title">아이디어 체크인</div>',
-    '  <div class="bd-inbox-desc">생각나는 대로 적어보세요. 게이트로 드래그하면 정리돼요.</div>',
     '</div>',
-    '<form class="bd-inbox-form" id="bd-inbox-form">',
-    '  <input class="bd-inbox-input" id="bd-inbox-input" type="text" placeholder="장소 · 링크 · 메모를 입력하세요" />',
-    '  <button type="submit" class="bd-inbox-btn">' + ICON_PLUS + '<span>체크인</span></button>',
-    '</form>',
     '<div class="bd-inbox-list-header">',
     '  <span>대기 중</span>',
     '  <span class="bd-inbox-count" id="inbox-count">' + items.length + '</span>',
     '</div>',
     '<div class="bd-inbox-list bd-dropzone" id="inbox-list" data-zone=""></div>',
+    '<form class="bd-inbox-form" id="bd-inbox-form">',
+    '  <input class="bd-inbox-input" id="bd-inbox-input" type="text" placeholder="장소 · 링크 · 메모를 입력하세요" />',
+    '  <button type="submit" class="bd-inbox-btn">' + ICON_PLUS + '</button>',
+    '</form>',
   ].join('\n');
 
   const listEl = inbox.querySelector('#inbox-list') as HTMLElement;
