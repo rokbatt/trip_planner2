@@ -293,7 +293,7 @@
   letter-spacing: -0.01em;
 }
 
-/* ── 콘텐츠 + AI 패널 레이아웃 ── */
+/* ── 콘텐츠 + 패널 + 레일 레이아웃 ── */
 .ws-content-row {
   flex: 1;
   display: flex;
@@ -306,52 +306,108 @@
   overflow-y: auto;
   overflow-x: hidden;
   min-width: 0;
+  transition: width 220ms cubic-bezier(0.2,0.8,0.2,1);
 }
 
-/* ── AI 인사이트 패널 ── */
-.ws-ai-panel {
+/* ── 우측 아이콘 레일 ── */
+.ws-rail {
+  width: 56px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 0;
+  border-left: 1px solid rgba(130,150,170,0.16);
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: saturate(140%) blur(12px);
+  -webkit-backdrop-filter: saturate(140%) blur(12px);
+}
+
+.ws-rail-btn {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: none;
+  background: none;
+  color: #64748B;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+.ws-rail-btn:hover { background: #EAF6FD; color: #0B2A5C; }
+.ws-rail-btn.active { background: #0B2A5C; color: #FFFFFF; }
+.ws-rail-btn svg { width: 19px; height: 19px; }
+
+.ws-rail-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #DC2626;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #FFFFFF;
+}
+.ws-rail-badge.visible { display: flex; }
+
+/* ── 우측 슬라이드 패널 (채팅/AI) ── */
+.ws-panel {
   width: 0;
   flex-shrink: 0;
   overflow: hidden;
   border-left: 1px solid rgba(130,150,170,0.16);
-  background: rgba(255,255,255,0.7);
-  backdrop-filter: saturate(140%) blur(12px);
-  -webkit-backdrop-filter: saturate(140%) blur(12px);
+  background: #FFFFFF;
   transition: width 220ms cubic-bezier(0.2,0.8,0.2,1);
 }
-.ws-ai-panel.open { width: 280px; }
+.ws-content-row.panel-open .ws-panel { width: 360px; }
 
-.ws-ai-panel-inner {
-  width: 280px;
+.ws-panel-inner {
+  width: 360px;
   height: 100%;
   display: flex;
   flex-direction: column;
 }
 
-.ws-ai-panel-header {
+.ws-panel-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 4px;
   height: 76px;
-  padding: 0 18px;
+  padding: 0 12px;
   border-bottom: 1px solid rgba(130,150,170,0.16);
   flex-shrink: 0;
 }
-.ws-ai-panel-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12.5px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: #0B2A5C;
-}
-.ws-ai-panel-title svg { width: 14px; height: 14px; color: #8FD8F8; }
 
-.ws-ai-panel-close {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
+.ws-panel-tab {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: none;
+  background: none;
+  font-size: 13px;
+  font-weight: 700;
+  color: #94A3B8;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+.ws-panel-tab:hover { color: #0B2A5C; }
+.ws-panel-tab.active { background: #EAF6FD; color: #0B2A5C; }
+
+.ws-panel-close {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   border: none;
   background: none;
   color: #94A3B8;
@@ -359,60 +415,111 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 150ms ease;
+  transition: background 150ms ease, color 150ms ease;
 }
-.ws-ai-panel-close:hover { background: #EAF6FD; color: #0B2A5C; }
-.ws-ai-panel-close svg { width: 13px; height: 13px; }
+.ws-panel-close:hover { background: #EAF6FD; color: #0B2A5C; }
+.ws-panel-close svg { width: 15px; height: 15px; }
 
-.ws-ai-panel-body {
+.ws-panel-body {
   flex: 1;
-  padding: 20px 18px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow-y: auto;
 }
 
-.ws-ai-empty {
-  padding-top: 40px;
-  text-align: center;
+/* ── AI 데모 콘텐츠 ── */
+.ws-ai-demo {
+  padding: 18px;
+  position: relative;
+}
+.ws-ai-demo-badge {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   color: #94A3B8;
-  font-size: 12.5px;
+  border: 1px solid rgba(130,150,170,0.25);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.ws-ai-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding-right: 60px;
+}
+.ws-ai-msg-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #EAF6FD;
+  color: #0B7CC4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.ws-ai-msg-icon svg { width: 13px; height: 13px; }
+.ws-ai-msg-text {
+  font-size: 13px;
+  color: #334155;
   line-height: 1.6;
+  padding-top: 4px;
 }
 
-.ws-ai-selected {
-  padding-bottom: 16px;
-  margin-bottom: 16px;
+.ws-ai-card {
+  background: #F8FBFE;
+  border: 1px solid rgba(130,150,170,0.18);
+  border-radius: 14px;
+  padding: 16px;
+}
+.ws-ai-card-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0B2A5C;
+  margin-bottom: 10px;
+}
+.ws-ai-card-route {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  color: #475569;
+  line-height: 1.6;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
   border-bottom: 1px dashed rgba(130,150,170,0.28);
 }
-.ws-ai-selected-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: #94A3B8;
-  margin-bottom: 4px;
-}
-.ws-ai-selected-name {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: #0B2A5C;
-}
+.ws-ai-card-route svg { width: 13px; height: 13px; color: #8FD8F8; flex-shrink: 0; margin-top: 2px; }
 
-.ws-ai-coming-soon {
-  text-align: center;
-  padding: 24px 8px;
-  color: #94A3B8;
-}
-.ws-ai-coming-soon svg { width: 22px; height: 22px; color: #CDEBFB; margin-bottom: 10px; }
-.ws-ai-coming-soon-text {
+.ws-ai-card-stats { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; }
+.ws-ai-stat { display: flex; justify-content: space-between; font-size: 12px; }
+.ws-ai-stat-label { color: #94A3B8; }
+.ws-ai-stat-value { font-weight: 700; color: #0B2A5C; }
+
+.ws-ai-map-btn {
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid #CDEBFB;
+  background: #FFFFFF;
+  color: #0B7CC4;
   font-size: 12.5px;
-  font-weight: 600;
-  color: #64748B;
-  margin-bottom: 4px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 150ms ease;
 }
-.ws-ai-coming-soon-hint {
-  font-size: 11.5px;
-  line-height: 1.55;
+.ws-ai-map-btn:hover { background: #EAF6FD; }
+
+.ws-ai-demo-hint {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 11px;
+  color: #B0BCC9;
 }
 
 /* 플레이스홀더 (미구현 게이트) */
@@ -485,4 +592,14 @@
   .ws-ai-panel.open { width: 100%; position: fixed; inset: 0; z-index: 150; }
   .ws-ai-panel-inner { width: 100%; }
   .ws-header-route { font-size: 16px; }
+
+  .ws-rail { width: 48px; }
+  .ws-content-row.panel-open .ws-panel {
+    width: 100%;
+    position: fixed;
+    inset: 0;
+    right: 48px;
+    z-index: 150;
+  }
+  .ws-panel-inner { width: 100%; }
 }
