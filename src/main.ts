@@ -1,4 +1,3 @@
-// src/main.ts
 /**
  * main.ts — 앱 엔트리포인트
  */
@@ -11,8 +10,9 @@ import { addRoute, setNotFound, startRouter, navigate, rerender, currentPath } f
 
 import { renderLogin } from './auth/auth';
 import { renderTripList } from './trips/trip-list';
-import { renderBoard } from './board/board';
+import { renderWorkspace } from './workspace/workspace';
 
+// ─── 인증이 필요 없는 라우트 ───
 const PUBLIC_ROUTES = ['login'];
 
 // ─── 라우트 등록 ───
@@ -26,36 +26,42 @@ addRoute('trips', async () => {
   app.replaceChildren(el);
 });
 
-addRoute('board', async (params) => {
+// 새 워크스페이스 라우트: #trip/:tripId/:gate
+addRoute('trip', async (params) => {
   const app = document.getElementById('app')!;
-  const el = await renderBoard(params.tripId);
+  const el = await renderWorkspace(params.tripId ?? '', params.subPath);
   app.replaceChildren(el);
+});
+
+// 하위호환: 기존 #board/:tripId → #trip/:tripId/ideas 로 리다이렉트
+addRoute('board', (params) => {
+  navigate('trip/' + (params.tripId ?? '') + '/ideas');
 });
 
 setNotFound(() => {
   const app = document.getElementById('app')!;
-  app.innerHTML = `
-    <div style="padding:48px;text-align:center;">
-      <p style="font-size:48px;margin-bottom:12px;">🤔</p>
-      <p style="color:var(--text-secondary);margin-bottom:20px;">페이지를 찾을 수 없어요</p>
-      <button class="btn btn-primary" id="btn-go-home">홈으로</button>
-    </div>
-  `;
+  app.innerHTML = [
+    '<div style="padding:48px;text-align:center;">',
+    '  <p style="font-size:48px;margin-bottom:12px;">404</p>',
+    '  <p style="color:#697586;margin-bottom:20px;">페이지를 찾을 수 없어요</p>',
+    '  <button class="btn btn-primary" id="btn-go-home">홈으로</button>',
+    '</div>',
+  ].join('\n');
   document.getElementById('btn-go-home')!.addEventListener('click', () => navigate('trips'));
 });
 
-// ─── 라우트 가드: router.ts의 currentPath()를 그대로 사용 (판단 기준 이원화 방지) ───
-const guardAndMaybeRender = (): boolean => {
+// ─── 라우트 가드 ───
+const originalHandleRoute = () => {
   const path = currentPath();
   const isPublic = PUBLIC_ROUTES.includes(path);
 
   if (!store.get('authChecked')) {
     const app = document.getElementById('app')!;
-    app.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:center;min-height:100dvh;color:var(--text-tertiary);font-size:13px;">
-        불러오는 중...
-      </div>
-    `;
+    app.innerHTML = [
+      '<div style="display:flex;align-items:center;justify-content:center;min-height:100dvh;color:#94A3B8;font-size:13px;">',
+      '  불러오는 중...',
+      '</div>',
+    ].join('');
     return false;
   }
 
@@ -63,6 +69,7 @@ const guardAndMaybeRender = (): boolean => {
     navigate('login');
     return false;
   }
+
   return true;
 };
 
@@ -73,26 +80,26 @@ supabase.auth.onAuthStateChange((event, session) => {
   store.set('user', session?.user ?? null);
   store.set('authChecked', true);
 
-  if (guardAndMaybeRender()) {
+  if (originalHandleRoute()) {
     rerender();
   }
 });
 
 // ─── 라우터 시작 ───
 window.addEventListener('hashchange', () => {
-  if (guardAndMaybeRender()) rerender();
+  if (originalHandleRoute()) rerender();
 });
 
-if (guardAndMaybeRender()) {
+if (originalHandleRoute()) {
   startRouter();
 }
 
-// ─── 안전장치: 5초 내로 세션 확인이 안 끝나면 강제로 로그인 화면 ───
+// ─── 안전장치: 5초 타임아웃 ───
 setTimeout(() => {
   if (!store.get('authChecked')) {
-    console.warn('[Auth] 세션 확인 타임아웃 — 로그인 화면으로 전환');
+    console.warn('[Auth] 세션 확인 타임아웃');
     store.set('authChecked', true);
     store.set('user', null);
-    if (guardAndMaybeRender()) rerender();
+    if (originalHandleRoute()) rerender();
   }
 }, 5000);
