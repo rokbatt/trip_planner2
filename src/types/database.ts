@@ -142,6 +142,29 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['city_images']['Insert']>;
         Relationships: [];
       };
+
+      chat_messages: {
+        Row: {
+          id: string;
+          trip_id: string;
+          user_id: string;
+          display_name: string | null;
+          avatar_url: string | null;
+          message: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          trip_id: string;
+          user_id: string;
+          display_name?: string | null;
+          avatar_url?: string | null;
+          message: string;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['chat_messages']['Insert']>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -155,3 +178,4 @@ export type Trip = Database['public']['Tables']['trips']['Row'];
 export type TripMember = Database['public']['Tables']['trip_members']['Row'];
 export type Place = Database['public']['Tables']['places']['Row'];
 export type CityImage = Database['public']['Tables']['city_images']['Row'];
+export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'];
