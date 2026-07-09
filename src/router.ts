@@ -1,23 +1,19 @@
-// src/router.ts
 /**
  * 해시 라우터
  *
- * URL 형식: /#login, /#trips, /#board/abc123
- * - 새로고침 안전 (서버는 항상 index.html만 반환하면 됨)
- * - Vercel rewrite 설정 불필요
- * - 빈 해시('/' 또는 '')는 항상 'login'으로 취급 (가드 로직과 반드시 일치시킬 것)
+ * URL 형식: /#login, /#trips, /#trip/abc123/ideas
+ * - 최대 3세그먼트: path / tripId / subPath
  */
 
 export interface RouteParams {
   tripId?: string;
+  subPath?: string;
 }
 
 type RenderFn = (params: RouteParams) => void | Promise<void>;
 
 const routes = new Map<string, RenderFn>();
 let notFoundRender: RenderFn | null = null;
-
-const DEFAULT_PATH = 'login';
 
 /** 라우트 등록 */
 export function addRoute(path: string, render: RenderFn): void {
@@ -31,7 +27,7 @@ export function setNotFound(render: RenderFn): void {
 
 /** 프로그래밍 방식 이동 */
 export function navigate(path: string): void {
-  const hash = `#${path}`;
+  const hash = '#' + path;
   if (window.location.hash === hash) {
     handleRoute();
   } else {
@@ -39,12 +35,19 @@ export function navigate(path: string): void {
   }
 }
 
-/** 현재 해시 파싱 → { path, params } — 빈 값이면 DEFAULT_PATH로 통일 */
+/** 현재 해시 → path + params */
 function parseHash(): { path: string; params: RouteParams } {
   const raw = window.location.hash.replace(/^#\/?/, '');
-  const [rawPath = '', tripId] = raw.split('/');
-  const path = rawPath === '' ? DEFAULT_PATH : rawPath;
-  return { path, params: tripId ? { tripId } : {} };
+  const segments = raw.split('/');
+  const path = segments[0] || '';
+  const tripId = segments[1] || undefined;
+  const subPath = segments[2] || undefined;
+  return { path, params: { tripId, subPath } };
+}
+
+/** 현재 경로의 첫 세그먼트 반환 */
+export function currentPath(): string {
+  return parseHash().path || 'login';
 }
 
 /** 현재 해시에 맞는 뷰 렌더 */
@@ -59,17 +62,12 @@ async function handleRoute(): Promise<void> {
   }
 }
 
-/** 현재 경로 문자열 반환 (main.ts 가드에서 사용, parseHash와 동일 기준) */
-export function currentPath(): string {
-  return parseHash().path;
-}
-
-/** 라우터 시작 — main.ts가 자체 가드를 통과시킨 뒤 최초 1회 호출 */
+/** 라우터 시작 */
 export function startRouter(): void {
   handleRoute();
 }
 
-/** 현재 라우트를 다시 그리기 (auth 상태 바뀌었을 때 사용) */
+/** 현재 라우트를 다시 그리기 */
 export function rerender(): void {
   handleRoute();
 }
