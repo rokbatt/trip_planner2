@@ -3,6 +3,7 @@
  *
  * URL 형식: /#login, /#trips, /#trip/abc123/ideas
  * - 최대 3세그먼트: path / tripId / subPath
+ * - 해시가 비어있으면(최초 접속) 'login'을 기본 경로로 사용
  */
 
 export interface RouteParams {
@@ -14,6 +15,8 @@ type RenderFn = (params: RouteParams) => void | Promise<void>;
 
 const routes = new Map<string, RenderFn>();
 let notFoundRender: RenderFn | null = null;
+
+const DEFAULT_PATH = 'login';
 
 /** 라우트 등록 */
 export function addRoute(path: string, render: RenderFn): void {
@@ -35,11 +38,11 @@ export function navigate(path: string): void {
   }
 }
 
-/** 현재 해시 → path + params */
+/** 현재 해시 → path + params (빈 해시는 DEFAULT_PATH로 보정) */
 function parseHash(): { path: string; params: RouteParams } {
   const raw = window.location.hash.replace(/^#\/?/, '');
   const segments = raw.split('/');
-  const path = segments[0] || '';
+  const path = segments[0] || DEFAULT_PATH;
   const tripId = segments[1] || undefined;
   const subPath = segments[2] || undefined;
   return { path, params: { tripId, subPath } };
@@ -47,7 +50,7 @@ function parseHash(): { path: string; params: RouteParams } {
 
 /** 현재 경로의 첫 세그먼트 반환 */
 export function currentPath(): string {
-  return parseHash().path || 'login';
+  return parseHash().path;
 }
 
 /** 현재 해시에 맞는 뷰 렌더 */
