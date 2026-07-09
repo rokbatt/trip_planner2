@@ -28,6 +28,33 @@ const GATES: GateConfig[] = [
   { key: '후보',     step: 'GATE 04', label: 'MAYBE',    icon: ICON_STAR },
 ];
 
+/* ── 규칙 기반 분류 (진짜 AI 아님) ──
+ * 키워드 매칭 점수로 게이트를 추천. 향후 Gemini 연동 시 이 함수만 교체하면 됨. */
+interface Suggestion { gate: string; label: string; confidence: number; }
+
+const KEYWORD_RULES: Array<{ gate: string; words: string[] }> = [
+  { gate: '먹고싶어', words: ['맛집', '식당', '카페', '라멘', '스시', '고기', '디저트', '빵집', '브런치', '이자카야', '음식', '먹'] },
+  { gate: '가고싶어', words: ['야경', '전망', '박물관', '미술관', '공원', '타워', '신사', '절', '사원', '전망대', '해변', '다리', '브릿지', '성당'] },
+  { gate: '하고싶어', words: ['체험', '액티비티', '투어', '클래스', '공연', '쇼핑', '테마파크', '놀이', '스파', '마사지', '클럽'] },
+];
+
+function classify(text: string): Suggestion | null {
+  const lower = text.toLowerCase();
+  let best: { gate: string; score: number } | null = null;
+
+  for (const rule of KEYWORD_RULES) {
+    const hits = rule.words.filter((w) => lower.includes(w.toLowerCase())).length;
+    if (hits === 0) continue;
+    const score = Math.min(0.5 + hits * 0.25, 0.95);
+    if (!best || score > best.score) best = { gate: rule.gate, score };
+  }
+
+  if (!best) return null;
+  const gateConfig = GATES.find((g) => g.key === best!.gate);
+  if (!gateConfig) return null;
+  return { gate: best.gate, label: gateConfig.label, confidence: Math.round(best.score * 100) };
+}
+
 /** 문자열 zone key ↔ DB mood 값 변환. 인박스는 '' 로 표현, DB에는 null 저장 */
 function zoneToMood(zone: string): string | null {
   return zone === '' ? null : zone;
@@ -150,6 +177,7 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
 
   const form = inbox.querySelector('#bd-inbox-form') as HTMLFormElement;
   const input = inbox.querySelector('#bd-inbox-input') as HTMLInputElement;
+  requestAnimationFrame(() => input.focus());
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const text = input.value.trim();
@@ -188,14 +216,72 @@ function createTicket(id: string, name: string): HTMLElement {
   ticket.draggable = true;
   ticket.dataset.placeId = id;
 
+  const suggestion = classify(name);
+
   ticket.innerHTML = [
+    '<div class="bd-ticket-main">',
     ICON_PLANE,
     '<span class="bd-ticket-text">' + escapeHtml(name) + '</span>',
     '<button class="bd-ticket-delete" id="tdel-' + id + '">' + ICON_TRASH + '</button>',
+    '</div>',
+    suggestion ? buildSuggestionChip(suggestion) : '',
   ].join('');
+
+  if (suggestion) {
+    bindSuggestionChip(ticket, id, suggestion);
+  }
 
   bindItemBehavior(ticket, id, name);
   return ticket;
+}
+
+function buildSuggestionChip(s: Suggestion): string {
+  return [
+    '<div class="bd-suggest">',
+    '  <span class="bd-suggest-text">제안 · ' + s.label + ' ' + s.confidence + '%</span>',
+    '  <button class="bd-suggest-apply" type="button">적용</button>',
+    '  <button class="bd-suggest-dismiss" type="button">무시</button>',
+    '</div>',
+    '<div class="bd-suggest-note">규칙 기반 제안 · AI 연동 예정</div>',
+  ].join('');
+}
+
+function bindSuggestionChip(ticket: HTMLElement, id: string, s: Suggestion): void {
+  const applyBtn = ticket.querySelector('.bd-suggest-apply') as HTMLButtonElement | null;
+  const dismissBtn = ticket.querySelector('.bd-suggest-dismiss') as HTMLButtonElement | null;
+
+  applyBtn?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    applyBtn.disabled = true;
+    const success = await movePlace(id, s.gate);
+    if (!success) {
+      applyBtn.disabled = false;
+      return;
+    }
+    const targetList = document.getElementById('glist-' + s.gate);
+    const name = ticket.querySelector('.bd-ticket-text')?.textContent ?? '';
+    const inboxList = ticket.closest('[data-zone]') as HTMLElement | null;
+    ticket.remove();
+    if (inboxList) {
+      updateZoneCount(inboxList);
+      ensureEmptyState(inboxList);
+    }
+    if (targetList) {
+      removeEmptyState(targetList);
+      const newCard = createBoardingCard(id, name);
+      targetList.appendChild(newCard);
+      triggerLightSweep(newCard);
+      updateZoneCount(targetList);
+    }
+  });
+
+  dismissBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const chip = ticket.querySelector('.bd-suggest') as HTMLElement | null;
+    const note = ticket.querySelector('.bd-suggest-note') as HTMLElement | null;
+    chip?.remove();
+    note?.remove();
+  });
 }
 
 /* ── 중앙: 보안 검색대 사이니지 (장식 + 정직한 안내) ── */
