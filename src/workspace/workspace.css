@@ -8,28 +8,29 @@
   background: #F8FBFE;
 }
 
-/* ── 사이드바 (터미널 사이니지) ── */
+/* ── 사이드바 ── */
 .ws-sidebar {
   width: 240px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: #FFFFFF;
-  border-right: 1px solid #E3F2FB;
+  background: rgba(255,255,255,0.88);
+  backdrop-filter: saturate(160%) blur(14px);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
+  border-right: 1px solid rgba(130,150,170,0.16);
   transition: width 180ms cubic-bezier(0.2,0.8,0.2,1);
   overflow: hidden;
   z-index: 20;
 }
 .ws-sidebar.collapsed { width: 64px; }
 
-/* 상단: 로고 + 접기 버튼 */
 .ws-sidebar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   height: 64px;
   padding: 0 16px;
-  border-bottom: 1px solid #E3F2FB;
+  border-bottom: 1px solid rgba(130,150,170,0.16);
   flex-shrink: 0;
 }
 
@@ -76,10 +77,10 @@
 .ws-sidebar-toggle svg { width: 16px; height: 16px; }
 .ws-sidebar.collapsed .ws-sidebar-toggle { display: none; }
 
-/* 여행 정보 블록 */
+/* 여행 정보 — 박스 대신 디바이더 */
 .ws-trip-info {
-  padding: 18px 16px 14px;
-  border-bottom: 1px solid #E3F2FB;
+  padding: 16px 16px 14px;
+  border-bottom: 1px solid rgba(130,150,170,0.16);
   flex-shrink: 0;
 }
 .ws-sidebar.collapsed .ws-trip-info { display: none; }
@@ -94,19 +95,27 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ws-trip-meta {
-  font-size: 11px;
-  color: #64748B;
+.ws-trip-eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #94A3B8;
 }
 
-/* 네비 아이템 */
 .ws-nav {
   flex: 1;
-  padding: 10px 8px;
+  padding: 14px 8px 10px;
   display: flex;
   flex-direction: column;
   gap: 2px;
   overflow-y: auto;
+}
+
+/* 메인 게이트 그룹 — 웨이파인딩 커넥터 */
+.ws-nav-group {
+  position: relative;
+  padding-left: 4px;
 }
 
 .ws-nav-item {
@@ -114,7 +123,7 @@
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 11px 12px;
+  padding: 10px 8px;
   border: none;
   background: none;
   border-radius: 10px;
@@ -129,39 +138,71 @@
   overflow: hidden;
 }
 .ws-nav-item:hover { background: #EAF6FD; color: #0B2A5C; }
-.ws-nav-item.active {
-  background: #0B2A5C;
-  color: #FFFFFF;
-}
+.ws-nav-item.active { color: #0B2A5C; background: #EAF6FD; }
 .ws-nav-item svg { width: 18px; height: 18px; flex-shrink: 0; }
 
-.ws-nav-item .ws-nav-step {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  opacity: 0.55;
-  margin-right: -4px;
+/* 게이트 번호 마커 — 세로 연결선으로 스텝 흐름 표현 */
+.ws-nav-gate { position: relative; padding-left: 8px; }
+
+.ws-nav-marker {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid #CDEBFB;
+  background: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: border-color 150ms ease, background 150ms ease;
+  z-index: 1;
 }
-.ws-nav-item.active .ws-nav-step { opacity: 0.7; }
+.ws-nav-marker-num {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #64748B;
+  transition: color 150ms ease;
+}
+.ws-nav-item.active .ws-nav-marker {
+  background: #0B2A5C;
+  border-color: #0B2A5C;
+}
+.ws-nav-item.active .ws-nav-marker-num { color: #FFFFFF; }
+.ws-nav-item:hover .ws-nav-marker { border-color: #8FD8F8; }
+
+/* 마커 사이 연결선 */
+.ws-nav-gate:not(.last)::after {
+  content: '';
+  position: absolute;
+  left: 19px;
+  top: 32px;
+  width: 1px;
+  height: 16px;
+  background: #CDEBFB;
+  z-index: 0;
+}
 
 .ws-nav-label {
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: 0.02em;
 }
 .ws-sidebar.collapsed .ws-nav-label { display: none; }
-.ws-sidebar.collapsed .ws-nav-step { display: none; }
-.ws-sidebar.collapsed .ws-nav-item { justify-content: center; padding: 11px 0; }
+.ws-sidebar.collapsed .ws-nav-item,
+.ws-sidebar.collapsed .ws-nav-gate { justify-content: center; padding: 10px 0; }
+.ws-sidebar.collapsed .ws-nav-gate:not(.last)::after { display: none; }
 
 .ws-nav-divider {
   height: 1px;
-  background: #E3F2FB;
-  margin: 8px 4px;
+  background: rgba(130,150,170,0.16);
+  margin: 12px 8px;
 }
 
-/* 하단: 멤버 / 초대 */
 .ws-sidebar-footer {
   padding: 12px 16px;
-  border-top: 1px solid #E3F2FB;
+  border-top: 1px solid rgba(130,150,170,0.16);
   flex-shrink: 0;
 }
 .ws-sidebar.collapsed .ws-sidebar-footer { display: none; }
@@ -178,8 +219,13 @@
   cursor: pointer;
   transition: background 150ms ease;
   font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 .ws-invite-btn:hover { background: #EAF6FD; }
+.ws-invite-btn svg { width: 15px; height: 15px; }
 
 /* ── 메인 콘텐츠 ── */
 .ws-main {
@@ -190,21 +236,20 @@
   overflow: hidden;
 }
 
-/* 콘텐츠 헤더 */
+/* 보딩패스 스타일 헤더 */
 .ws-content-header {
   display: flex;
   align-items: center;
   gap: 14px;
-  height: 64px;
-  padding: 0 28px;
-  border-bottom: 1px solid #E3F2FB;
+  min-height: 76px;
+  padding: 14px 28px;
+  border-bottom: 1px solid rgba(130,150,170,0.16);
   background: rgba(255,255,255,0.9);
   backdrop-filter: saturate(160%) blur(18px);
   -webkit-backdrop-filter: saturate(160%) blur(18px);
   flex-shrink: 0;
 }
 
-/* 모바일: 사이드바 토글 버튼 (데스크톱에서는 숨김) */
 .ws-mobile-menu {
   display: none;
   width: 34px;
@@ -220,25 +265,154 @@
 }
 .ws-mobile-menu svg { width: 18px; height: 18px; }
 
-.ws-content-title {
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: #0B2A5C;
-}
-.ws-content-subtitle {
+.ws-header-info { display: flex; flex-direction: column; gap: 2px; }
+
+.ws-header-eyebrow {
   font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
+  font-weight: 700;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: #0B7CC4;
 }
 
-/* 실제 콘텐츠 영역 */
+.ws-header-route {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #0B2A5C;
+  font-variant-numeric: tabular-nums;
+}
+.ws-header-route svg { width: 14px; height: 14px; color: #8FD8F8; flex-shrink: 0; }
+
+.ws-header-meta {
+  font-size: 12px;
+  color: #64748B;
+  letter-spacing: -0.01em;
+}
+
+/* ── 콘텐츠 + AI 패널 레이아웃 ── */
+.ws-content-row {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .ws-content-body {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  min-width: 0;
+}
+
+/* ── AI 인사이트 패널 ── */
+.ws-ai-panel {
+  width: 0;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-left: 1px solid rgba(130,150,170,0.16);
+  background: rgba(255,255,255,0.7);
+  backdrop-filter: saturate(140%) blur(12px);
+  -webkit-backdrop-filter: saturate(140%) blur(12px);
+  transition: width 220ms cubic-bezier(0.2,0.8,0.2,1);
+}
+.ws-ai-panel.open { width: 280px; }
+
+.ws-ai-panel-inner {
+  width: 280px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.ws-ai-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 76px;
+  padding: 0 18px;
+  border-bottom: 1px solid rgba(130,150,170,0.16);
+  flex-shrink: 0;
+}
+.ws-ai-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #0B2A5C;
+}
+.ws-ai-panel-title svg { width: 14px; height: 14px; color: #8FD8F8; }
+
+.ws-ai-panel-close {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: none;
+  background: none;
+  color: #94A3B8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.ws-ai-panel-close:hover { background: #EAF6FD; color: #0B2A5C; }
+.ws-ai-panel-close svg { width: 13px; height: 13px; }
+
+.ws-ai-panel-body {
+  flex: 1;
+  padding: 20px 18px;
+  overflow-y: auto;
+}
+
+.ws-ai-empty {
+  padding-top: 40px;
+  text-align: center;
+  color: #94A3B8;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.ws-ai-selected {
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px dashed rgba(130,150,170,0.28);
+}
+.ws-ai-selected-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #94A3B8;
+  margin-bottom: 4px;
+}
+.ws-ai-selected-name {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0B2A5C;
+}
+
+.ws-ai-coming-soon {
+  text-align: center;
+  padding: 24px 8px;
+  color: #94A3B8;
+}
+.ws-ai-coming-soon svg { width: 22px; height: 22px; color: #CDEBFB; margin-bottom: 10px; }
+.ws-ai-coming-soon-text {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #64748B;
+  margin-bottom: 4px;
+}
+.ws-ai-coming-soon-hint {
+  font-size: 11.5px;
+  line-height: 1.55;
 }
 
 /* 플레이스홀더 (미구현 게이트) */
@@ -272,9 +446,7 @@
 @media (max-width: 768px) {
   .ws-sidebar {
     position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
+    top: 0; left: 0; bottom: 0;
     width: 280px;
     transform: translateX(-100%);
     transition: transform 220ms cubic-bezier(0.2,0.8,0.2,1);
@@ -289,12 +461,13 @@
   .ws-sidebar.collapsed.mobile-open { transform: translateX(0); }
 
   .ws-sidebar-toggle { display: none; }
-  .ws-sidebar.collapsed .ws-sidebar-back-label { display: block; }
-  .ws-sidebar.collapsed .ws-trip-info { display: block; }
-  .ws-sidebar.collapsed .ws-nav-label { display: block; }
-  .ws-sidebar.collapsed .ws-nav-step { display: block; }
-  .ws-sidebar.collapsed .ws-nav-item { justify-content: flex-start; padding: 11px 12px; }
+  .ws-sidebar.collapsed .ws-sidebar-back-label,
+  .ws-sidebar.collapsed .ws-trip-info,
+  .ws-sidebar.collapsed .ws-nav-label,
   .ws-sidebar.collapsed .ws-sidebar-footer { display: block; }
+  .ws-sidebar.collapsed .ws-nav-item,
+  .ws-sidebar.collapsed .ws-nav-gate { justify-content: flex-start; padding: 10px 8px; }
+  .ws-sidebar.collapsed .ws-nav-gate:not(.last)::after { display: block; }
 
   .ws-mobile-menu { display: flex; }
 
@@ -307,8 +480,9 @@
     pointer-events: none;
     transition: opacity 220ms ease;
   }
-  .ws-mobile-overlay.visible {
-    opacity: 1;
-    pointer-events: auto;
-  }
+  .ws-mobile-overlay.visible { opacity: 1; pointer-events: auto; }
+
+  .ws-ai-panel.open { width: 100%; position: fixed; inset: 0; z-index: 150; }
+  .ws-ai-panel-inner { width: 100%; }
+  .ws-header-route { font-size: 16px; }
 }
