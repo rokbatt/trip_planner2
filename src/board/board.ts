@@ -97,10 +97,6 @@ async function movePlace(placeId: string, newMood: string | null): Promise<boole
   return true;
 }
 
-function dispatchSelectCard(root: HTMLElement, name: string): void {
-  root.dispatchEvent(new CustomEvent('mongsil:selectCard', { detail: { name }, bubbles: true }));
-}
-
 /** ─────────────────────────────────────────────
  *  메인 렌더: Inbox(체크인 카운터) + 중앙 사이니지 + 4게이트
  *  ───────────────────────────────────────────── */
@@ -294,13 +290,8 @@ function createBoardingCard(id: string, name: string): HTMLElement {
   return card;
 }
 
-/** 티켓/카드 공통 동작: 클릭(AI패널 선택), 드래그 시작/끝, 삭제 2단계 확인 */
-function bindItemBehavior(el: HTMLElement, id: string, name: string): void {
-  el.addEventListener('click', (e) => {
-    if ((e.target as HTMLElement).closest('.bd-ticket-delete, .bd-card-delete')) return;
-    dispatchSelectCard(el, name);
-  });
-
+/** 티켓/카드 공통 동작: 드래그 시작/끝, 삭제 2단계 확인 */
+function bindItemBehavior(el: HTMLElement, id: string, _name: string): void {
   el.addEventListener('dragstart', (e) => {
     el.classList.add('dragging');
     const zone = el.closest('[data-zone]') as HTMLElement | null;
