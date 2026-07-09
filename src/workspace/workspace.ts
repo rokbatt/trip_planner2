@@ -1,12 +1,14 @@
 import { supabase } from '../supabase';
 import { store } from '../store';
 import { navigate } from '../router';
+import { initChat, teardownChat, setBadgeListener, countUnreadSince, markAsRead, renderChatPanelUI } from '../chat/chat';
 import type { Database } from '../types/database';
+import type { ChatMessage } from '../types/database';
 import './workspace.css';
 
 type Trip = Database['public']['Tables']['trips']['Row'];
 
-/* ── 도시 → IATA 공항코드 (trip-list.ts와 동일 매핑) ── */
+/* ── 도시 → IATA 공항코드 ── */
 const AIRPORT_CODE: Record<string, string> = {
   '서울': 'ICN', '인천': 'ICN', '뉴욕': 'JFK', '방콕': 'BKK', '도쿄': 'NRT',
   '오사카': 'KIX', '파리': 'CDG', '런던': 'LHR', '로마': 'FCO', '바르셀로나': 'BCN',
@@ -38,7 +40,9 @@ const IC = {
   placeholder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></svg>',
   routeArrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
   sparkle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18"/></svg>',
+  chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
   panelClose: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
+  mapPin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21C12 21 19 14.5 19 9.5C19 5.9 15.9 3 12 3C8.1 3 5 5.9 5 9.5C5 14.5 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.2"/></svg>',
 };
 
 interface NavItem {
@@ -70,6 +74,8 @@ const GATE_TITLES: Record<string, string> = {
   expense: 'EXPENSE',
   links: 'LINKS',
 };
+
+type PanelTab = 'chat' | 'ai';
 
 function escapeHtml(str: string): string {
   const div = document.createElement('div');
@@ -111,7 +117,8 @@ export async function renderWorkspace(tripId: string, subPath?: string): Promise
     '    <div class="ws-content-body" id="ws-body">',
     '      <div class="ws-placeholder">불러오는 중...</div>',
     '    </div>',
-    '    <aside class="ws-ai-panel" id="ws-ai-panel"></aside>',
+    '    <div class="ws-panel" id="ws-panel"></div>',
+    '    <div class="ws-rail" id="ws-rail"></div>',
     '  </div>',
     '</div>',
   ].join('\n');
@@ -128,13 +135,14 @@ export async function renderWorkspace(tripId: string, subPath?: string): Promise
   const header = page.querySelector('#ws-header') as HTMLElement;
   header.innerHTML = buildContentHeader(trip, activeGate);
 
-  const aiPanel = page.querySelector('#ws-ai-panel') as HTMLElement;
-  aiPanel.innerHTML = buildAiPanel();
+  const railEl = page.querySelector('#ws-rail') as HTMLElement;
+  railEl.innerHTML = buildRail();
 
   const body = page.querySelector('#ws-body') as HTMLElement;
   await renderGate(body, tripId, activeGate);
 
   bindEvents(page, tripId);
+  await bindChat(page, tripId);
 
   return page;
 }
@@ -206,19 +214,54 @@ function buildContentHeader(trip: Trip, activeGate: string): string {
   ].join('\n');
 }
 
-function buildAiPanel(): string {
+/** 우측 아이콘 레일: 채팅 / AI */
+function buildRail(): string {
   return [
-    '<div class="ws-ai-panel-inner">',
-    '  <div class="ws-ai-panel-header">',
-    '    <span class="ws-ai-panel-title">' + IC.sparkle + ' AI 인사이트</span>',
-    '    <button class="ws-ai-panel-close" id="ws-ai-close">' + IC.panelClose + '</button>',
+    '<button class="ws-rail-btn" id="rail-chat" data-tab="chat">',
+    '  ' + IC.chat,
+    '  <span class="ws-rail-badge" id="rail-badge">0</span>',
+    '</button>',
+    '<button class="ws-rail-btn" id="rail-ai" data-tab="ai">',
+    '  ' + IC.sparkle,
+    '</button>',
+  ].join('\n');
+}
+
+/** 우측 슬라이드 패널 (채팅 / AI 탭 전환) */
+function buildPanelShell(): string {
+  return [
+    '<div class="ws-panel-inner">',
+    '  <div class="ws-panel-header">',
+    '    <button class="ws-panel-tab active" id="tab-chat" data-tab="chat">채팅</button>',
+    '    <button class="ws-panel-tab" id="tab-ai" data-tab="ai">AI</button>',
+    '    <button class="ws-panel-close" id="ws-panel-close">' + IC.panelClose + '</button>',
     '  </div>',
-    '  <div class="ws-ai-panel-body" id="ws-ai-body">',
-    '    <div class="ws-ai-empty">',
-    '      <div class="ws-ai-empty-text">카드를 선택하면</div>',
-    '      <div class="ws-ai-empty-text">추천 정보가 여기에 표시돼요</div>',
+    '  <div class="ws-panel-body" id="ws-panel-body"></div>',
+    '</div>',
+  ].join('\n');
+}
+
+function buildAiDemoContent(): string {
+  return [
+    '<div class="ws-ai-demo">',
+    '  <div class="ws-ai-demo-badge">DEMO</div>',
+    '  <div class="ws-ai-msg">',
+    '    <div class="ws-ai-msg-icon">' + IC.sparkle + '</div>',
+    '    <div class="ws-ai-msg-text">현재 보드 기준으로 최적 동선을 제안할게요.</div>',
+    '  </div>',
+    '  <div class="ws-ai-card">',
+    '    <div class="ws-ai-card-title">11/03 (Day 2) 추천 코스</div>',
+    '    <div class="ws-ai-card-route">',
+    '      ' + IC.mapPin + '<span>이치란 → Central Park → MoMA → Chelsea Market → 브루클린 브릿지</span>',
     '    </div>',
+    '    <div class="ws-ai-card-stats">',
+    '      <div class="ws-ai-stat"><span class="ws-ai-stat-label">예상 이동시간</span><span class="ws-ai-stat-value">42분</span></div>',
+    '      <div class="ws-ai-stat"><span class="ws-ai-stat-label">예상 비용</span><span class="ws-ai-stat-value">$85</span></div>',
+    '      <div class="ws-ai-stat"><span class="ws-ai-stat-label">혼잡도</span><span class="ws-ai-stat-value">보통</span></div>',
+    '    </div>',
+    '    <button class="ws-ai-map-btn" id="ws-ai-map-btn">지도에서 보기</button>',
     '  </div>',
+    '  <div class="ws-ai-demo-hint">실제 AI 연동은 다음 단계에서 진행돼요</div>',
     '</div>',
   ].join('\n');
 }
@@ -240,7 +283,10 @@ async function renderGate(body: HTMLElement, tripId: string, gate: string): Prom
 }
 
 function bindEvents(page: HTMLElement, tripId: string): void {
-  page.querySelector('#ws-back')?.addEventListener('click', () => navigate('trips'));
+  page.querySelector('#ws-back')?.addEventListener('click', () => {
+    teardownChat();
+    navigate('trips');
+  });
 
   const sidebar = page.querySelector('#ws-sidebar') as HTMLElement;
   page.querySelector('#ws-toggle')?.addEventListener('click', () => {
@@ -279,27 +325,108 @@ function bindEvents(page: HTMLElement, tripId: string): void {
       alert('초대 코드를 찾을 수 없어요.');
     }
   });
+}
 
-  // AI 패널 열기/닫기
-  const aiPanel = page.querySelector('#ws-ai-panel') as HTMLElement;
-  page.querySelector('#ws-ai-close')?.addEventListener('click', () => {
-    aiPanel.classList.remove('open');
+/** 채팅 초기화 + 우측 레일/패널 인터랙션 바인딩 */
+async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
+  const layout = page.querySelector('.ws-content-row') as HTMLElement;
+  const panelEl = page.querySelector('#ws-panel') as HTMLElement;
+  const badgeEl = page.querySelector('#rail-badge') as HTMLElement;
+  const railChatBtn = page.querySelector('#rail-chat') as HTMLButtonElement;
+  const railAiBtn = page.querySelector('#rail-ai') as HTMLButtonElement;
+
+  let panelOpen = false;
+  let activeTab: PanelTab = 'chat';
+  let chatUnsub: (() => void) | null = null;
+
+  function updateBadge(count: number): void {
+    badgeEl.textContent = String(count);
+    badgeEl.classList.toggle('visible', count > 0);
+  }
+
+  function closePanel(): void {
+    panelOpen = false;
+    layout.classList.remove('panel-open');
+    panelEl.innerHTML = '';
+    railChatBtn.classList.remove('active');
+    railAiBtn.classList.remove('active');
+    if (chatUnsub) {
+      chatUnsub();
+      chatUnsub = null;
+    }
+  }
+
+  function renderPanelBody(): void {
+    const bodyEl = panelEl.querySelector('#ws-panel-body') as HTMLElement;
+    if (!bodyEl) return;
+
+    if (chatUnsub) {
+      chatUnsub();
+      chatUnsub = null;
+    }
+
+    if (activeTab === 'chat') {
+      chatUnsub = renderChatPanelUI(bodyEl, tripId);
+      markAsRead(tripId);
+      updateBadge(0);
+    } else {
+      bodyEl.innerHTML = buildAiDemoContent();
+      bodyEl.querySelector('#ws-ai-map-btn')?.addEventListener('click', () => {
+        alert('지도 연동은 다음 단계에서 구현 예정이에요 (데모)');
+      });
+    }
+  }
+
+  function openPanel(tab: PanelTab): void {
+    panelOpen = true;
+    activeTab = tab;
+    layout.classList.add('panel-open');
+    panelEl.innerHTML = buildPanelShell();
+
+    panelEl.querySelectorAll('.ws-panel-tab').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const t = (btn as HTMLElement).dataset.tab as PanelTab;
+        activeTab = t;
+        panelEl.querySelectorAll('.ws-panel-tab').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderPanelBody();
+      });
+    });
+    panelEl.querySelector('#ws-panel-close')?.addEventListener('click', closePanel);
+
+    railChatBtn.classList.toggle('active', tab === 'chat');
+    railAiBtn.classList.toggle('active', tab === 'ai');
+
+    renderPanelBody();
+  }
+
+  railChatBtn.addEventListener('click', () => {
+    if (panelOpen && activeTab === 'chat') {
+      closePanel();
+    } else {
+      openPanel('chat');
+    }
+  });
+  railAiBtn.addEventListener('click', () => {
+    if (panelOpen && activeTab === 'ai') {
+      closePanel();
+    } else {
+      openPanel('ai');
+    }
   });
 
-  // 보드 카드 선택 이벤트 수신 (board.ts에서 dispatch)
-  page.addEventListener('mongsil:selectCard', ((e: CustomEvent<{ name: string }>) => {
-    const aiBody = page.querySelector('#ws-ai-body') as HTMLElement;
-    aiBody.innerHTML = [
-      '<div class="ws-ai-selected">',
-      '  <div class="ws-ai-selected-label">선택한 카드</div>',
-      '  <div class="ws-ai-selected-name">' + escapeHtml(e.detail.name) + '</div>',
-      '</div>',
-      '<div class="ws-ai-coming-soon">',
-      '  ' + IC.sparkle,
-      '  <div class="ws-ai-coming-soon-text">AI 추천 정보는 곧 연결돼요</div>',
-      '  <div class="ws-ai-coming-soon-hint">방문 시간 · 대기시간 · 예상 가격 등을 준비 중이에요</div>',
-      '</div>',
-    ].join('\n');
-    aiPanel.classList.add('open');
-  }) as EventListener);
+  // 채팅 실시간 초기화 + 안읽은 배지 관리
+  await initChat(tripId);
+  const myId = store.get('user')?.id;
+  updateBadge(countUnreadSince(tripId, myId));
+
+  setBadgeListener((msg: ChatMessage) => {
+    if (msg.user_id === myId) return;
+    const chatVisible = panelOpen && activeTab === 'chat';
+    if (chatVisible) {
+      markAsRead(tripId);
+    } else {
+      updateBadge(countUnreadSince(tripId, myId));
+    }
+  });
 }
