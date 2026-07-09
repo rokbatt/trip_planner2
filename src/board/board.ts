@@ -8,13 +8,15 @@ type Place = Database['public']['Tables']['places']['Row'];
 interface MoodConfig {
   key: string;
   label: string;
+  emptyHint: string;
+  placeholder: string;
 }
 
 const MOODS: MoodConfig[] = [
-  { key: '가고싶어', label: 'VISIT' },
-  { key: '먹고싶어', label: 'FOOD' },
-  { key: '하고싶어', label: 'ACTIVITY' },
-  { key: '후보',     label: 'MAYBE' },
+  { key: '가고싶어', label: 'VISIT',    emptyHint: '📍 장소 이름을 입력하세요',   placeholder: '장소 이름 · 링크를 붙여넣으세요' },
+  { key: '먹고싶어', label: 'FOOD',     emptyHint: '🍜 맛집 이름을 입력하세요',   placeholder: '맛집 이름 · 링크를 붙여넣으세요' },
+  { key: '하고싶어', label: 'ACTIVITY', emptyHint: '🎤 통화 중 나온 아이디어를 기록하세요', placeholder: '하고 싶은 것을 적어보세요' },
+  { key: '후보',     label: 'MAYBE',   emptyHint: '💬 메모나 링크를 남겨보세요', placeholder: '메모 · Google Maps 링크' },
 ];
 
 const ICON_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
@@ -81,6 +83,13 @@ async function movePlace(placeId: string, newMood: string): Promise<boolean> {
   return true;
 }
 
+/** 카드 선택 시 워크스페이스 셸(AI 패널)에 알림 */
+function dispatchSelectCard(root: HTMLElement, name: string): void {
+  root.dispatchEvent(
+    new CustomEvent('mongsil:selectCard', { detail: { name }, bubbles: true })
+  );
+}
+
 /** Workspace 안에서 호출되는 보드 콘텐츠 렌더 */
 export async function renderBoardContent(container: HTMLElement, tripId: string): Promise<void> {
   container.innerHTML = '<div class="bd-board" id="bd-board"><div class="bd-loading">보드를 불러오는 중...</div></div>';
@@ -106,7 +115,7 @@ function createColumn(tripId: string, mood: MoodConfig, places: Place[]): HTMLEl
     '</div>',
     '<div class="bd-col-list" id="list-' + mood.key + '"></div>',
     '<form class="bd-add-form" id="form-' + mood.key + '">',
-    '  <input class="bd-add-input" id="input-' + mood.key + '" type="text" placeholder="아이디어 추가..." />',
+    '  <input class="bd-add-input" id="input-' + mood.key + '" type="text" placeholder="' + mood.placeholder + '" />',
     '  <button type="submit" class="bd-add-btn">' + ICON_PLUS + '</button>',
     '</form>',
   ].join('\n');
@@ -114,7 +123,7 @@ function createColumn(tripId: string, mood: MoodConfig, places: Place[]): HTMLEl
   const listEl = col.querySelector('#list-' + cssEscape(mood.key)) as HTMLElement;
 
   if (places.length === 0) {
-    listEl.innerHTML = '<div class="bd-col-empty">아직 아이디어가 없어요</div>';
+    listEl.innerHTML = buildEmptyState(mood);
   } else {
     places.forEach((place) => listEl.appendChild(createCard(place)));
   }
@@ -130,13 +139,17 @@ function createColumn(tripId: string, mood: MoodConfig, places: Place[]): HTMLEl
 
     const success = await movePlace(placeId, mood.key);
     if (success) {
-      const cardEl = document.querySelector('[data-place-id="' + placeId + '"]');
+      const cardEl = document.querySelector('[data-place-id="' + placeId + '"]') as HTMLElement | null;
       if (cardEl) {
         removeEmptyState(listEl);
         listEl.appendChild(cardEl);
-        updateEmptyState(listEl);
+        triggerLightSweep(cardEl);
+        updateEmptyState(listEl, mood);
+
         const fromList = document.querySelector('#list-' + cssEscape(fromMood ?? ''));
-        if (fromList) updateEmptyState(fromList as HTMLElement);
+        const fromMoodConfig = MOODS.find((m) => m.key === fromMood);
+        if (fromList && fromMoodConfig) updateEmptyState(fromList as HTMLElement, fromMoodConfig);
+
         updateCount(mood.key);
         if (fromMood) updateCount(fromMood);
       }
@@ -155,13 +168,23 @@ function createColumn(tripId: string, mood: MoodConfig, places: Place[]): HTMLEl
     input.disabled = false;
     if (newPlace) {
       removeEmptyState(listEl);
-      listEl.appendChild(createCard(newPlace));
+      const cardEl = createCard(newPlace);
+      listEl.appendChild(cardEl);
+      triggerLightSweep(cardEl);
       input.value = '';
       updateCount(mood.key);
     }
   });
 
   return col;
+}
+
+function buildEmptyState(mood: MoodConfig): string {
+  return [
+    '<div class="bd-col-empty">',
+    '  <div class="bd-col-empty-hint">' + mood.emptyHint + '</div>',
+    '</div>',
+  ].join('');
 }
 
 function createCard(place: Place): HTMLElement {
@@ -174,6 +197,12 @@ function createCard(place: Place): HTMLElement {
     '<span class="bd-card-text">' + escapeHtml(place.name) + '</span>',
     '<button class="bd-card-delete" id="del-' + place.id + '">' + ICON_TRASH + '</button>',
   ].join('');
+
+  // 카드 클릭 → AI 패널에 선택 알림 (삭제 버튼 클릭은 제외)
+  card.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).closest('.bd-card-delete')) return;
+    dispatchSelectCard(card, place.name);
+  });
 
   card.addEventListener('dragstart', (e) => {
     card.classList.add('dragging');
@@ -203,11 +232,12 @@ function createCard(place: Place): HTMLElement {
     deleteBtn.disabled = true;
     const listEl = card.parentElement;
     const moodKey = place.mood ?? '';
+    const moodConfig = MOODS.find((m) => m.key === moodKey);
     const success = await deleteIdea(place.id);
     if (success) {
       card.remove();
       updateCount(moodKey);
-      if (listEl) updateEmptyState(listEl);
+      if (listEl && moodConfig) updateEmptyState(listEl, moodConfig);
     } else {
       deleteBtn.disabled = false;
       confirming = false;
@@ -217,6 +247,15 @@ function createCard(place: Place): HTMLElement {
   });
 
   return card;
+}
+
+/** 드롭/추가 직후 카드 표면에 빛이 스치는 모션 */
+function triggerLightSweep(cardEl: HTMLElement): void {
+  cardEl.classList.remove('sweep');
+  // 리플로우 강제 후 클래스 재적용 (연속 트리거 대비)
+  void cardEl.offsetWidth;
+  cardEl.classList.add('sweep');
+  setTimeout(() => cardEl.classList.remove('sweep'), 650);
 }
 
 function updateCount(moodKey: string): void {
@@ -232,11 +271,11 @@ function removeEmptyState(listEl: HTMLElement): void {
   if (empty) empty.remove();
 }
 
-function updateEmptyState(listEl: HTMLElement): void {
+function updateEmptyState(listEl: HTMLElement, mood: MoodConfig): void {
   const hasCards = listEl.querySelectorAll('.bd-card').length > 0;
   const hasEmpty = listEl.querySelector('.bd-col-empty');
   if (!hasCards && !hasEmpty) {
-    listEl.innerHTML = '<div class="bd-col-empty">아직 아이디어가 없어요</div>';
+    listEl.innerHTML = buildEmptyState(mood);
   }
 }
 
