@@ -78,22 +78,21 @@
   color: #0B2A5C;
   margin-bottom: 5px;
 }
-.bd-inbox-desc {
-  font-size: 12px;
-  color: #94A3B8;
-  line-height: 1.55;
-}
 
-/* 체크인 입력 — 키오스크 느낌으로 크게 */
+/* 체크인 입력 — 하단 고정 컴포저 */
 .bd-inbox-form {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 8px;
-  margin-bottom: 16px;
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(130,150,170,0.24);
+  flex-shrink: 0;
 }
 .bd-inbox-input {
-  width: 100%;
-  padding: 14px 16px;
+  flex: 1;
+  min-width: 0;
+  padding: 12px 14px;
   border: 1.5px solid rgba(130,150,170,0.22);
   border-radius: 12px;
   background: #FFFFFF;
@@ -113,20 +112,18 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 11px;
-  border-radius: 12px;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 50%;
   border: none;
   background: #0B2A5C;
   color: #fff;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
   cursor: pointer;
   transition: background 180ms cubic-bezier(0.2,0.8,0.2,1);
 }
 .bd-inbox-btn:hover { background: #0E3676; }
-.bd-inbox-btn svg { width: 15px; height: 15px; }
+.bd-inbox-btn svg { width: 16px; height: 16px; }
 
 .bd-inbox-list-header {
   display: flex;
