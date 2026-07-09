@@ -5,10 +5,11 @@
 
 .bd-layout {
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 0;
   padding: 24px 28px 32px;
-  min-height: 100%;
+  height: calc(100vh - 172px);
+  min-height: 480px;
 }
 
 .bd-loading {
@@ -56,7 +57,7 @@
   border: 1px solid rgba(130,150,170,0.16);
   border-radius: 18px;
   padding: 18px;
-  max-height: 640px;
+  height: 100%;
   margin-right: 4px;
 }
 
@@ -278,16 +279,38 @@
 
 .bd-gates {
   flex: 1;
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  overflow-x: auto;
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 20px;
   min-width: 0;
-  padding-bottom: 4px;
+  height: 100%;
+}
+
+/* 십자 디바이더 (그리드 gap 중앙에 얇은 선) */
+.bd-gates::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(50% - 0.5px);
+  width: 1px;
+  background: rgba(130,150,170,0.22);
+  pointer-events: none;
+}
+.bd-gates::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% - 0.5px);
+  height: 1px;
+  background: rgba(130,150,170,0.22);
+  pointer-events: none;
 }
 
 .bd-gate {
-  flex: 0 0 250px;
   display: flex;
   flex-direction: column;
   background: rgba(255,255,255,0.6);
@@ -295,8 +318,9 @@
   -webkit-backdrop-filter: saturate(140%) blur(8px);
   border: 1px solid rgba(130,150,170,0.16);
   border-radius: 16px;
-  padding: 14px;
-  max-height: 560px;
+  padding: 16px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .bd-gate-header { margin-bottom: 10px; }
@@ -439,8 +463,8 @@
 
 /* ── 반응형 ── */
 @media (max-width: 980px) {
-  .bd-layout { flex-direction: column; gap: 16px; padding: 16px; }
-  .bd-inbox { flex: none; width: 100%; max-height: 320px; margin-right: 0; }
+  .bd-layout { flex-direction: column; gap: 16px; padding: 16px; height: auto; }
+  .bd-inbox { flex: none; width: 100%; height: 320px; margin-right: 0; }
   .bd-security {
     flex-direction: row;
     width: 100%;
@@ -454,6 +478,12 @@
   .bd-security-label, .bd-security-note {
     writing-mode: horizontal-tb;
   }
-  .bd-gates { flex: none; }
-  .bd-gate { flex: 0 0 230px; max-height: 460px; }
+  .bd-gates {
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(4, 340px);
+    height: auto;
+  }
+  .bd-gates::before { display: none; }
+  .bd-gates::after { display: none; }
+  .bd-gate { min-height: 0; }
 }
