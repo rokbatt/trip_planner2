@@ -308,7 +308,7 @@ function buildGates(tripId: string, allPlaces: Place[]): HTMLElement {
   return gates;
 }
 
-function createGateColumn(tripId: string, gate: GateConfig, items: Place[]): HTMLElement {
+function createGateColumn(_tripId: string, gate: GateConfig, items: Place[]): HTMLElement {
   const col = document.createElement('div');
   col.className = 'bd-gate';
 
@@ -322,10 +322,6 @@ function createGateColumn(tripId: string, gate: GateConfig, items: Place[]): HTM
     '  </div>',
     '</div>',
     '<div class="bd-gate-list bd-dropzone" id="glist-' + gate.key + '" data-zone="' + gate.key + '"></div>',
-    '<form class="bd-gate-form" id="gform-' + gate.key + '">',
-    '  <input class="bd-gate-input" id="ginput-' + gate.key + '" type="text" placeholder="바로 추가" />',
-    '  <button type="submit" class="bd-gate-add">' + ICON_PLUS + '</button>',
-    '</form>',
   ].join('\n');
 
   const listEl = col.querySelector('.bd-gate-list') as HTMLElement;
@@ -336,25 +332,6 @@ function createGateColumn(tripId: string, gate: GateConfig, items: Place[]): HTM
   }
 
   attachDropzone(listEl);
-
-  const form = col.querySelector('.bd-gate-form') as HTMLFormElement;
-  const input = col.querySelector('.bd-gate-input') as HTMLInputElement;
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const text = input.value.trim();
-    if (!text) return;
-    input.disabled = true;
-    const newPlace = await addIdea(tripId, gate.key, text);
-    input.disabled = false;
-    if (newPlace) {
-      removeEmptyState(listEl);
-      const el = createBoardingCard(newPlace.id, newPlace.name);
-      listEl.appendChild(el);
-      triggerLightSweep(el);
-      input.value = '';
-      updateZoneCount(listEl);
-    }
-  });
 
   return col;
 }
