@@ -118,7 +118,10 @@ export async function renderWorkspace(tripId: string, subPath?: string): Promise
     '      <div class="ws-placeholder">불러오는 중...</div>',
     '    </div>',
     '    <div class="ws-panel" id="ws-panel"></div>',
-    '    <div class="ws-rail" id="ws-rail"></div>',
+    '    <button class="ws-drawer-fab" id="ws-drawer-fab">',
+    '      ' + IC.chat,
+    '      <span class="ws-drawer-badge" id="rail-badge">0</span>',
+    '    </button>',
     '  </div>',
     '</div>',
   ].join('\n');
@@ -134,9 +137,6 @@ export async function renderWorkspace(tripId: string, subPath?: string): Promise
 
   const header = page.querySelector('#ws-header') as HTMLElement;
   header.innerHTML = buildContentHeader(trip, activeGate);
-
-  const railEl = page.querySelector('#ws-rail') as HTMLElement;
-  railEl.innerHTML = buildRail();
 
   const body = page.querySelector('#ws-body') as HTMLElement;
   await renderGate(body, tripId, activeGate);
@@ -214,26 +214,15 @@ function buildContentHeader(trip: Trip, activeGate: string): string {
   ].join('\n');
 }
 
-/** 우측 아이콘 레일: 채팅 / AI */
-function buildRail(): string {
-  return [
-    '<button class="ws-rail-btn" id="rail-chat" data-tab="chat">',
-    '  ' + IC.chat,
-    '  <span class="ws-rail-badge" id="rail-badge">0</span>',
-    '</button>',
-    '<button class="ws-rail-btn" id="rail-ai" data-tab="ai">',
-    '  ' + IC.sparkle,
-    '</button>',
-  ].join('\n');
-}
-
-/** 우측 슬라이드 패널 (채팅 / AI 탭 전환) */
+/** 우측 슬라이드 패널 (Drawer) — Collaborate / Assistant 세그먼트 컨트롤 */
 function buildPanelShell(): string {
   return [
     '<div class="ws-panel-inner">',
     '  <div class="ws-panel-header">',
-    '    <button class="ws-panel-tab active" id="tab-chat" data-tab="chat">채팅</button>',
-    '    <button class="ws-panel-tab" id="tab-ai" data-tab="ai">AI</button>',
+    '    <div class="ws-segmented">',
+    '      <button class="ws-segment active" id="tab-chat" data-tab="chat">Collaborate</button>',
+    '      <button class="ws-segment" id="tab-ai" data-tab="ai">Assistant</button>',
+    '    </div>',
     '    <button class="ws-panel-close" id="ws-panel-close">' + IC.panelClose + '</button>',
     '  </div>',
     '  <div class="ws-panel-body" id="ws-panel-body"></div>',
@@ -261,7 +250,14 @@ function buildAiDemoContent(): string {
     '    </div>',
     '    <button class="ws-ai-map-btn" id="ws-ai-map-btn">지도에서 보기</button>',
     '  </div>',
-    '  <div class="ws-ai-demo-hint">실제 AI 연동은 다음 단계에서 진행돼요</div>',
+    '  <div class="ws-ai-prompts">',
+    '    <button class="ws-ai-prompt-chip">3일차 일정 다시 짜줘</button>',
+    '    <button class="ws-ai-prompt-chip">비오면 대체 일정 추천</button>',
+    '    <button class="ws-ai-prompt-chip">예산 줄여줘</button>',
+    '    <button class="ws-ai-prompt-chip">웨이팅 적은 순으로 정렬</button>',
+    '    <button class="ws-ai-prompt-chip">동선 최적화</button>',
+    '  </div>',
+    '  <div class="ws-ai-demo-hint">실제 AI 연동(Gemini/Claude)은 다음 단계에서 진행돼요</div>',
     '</div>',
   ].join('\n');
 }
@@ -331,9 +327,8 @@ function bindEvents(page: HTMLElement, tripId: string): void {
 async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
   const layout = page.querySelector('.ws-content-row') as HTMLElement;
   const panelEl = page.querySelector('#ws-panel') as HTMLElement;
+  const fab = page.querySelector('#ws-drawer-fab') as HTMLButtonElement;
   const badgeEl = page.querySelector('#rail-badge') as HTMLElement;
-  const railChatBtn = page.querySelector('#rail-chat') as HTMLButtonElement;
-  const railAiBtn = page.querySelector('#rail-ai') as HTMLButtonElement;
 
   let panelOpen = false;
   let activeTab: PanelTab = 'chat';
@@ -344,12 +339,11 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
     badgeEl.classList.toggle('visible', count > 0);
   }
 
-  function closePanel(): void {
+  function closeDrawer(): void {
     panelOpen = false;
     layout.classList.remove('panel-open');
     panelEl.innerHTML = '';
-    railChatBtn.classList.remove('active');
-    railAiBtn.classList.remove('active');
+    fab.classList.remove('hidden');
     if (chatUnsub) {
       chatUnsub();
       chatUnsub = null;
@@ -374,44 +368,40 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
       bodyEl.querySelector('#ws-ai-map-btn')?.addEventListener('click', () => {
         alert('지도 연동은 다음 단계에서 구현 예정이에요 (데모)');
       });
+      bodyEl.querySelectorAll('.ws-ai-prompt-chip').forEach((chip) => {
+        chip.addEventListener('click', () => {
+          alert('AI 어시스턴트 연동은 다음 단계에서 구현 예정이에요 (데모)');
+        });
+      });
     }
   }
 
-  function openPanel(tab: PanelTab): void {
+  function openDrawer(tab: PanelTab): void {
     panelOpen = true;
     activeTab = tab;
     layout.classList.add('panel-open');
+    fab.classList.add('hidden');
     panelEl.innerHTML = buildPanelShell();
 
-    panelEl.querySelectorAll('.ws-panel-tab').forEach((btn) => {
+    panelEl.querySelectorAll('.ws-segment').forEach((btn) => {
       btn.addEventListener('click', () => {
         const t = (btn as HTMLElement).dataset.tab as PanelTab;
         activeTab = t;
-        panelEl.querySelectorAll('.ws-panel-tab').forEach((b) => b.classList.remove('active'));
+        panelEl.querySelectorAll('.ws-segment').forEach((b) => b.classList.remove('active'));
         btn.classList.add('active');
         renderPanelBody();
       });
     });
-    panelEl.querySelector('#ws-panel-close')?.addEventListener('click', closePanel);
-
-    railChatBtn.classList.toggle('active', tab === 'chat');
-    railAiBtn.classList.toggle('active', tab === 'ai');
+    panelEl.querySelector('#ws-panel-close')?.addEventListener('click', closeDrawer);
 
     renderPanelBody();
   }
 
-  railChatBtn.addEventListener('click', () => {
-    if (panelOpen && activeTab === 'chat') {
-      closePanel();
+  fab.addEventListener('click', () => {
+    if (panelOpen) {
+      closeDrawer();
     } else {
-      openPanel('chat');
-    }
-  });
-  railAiBtn.addEventListener('click', () => {
-    if (panelOpen && activeTab === 'ai') {
-      closePanel();
-    } else {
-      openPanel('ai');
+      openDrawer(activeTab);
     }
   });
 
