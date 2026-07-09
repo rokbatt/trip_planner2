@@ -67,7 +67,7 @@ async function addIdea(tripId: string, mood: string | null, text: string): Promi
       status: 'idea',
       is_idea: true,
       added_by: user?.id ?? null,
-      sort_order: Date.now(),
+      sort_order: Math.floor(Date.now() / 1000),
     })
     .select()
     .single();
