@@ -1,13 +1,14 @@
 /* ============================================================
-   몽실이 브레인스토밍 보드 — 워크스페이스 내부 콘텐츠
+   몽실이 브레인스토밍 보드
+   Check-in Counter (Inbox) → Security Check → 4 Gates
    ============================================================ */
 
-.bd-board {
+.bd-layout {
   display: flex;
   align-items: flex-start;
-  gap: 18px;
+  gap: 0;
   padding: 24px 28px 32px;
-  overflow-x: auto;
+  min-height: 100%;
 }
 
 .bd-loading {
@@ -20,8 +21,273 @@
   padding: 80px 0;
 }
 
-.bd-col {
-  flex: 0 0 264px;
+/* ── 공통: 드롭존 하이라이트 ── */
+.bd-dropzone.drag-over {
+  background: rgba(234,246,253,0.85);
+  border-color: #8FD8F8 !important;
+}
+
+/* ── 라이트 스윕 (공통 모션) ── */
+.sweep::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 30%, rgba(143,216,248,0.35) 50%, transparent 70%);
+  transform: translateX(-140%);
+  animation: bd-sweep 600ms cubic-bezier(0.2,0.8,0.2,1);
+  pointer-events: none;
+  border-radius: inherit;
+}
+@keyframes bd-sweep {
+  to { transform: translateX(140%); }
+}
+
+/* ============================================================
+   좌측: Inbox — 체크인 카운터
+   ============================================================ */
+
+.bd-inbox {
+  flex: 0 0 300px;
+  display: flex;
+  flex-direction: column;
+  background: rgba(255,255,255,0.6);
+  backdrop-filter: saturate(140%) blur(8px);
+  -webkit-backdrop-filter: saturate(140%) blur(8px);
+  border: 1px solid rgba(130,150,170,0.16);
+  border-radius: 18px;
+  padding: 18px;
+  max-height: 640px;
+  margin-right: 4px;
+}
+
+.bd-inbox-header { margin-bottom: 14px; }
+
+.bd-inbox-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #0B7CC4;
+  margin-bottom: 6px;
+}
+.bd-inbox-title {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0B2A5C;
+  margin-bottom: 5px;
+}
+.bd-inbox-desc {
+  font-size: 12px;
+  color: #94A3B8;
+  line-height: 1.55;
+}
+
+/* 체크인 입력 — 키오스크 느낌으로 크게 */
+.bd-inbox-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.bd-inbox-input {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1.5px solid rgba(130,150,170,0.22);
+  border-radius: 12px;
+  background: #FFFFFF;
+  font-size: 14px;
+  font-family: inherit;
+  color: #0B2A5C;
+  transition: border-color 180ms cubic-bezier(0.2,0.8,0.2,1), box-shadow 180ms cubic-bezier(0.2,0.8,0.2,1);
+}
+.bd-inbox-input:focus {
+  outline: none;
+  border-color: #8FD8F8;
+  box-shadow: 0 0 0 3px rgba(143,216,248,0.18);
+}
+.bd-inbox-input::placeholder { color: #A8B7C7; }
+
+.bd-inbox-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 11px;
+  border-radius: 12px;
+  border: none;
+  background: #0B2A5C;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background 180ms cubic-bezier(0.2,0.8,0.2,1);
+}
+.bd-inbox-btn:hover { background: #0E3676; }
+.bd-inbox-btn svg { width: 15px; height: 15px; }
+
+.bd-inbox-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(130,150,170,0.16);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94A3B8;
+}
+.bd-inbox-count {
+  color: #0B7CC4;
+  background: #EAF6FD;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.bd-inbox-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  overflow-y: auto;
+  border-radius: 10px;
+  transition: background 180ms ease, border-color 180ms ease;
+  border: 1px solid transparent;
+  padding: 2px;
+}
+
+/* ── 티켓 스텁 ── */
+.bd-ticket {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: #FFFFFF;
+  border: 1px solid rgba(130,150,170,0.2);
+  border-left: 3px dashed #CDEBFB;
+  border-radius: 8px;
+  padding: 10px 30px 10px 12px;
+  font-size: 12.5px;
+  color: #1E293B;
+  cursor: grab;
+  transition: border-color 180ms cubic-bezier(0.2,0.8,0.2,1),
+              box-shadow 180ms cubic-bezier(0.2,0.8,0.2,1),
+              opacity 180ms cubic-bezier(0.2,0.8,0.2,1);
+  overflow: hidden;
+}
+.bd-ticket svg {
+  width: 13px;
+  height: 13px;
+  color: #8FD8F8;
+  flex-shrink: 0;
+}
+.bd-ticket-text {
+  flex: 1;
+  word-break: break-word;
+  line-height: 1.4;
+}
+.bd-ticket:hover { border-color: #8FD8F8; box-shadow: 0 3px 10px rgba(11,124,196,0.10); }
+.bd-ticket.dragging {
+  opacity: 0.85;
+  border-color: #8FD8F8;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 6px 18px rgba(11,124,196,0.14);
+}
+
+.bd-ticket-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #94A3B8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+.bd-ticket-delete:hover { background: #FDEEEC; color: #C0392B; }
+.bd-ticket-delete svg { width: 12px; height: 12px; color: inherit; }
+.bd-ticket-delete.confirm {
+  background: #C0392B; color: #fff; font-size: 8.5px; font-weight: 700;
+  width: auto; padding: 0 7px; border-radius: 7px;
+}
+
+/* ============================================================
+   중앙: Security Check 사이니지 (장식 + 안내, 비활성 상태 표기)
+   ============================================================ */
+
+.bd-security {
+  flex: 0 0 68px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px 6px;
+  align-self: stretch;
+  position: relative;
+}
+.bd-security::before,
+.bd-security::after {
+  content: '';
+  flex: 1;
+  width: 1px;
+  background: repeating-linear-gradient(to bottom, rgba(130,150,170,0.3) 0 4px, transparent 4px 9px);
+}
+.bd-security-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(130,150,170,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94A3B8;
+  flex-shrink: 0;
+}
+.bd-security-icon svg { width: 15px; height: 15px; }
+.bd-security-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #64748B;
+  flex-shrink: 0;
+}
+.bd-security-note {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 9.5px;
+  color: #B8C4D4;
+  line-height: 1.5;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   우측: 4개 게이트
+   ============================================================ */
+
+.bd-gates {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  overflow-x: auto;
+  min-width: 0;
+  padding-bottom: 4px;
+}
+
+.bd-gate {
+  flex: 0 0 250px;
   display: flex;
   flex-direction: column;
   background: rgba(255,255,255,0.6);
@@ -31,47 +297,55 @@
   border-radius: 16px;
   padding: 14px;
   max-height: 560px;
-  transition: border-color 180ms cubic-bezier(0.2,0.8,0.2,1), background 180ms cubic-bezier(0.2,0.8,0.2,1);
-}
-.bd-col.drag-over {
-  border-color: #8FD8F8;
-  background: rgba(234,246,253,0.85);
 }
 
-.bd-col-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-  padding: 0 4px 10px;
-  border-bottom: 1px solid rgba(130,150,170,0.16);
-}
+.bd-gate-header { margin-bottom: 10px; }
 
-.bd-col-step {
-  font-size: 11px;
+.bd-gate-step {
+  font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.14em;
-  color: #0B7CC4;
-  text-transform: uppercase;
+  color: #94A3B8;
+  margin-bottom: 4px;
 }
 
-.bd-col-count {
+.bd-gate-label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid rgba(130,150,170,0.16);
+}
+.bd-gate-icon { width: 15px; height: 15px; color: #0B2A5C; flex-shrink: 0; }
+.bd-gate-icon svg { width: 100%; height: 100%; }
+.bd-gate-label {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #0B2A5C;
+}
+.bd-gate-count {
   font-size: 11px;
   font-weight: 700;
   color: #0B7CC4;
 }
 
-.bd-col-list {
+.bd-gate-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
   overflow-y: auto;
   min-height: 0;
-  padding-bottom: 4px;
   flex: 1;
+  padding: 2px;
+  margin: 8px -2px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  transition: background 180ms ease, border-color 180ms ease;
 }
 
-/* ── 카드 ── */
+/* ── 보딩패스 카드 ── */
 .bd-card {
   position: relative;
   background: #FFFFFF;
@@ -88,30 +362,11 @@
   word-break: break-word;
   overflow: hidden;
 }
-.bd-card:hover {
-  border-color: #8FD8F8;
-  box-shadow: 0 4px 14px rgba(11,124,196,0.10);
-}
-
-/* 드래그 중: opacity 0.85 + 글래스 하이라이트 (scale 사용 안 함) */
+.bd-card:hover { border-color: #8FD8F8; box-shadow: 0 4px 14px rgba(11,124,196,0.10); }
 .bd-card.dragging {
   opacity: 0.85;
   border-color: #8FD8F8;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 6px 18px rgba(11,124,196,0.14);
-}
-
-/* 드롭/추가 직후: 라이트 스윕 모션 */
-.bd-card.sweep::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(115deg, transparent 30%, rgba(143,216,248,0.35) 50%, transparent 70%);
-  transform: translateX(-140%);
-  animation: bd-sweep 600ms cubic-bezier(0.2,0.8,0.2,1);
-  pointer-events: none;
-}
-@keyframes bd-sweep {
-  to { transform: translateX(140%); }
 }
 
 .bd-card-delete {
@@ -133,70 +388,72 @@
 .bd-card-delete:hover { background: #FDEEEC; color: #C0392B; }
 .bd-card-delete svg { width: 13px; height: 13px; }
 .bd-card-delete.confirm {
-  background: #C0392B;
-  color: #fff;
-  font-size: 9px;
-  font-weight: 700;
-  width: auto;
-  padding: 0 8px;
-  border-radius: 8px;
+  background: #C0392B; color: #fff; font-size: 9px; font-weight: 700;
+  width: auto; padding: 0 8px; border-radius: 8px;
 }
 
-/* ── 입력 영역 — 브레인스토밍 우선순위에 맞게 확대 ── */
-.bd-add-form {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px dashed rgba(130,150,170,0.24);
+/* 게이트 내 빠른 추가 입력 */
+.bd-gate-form {
   display: flex;
   gap: 6px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(130,150,170,0.24);
 }
-
-.bd-add-input {
+.bd-gate-input {
   flex: 1;
-  padding: 12px 14px;
-  border: 1px solid rgba(130,150,170,0.22);
-  border-radius: 10px;
+  padding: 9px 11px;
+  border: 1px solid rgba(130,150,170,0.2);
+  border-radius: 9px;
   background: #F8FBFE;
-  font-size: 13.5px;
+  font-size: 12.5px;
   font-family: inherit;
   color: #0B2A5C;
   transition: border-color 180ms cubic-bezier(0.2,0.8,0.2,1), background 180ms cubic-bezier(0.2,0.8,0.2,1);
 }
-.bd-add-input:focus {
-  outline: none;
-  border-color: #8FD8F8;
-  background: #FFFFFF;
-}
-.bd-add-input::placeholder { color: #A8B7C7; }
-
-.bd-add-btn {
-  width: 40px;
+.bd-gate-input:focus { outline: none; border-color: #8FD8F8; background: #FFFFFF; }
+.bd-gate-input::placeholder { color: #A8B7C7; }
+.bd-gate-add {
+  width: 34px;
   flex-shrink: 0;
-  border-radius: 10px;
+  border-radius: 9px;
   border: none;
-  background: #0B2A5C;
-  color: #fff;
+  background: #F1F6FB;
+  color: #0B2A5C;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 180ms cubic-bezier(0.2,0.8,0.2,1);
+  transition: background 180ms ease;
 }
-.bd-add-btn:hover { background: #0E3676; }
-.bd-add-btn svg { width: 16px; height: 16px; }
+.bd-gate-add:hover { background: #E3F2FB; }
+.bd-gate-add svg { width: 14px; height: 14px; }
 
-/* ── Empty State — 브레인스토밍 유도형 ── */
-.bd-col-empty {
-  padding: 22px 10px;
-  text-align: center;
-}
-.bd-col-empty-hint {
-  font-size: 12.5px;
+/* ── Empty States ── */
+.bd-empty { padding: 20px 8px; text-align: center; }
+.bd-empty-sm { padding: 28px 8px; }
+.bd-empty-hint {
+  font-size: 12px;
   color: #94A3B8;
-  line-height: 1.6;
+  line-height: 1.7;
 }
 
-@media (max-width: 720px) {
-  .bd-board { padding: 16px; gap: 14px; }
-  .bd-col { flex: 0 0 240px; max-height: 480px; }
+/* ── 반응형 ── */
+@media (max-width: 980px) {
+  .bd-layout { flex-direction: column; gap: 16px; padding: 16px; }
+  .bd-inbox { flex: none; width: 100%; max-height: 320px; margin-right: 0; }
+  .bd-security {
+    flex-direction: row;
+    width: 100%;
+    padding: 6px 0;
+    flex: none;
+  }
+  .bd-security::before, .bd-security::after {
+    height: 1px; width: auto; flex: 1;
+    background: repeating-linear-gradient(to right, rgba(130,150,170,0.3) 0 4px, transparent 4px 9px);
+  }
+  .bd-security-label, .bd-security-note {
+    writing-mode: horizontal-tb;
+  }
+  .bd-gates { flex: none; }
+  .bd-gate { flex: 0 0 230px; max-height: 460px; }
 }
