@@ -4,10 +4,10 @@
 
 .bd-board {
   display: flex;
+  align-items: flex-start;
   gap: 18px;
-  padding: 22px 24px 32px;
+  padding: 24px 28px 32px;
   overflow-x: auto;
-  min-height: 100%;
 }
 
 .bd-loading {
@@ -21,18 +21,21 @@
 }
 
 .bd-col {
-  flex: 0 0 260px;
+  flex: 0 0 264px;
   display: flex;
   flex-direction: column;
-  background: rgba(255,255,255,0.7);
-  border: 1px solid #E3F2FB;
-  border-radius: 14px;
+  background: rgba(255,255,255,0.6);
+  backdrop-filter: saturate(140%) blur(8px);
+  -webkit-backdrop-filter: saturate(140%) blur(8px);
+  border: 1px solid rgba(130,150,170,0.16);
+  border-radius: 16px;
   padding: 14px;
-  max-height: calc(100vh - 140px);
+  max-height: 560px;
+  transition: border-color 180ms cubic-bezier(0.2,0.8,0.2,1), background 180ms cubic-bezier(0.2,0.8,0.2,1);
 }
 .bd-col.drag-over {
   border-color: #8FD8F8;
-  background: #EAF6FD;
+  background: rgba(234,246,253,0.85);
 }
 
 .bd-col-header {
@@ -40,13 +43,14 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
-  padding: 0 4px;
+  padding: 0 4px 10px;
+  border-bottom: 1px solid rgba(130,150,170,0.16);
 }
 
 .bd-col-step {
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   color: #0B7CC4;
   text-transform: uppercase;
 }
@@ -55,9 +59,6 @@
   font-size: 11px;
   font-weight: 700;
   color: #0B7CC4;
-  background: #EAF6FD;
-  border-radius: 999px;
-  padding: 2px 8px;
 }
 
 .bd-col-list {
@@ -65,29 +66,53 @@
   flex-direction: column;
   gap: 8px;
   overflow-y: auto;
-  min-height: 40px;
+  min-height: 0;
   padding-bottom: 4px;
   flex: 1;
 }
 
+/* ── 카드 ── */
 .bd-card {
   position: relative;
   background: #FFFFFF;
-  border: 1px solid #E3F2FB;
+  border: 1px solid rgba(130,150,170,0.18);
   border-radius: 10px;
   padding: 11px 32px 11px 13px;
   font-size: 13px;
   line-height: 1.5;
   color: #1E293B;
   cursor: grab;
-  transition: border-color 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
+  transition: border-color 180ms cubic-bezier(0.2,0.8,0.2,1),
+              box-shadow 180ms cubic-bezier(0.2,0.8,0.2,1),
+              opacity 180ms cubic-bezier(0.2,0.8,0.2,1);
   word-break: break-word;
+  overflow: hidden;
 }
 .bd-card:hover {
   border-color: #8FD8F8;
   box-shadow: 0 4px 14px rgba(11,124,196,0.10);
 }
-.bd-card.dragging { opacity: 0.4; }
+
+/* 드래그 중: opacity 0.85 + 글래스 하이라이트 (scale 사용 안 함) */
+.bd-card.dragging {
+  opacity: 0.85;
+  border-color: #8FD8F8;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 6px 18px rgba(11,124,196,0.14);
+}
+
+/* 드롭/추가 직후: 라이트 스윕 모션 */
+.bd-card.sweep::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 30%, rgba(143,216,248,0.35) 50%, transparent 70%);
+  transform: translateX(-140%);
+  animation: bd-sweep 600ms cubic-bezier(0.2,0.8,0.2,1);
+  pointer-events: none;
+}
+@keyframes bd-sweep {
+  to { transform: translateX(140%); }
+}
 
 .bd-card-delete {
   position: absolute;
@@ -117,22 +142,25 @@
   border-radius: 8px;
 }
 
+/* ── 입력 영역 — 브레인스토밍 우선순위에 맞게 확대 ── */
 .bd-add-form {
-  margin-top: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(130,150,170,0.24);
   display: flex;
   gap: 6px;
 }
 
 .bd-add-input {
   flex: 1;
-  padding: 9px 12px;
-  border: 1px solid #E3F2FB;
+  padding: 12px 14px;
+  border: 1px solid rgba(130,150,170,0.22);
   border-radius: 10px;
   background: #F8FBFE;
-  font-size: 13px;
+  font-size: 13.5px;
   font-family: inherit;
   color: #0B2A5C;
-  transition: border-color 150ms ease, background 150ms ease;
+  transition: border-color 180ms cubic-bezier(0.2,0.8,0.2,1), background 180ms cubic-bezier(0.2,0.8,0.2,1);
 }
 .bd-add-input:focus {
   outline: none;
@@ -142,7 +170,7 @@
 .bd-add-input::placeholder { color: #A8B7C7; }
 
 .bd-add-btn {
-  width: 34px;
+  width: 40px;
   flex-shrink: 0;
   border-radius: 10px;
   border: none;
@@ -152,19 +180,23 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 150ms ease;
+  transition: background 180ms cubic-bezier(0.2,0.8,0.2,1);
 }
 .bd-add-btn:hover { background: #0E3676; }
-.bd-add-btn svg { width: 15px; height: 15px; }
+.bd-add-btn svg { width: 16px; height: 16px; }
 
+/* ── Empty State — 브레인스토밍 유도형 ── */
 .bd-col-empty {
-  font-size: 12px;
-  color: #A8B7C7;
+  padding: 22px 10px;
   text-align: center;
-  padding: 18px 8px;
+}
+.bd-col-empty-hint {
+  font-size: 12.5px;
+  color: #94A3B8;
+  line-height: 1.6;
 }
 
 @media (max-width: 720px) {
   .bd-board { padding: 16px; gap: 14px; }
-  .bd-col { flex: 0 0 240px; }
+  .bd-col { flex: 0 0 240px; max-height: 480px; }
 }
