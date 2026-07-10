@@ -75,7 +75,7 @@ const GATE_TITLES: Record<string, string> = {
   links: 'LINKS',
 };
 
-type PanelTab = 'chat' | 'ai';
+type PanelTab = 'chat' | 'ai' | 'detail';
 
 function escapeHtml(str: string): string {
   const div = document.createElement('div');
@@ -343,6 +343,7 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
 
   let panelOpen = false;
   let activeTab: PanelTab = 'chat';
+  let lastNonDetailTab: PanelTab = 'chat';
   let chatUnsub: (() => void) | null = null;
 
   function updateBadge(count: number): void {
@@ -390,14 +391,17 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
   function openDrawer(tab: PanelTab): void {
     panelOpen = true;
     activeTab = tab;
+    lastNonDetailTab = tab;
     layout.classList.add('panel-open');
     fab.classList.add('hidden');
     panelEl.innerHTML = buildPanelShell();
 
     panelEl.querySelectorAll('.ws-segment').forEach((btn) => {
+      btn.classList.toggle('active', (btn as HTMLElement).dataset.tab === tab);
       btn.addEventListener('click', () => {
         const t = (btn as HTMLElement).dataset.tab as PanelTab;
         activeTab = t;
+        lastNonDetailTab = t;
         panelEl.querySelectorAll('.ws-segment').forEach((b) => b.classList.remove('active'));
         btn.classList.add('active');
         renderPanelBody();
@@ -408,11 +412,41 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
     renderPanelBody();
   }
 
+  /** 카드 클릭 시 우측 Drawer에 상세 정보 표시 */
+  function openDetailPanel(place: any): void {
+    const wasOpen = panelOpen;
+    panelOpen = true;
+    activeTab = 'detail';
+    layout.classList.add('panel-open');
+    fab.classList.add('hidden');
+    if (chatUnsub) {
+      chatUnsub();
+      chatUnsub = null;
+    }
+
+    panelEl.innerHTML = buildDetailPanelShell(place);
+
+    panelEl.querySelector('#detail-back')?.addEventListener('click', () => {
+      if (wasOpen) {
+        openDrawer(lastNonDetailTab);
+      } else {
+        closeDrawer();
+      }
+    });
+    panelEl.querySelector('#detail-close')?.addEventListener('click', closeDrawer);
+
+    bindDetailNoteSave(place.id);
+  }
+
+  page.addEventListener('mongsil:openPlaceDetail', ((e: CustomEvent<{ place: any }>) => {
+    openDetailPanel(e.detail.place);
+  }) as EventListener);
+
   fab.addEventListener('click', () => {
     if (panelOpen) {
       closeDrawer();
     } else {
-      openDrawer(activeTab);
+      openDrawer(activeTab === 'detail' ? lastNonDetailTab : activeTab);
     }
   });
 
@@ -429,5 +463,79 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
     } else {
       updateBadge(countUnreadSince(tripId, myId));
     }
+  });
+}
+
+/** 카드 상세 Drawer 콘텐츠 */
+function buildDetailPanelShell(place: any): string {
+  const photo = place.photo_url
+    ? '<div class="ws-detail-photo" style="background-image:url(\'' + place.photo_url + '\')"></div>'
+    : '';
+  const rating = typeof place.google_rating === 'number'
+    ? '<span class="ws-detail-rating">★ ' + place.google_rating.toFixed(1) + '</span>'
+    : '';
+  const category = place.category
+    ? '<span class="ws-chip">' + escapeHtml(place.category) + '</span>'
+    : '';
+  const address = place.address
+    ? '<div class="ws-detail-section"><span class="ws-detail-label">주소</span><div class="ws-detail-text">' + escapeHtml(place.address) + '</div></div>'
+    : '';
+  const hours = buildOpeningHoursHtml(place.opening_hours);
+
+  return [
+    '<div class="ws-panel-header">',
+    '  <button class="ws-detail-back" id="detail-back">' + IC.back + '</button>',
+    '  <span class="ws-detail-header-title">장소 상세</span>',
+    '  <button class="ws-panel-close" id="detail-close">' + IC.panelClose + '</button>',
+    '</div>',
+    '<div class="ws-panel-body ws-detail-body" id="ws-panel-body">',
+         photo,
+    '  <div class="ws-detail-content">',
+    '    <div class="ws-detail-title-row">',
+    '      <span class="ws-detail-name">' + escapeHtml(place.name) + '</span>',
+           rating,
+    '    </div>',
+         category,
+         address,
+         hours,
+    '    <div class="ws-detail-section">',
+    '      <span class="ws-detail-label">메모</span>',
+    '      <textarea class="ws-detail-notes" id="detail-notes" placeholder="메모를 남겨보세요...">' + escapeHtml(place.notes || '') + '</textarea>',
+    '      <span class="ws-detail-save-hint" id="detail-save-hint"></span>',
+    '    </div>',
+    '    <div class="ws-detail-section">',
+    '      <span class="ws-detail-label">댓글</span>',
+    '      <div class="ws-detail-placeholder">댓글 기능은 다음 단계에서 구현 예정이에요</div>',
+    '    </div>',
+    '    <div class="ws-detail-section">',
+    '      <span class="ws-detail-label">' + IC.sparkle + ' AI 요약</span>',
+    '      <div class="ws-detail-placeholder">AI 요약은 다음 단계에서 연결돼요</div>',
+    '    </div>',
+    '  </div>',
+    '</div>',
+  ].join('\n');
+}
+
+function buildOpeningHoursHtml(hours: unknown): string {
+  if (!Array.isArray(hours) || hours.length === 0) return '';
+  const lines = hours.map((h) => '<div class="ws-hours-line">' + escapeHtml(String(h)) + '</div>').join('');
+  return '<div class="ws-detail-section"><span class="ws-detail-label">영업시간</span>' + lines + '</div>';
+}
+
+/** 메모 입력을 디바운스 후 자동 저장 */
+function bindDetailNoteSave(placeId: string): void {
+  const textarea = document.getElementById('detail-notes') as HTMLTextAreaElement | null;
+  const hint = document.getElementById('detail-save-hint') as HTMLElement | null;
+  if (!textarea) return;
+
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  textarea.addEventListener('input', () => {
+    if (hint) hint.textContent = '저장 중...';
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const { error } = await supabase.from('places').update({ notes: textarea.value }).eq('id', placeId);
+      if (hint) hint.textContent = error ? '저장 실패' : '저장됨';
+      setTimeout(() => { if (hint) hint.textContent = ''; }, 1500);
+    }, 600);
   });
 }
