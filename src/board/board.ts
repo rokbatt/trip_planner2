@@ -20,6 +20,7 @@ const ICON_FORK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const ICON_TICKET = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1.5a1.5 1.5 0 0 0 0 3V15a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1.5a1.5 1.5 0 0 0 0-3V9z"/></svg>';
 const ICON_STAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.8 6.3.6-4.8 4.2 1.4 6.2L12 16.9l-5.5 2.9 1.4-6.2-4.8-4.2 6.3-.6z"/></svg>';
 const ICON_STAR_FILL = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l2.6 5.8 6.3.6-4.8 4.2 1.4 6.2L12 16.9l-5.5 2.9 1.4-6.2-4.8-4.2 6.3-.6z"/></svg>';
+const ICON_BED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20v-8a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v8M2 20v-3a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3M2 20h20M6 10V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4"/></svg>';
 const ICON_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
 const ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z"/></svg>';
 const ICON_PLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12L22 5L15 22L11 14L2 12Z"/></svg>';
@@ -33,7 +34,7 @@ const GATES: GateConfig[] = [
   { key: '가고싶어', step: 'GATE 01', label: 'VISIT',    icon: ICON_PIN },
   { key: '먹고싶어', step: 'GATE 02', label: 'FOOD',     icon: ICON_FORK },
   { key: '하고싶어', step: 'GATE 03', label: 'ACTIVITY', icon: ICON_TICKET },
-  { key: '후보',     step: 'GATE 04', label: 'MAYBE',    icon: ICON_STAR },
+  { key: '숙소',     step: 'GATE 04', label: 'STAY',     icon: ICON_BED },
 ];
 
 /* ── 규칙 기반 분류 (진짜 AI 아님) ──
@@ -44,6 +45,7 @@ const KEYWORD_RULES: Array<{ gate: string; words: string[] }> = [
   { gate: '먹고싶어', words: ['맛집', '식당', '카페', '라멘', '스시', '고기', '디저트', '빵집', '브런치', '이자카야', '음식', '먹'] },
   { gate: '가고싶어', words: ['야경', '전망', '박물관', '미술관', '공원', '타워', '신사', '절', '사원', '전망대', '해변', '다리', '브릿지', '성당'] },
   { gate: '하고싶어', words: ['체험', '액티비티', '투어', '클래스', '공연', '쇼핑', '테마파크', '놀이', '스파', '마사지', '클럽'] },
+  { gate: '숙소',     words: ['호텔', '숙소', '게스트하우스', '에어비앤비', '리조트', '펜션', '모텔', '호스텔', '체크인', '숙박'] },
 ];
 
 function classify(text: string): Suggestion | null {
@@ -109,6 +111,7 @@ let realtimeChannel: RealtimeChannel | null = null;
 let securityEl: HTMLElement | null = null;
 let placesCache = new Map<string, Place>(); // id → 최신 place 데이터 (rebuild 용)
 let boardGeneration = 0; // 렌더링마다 증가 — 오래된 렌더의 비동기 콜백을 걸러내는 용도
+let currentAutocomplete: any = null; // 이전 게이트 방문에서 남은 위젯 정리용
 
 export function teardownBoard(): void {
   boardGeneration++; // 진행 중인 재시도/콜백을 즉시 무효화
@@ -120,6 +123,17 @@ export function teardownBoard(): void {
   pendingDeletes.clear();
   securityEl = null;
   placesCache = new Map();
+  cleanupAutocomplete();
+}
+
+/** 이전 Autocomplete 위젯의 전역 리스너와 드롭다운 DOM을 정리 (누적되면 검색이 멈춤) */
+function cleanupAutocomplete(): void {
+  const g = window.google;
+  if (currentAutocomplete && g?.maps?.event) {
+    g.maps.event.clearInstanceListeners(currentAutocomplete);
+  }
+  currentAutocomplete = null;
+  document.querySelectorAll('.pac-container').forEach((el) => el.remove());
 }
 
 async function loadPlaces(tripId: string): Promise<Place[]> {
@@ -455,9 +469,13 @@ function attachAutocomplete(tripId: string, input: HTMLInputElement): void {
     return;
   }
 
+  // 이전 게이트 방문에서 남은 위젯이 있으면 먼저 정리 (누적 시 검색이 멈추는 원인)
+  cleanupAutocomplete();
+
   const autocomplete = new g.maps.places.Autocomplete(input, {
     fields: ['place_id', 'name', 'formatted_address', 'geometry', 'rating', 'types', 'photos'],
   });
+  currentAutocomplete = autocomplete;
   console.log('[GoogleMaps] 자동완성 연결 완료');
 
   autocomplete.addListener('place_changed', async () => {
