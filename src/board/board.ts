@@ -2,7 +2,7 @@ import { supabase } from '../supabase';
 import { store } from '../store';
 import type { Database } from '../types/database';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { loadGoogleMapsScript, buildPhotoUrl, extractPlaceResult, suggestGateFromCategory } from '../utils/googleMaps';
+import { loadGoogleMapsScript, extractPlaceResult, suggestGateFromCategory } from '../utils/googleMaps';
 import type { GooglePlaceResult } from '../utils/googleMaps';
 import './board.css';
 
@@ -179,7 +179,7 @@ async function addRichIdea(tripId: string, mood: string | null, g: GooglePlaceRe
       google_place_id: g.place_id,
       google_rating: g.rating,
       category: g.category,
-      photo_ref: g.photoRef,
+      photo_url: g.photoUrl,
     })
     .select()
     .single();
@@ -214,7 +214,7 @@ async function cacheToPlacesDb(g: GooglePlaceResult): Promise<void> {
     lng: g.lng,
     google_place_id: g.place_id,
     google_rating: g.rating,
-    photo_ref: g.photoRef,
+    photo_url: g.photoUrl,
     source: 'google_autocomplete',
   });
 }
@@ -500,16 +500,16 @@ function buildRatingHtml(rating: number | null): string {
 /* ── 티켓 스텁 (Inbox 아이템) — Google 데이터 있으면 컴팩트 리치 프리뷰 ── */
 function createTicket(place: Place): HTMLElement {
   const ticket = document.createElement('div');
-  ticket.className = 'bd-ticket' + (place.photo_ref ? ' bd-ticket-rich' : '');
+  ticket.className = 'bd-ticket' + (place.photo_url ? ' bd-ticket-rich' : '');
   ticket.draggable = true;
   ticket.dataset.placeId = place.id;
 
   const suggestion = place.google_place_id ? classifyPlace(place) : classify(place.name);
 
-  if (place.photo_ref) {
+  if (place.photo_url) {
     ticket.innerHTML = [
       '<div class="bd-ticket-main">',
-      '  <div class="bd-ticket-thumb" style="background-image:url(\'' + buildPhotoUrl(place.photo_ref, 120) + '\')"></div>',
+      '  <div class="bd-ticket-thumb" style="background-image:url(\'' + place.photo_url + '\')"></div>',
       '  <div class="bd-ticket-info">',
       '    <span class="bd-ticket-text">' + escapeHtml(place.name) + '</span>',
       '    <div class="bd-ticket-meta">',
@@ -651,13 +651,13 @@ function createGateColumn(_tripId: string, gate: GateConfig, items: Place[]): HT
 /* ── 게이트 카드 (보딩패스 스타일) — Google 데이터 있으면 리치 카드 ── */
 function createBoardingCard(place: Place): HTMLElement {
   const card = document.createElement('div');
-  card.className = 'bd-card' + (place.photo_ref ? ' bd-card-rich' : '');
+  card.className = 'bd-card' + (place.photo_url ? ' bd-card-rich' : '');
   card.draggable = true;
   card.dataset.placeId = place.id;
 
-  if (place.photo_ref) {
+  if (place.photo_url) {
     card.innerHTML = [
-      '<div class="bd-card-photo" style="background-image:url(\'' + buildPhotoUrl(place.photo_ref, 400) + '\')">',
+      '<div class="bd-card-photo" style="background-image:url(\'' + place.photo_url + '\')">',
       '  <button class="bd-card-kebab" id="kebab-' + place.id + '">' + ICON_KEBAB + '</button>',
       '  <div class="bd-card-kebab-menu" id="kmenu-' + place.id + '">',
       '    <button class="bd-kmenu-item" data-action="edit">' + ICON_EDIT + '<span>Edit</span></button>',
@@ -685,7 +685,7 @@ function createBoardingCard(place: Place): HTMLElement {
 
   bindItemBehavior(card, place);
 
-  if (place.photo_ref) {
+  if (place.photo_url) {
     bindKebabMenu(card, place);
   }
 
