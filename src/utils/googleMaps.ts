@@ -108,34 +108,34 @@ const CATEGORY_MAP: Record<string, string> = {
   point_of_interest: '명소',
 };
 
+/** 새 Place 클래스 인스턴스(fetchFields 완료 후)를 몽실이 표준 포맷으로 변환 */
 export function extractPlaceResult(place: any): GooglePlaceResult | null {
-  if (!place || !place.place_id) return null;
+  if (!place || !place.id) return null;
 
   const types: string[] = place.types || [];
   const matchedType = types.find((t) => CATEGORY_MAP[t]);
   const photo = place.photos && place.photos.length > 0 ? place.photos[0] : null;
 
-  // Google JS 라이브러리의 PlacePhoto는 photo_reference를 노출하지 않고
-  // getUrl() 메서드로 바로 사용 가능한 이미지 URL을 만들어줘야 함
+  // 새 API의 Photo 클래스는 getURI() 사용 (레거시 PlacePhoto.getUrl()과 다름)
   let photoUrl: string | null = null;
-  if (photo && typeof photo.getUrl === 'function') {
+  if (photo && typeof photo.getURI === 'function') {
     try {
-      photoUrl = photo.getUrl({ maxWidth: 480, maxHeight: 480 });
+      photoUrl = photo.getURI({ maxWidth: 480, maxHeight: 480 });
     } catch (e) {
       photoUrl = null;
     }
   }
 
-  const openingHours: string[] | null = Array.isArray(place.opening_hours?.weekday_text)
-    ? place.opening_hours.weekday_text
+  const openingHours: string[] | null = Array.isArray(place.regularOpeningHours?.weekdayDescriptions)
+    ? place.regularOpeningHours.weekdayDescriptions
     : null;
 
   return {
-    place_id: place.place_id,
-    name: place.name || '',
-    address: place.formatted_address || null,
-    lat: place.geometry?.location ? place.geometry.location.lat() : null,
-    lng: place.geometry?.location ? place.geometry.location.lng() : null,
+    place_id: place.id,
+    name: place.displayName || '',
+    address: place.formattedAddress || null,
+    lat: place.location ? place.location.lat() : null,
+    lng: place.location ? place.location.lng() : null,
     rating: typeof place.rating === 'number' ? place.rating : null,
     category: matchedType ? CATEGORY_MAP[matchedType] : null,
     photoUrl,
@@ -164,27 +164,11 @@ export function suggestGateFromCategory(category: string | null): string | null 
    - 세션 토큰을 공유해서 Google의 "세션 기반 자동완성" 할인 요금 유지
    ============================================================ */
 
-let autocompleteService: any = null;
-let placesService: any = null;
 let sessionToken: any = null;
 
-/** 보드를 다시 마운트할 때마다 호출 — 이전 인스턴스에 남아있을지 모르는 내부 상태를 확실히 비움 */
+/** 보드를 다시 마운트할 때마다 호출 — 이전 방문에서 남은 세션 토큰을 확실히 비움 */
 export function resetGoogleServices(): void {
-  autocompleteService = null;
-  placesService = null;
   sessionToken = null;
-}
-
-function ensurePlacesServices(): void {
-  const g = window.google;
-  if (!autocompleteService) {
-    autocompleteService = new g.maps.places.AutocompleteService();
-  }
-  if (!placesService) {
-    // PlacesService는 지도나 DOM 노드가 필요함 (화면엔 안 보이는 더미 div로 충분)
-    const dummy = document.createElement('div');
-    placesService = new g.maps.places.PlacesService(dummy);
-  }
 }
 
 function ensureSessionToken(): void {
@@ -201,63 +185,56 @@ export interface PlacePrediction {
   types: string[];
 }
 
-/** 입력 텍스트로 예측 목록 요청 (텍스트만, 추가 과금 없음) */
-export function getPlacePredictions(input: string): Promise<PlacePrediction[]> {
-  return new Promise((resolve) => {
-    const g = window.google;
-    if (!g?.maps?.places || !input.trim()) {
-      resolve([]);
-      return;
-    }
-    ensurePlacesServices();
-    ensureSessionToken();
+/** 입력 텍스트로 예측 목록 요청 (텍스트만, 추가 과금 없음)
+ *  2025년 3월부터 신규 발급 키는 레거시 AutocompleteService를 쓸 수 없어서
+ *  Google 권장 신규 API(AutocompleteSuggestion)로 구현 */
+export async function getPlacePredictions(input: string): Promise<PlacePrediction[]> {
+  const g = window.google;
+  if (!g?.maps?.places || !input.trim()) return [];
 
-    autocompleteService.getPlacePredictions(
-      { input, sessionToken },
-      (predictions: any[] | null, status: string) => {
-        if (status !== g.maps.places.PlacesServiceStatus.OK || !predictions) {
-          resolve([]);
-          return;
-        }
-        resolve(
-          predictions.map((p) => ({
-            placeId: p.place_id,
-            mainText: p.structured_formatting?.main_text ?? p.description,
-            secondaryText: p.structured_formatting?.secondary_text ?? '',
-            types: p.types ?? [],
-          }))
-        );
-      }
-    );
-  });
+  ensureSessionToken();
+
+  try {
+    const { AutocompleteSuggestion } = await g.maps.importLibrary('places');
+    const { suggestions } = await AutocompleteSuggestion.fetchAutocompleteSuggestions({
+      input,
+      sessionToken,
+    });
+
+    return (suggestions ?? [])
+      .filter((s: any) => s.placePrediction)
+      .map((s: any) => {
+        const p = s.placePrediction;
+        return {
+          placeId: p.placeId,
+          mainText: p.mainText?.text ?? p.text?.text ?? '',
+          secondaryText: p.secondaryText?.text ?? '',
+          types: p.types ?? [],
+        };
+      });
+  } catch (e) {
+    console.error('[GoogleMaps] 예측 요청 실패:', (e as Error).message);
+    return [];
+  }
 }
 
-/** 사용자가 선택한 1곳만 상세정보 요청 (사진/평점 포함, 세션 토큰으로 할인 요금 적용) */
-export function getPlaceDetails(placeId: string): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const g = window.google;
-    if (!g?.maps?.places) {
-      reject(new Error('Google Maps가 준비되지 않았어요.'));
-      return;
-    }
-    ensurePlacesServices();
+/** 사용자가 선택한 1곳만 상세정보 요청 (사진/평점 포함, 세션 토큰으로 할인 요금 적용)
+ *  레거시 PlacesService 대신 신규 Place 클래스 사용 */
+export async function getPlaceDetails(placeId: string): Promise<any> {
+  const g = window.google;
+  if (!g?.maps?.places) {
+    throw new Error('Google Maps가 준비되지 않았어요.');
+  }
 
-    placesService.getDetails(
-      {
-        placeId,
-        fields: ['place_id', 'name', 'formatted_address', 'geometry', 'rating', 'types', 'photos', 'opening_hours'],
-        sessionToken,
-      },
-      (result: any, status: string) => {
-        sessionToken = null; // 세션 종료 → 다음 검색은 새 세션(요금 단위)으로 시작
-        if (status === g.maps.places.PlacesServiceStatus.OK && result) {
-          resolve(result);
-        } else {
-          reject(new Error('Place Details 요청 실패: ' + status));
-        }
-      }
-    );
+  const { Place } = await g.maps.importLibrary('places');
+  const place = new Place({ id: placeId });
+
+  await place.fetchFields({
+    fields: ['id', 'displayName', 'formattedAddress', 'location', 'rating', 'types', 'photos', 'regularOpeningHours'],
   });
+
+  sessionToken = null; // 세션 종료 → 다음 검색은 새 세션(요금 단위)으로 시작
+  return place;
 }
 
 /** 예측 항목의 types → 한글 카테고리 라벨 (드롭다운 아이콘/보조텍스트용) */
