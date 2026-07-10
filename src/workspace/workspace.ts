@@ -262,10 +262,19 @@ function buildAiDemoContent(): string {
   ].join('\n');
 }
 
+/** 'ideas' 게이트를 벗어날 때 realtime 채널을 정리하기 위한 참조 */
+let boardModuleRef: { teardownBoard: () => void } | null = null;
+
 async function renderGate(body: HTMLElement, tripId: string, gate: string): Promise<void> {
+  if (gate !== 'ideas' && boardModuleRef) {
+    boardModuleRef.teardownBoard();
+    boardModuleRef = null;
+  }
+
   if (gate === 'ideas') {
-    const { renderBoardContent } = await import('../board/board');
-    await renderBoardContent(body, tripId);
+    const mod = await import('../board/board');
+    boardModuleRef = mod;
+    await mod.renderBoardContent(body, tripId);
   } else {
     const title = GATE_TITLES[gate] || gate;
     body.innerHTML = [
@@ -281,6 +290,8 @@ async function renderGate(body: HTMLElement, tripId: string, gate: string): Prom
 function bindEvents(page: HTMLElement, tripId: string): void {
   page.querySelector('#ws-back')?.addEventListener('click', () => {
     teardownChat();
+    boardModuleRef?.teardownBoard();
+    boardModuleRef = null;
     navigate('trips');
   });
 
