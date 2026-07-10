@@ -672,6 +672,20 @@
   padding-top: 2px;
 }
 
+.ws-maps-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0B7CC4;
+  text-decoration: none;
+  margin-bottom: 10px;
+  transition: color 150ms ease;
+}
+.ws-maps-link:hover { color: #0B2A5C; }
+.ws-maps-link svg { width: 13px; height: 13px; }
+
 .ws-chip {
   display: inline-block;
   align-self: flex-start;
