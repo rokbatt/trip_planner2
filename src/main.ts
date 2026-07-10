@@ -10,10 +10,13 @@ import { addRoute, setNotFound, startRouter, navigate, rerender, currentPath } f
 
 import { renderLogin } from './auth/auth';
 import { renderTripList } from './trips/trip-list';
+import { renderJoinPage, consumePendingInvite } from './trips/trip-join';
 import { renderWorkspace } from './workspace/workspace';
 
 // ─── 인증이 필요 없는 라우트 ───
-const PUBLIC_ROUTES = ['login'];
+// join은 초대코드를 들고 온 비로그인 사용자도 접근해야 해서 public 처리
+// (renderJoinPage 내부에서 로그인 여부를 직접 분기함)
+const PUBLIC_ROUTES = ['login', 'join'];
 
 // ─── 라우트 등록 ───
 addRoute('login', () => {
@@ -30,6 +33,13 @@ addRoute('trips', async () => {
 addRoute('trip', async (params) => {
   const app = document.getElementById('app')!;
   const el = await renderWorkspace(params.tripId ?? '', params.subPath);
+  app.replaceChildren(el);
+});
+
+// 초대 참여 라우트: #join/:inviteCode
+addRoute('join', async (params) => {
+  const app = document.getElementById('app')!;
+  const el = await renderJoinPage(params.tripId);
   app.replaceChildren(el);
 });
 
@@ -79,6 +89,15 @@ supabase.auth.onAuthStateChange((event, session) => {
 
   store.set('user', session?.user ?? null);
   store.set('authChecked', true);
+
+  // 로그인 직후, 초대 링크를 통해 들어왔던 거라면 그 초대 페이지로 되돌아감
+  if (session?.user) {
+    const pendingCode = consumePendingInvite();
+    if (pendingCode) {
+      navigate('join/' + pendingCode);
+      return;
+    }
+  }
 
   if (originalHandleRoute()) {
     rerender();
