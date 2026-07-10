@@ -168,6 +168,13 @@ let autocompleteService: any = null;
 let placesService: any = null;
 let sessionToken: any = null;
 
+/** 보드를 다시 마운트할 때마다 호출 — 이전 인스턴스에 남아있을지 모르는 내부 상태를 확실히 비움 */
+export function resetGoogleServices(): void {
+  autocompleteService = null;
+  placesService = null;
+  sessionToken = null;
+}
+
 function ensurePlacesServices(): void {
   const g = window.google;
   if (!autocompleteService) {
