@@ -30,6 +30,7 @@ const ICON_SCAN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const ICON_KEBAB = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>';
 const ICON_EDIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>';
 const ICON_MOVE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>';
+const ICON_BACK_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
 const ICON_COMMENT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
 
 const GATES: GateConfig[] = [
@@ -857,11 +858,20 @@ function createBoardingCard(place: Place): HTMLElement {
       '<div class="bd-card-photo" style="background-image:url(\'' + place.photo_url + '\')">',
       '  <button class="bd-card-kebab" id="kebab-' + place.id + '">' + ICON_KEBAB + '</button>',
       '  <div class="bd-card-kebab-menu" id="kmenu-' + place.id + '">',
-      '    <button class="bd-kmenu-item" data-action="edit">' + ICON_EDIT + '<span>Edit</span></button>',
-      '    <button class="bd-kmenu-item" data-action="comment">' + ICON_COMMENT + '<span>Comment</span></button>',
-      '    <button class="bd-kmenu-item" data-action="move">' + ICON_MOVE + '<span>Move</span></button>',
-      '    <div class="bd-kmenu-divider"></div>',
-      '    <button class="bd-kmenu-item danger" data-action="delete">' + ICON_TRASH + '<span>Delete</span></button>',
+      '    <div class="bd-kmenu-main">',
+      '      <button class="bd-kmenu-item" data-action="edit">' + ICON_EDIT + '<span>Edit</span></button>',
+      '      <button class="bd-kmenu-item" data-action="comment">' + ICON_COMMENT + '<span>Comment</span></button>',
+      '      <button class="bd-kmenu-item" data-action="move">' + ICON_MOVE + '<span>Move</span></button>',
+      '      <div class="bd-kmenu-divider"></div>',
+      '      <button class="bd-kmenu-item danger" data-action="delete">' + ICON_TRASH + '<span>Delete</span></button>',
+      '    </div>',
+      '    <div class="bd-kmenu-move" id="kmove-' + place.id + '">',
+             GATES.filter((g) => g.key !== place.mood).map((g) =>
+               '<button class="bd-kmenu-item" data-move-gate="' + g.key + '">' + g.icon + '<span>' + g.label + '</span></button>'
+             ).join(''),
+      '      <div class="bd-kmenu-divider"></div>',
+      '      <button class="bd-kmenu-item" data-move-back="1">' + ICON_BACK_ARROW + '<span>뒤로</span></button>',
+      '    </div>',
       '  </div>',
       '</div>',
       '<div class="bd-card-body">',
@@ -892,7 +902,17 @@ function createBoardingCard(place: Place): HTMLElement {
 function bindKebabMenu(card: HTMLElement, place: Place): void {
   const kebabBtn = card.querySelector('.bd-card-kebab') as HTMLButtonElement | null;
   const menu = card.querySelector('.bd-card-kebab-menu') as HTMLElement | null;
-  if (!kebabBtn || !menu) return;
+  const mainView = card.querySelector('.bd-kmenu-main') as HTMLElement | null;
+  const moveView = card.querySelector('.bd-kmenu-move') as HTMLElement | null;
+  if (!kebabBtn || !menu || !mainView || !moveView) return;
+
+  function closeMenu(): void {
+    menu?.classList.remove('open');
+    if (mainView && moveView) {
+      mainView.style.display = 'block';
+      moveView.style.display = 'none';
+    }
+  }
 
   kebabBtn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -902,22 +922,75 @@ function bindKebabMenu(card: HTMLElement, place: Place): void {
     menu.classList.toggle('open');
   });
 
-  document.addEventListener('click', () => menu.classList.remove('open'));
+  document.addEventListener('click', closeMenu);
+  menu.addEventListener('click', (e) => e.stopPropagation());
 
-  menu.querySelectorAll('.bd-kmenu-item').forEach((item) => {
+  mainView.querySelectorAll('.bd-kmenu-item').forEach((item) => {
     item.addEventListener('click', (e) => {
       e.stopPropagation();
-      menu.classList.remove('open');
       const action = (item as HTMLElement).dataset.action;
 
       if (action === 'delete') {
+        closeMenu();
         const listEl = card.closest('[data-zone]') as HTMLElement | null;
         scheduleDelete(place.id, place.name, card, listEl);
-      } else {
-        alert('이 기능은 다음 단계에서 구현 예정이에요.');
+      } else if (action === 'edit' || action === 'comment') {
+        closeMenu();
+        const focusSection = action === 'comment' ? 'comments' : 'name';
+        card.dispatchEvent(
+          new CustomEvent('mongsil:openPlaceDetail', { detail: { place, focus: focusSection }, bubbles: true })
+        );
+      } else if (action === 'move') {
+        mainView.style.display = 'none';
+        moveView.style.display = 'block';
       }
     });
   });
+
+  moveView.querySelectorAll('[data-move-gate]').forEach((item) => {
+    item.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      closeMenu();
+      const targetGate = (item as HTMLElement).dataset.moveGate;
+      if (!targetGate) return;
+      await moveCardToGate(place, targetGate);
+    });
+  });
+
+  moveView.querySelector('[data-move-back]')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    mainView.style.display = 'block';
+    moveView.style.display = 'none';
+  });
+}
+
+/** 케밥 메뉴의 Move에서 게이트를 직접 선택했을 때 — 드래그와 동일한 절차(스캔→이동) */
+async function moveCardToGate(place: Place, targetGate: string): Promise<void> {
+  const el = document.querySelector('[data-place-id="' + place.id + '"]') as HTMLElement | null;
+  const targetList = document.getElementById('glist-' + targetGate);
+  if (!el || !targetList) return;
+
+  await runSecurityScan();
+
+  markRecentlyMutated(place.id);
+  const success = await movePlace(place.id, targetGate);
+  if (!success) return;
+
+  const sourceZoneEl = el.closest('[data-zone]') as HTMLElement | null;
+  el.remove();
+  if (sourceZoneEl) {
+    updateZoneCount(sourceZoneEl);
+    ensureEmptyState(sourceZoneEl);
+  }
+
+  const updatedPlace = { ...place, mood: targetGate };
+  placesCache.set(place.id, updatedPlace);
+
+  removeEmptyState(targetList);
+  const newEl = createBoardingCard(updatedPlace);
+  targetList.appendChild(newEl);
+  triggerLightSweep(newEl);
+  updateZoneCount(targetList);
 }
 
 /** 티켓/카드 공통 동작: 클릭(상세 Drawer), 드래그 시작/끝, 삭제 2단계 확인 + Undo */
