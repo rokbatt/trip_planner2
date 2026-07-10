@@ -742,6 +742,7 @@
   transform: translateY(0);
   pointer-events: auto;
 }
+.bd-kmenu-move { display: none; }
 .bd-kmenu-item {
   display: flex;
   align-items: center;
