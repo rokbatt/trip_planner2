@@ -143,6 +143,7 @@ const CATEGORY_TO_GATE: Record<string, string> = {
   '관광명소': '가고싶어', '박물관': '가고싶어', '미술관': '가고싶어', '공원': '가고싶어',
   '종교시설': '가고싶어', '명소': '가고싶어',
   '쇼핑': '하고싶어', '나이트라이프': '하고싶어', '테마파크': '하고싶어',
+  '숙소': '숙소',
 };
 
 export function suggestGateFromCategory(category: string | null): string | null {
