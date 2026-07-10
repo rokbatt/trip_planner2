@@ -174,6 +174,29 @@ export interface Database {
         Relationships: [];
       };
 
+      place_comments: {
+        Row: {
+          id: string;
+          place_id: string;
+          user_id: string;
+          display_name: string | null;
+          avatar_url: string | null;
+          comment: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          place_id: string;
+          user_id: string;
+          display_name?: string | null;
+          avatar_url?: string | null;
+          comment: string;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['place_comments']['Insert']>;
+        Relationships: [];
+      };
+
       places_db: {
         Row: {
           id: string;
@@ -253,3 +276,4 @@ export type TripMember = Database['public']['Tables']['trip_members']['Row'];
 export type Place = Database['public']['Tables']['places']['Row'];
 export type CityImage = Database['public']['Tables']['city_images']['Row'];
 export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'];
+export type PlaceComment = Database['public']['Tables']['place_comments']['Row'];
