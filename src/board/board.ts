@@ -583,7 +583,8 @@ function attachAutocomplete(tripId: string, input: HTMLInputElement): void {
     toggleClearButton(query.length > 0);
 
     if (acDebounceTimer) clearTimeout(acDebounceTimer);
-    if (!query) {
+    if (query.length < 2) {
+      // 한 글자짜리 검색은 결과도 부정확하고 요청만 낭비하므로 아예 안 나감
       closeAcDropdown();
       return;
     }
@@ -620,7 +621,7 @@ function attachAutocomplete(tripId: string, input: HTMLInputElement): void {
       } else {
         closeAcDropdown();
       }
-    }, 280);
+    }, 400);
   });
 
   input.addEventListener('keydown', (e) => {
