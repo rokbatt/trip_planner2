@@ -121,6 +121,10 @@ let acPredictions: PlacePrediction[] = [];
 let acActiveIndex = -1;
 let acDocClickHandler: ((e: MouseEvent) => void) | null = null;
 
+/* ── 같은 게이트 내 재정렬 상태 ── */
+let draggingEl: HTMLElement | null = null;
+let draggingFromZone = '';
+
 export function teardownBoard(): void {
   boardGeneration++; // 진행 중인 재시도/콜백을 즉시 무효화
   if (realtimeChannel) {
@@ -210,6 +214,7 @@ async function addRichIdea(tripId: string, mood: string | null, g: GooglePlaceRe
       google_rating: g.rating,
       category: g.category,
       photo_url: g.photoUrl,
+      opening_hours: g.openingHours,
     })
     .select()
     .single();
@@ -384,7 +389,19 @@ function subscribeRealtime(tripId: string): void {
         const el = document.querySelector('[data-place-id="' + row.id + '"]') as HTMLElement | null;
         if (el) {
           const currentZoneEl = el.closest('[data-zone]') as HTMLElement | null;
-          if (currentZoneEl === targetListEl) return;
+          if (currentZoneEl === targetListEl) {
+            // 무드는 그대로, 다른 사람이 순서만 바꾼 경우 — sort_order 기준으로 재배치
+            const siblings = Array.from(targetListEl.querySelectorAll('.bd-ticket, .bd-card')) as HTMLElement[];
+            const afterEl = siblings.find((s) => {
+              const sid = s.dataset.placeId;
+              if (!sid || sid === row.id) return false;
+              const sp = placesCache.get(sid);
+              return sp !== undefined && sp.sort_order > row.sort_order;
+            });
+            if (afterEl) targetListEl.insertBefore(el, afterEl);
+            else targetListEl.appendChild(el);
+            return;
+          }
           el.remove();
           if (currentZoneEl) {
             updateZoneCount(currentZoneEl);
@@ -903,17 +920,29 @@ function bindKebabMenu(card: HTMLElement, place: Place): void {
   });
 }
 
-/** 티켓/카드 공통 동작: 드래그 시작/끝, 삭제 2단계 확인 + Undo */
+/** 티켓/카드 공통 동작: 클릭(상세 Drawer), 드래그 시작/끝, 삭제 2단계 확인 + Undo */
 function bindItemBehavior(el: HTMLElement, place: Place): void {
   const id = place.id;
+
+  el.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('.bd-ticket-delete, .bd-card-delete, .bd-card-kebab, .bd-card-kebab-menu, .bd-suggest')) return;
+    el.dispatchEvent(new CustomEvent('mongsil:openPlaceDetail', { detail: { place }, bubbles: true }));
+  });
 
   el.addEventListener('dragstart', (e) => {
     el.classList.add('dragging');
     const zone = el.closest('[data-zone]') as HTMLElement | null;
+    draggingEl = el;
+    draggingFromZone = zone?.dataset.zone ?? '';
     e.dataTransfer?.setData('text/place-id', id);
-    e.dataTransfer?.setData('text/from-zone', zone?.dataset.zone ?? '');
+    e.dataTransfer?.setData('text/from-zone', draggingFromZone);
   });
-  el.addEventListener('dragend', () => el.classList.remove('dragging'));
+  el.addEventListener('dragend', () => {
+    el.classList.remove('dragging');
+    draggingEl = null;
+    draggingFromZone = '';
+  });
 
   // 리치 카드는 kebab 메뉴에 delete가 있으므로 별도 trash 버튼 바인딩 skip
   const deleteBtn = el.querySelector('.bd-ticket-delete, .bd-card-delete') as HTMLButtonElement | null;
@@ -1000,11 +1029,54 @@ function dismissToast(toast: HTMLElement): void {
   setTimeout(() => toast.remove(), 220);
 }
 
-/** 드롭존 공통 이벤트: dragover 하이라이트 + drop 시 zone 이동 처리 (게이트 진입 시 Security Check 스캔) */
+/** 드래그 중인 요소를 커서 Y좌표 기준으로 어디에 끼워넣을지 계산 (자기 자신 제외) */
+function getDragAfterElement(container: HTMLElement, y: number): HTMLElement | null {
+  const items = Array.from(
+    container.querySelectorAll(':scope > .bd-ticket:not(.dragging), :scope > .bd-card:not(.dragging)')
+  ) as HTMLElement[];
+
+  let closest: { offset: number; el: HTMLElement | null } = { offset: -Infinity, el: null };
+  for (const child of items) {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) {
+      closest = { offset, el: child };
+    }
+  }
+  return closest.el;
+}
+
+/** 같은 게이트 내 재정렬을 마친 뒤 DOM 순서를 sort_order로 반영 */
+async function persistOrder(listEl: HTMLElement): Promise<void> {
+  const items = Array.from(listEl.querySelectorAll('.bd-ticket, .bd-card')) as HTMLElement[];
+  await Promise.all(
+    items.map((el, idx) => {
+      const id = el.dataset.placeId;
+      if (!id) return Promise.resolve();
+      markRecentlyMutated(id);
+      const place = placesCache.get(id);
+      if (place) placesCache.set(id, { ...place, sort_order: idx });
+      return supabase.from('places').update({ sort_order: idx }).eq('id', id);
+    })
+  );
+}
+
+/** 드롭존 공통 이벤트: dragover 하이라이트 + drop 시 zone 이동/재정렬 처리 (게이트 진입 시 Security Check 스캔) */
 function attachDropzone(listEl: HTMLElement): void {
   listEl.addEventListener('dragover', (e) => {
     e.preventDefault();
     listEl.classList.add('drag-over');
+
+    // 드래그 시작한 게이트와 같은 게이트 위라면 실시간으로 위치 재배치
+    if (draggingEl && draggingFromZone === (listEl.dataset.zone ?? '')) {
+      removeEmptyState(listEl);
+      const afterEl = getDragAfterElement(listEl, e.clientY);
+      if (afterEl) {
+        listEl.insertBefore(draggingEl, afterEl);
+      } else {
+        listEl.appendChild(draggingEl);
+      }
+    }
   });
   listEl.addEventListener('dragleave', () => listEl.classList.remove('drag-over'));
   listEl.addEventListener('drop', async (e) => {
@@ -1014,7 +1086,13 @@ function attachDropzone(listEl: HTMLElement): void {
     const placeId = e.dataTransfer?.getData('text/place-id');
     const fromZone = e.dataTransfer?.getData('text/from-zone') ?? '';
     const toZone = listEl.dataset.zone ?? '';
-    if (!placeId || fromZone === toZone) return;
+    if (!placeId) return;
+
+    if (fromZone === toZone) {
+      // 같은 게이트 내 재정렬 — dragover에서 이미 위치가 옮겨져 있으므로 순서만 저장
+      await persistOrder(listEl);
+      return;
+    }
 
     const el = document.querySelector('[data-place-id="' + placeId + '"]') as HTMLElement | null;
     if (!el) return;
