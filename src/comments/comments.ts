@@ -79,6 +79,16 @@ export async function sendComment(placeId: string, text: string): Promise<boolea
   return true;
 }
 
+export async function deleteComment(commentId: string): Promise<boolean> {
+  const { error } = await supabase.from('place_comments').delete().eq('id', commentId);
+  if (error) {
+    console.error('Comment delete error:', error.message);
+    return false;
+  }
+  comments = comments.filter((c) => c.id !== commentId);
+  return true;
+}
+
 function formatTime(iso: string): string {
   const d = new Date(iso);
   const h = d.getHours();
@@ -95,10 +105,14 @@ function commentHtml(c: PlaceComment, isMe: boolean): string {
     : escapeHtml(initial);
 
   return [
-    '<div class="pc-item">',
+    '<div class="pc-item" data-comment-id="' + c.id + '">',
     '  <div class="pc-avatar' + (isMe ? ' me' : '') + '">' + avatar + '</div>',
     '  <div class="pc-body">',
-    '    <div class="pc-meta"><span class="pc-name">' + escapeHtml(c.display_name || '익명') + '</span><span class="pc-time">' + formatTime(c.created_at) + '</span></div>',
+    '    <div class="pc-meta">',
+    '      <span class="pc-name">' + escapeHtml(c.display_name || '익명') + '</span>',
+    '      <span class="pc-time">' + formatTime(c.created_at) + '</span>',
+           (isMe ? '<button class="pc-delete" data-delete-id="' + c.id + '">삭제</button>' : ''),
+    '    </div>',
     '    <div class="pc-text">' + escapeHtml(c.comment) + '</div>',
     '  </div>',
     '</div>',
@@ -131,8 +145,27 @@ export function renderCommentsUI(container: HTMLElement, placeId: string): () =>
     }
     listEl.innerHTML = comments.map((c) => commentHtml(c, c.user_id === myId)).join('');
     listEl.scrollTop = listEl.scrollHeight;
+    bindDeleteButtons();
   }
   renderAll();
+
+  function bindDeleteButtons(): void {
+    listEl.querySelectorAll('.pc-delete').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = (btn as HTMLElement).dataset.deleteId;
+        if (!id) return;
+        const itemEl = listEl.querySelector('[data-comment-id="' + id + '"]');
+        (btn as HTMLButtonElement).disabled = true;
+        const success = await deleteComment(id);
+        if (success) {
+          itemEl?.remove();
+          if (comments.length === 0) renderAll();
+        } else {
+          (btn as HTMLButtonElement).disabled = false;
+        }
+      });
+    });
+  }
 
   const unsubscribe = ((): (() => void) => {
     const fn = () => renderAll();
