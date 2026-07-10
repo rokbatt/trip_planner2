@@ -78,11 +78,6 @@ export function loadGoogleMapsScript(): Promise<void> {
   return loadPromise;
 }
 
-export function buildPhotoUrl(photoRef: string, maxWidth = 480): string {
-  const key = import.meta.env.VITE_GOOGLE_MAPS_KEY;
-  return 'https://maps.googleapis.com/maps/api/place/photo?maxwidth=' + maxWidth + '&photoreference=' + photoRef + '&key=' + key;
-}
-
 export interface GooglePlaceResult {
   place_id: string;
   name: string;
@@ -91,7 +86,7 @@ export interface GooglePlaceResult {
   lng: number | null;
   rating: number | null;
   category: string | null;
-  photoRef: string | null;
+  photoUrl: string | null;
 }
 
 /** Google Place types → 몽실이 한글 카테고리 라벨 매핑 */
@@ -119,6 +114,17 @@ export function extractPlaceResult(place: any): GooglePlaceResult | null {
   const matchedType = types.find((t) => CATEGORY_MAP[t]);
   const photo = place.photos && place.photos.length > 0 ? place.photos[0] : null;
 
+  // Google JS 라이브러리의 PlacePhoto는 photo_reference를 노출하지 않고
+  // getUrl() 메서드로 바로 사용 가능한 이미지 URL을 만들어줘야 함
+  let photoUrl: string | null = null;
+  if (photo && typeof photo.getUrl === 'function') {
+    try {
+      photoUrl = photo.getUrl({ maxWidth: 480, maxHeight: 480 });
+    } catch (e) {
+      photoUrl = null;
+    }
+  }
+
   return {
     place_id: place.place_id,
     name: place.name || '',
@@ -127,7 +133,7 @@ export function extractPlaceResult(place: any): GooglePlaceResult | null {
     lng: place.geometry?.location ? place.geometry.location.lng() : null,
     rating: typeof place.rating === 'number' ? place.rating : null,
     category: matchedType ? CATEGORY_MAP[matchedType] : null,
-    photoRef: photo?.photo_reference ?? null,
+    photoUrl,
   };
 }
 
