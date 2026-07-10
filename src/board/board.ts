@@ -1,6 +1,7 @@
 import { supabase } from '../supabase';
 import { store } from '../store';
 import type { Database } from '../types/database';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import './board.css';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -59,14 +60,43 @@ function classify(text: string): Suggestion | null {
 function zoneToMood(zone: string): string | null {
   return zone === '' ? null : zone;
 }
-function moodToZone(mood: string | null): string {
-  return mood ?? '';
+
+function zoneListId(mood: string | null): string {
+  return mood === null ? 'inbox-list' : 'glist-' + mood;
 }
 
 function escapeHtml(str: string): string {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+/* ── 최근 내가 직접 반영한 변경 id (realtime 에코 중복 처리 방지) ── */
+const recentlyMutatedIds = new Set<string>();
+function markRecentlyMutated(id: string): void {
+  recentlyMutatedIds.add(id);
+  setTimeout(() => recentlyMutatedIds.delete(id), 2500);
+}
+
+/* ── 삭제 대기(Undo) 상태 ── */
+interface PendingDelete {
+  timer: ReturnType<typeof setTimeout>;
+  toastEl: HTMLElement;
+}
+const pendingDeletes = new Map<string, PendingDelete>();
+
+/* ── Realtime 채널 (게이트 전환 시 workspace.ts에서 teardownBoard 호출) ── */
+let realtimeChannel: RealtimeChannel | null = null;
+let securityEl: HTMLElement | null = null;
+
+export function teardownBoard(): void {
+  if (realtimeChannel) {
+    supabase.removeChannel(realtimeChannel);
+    realtimeChannel = null;
+  }
+  pendingDeletes.forEach((p) => clearTimeout(p.timer));
+  pendingDeletes.clear();
+  securityEl = null;
 }
 
 async function loadPlaces(tripId: string): Promise<Place[]> {
@@ -106,7 +136,7 @@ async function addIdea(tripId: string, mood: string | null, text: string): Promi
   return data;
 }
 
-async function deleteIdea(placeId: string): Promise<boolean> {
+async function deleteIdeaNow(placeId: string): Promise<boolean> {
   const { error } = await supabase.from('places').delete().eq('id', placeId);
   if (error) {
     console.error('Idea delete error:', error.message);
@@ -124,14 +154,37 @@ async function movePlace(placeId: string, newMood: string | null): Promise<boole
   return true;
 }
 
+/* ── Security Check 스캔 애니메이션 (게이트로 들어갈 때만) ── */
+function runSecurityScan(): Promise<void> {
+  if (!securityEl) return Promise.resolve();
+  const el = securityEl;
+  const original = el.innerHTML;
+  el.classList.add('scanning');
+  el.innerHTML = [
+    '<div class="bd-security-icon">' + ICON_SCAN + '</div>',
+    '<div class="bd-security-label">ANALYZING<br>&nbsp;</div>',
+  ].join('');
+
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      el.classList.remove('scanning');
+      el.innerHTML = original;
+      resolve();
+    }, 800);
+  });
+}
+
 /** ─────────────────────────────────────────────
  *  메인 렌더: Inbox(체크인 카운터) + 중앙 사이니지 + 4게이트
  *  ───────────────────────────────────────────── */
 export async function renderBoardContent(container: HTMLElement, tripId: string): Promise<void> {
+  teardownBoard();
+
   container.innerHTML = [
     '<div class="bd-layout" id="bd-layout">',
     '  <div class="bd-loading">보드를 불러오는 중...</div>',
     '</div>',
+    '<div class="bd-toast-container" id="bd-toast-container"></div>',
   ].join('');
 
   const places = await loadPlaces(tripId);
@@ -140,8 +193,80 @@ export async function renderBoardContent(container: HTMLElement, tripId: string)
   const inboxItems = places.filter((p) => p.mood === null);
   layout.innerHTML = '';
   layout.appendChild(buildInbox(tripId, inboxItems));
-  layout.appendChild(buildSecuritySignage());
+  const security = buildSecuritySignage();
+  securityEl = security;
+  layout.appendChild(security);
   layout.appendChild(buildGates(tripId, places));
+
+  subscribeRealtime(tripId);
+}
+
+/* ── 실시간 동기화 ── */
+function subscribeRealtime(tripId: string): void {
+  realtimeChannel = supabase
+    .channel('places:' + tripId)
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'places', filter: 'trip_id=eq.' + tripId },
+      (payload) => {
+        const row = payload.new as Place;
+        if (recentlyMutatedIds.has(row.id)) return;
+        if (document.querySelector('[data-place-id="' + row.id + '"]')) return;
+
+        const listEl = document.getElementById(zoneListId(row.mood));
+        if (!listEl) return;
+        removeEmptyState(listEl);
+        const el = row.mood === null ? createTicket(row.id, row.name) : createBoardingCard(row.id, row.name);
+        listEl.appendChild(el);
+        triggerLightSweep(el);
+        updateZoneCount(listEl);
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: 'DELETE', schema: 'public', table: 'places', filter: 'trip_id=eq.' + tripId },
+      (payload) => {
+        const oldRow = payload.old as { id: string };
+        if (recentlyMutatedIds.has(oldRow.id)) return;
+        const el = document.querySelector('[data-place-id="' + oldRow.id + '"]') as HTMLElement | null;
+        if (!el) return;
+        const listEl = el.closest('[data-zone]') as HTMLElement | null;
+        el.remove();
+        if (listEl) {
+          updateZoneCount(listEl);
+          ensureEmptyState(listEl);
+        }
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'places', filter: 'trip_id=eq.' + tripId },
+      (payload) => {
+        const row = payload.new as Place;
+        if (recentlyMutatedIds.has(row.id)) return;
+
+        const targetListEl = document.getElementById(zoneListId(row.mood));
+        if (!targetListEl) return;
+
+        const el = document.querySelector('[data-place-id="' + row.id + '"]') as HTMLElement | null;
+        if (el) {
+          const currentZoneEl = el.closest('[data-zone]') as HTMLElement | null;
+          if (currentZoneEl === targetListEl) return; // 무드 변경 없음 (다음 단계에서 이름/상세 수정 대응 예정)
+          el.remove();
+          if (currentZoneEl) {
+            updateZoneCount(currentZoneEl);
+            ensureEmptyState(currentZoneEl);
+          }
+        }
+
+        removeEmptyState(targetListEl);
+        const newEl = row.mood === null ? createTicket(row.id, row.name) : createBoardingCard(row.id, row.name);
+        targetListEl.appendChild(newEl);
+        triggerLightSweep(newEl);
+        updateZoneCount(targetListEl);
+      }
+    )
+    .subscribe();
 }
 
 /* ── 좌측: 체크인 카운터 (Inbox) ── */
@@ -186,6 +311,7 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
     input.disabled = false;
     input.focus();
     if (newPlace) {
+      markRecentlyMutated(newPlace.id);
       removeEmptyState(listEl);
       const el = createTicket(newPlace.id, newPlace.name);
       listEl.appendChild(el);
@@ -252,6 +378,10 @@ function bindSuggestionChip(ticket: HTMLElement, id: string, s: Suggestion): voi
   applyBtn?.addEventListener('click', async (e) => {
     e.stopPropagation();
     applyBtn.disabled = true;
+
+    await runSecurityScan();
+
+    markRecentlyMutated(id);
     const success = await movePlace(id, s.gate);
     if (!success) {
       applyBtn.disabled = false;
@@ -283,7 +413,7 @@ function bindSuggestionChip(ticket: HTMLElement, id: string, s: Suggestion): voi
   });
 }
 
-/* ── 중앙: 보안 검색대 사이니지 (장식 + 정직한 안내) ── */
+/* ── 중앙: 보안 검색대 사이니지 ── */
 function buildSecuritySignage(): HTMLElement {
   const strip = document.createElement('div');
   strip.className = 'bd-security';
@@ -352,7 +482,7 @@ function createBoardingCard(id: string, name: string): HTMLElement {
   return card;
 }
 
-/** 티켓/카드 공통 동작: 드래그 시작/끝, 삭제 2단계 확인 */
+/** 티켓/카드 공통 동작: 드래그 시작/끝, 삭제 2단계 확인 + Undo */
 function bindItemBehavior(el: HTMLElement, id: string, _name: string): void {
   el.addEventListener('dragstart', (e) => {
     el.classList.add('dragging');
@@ -366,7 +496,7 @@ function bindItemBehavior(el: HTMLElement, id: string, _name: string): void {
   let confirming = false;
   let confirmTimer: ReturnType<typeof setTimeout> | null = null;
 
-  deleteBtn.addEventListener('click', async (e) => {
+  deleteBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     if (!confirming) {
       confirming = true;
@@ -380,25 +510,71 @@ function bindItemBehavior(el: HTMLElement, id: string, _name: string): void {
       return;
     }
     if (confirmTimer) clearTimeout(confirmTimer);
-    deleteBtn.disabled = true;
+
     const listEl = el.closest('[data-zone]') as HTMLElement | null;
-    const success = await deleteIdea(id);
-    if (success) {
-      el.remove();
-      if (listEl) {
-        updateZoneCount(listEl);
-        ensureEmptyState(listEl);
-      }
-    } else {
-      deleteBtn.disabled = false;
-      confirming = false;
-      deleteBtn.classList.remove('confirm');
-      deleteBtn.innerHTML = ICON_TRASH;
+    const name = el.querySelector('.bd-ticket-text, .bd-card-text')?.textContent ?? '';
+    scheduleDelete(id, name, el, listEl);
+  });
+}
+
+/** 삭제 예약: 즉시 화면에서 치우고 5초 Undo 토스트, 시간 지나면 실제 DB 삭제 */
+function scheduleDelete(id: string, name: string, el: HTMLElement, listEl: HTMLElement | null): void {
+  el.remove();
+  if (listEl) {
+    updateZoneCount(listEl);
+    ensureEmptyState(listEl);
+  }
+
+  const toastContainer = document.getElementById('bd-toast-container');
+  if (!toastContainer) {
+    // 안전장치: 토스트 컨테이너가 없으면 즉시 삭제로 폴백
+    markRecentlyMutated(id);
+    deleteIdeaNow(id);
+    return;
+  }
+
+  const toast = document.createElement('div');
+  toast.className = 'bd-toast';
+  toast.innerHTML = [
+    '<span class="bd-toast-text">"' + escapeHtml(name) + '" 삭제됨</span>',
+    '<button class="bd-toast-undo" type="button">실행취소</button>',
+  ].join('');
+  toastContainer.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('show'));
+
+  const timer = setTimeout(() => {
+    pendingDeletes.delete(id);
+    markRecentlyMutated(id);
+    deleteIdeaNow(id);
+    dismissToast(toast);
+  }, 5000);
+
+  pendingDeletes.set(id, { timer, toastEl: toast });
+
+  const undoBtn = toast.querySelector('.bd-toast-undo') as HTMLButtonElement;
+  undoBtn.addEventListener('click', () => {
+    const pending = pendingDeletes.get(id);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    pendingDeletes.delete(id);
+    dismissToast(toast);
+
+    if (listEl) {
+      removeEmptyState(listEl);
+      const restored = listEl.dataset.zone === '' ? createTicket(id, name) : createBoardingCard(id, name);
+      listEl.appendChild(restored);
+      triggerLightSweep(restored);
+      updateZoneCount(listEl);
     }
   });
 }
 
-/** 드롭존 공통 이벤트: dragover 하이라이트 + drop 시 zone 이동 처리 */
+function dismissToast(toast: HTMLElement): void {
+  toast.classList.remove('show');
+  setTimeout(() => toast.remove(), 220);
+}
+
+/** 드롭존 공통 이벤트: dragover 하이라이트 + drop 시 zone 이동 처리 (게이트 진입 시 Security Check 스캔) */
 function attachDropzone(listEl: HTMLElement): void {
   listEl.addEventListener('dragover', (e) => {
     e.preventDefault();
@@ -418,11 +594,19 @@ function attachDropzone(listEl: HTMLElement): void {
     if (!el) return;
     const name = el.querySelector('.bd-ticket-text, .bd-card-text')?.textContent ?? '';
 
+    // 게이트로 들어가는 이동일 때만 Security Check 스캔
+    if (toZone !== '') {
+      await runSecurityScan();
+    }
+
+    markRecentlyMutated(placeId);
     const success = await movePlace(placeId, zoneToMood(toZone));
     if (!success) return;
 
-    const sourceZoneEl = el.closest('[data-zone]') as HTMLElement | null;
-    el.remove();
+    const currentEl = document.querySelector('[data-place-id="' + placeId + '"]') as HTMLElement | null;
+    if (!currentEl) return;
+    const sourceZoneEl = currentEl.closest('[data-zone]') as HTMLElement | null;
+    currentEl.remove();
     if (sourceZoneEl) {
       updateZoneCount(sourceZoneEl);
       ensureEmptyState(sourceZoneEl);
