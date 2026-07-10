@@ -2,6 +2,7 @@ import { supabase } from '../supabase';
 import { store } from '../store';
 import { navigate } from '../router';
 import { initChat, teardownChat, setBadgeListener, countUnreadSince, markAsRead, renderChatPanelUI } from '../chat/chat';
+import { initComments, teardownComments, renderCommentsUI } from '../comments/comments';
 import type { Database } from '../types/database';
 import type { ChatMessage } from '../types/database';
 import './workspace.css';
@@ -360,6 +361,7 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
       chatUnsub();
       chatUnsub = null;
     }
+    teardownComments();
   }
 
   function renderPanelBody(): void {
@@ -413,7 +415,7 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
   }
 
   /** 카드 클릭 시 우측 Drawer에 상세 정보 표시 */
-  function openDetailPanel(place: any): void {
+  async function openDetailPanel(place: any): Promise<void> {
     const wasOpen = panelOpen;
     panelOpen = true;
     activeTab = 'detail';
@@ -423,6 +425,7 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
       chatUnsub();
       chatUnsub = null;
     }
+    teardownComments(); // 이전에 열려있던 다른 장소의 댓글 구독 정리
 
     panelEl.innerHTML = buildDetailPanelShell(place);
 
@@ -436,6 +439,14 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
     panelEl.querySelector('#detail-close')?.addEventListener('click', closeDrawer);
 
     bindDetailNoteSave(place.id);
+    bindDetailNameSave(place.id);
+    bindDetailGatePicker(place, tripId, (updatedPlace) => openDetailPanel(updatedPlace));
+
+    const commentsBody = panelEl.querySelector('#detail-comments-body') as HTMLElement | null;
+    if (commentsBody) {
+      await initComments(place.id);
+      renderCommentsUI(commentsBody, place.id);
+    }
   }
 
   page.addEventListener('mongsil:openPlaceDetail', ((e: CustomEvent<{ place: any }>) => {
@@ -466,6 +477,14 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
   });
 }
 
+/** Drawer의 게이트 선택 버튼에 쓰는 최소 게이트 정보 (board.ts의 GATES와 동일한 mood 값) */
+const DETAIL_GATES: Array<{ key: string; label: string }> = [
+  { key: '가고싶어', label: 'VISIT' },
+  { key: '먹고싶어', label: 'FOOD' },
+  { key: '하고싶어', label: 'ACTIVITY' },
+  { key: '숙소', label: 'STAY' },
+];
+
 /** 카드 상세 Drawer 콘텐츠 */
 function buildDetailPanelShell(place: any): string {
   const photo = place.photo_url
@@ -482,6 +501,11 @@ function buildDetailPanelShell(place: any): string {
     : '';
   const hours = buildOpeningHoursHtml(place.opening_hours);
 
+  const gateButtons = DETAIL_GATES.map((g) => {
+    const isActive = g.key === place.mood;
+    return '<button type="button" class="ws-gate-pick' + (isActive ? ' active' : '') + '" data-gate="' + g.key + '">' + g.label + '</button>';
+  }).join('');
+
   return [
     '<div class="ws-panel-header">',
     '  <button class="ws-detail-back" id="detail-back">' + IC.back + '</button>',
@@ -492,12 +516,17 @@ function buildDetailPanelShell(place: any): string {
          photo,
     '  <div class="ws-detail-content">',
     '    <div class="ws-detail-title-row">',
-    '      <span class="ws-detail-name">' + escapeHtml(place.name) + '</span>',
+    '      <input type="text" class="ws-detail-name-input" id="detail-name" value="' + escapeHtml(place.name) + '" />',
            rating,
     '    </div>',
+    '    <span class="ws-detail-save-hint" id="detail-name-hint"></span>',
          category,
          address,
          hours,
+    '    <div class="ws-detail-section">',
+    '      <span class="ws-detail-label">게이트 이동</span>',
+    '      <div class="ws-gate-picker">' + gateButtons + '</div>',
+    '    </div>',
     '    <div class="ws-detail-section">',
     '      <span class="ws-detail-label">메모</span>',
     '      <textarea class="ws-detail-notes" id="detail-notes" placeholder="메모를 남겨보세요...">' + escapeHtml(place.notes || '') + '</textarea>',
@@ -505,7 +534,7 @@ function buildDetailPanelShell(place: any): string {
     '    </div>',
     '    <div class="ws-detail-section">',
     '      <span class="ws-detail-label">댓글</span>',
-    '      <div class="ws-detail-placeholder">댓글 기능은 다음 단계에서 구현 예정이에요</div>',
+    '      <div id="detail-comments-body"></div>',
     '    </div>',
     '    <div class="ws-detail-section">',
     '      <span class="ws-detail-label">' + IC.sparkle + ' AI 요약</span>',
@@ -520,6 +549,52 @@ function buildOpeningHoursHtml(hours: unknown): string {
   if (!Array.isArray(hours) || hours.length === 0) return '';
   const lines = hours.map((h) => '<div class="ws-hours-line">' + escapeHtml(String(h)) + '</div>').join('');
   return '<div class="ws-detail-section"><span class="ws-detail-label">영업시간</span>' + lines + '</div>';
+}
+
+/** 장소 이름 입력을 디바운스 후 자동 저장 */
+function bindDetailNameSave(placeId: string): void {
+  const input = document.getElementById('detail-name') as HTMLInputElement | null;
+  const hint = document.getElementById('detail-name-hint') as HTMLElement | null;
+  if (!input) return;
+
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  input.addEventListener('input', () => {
+    if (hint) hint.textContent = '저장 중...';
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const value = input.value.trim();
+      if (!value) return;
+      const { error } = await supabase.from('places').update({ name: value }).eq('id', placeId);
+      if (hint) hint.textContent = error ? '저장 실패' : '저장됨';
+      setTimeout(() => { if (hint) hint.textContent = ''; }, 1500);
+    }, 600);
+  });
+}
+
+/** Drawer 안의 게이트 이동 버튼 — 클릭하면 바로 mood 변경 */
+function bindDetailGatePicker(place: any, tripId: string, onMoved: (updatedPlace: any) => void): void {
+  const buttons = document.querySelectorAll('.ws-gate-pick');
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const targetGate = (btn as HTMLElement).dataset.gate;
+      if (!targetGate || targetGate === place.mood) return;
+
+      buttons.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const { error } = await supabase.from('places').update({ mood: targetGate }).eq('id', place.id);
+      if (error) {
+        console.error('게이트 이동 실패:', error.message);
+        return;
+      }
+
+      const updatedPlace = { ...place, mood: targetGate };
+      onMoved(updatedPlace);
+
+      // 보드 화면이 열려있으면 그쪽도 즉시 갱신되도록 알림
+      window.dispatchEvent(new CustomEvent('mongsil:placeGateChanged', { detail: { tripId, place: updatedPlace } }));
+    });
+  });
 }
 
 /** 메모 입력을 디바운스 후 자동 저장 */
