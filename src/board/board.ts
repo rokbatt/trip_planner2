@@ -2,7 +2,7 @@ import { supabase } from '../supabase';
 import { store } from '../store';
 import type { Database } from '../types/database';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { loadGoogleMapsScript, extractPlaceResult, suggestGateFromCategory, getPlacePredictions, getPlaceDetails, getCategoryLabel } from '../utils/googleMaps';
+import { loadGoogleMapsScript, extractPlaceResult, suggestGateFromCategory, getPlacePredictions, getPlaceDetails, getCategoryLabel, resetGoogleServices } from '../utils/googleMaps';
 import type { GooglePlaceResult, PlacePrediction } from '../utils/googleMaps';
 import './board.css';
 
@@ -148,6 +148,11 @@ function cleanupAutocomplete(): void {
     document.removeEventListener('click', acDocClickHandler);
     acDocClickHandler = null;
   }
+  // 혹시 추적 중인 참조 밖에서 남아있는 드롭다운이 있으면 전부 제거
+  document.querySelectorAll('.bd-ac-dropdown').forEach((el) => el.remove());
+  // 서비스 인스턴스/세션 토큰도 리셋 — 이전 방문에서 남은 내부 상태가
+  // 다음 방문의 검색을 조용히 막는 경우를 방지
+  resetGoogleServices();
 }
 
 function closeAcDropdown(): void {
