@@ -285,8 +285,11 @@ export async function renderBoardContent(container: HTMLElement, tripId: string)
 
   // Google Maps는 백그라운드에서 로드 (실패해도 텍스트 입력은 그대로 동작)
   loadGoogleMapsScript()
-    .then(() => attachAutocomplete(tripId))
-    .catch((err) => console.warn('Google Maps 로드 실패, 텍스트 입력만 사용:', err.message));
+    .then(() => {
+      console.log('[GoogleMaps] 로드 완료, 자동완성 연결 중...');
+      attachAutocomplete(tripId);
+    })
+    .catch((err) => console.error('[GoogleMaps] 로드 실패, 텍스트 입력만 사용:', err.message));
 }
 
 /* ── 실시간 동기화 ── */
@@ -421,11 +424,20 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
 function attachAutocomplete(tripId: string): void {
   const input = document.getElementById('bd-inbox-input') as HTMLInputElement | null;
   const g = window.google;
-  if (!input || !g?.maps?.places) return;
+
+  if (!input) {
+    console.error('[GoogleMaps] #bd-inbox-input을 찾지 못했어요 (아직 렌더 전이거나 DOM이 바뀜)');
+    return;
+  }
+  if (!g?.maps?.places) {
+    console.error('[GoogleMaps] window.google.maps.places가 없어요. 스크립트 로드는 됐지만 places 라이브러리 준비가 안 됨');
+    return;
+  }
 
   const autocomplete = new g.maps.places.Autocomplete(input, {
     fields: ['place_id', 'name', 'formatted_address', 'geometry', 'rating', 'types', 'photos'],
   });
+  console.log('[GoogleMaps] 자동완성 연결 완료');
 
   autocomplete.addListener('place_changed', async () => {
     const place = autocomplete.getPlace();
