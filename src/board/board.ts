@@ -5,12 +5,45 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import './board.css';
 
 type Place = Database['public']['Tables']['places']['Row'];
+type PlaceInsert = Database['public']['Tables']['places']['Insert'];
 
 interface GateConfig {
   key: string;      // mood 값 (DB 저장값)
   step: string;     // GATE 01 등
   label: string;
   icon: string;
+}
+
+/* ── Google Maps JS API 최소 타입 (window.google 스코프 안에서만 사용) ── */
+interface GMapsPlaceResult {
+  place_id?: string;
+  name?: string;
+  formatted_address?: string;
+  rating?: number;
+  types?: string[];
+  geometry?: { location?: { lat(): number; lng(): number } };
+  photos?: Array<{ getUrl(opts?: { maxWidth?: number; maxHeight?: number }): string }>;
+  opening_hours?: { weekday_text?: string[] };
+}
+interface GMapsAutocomplete {
+  addListener(event: string, handler: () => void): void;
+  getPlace(): GMapsPlaceResult;
+}
+declare global {
+  interface Window {
+    google?: {
+      maps?: {
+        places?: {
+          Autocomplete: new (input: HTMLInputElement, opts?: Record<string, unknown>) => GMapsAutocomplete;
+        };
+      };
+    };
+  }
+}
+
+/** DOM 요소에 원본 Place 데이터를 그대로 매달아 둠 — 이동/복원/실시간 반영 시 데이터 유실 방지 */
+interface PlaceEl extends HTMLElement {
+  placeData?: Place;
 }
 
 const ICON_PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21C12 21 19 14.5 19 9.5C19 5.9 15.9 3 12 3C8.1 3 5 5.9 5 9.5C5 14.5 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.2"/></svg>';
@@ -21,6 +54,10 @@ const ICON_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z"/></svg>';
 const ICON_PLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12L22 5L15 22L11 14L2 12Z"/></svg>';
 const ICON_SCAN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M3 12h18"/></svg>';
+const ICON_STAR_FILL = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.3 6.9.7-5.2 4.7 1.5 6.8L12 17.1l-6.1 3.4 1.5-6.8L2.2 9l6.9-.7z"/></svg>';
+const ICON_EDIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+const ICON_COMMENT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-4.7 7.6 8.5 8.5 0 0 1-8.6-.4L3 20l1.3-4.3A8.5 8.5 0 1 1 21 11.5z"/></svg>';
+const ICON_MOVE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>';
 
 const GATES: GateConfig[] = [
   { key: '가고싶어', step: 'GATE 01', label: 'VISIT',    icon: ICON_PIN },
@@ -28,6 +65,27 @@ const GATES: GateConfig[] = [
   { key: '하고싶어', step: 'GATE 03', label: 'ACTIVITY', icon: ICON_TICKET },
   { key: '후보',     step: 'GATE 04', label: 'MAYBE',    icon: ICON_STAR },
 ];
+
+/* ── Google Place types → 한글 카테고리 라벨 ── */
+const CATEGORY_LABELS: Record<string, string> = {
+  restaurant: '맛집', food: '맛집', cafe: '카페', bakery: '베이커리', bar: '바',
+  night_club: '나이트클럽', tourist_attraction: '관광명소', museum: '박물관',
+  art_gallery: '미술관', park: '공원', lodging: '숙소', shopping_mall: '쇼핑',
+  store: '쇼핑', amusement_park: '테마파크', zoo: '동물원', aquarium: '아쿠아리움',
+  church: '종교시설', hindu_temple: '종교시설', mosque: '종교시설', synagogue: '종교시설',
+  train_station: '교통', subway_station: '교통', airport: '공항', spa: '스파',
+  movie_theater: '영화관', stadium: '경기장', casino: '카지노',
+};
+const IGNORED_TYPES = new Set(['point_of_interest', 'establishment', 'premise']);
+
+function deriveCategory(types: string[] | undefined): string | null {
+  if (!types) return null;
+  for (const t of types) {
+    if (CATEGORY_LABELS[t]) return CATEGORY_LABELS[t];
+  }
+  const fallback = types.find((t) => !IGNORED_TYPES.has(t));
+  return fallback ? fallback.replace(/_/g, ' ') : null;
+}
 
 /* ── 규칙 기반 분류 (진짜 AI 아님) ──
  * 키워드 매칭 점수로 게이트를 추천. 향후 Gemini 연동 시 이 함수만 교체하면 됨. */
@@ -85,6 +143,30 @@ interface PendingDelete {
 }
 const pendingDeletes = new Map<string, PendingDelete>();
 
+/* ── 트립 멤버 이름 매핑 (카드 작성자 표시용) ── */
+let memberNames = new Map<string, string>();
+
+async function loadMemberNames(tripId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('trip_members')
+    .select('user_id, display_name')
+    .eq('trip_id', tripId);
+
+  memberNames = new Map();
+  if (!error && data) {
+    data.forEach((m) => {
+      if (m.display_name) memberNames.set(m.user_id, m.display_name);
+    });
+  }
+}
+
+function authorLabel(userId: string | null): string {
+  if (!userId) return '익명';
+  const me = store.get('user');
+  if (me && me.id === userId) return '나';
+  return memberNames.get(userId) ?? '익명';
+}
+
 /* ── Realtime 채널 (게이트 전환 시 workspace.ts에서 teardownBoard 호출) ── */
 let realtimeChannel: RealtimeChannel | null = null;
 let securityEl: HTMLElement | null = null;
@@ -113,6 +195,7 @@ async function loadPlaces(tripId: string): Promise<Place[]> {
   return data ?? [];
 }
 
+/** 텍스트만 있는 아이디어 추가 (Autocomplete로 선택하지 않은 경우) */
 async function addIdea(tripId: string, mood: string | null, text: string): Promise<Place | null> {
   const user = store.get('user');
   const { data, error } = await supabase
@@ -131,6 +214,36 @@ async function addIdea(tripId: string, mood: string | null, text: string): Promi
 
   if (error) {
     console.error('Idea add error:', error.message);
+    return null;
+  }
+  return data;
+}
+
+/** Google Place 데이터를 포함한 리치 아이디어 추가 */
+async function addRichIdea(tripId: string, mood: string | null, place: GMapsPlaceResult): Promise<Place | null> {
+  const user = store.get('user');
+  const payload: PlaceInsert = {
+    trip_id: tripId,
+    name: place.name || '이름 없음',
+    mood,
+    status: 'idea',
+    is_idea: true,
+    added_by: user?.id ?? null,
+    sort_order: Math.floor(Date.now() / 1000),
+    address: place.formatted_address ?? null,
+    lat: place.geometry?.location ? place.geometry.location.lat() : null,
+    lng: place.geometry?.location ? place.geometry.location.lng() : null,
+    google_place_id: place.place_id ?? null,
+    google_rating: place.rating ?? null,
+    category: deriveCategory(place.types),
+    opening_hours: place.opening_hours?.weekday_text ?? null,
+    photo_url: place.photos && place.photos[0] ? place.photos[0].getUrl({ maxWidth: 480, maxHeight: 360 }) : null,
+  };
+
+  const { data, error } = await supabase.from('places').insert(payload).select().single();
+
+  if (error) {
+    console.error('Rich idea add error:', error.message);
     return null;
   }
   return data;
@@ -174,6 +287,25 @@ function runSecurityScan(): Promise<void> {
   });
 }
 
+/* ── Google Maps 로드 대기 ── */
+function waitForGoogleMaps(timeoutMs = 6000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const check = () => {
+      if (window.google?.maps?.places) {
+        resolve(true);
+        return;
+      }
+      if (Date.now() - start > timeoutMs) {
+        resolve(false);
+        return;
+      }
+      setTimeout(check, 150);
+    };
+    check();
+  });
+}
+
 /** ─────────────────────────────────────────────
  *  메인 렌더: Inbox(체크인 카운터) + 중앙 사이니지 + 4게이트
  *  ───────────────────────────────────────────── */
@@ -187,7 +319,7 @@ export async function renderBoardContent(container: HTMLElement, tripId: string)
     '<div class="bd-toast-container" id="bd-toast-container"></div>',
   ].join('');
 
-  const places = await loadPlaces(tripId);
+  const [places] = await Promise.all([loadPlaces(tripId), loadMemberNames(tripId)]);
   const layout = container.querySelector('#bd-layout') as HTMLElement;
 
   const inboxItems = places.filter((p) => p.mood === null);
@@ -196,7 +328,7 @@ export async function renderBoardContent(container: HTMLElement, tripId: string)
   const security = buildSecuritySignage();
   securityEl = security;
   layout.appendChild(security);
-  layout.appendChild(buildGates(tripId, places));
+  layout.appendChild(buildGates(places));
 
   subscribeRealtime(tripId);
 }
@@ -216,7 +348,7 @@ function subscribeRealtime(tripId: string): void {
         const listEl = document.getElementById(zoneListId(row.mood));
         if (!listEl) return;
         removeEmptyState(listEl);
-        const el = row.mood === null ? createTicket(row.id, row.name) : createBoardingCard(row.id, row.name);
+        const el = row.mood === null ? createTicket(row) : createBoardingCard(row);
         listEl.appendChild(el);
         triggerLightSweep(el);
         updateZoneCount(listEl);
@@ -260,7 +392,7 @@ function subscribeRealtime(tripId: string): void {
         }
 
         removeEmptyState(targetListEl);
-        const newEl = row.mood === null ? createTicket(row.id, row.name) : createBoardingCard(row.id, row.name);
+        const newEl = row.mood === null ? createTicket(row) : createBoardingCard(row);
         targetListEl.appendChild(newEl);
         triggerLightSweep(newEl);
         updateZoneCount(targetListEl);
@@ -285,7 +417,7 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
     '</div>',
     '<div class="bd-inbox-list bd-dropzone" id="inbox-list" data-zone=""></div>',
     '<form class="bd-inbox-form" id="bd-inbox-form">',
-    '  <input class="bd-inbox-input" id="bd-inbox-input" type="text" placeholder="장소 · 링크 · 메모를 입력하세요" />',
+    '  <input class="bd-inbox-input" id="bd-inbox-input" type="text" placeholder="장소 · 링크 · 메모를 입력하세요" autocomplete="off" />',
     '  <button type="submit" class="bd-inbox-btn">' + ICON_PLUS + '</button>',
     '</form>',
   ].join('\n');
@@ -294,7 +426,7 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
   if (items.length === 0) {
     listEl.innerHTML = buildInboxEmpty();
   } else {
-    items.forEach((item) => listEl.appendChild(createTicket(item.id, item.name)));
+    items.forEach((item) => listEl.appendChild(createTicket(item)));
   }
 
   attachDropzone(listEl);
@@ -302,8 +434,43 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
   const form = inbox.querySelector('#bd-inbox-form') as HTMLFormElement;
   const input = inbox.querySelector('#bd-inbox-input') as HTMLInputElement;
   requestAnimationFrame(() => input.focus());
+
+  // Google Places Autocomplete 바인딩 (선택 시 리치 데이터로 즉시 체크인)
+  let justPickedPlace = false;
+  waitForGoogleMaps().then((ready) => {
+    if (!ready || !window.google?.maps?.places) return;
+    const autocomplete = new window.google.maps.places.Autocomplete(input, {
+      fields: ['place_id', 'name', 'formatted_address', 'geometry', 'rating', 'types', 'photos', 'opening_hours'],
+      types: ['establishment'],
+    });
+    autocomplete.addListener('place_changed', async () => {
+      const place = autocomplete.getPlace();
+      if (!place || (!place.place_id && !place.name)) return;
+
+      justPickedPlace = true;
+      input.disabled = true;
+      const newPlace = await addRichIdea(tripId, null, place);
+      input.disabled = false;
+      input.value = '';
+      input.focus();
+
+      if (newPlace) {
+        markRecentlyMutated(newPlace.id);
+        removeEmptyState(listEl);
+        const el = createTicket(newPlace);
+        listEl.appendChild(el);
+        triggerLightSweep(el);
+        updateZoneCount(listEl);
+      }
+    });
+  });
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (justPickedPlace) {
+      justPickedPlace = false;
+      return;
+    }
     const text = input.value.trim();
     if (!text) return;
     input.disabled = true;
@@ -313,7 +480,7 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
     if (newPlace) {
       markRecentlyMutated(newPlace.id);
       removeEmptyState(listEl);
-      const el = createTicket(newPlace.id, newPlace.name);
+      const el = createTicket(newPlace);
       listEl.appendChild(el);
       triggerLightSweep(el);
       input.value = '';
@@ -327,36 +494,43 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
 function buildInboxEmpty(): string {
   return [
     '<div class="bd-empty">',
-    '  <div class="bd-empty-hint">📍 장소 이름을 입력하세요</div>',
+    '  <div class="bd-empty-hint">📍 장소 이름을 입력하면 자동완성돼요</div>',
     '  <div class="bd-empty-hint">🔗 Google Maps 링크를 붙여넣으세요</div>',
     '  <div class="bd-empty-hint">🎤 통화 중 나온 아이디어를 기록하세요</div>',
     '</div>',
   ].join('');
 }
 
-/* ── 티켓 스텁 (Inbox 아이템) ── */
-function createTicket(id: string, name: string): HTMLElement {
-  const ticket = document.createElement('div');
+/* ── 티켓 스텁 (Inbox 아이템) — Place 데이터가 있으면 작은 썸네일/평점만 살짝 ── */
+function createTicket(place: Place): HTMLElement {
+  const ticket = document.createElement('div') as PlaceEl;
   ticket.className = 'bd-ticket';
   ticket.draggable = true;
-  ticket.dataset.placeId = id;
+  ticket.dataset.placeId = place.id;
+  ticket.placeData = place;
 
-  const suggestion = classify(name);
+  const suggestion = classify(place.name);
+  const hasPhoto = !!place.photo_url;
 
   ticket.innerHTML = [
     '<div class="bd-ticket-main">',
-    ICON_PLANE,
-    '<span class="bd-ticket-text">' + escapeHtml(name) + '</span>',
-    '<button class="bd-ticket-delete" id="tdel-' + id + '">' + ICON_TRASH + '</button>',
+    hasPhoto
+      ? '<div class="bd-ticket-thumb" style="background-image:url(\'' + place.photo_url + '\')"></div>'
+      : ICON_PLANE,
+    '<span class="bd-ticket-text">' + escapeHtml(place.name) + '</span>',
+    place.google_rating
+      ? '<span class="bd-ticket-rating">' + ICON_STAR_FILL + place.google_rating.toFixed(1) + '</span>'
+      : '',
+    '<button class="bd-ticket-delete" id="tdel-' + place.id + '">' + ICON_TRASH + '</button>',
     '</div>',
     suggestion ? buildSuggestionChip(suggestion) : '',
   ].join('');
 
   if (suggestion) {
-    bindSuggestionChip(ticket, id, suggestion);
+    bindSuggestionChip(ticket, suggestion);
   }
 
-  bindItemBehavior(ticket, id, name);
+  bindItemBehavior(ticket);
   return ticket;
 }
 
@@ -371,7 +545,7 @@ function buildSuggestionChip(s: Suggestion): string {
   ].join('');
 }
 
-function bindSuggestionChip(ticket: HTMLElement, id: string, s: Suggestion): void {
+function bindSuggestionChip(ticket: PlaceEl, s: Suggestion): void {
   const applyBtn = ticket.querySelector('.bd-suggest-apply') as HTMLButtonElement | null;
   const dismissBtn = ticket.querySelector('.bd-suggest-dismiss') as HTMLButtonElement | null;
 
@@ -381,14 +555,19 @@ function bindSuggestionChip(ticket: HTMLElement, id: string, s: Suggestion): voi
 
     await runSecurityScan();
 
-    markRecentlyMutated(id);
-    const success = await movePlace(id, s.gate);
+    const place = ticket.placeData;
+    if (!place) {
+      applyBtn.disabled = false;
+      return;
+    }
+
+    markRecentlyMutated(place.id);
+    const success = await movePlace(place.id, s.gate);
     if (!success) {
       applyBtn.disabled = false;
       return;
     }
     const targetList = document.getElementById('glist-' + s.gate);
-    const name = ticket.querySelector('.bd-ticket-text')?.textContent ?? '';
     const inboxList = ticket.closest('[data-zone]') as HTMLElement | null;
     ticket.remove();
     if (inboxList) {
@@ -397,7 +576,7 @@ function bindSuggestionChip(ticket: HTMLElement, id: string, s: Suggestion): voi
     }
     if (targetList) {
       removeEmptyState(targetList);
-      const newCard = createBoardingCard(id, name);
+      const newCard = createBoardingCard({ ...place, mood: s.gate });
       targetList.appendChild(newCard);
       triggerLightSweep(newCard);
       updateZoneCount(targetList);
@@ -426,19 +605,19 @@ function buildSecuritySignage(): HTMLElement {
 }
 
 /* ── 우측: 4개 게이트 ── */
-function buildGates(tripId: string, allPlaces: Place[]): HTMLElement {
+function buildGates(allPlaces: Place[]): HTMLElement {
   const gates = document.createElement('div');
   gates.className = 'bd-gates';
 
   GATES.forEach((gate) => {
     const items = allPlaces.filter((p) => p.mood === gate.key);
-    gates.appendChild(createGateColumn(tripId, gate, items));
+    gates.appendChild(createGateColumn(gate, items));
   });
 
   return gates;
 }
 
-function createGateColumn(_tripId: string, gate: GateConfig, items: Place[]): HTMLElement {
+function createGateColumn(gate: GateConfig, items: Place[]): HTMLElement {
   const col = document.createElement('div');
   col.className = 'bd-gate';
 
@@ -458,7 +637,7 @@ function createGateColumn(_tripId: string, gate: GateConfig, items: Place[]): HT
   if (items.length === 0) {
     listEl.innerHTML = '<div class="bd-empty bd-empty-sm"><div class="bd-empty-hint">아이디어를 여기로 드래그하세요</div></div>';
   } else {
-    items.forEach((item) => listEl.appendChild(createBoardingCard(item.id, item.name)));
+    items.forEach((item) => listEl.appendChild(createBoardingCard(item)));
   }
 
   attachDropzone(listEl);
@@ -466,24 +645,59 @@ function createGateColumn(_tripId: string, gate: GateConfig, items: Place[]): HT
   return col;
 }
 
-/* ── 게이트 카드 (보딩패스 스타일) ── */
-function createBoardingCard(id: string, name: string): HTMLElement {
-  const card = document.createElement('div');
-  card.className = 'bd-card';
+/* ── 게이트 카드 (보딩패스 스타일) — Place 데이터가 있으면 리치 카드 ── */
+function createBoardingCard(place: Place): HTMLElement {
+  const card = document.createElement('div') as PlaceEl;
+  const isRich = !!place.google_place_id;
+  card.className = 'bd-card' + (isRich ? ' bd-card-rich' : '');
   card.draggable = true;
-  card.dataset.placeId = id;
+  card.dataset.placeId = place.id;
+  card.placeData = place;
 
-  card.innerHTML = [
-    '<span class="bd-card-text">' + escapeHtml(name) + '</span>',
-    '<button class="bd-card-delete" id="cdel-' + id + '">' + ICON_TRASH + '</button>',
-  ].join('');
+  if (isRich) {
+    card.innerHTML = [
+      place.photo_url ? '<div class="bd-card-thumb" style="background-image:url(\'' + place.photo_url + '\')"></div>' : '',
+      '<div class="bd-card-body">',
+      '  <div class="bd-card-top-row">',
+      '    <span class="bd-card-name">' + escapeHtml(place.name) + '</span>',
+      place.google_rating
+        ? '    <span class="bd-card-rating">' + ICON_STAR_FILL + place.google_rating.toFixed(1) + '</span>'
+        : '',
+      '  </div>',
+      place.category ? '  <div class="bd-card-category">' + escapeHtml(place.category) + '</div>' : '',
+      '  <div class="bd-card-ai-line">🕐 추천 방문 · 오전 11시 (placeholder)</div>',
+      '  <div class="bd-card-footer">',
+      '    <span class="bd-card-author">' + escapeHtml(authorLabel(place.added_by)) + '</span>',
+      '  </div>',
+      '</div>',
+      buildCardActions(place.id),
+    ].join('');
+  } else {
+    card.innerHTML = [
+      '<span class="bd-card-text">' + escapeHtml(place.name) + '</span>',
+      buildCardActions(place.id),
+    ].join('');
+  }
 
-  bindItemBehavior(card, id, name);
+  bindItemBehavior(card);
   return card;
 }
 
-/** 티켓/카드 공통 동작: 드래그 시작/끝, 삭제 2단계 확인 + Undo */
-function bindItemBehavior(el: HTMLElement, id: string, _name: string): void {
+function buildCardActions(id: string): string {
+  return [
+    '<div class="bd-card-actions">',
+    '  <button class="bd-card-action" id="edit-' + id + '" title="편집">' + ICON_EDIT + '</button>',
+    '  <button class="bd-card-action" id="comment-' + id + '" title="댓글">' + ICON_COMMENT + '</button>',
+    '  <button class="bd-card-action" id="move-' + id + '" title="이동">' + ICON_MOVE + '</button>',
+    '  <button class="bd-card-action bd-card-action-delete" id="cdel-' + id + '" title="삭제">' + ICON_TRASH + '</button>',
+    '</div>',
+  ].join('');
+}
+
+/** 티켓/카드 공통 동작: 드래그 시작/끝, 삭제 2단계 확인 + Undo, 편집/댓글/이동 스텁 */
+function bindItemBehavior(el: PlaceEl): void {
+  const id = el.placeData?.id ?? '';
+
   el.addEventListener('dragstart', (e) => {
     el.classList.add('dragging');
     const zone = el.closest('[data-zone]') as HTMLElement | null;
@@ -492,7 +706,17 @@ function bindItemBehavior(el: HTMLElement, id: string, _name: string): void {
   });
   el.addEventListener('dragend', () => el.classList.remove('dragging'));
 
-  const deleteBtn = el.querySelector('.bd-ticket-delete, .bd-card-delete') as HTMLButtonElement;
+  // Step C(Drawer/재정렬)에서 실제 기능 연결 예정 — 지금은 스텁
+  el.querySelector('.bd-card-action:not(.bd-card-action-delete)')?.parentElement
+    ?.querySelectorAll('.bd-card-action:not(.bd-card-action-delete)')
+    .forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showStubToast('이 기능은 다음 단계에서 연결돼요');
+      });
+    });
+
+  const deleteBtn = el.querySelector('.bd-ticket-delete, .bd-card-action-delete') as HTMLButtonElement;
   let confirming = false;
   let confirmTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -501,7 +725,8 @@ function bindItemBehavior(el: HTMLElement, id: string, _name: string): void {
     if (!confirming) {
       confirming = true;
       deleteBtn.classList.add('confirm');
-      deleteBtn.innerHTML = '삭제?';
+      const label = deleteBtn.classList.contains('bd-card-action') ? '?' : '삭제?';
+      deleteBtn.innerHTML = label;
       confirmTimer = setTimeout(() => {
         confirming = false;
         deleteBtn.classList.remove('confirm');
@@ -512,13 +737,25 @@ function bindItemBehavior(el: HTMLElement, id: string, _name: string): void {
     if (confirmTimer) clearTimeout(confirmTimer);
 
     const listEl = el.closest('[data-zone]') as HTMLElement | null;
-    const name = el.querySelector('.bd-ticket-text, .bd-card-text')?.textContent ?? '';
-    scheduleDelete(id, name, el, listEl);
+    const place = el.placeData;
+    if (!place) return;
+    scheduleDelete(place, el, listEl);
   });
 }
 
+function showStubToast(message: string): void {
+  const toastContainer = document.getElementById('bd-toast-container');
+  if (!toastContainer) return;
+  const toast = document.createElement('div');
+  toast.className = 'bd-toast bd-toast-stub';
+  toast.innerHTML = '<span class="bd-toast-text">' + escapeHtml(message) + '</span>';
+  toastContainer.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('show'));
+  setTimeout(() => dismissToast(toast), 1800);
+}
+
 /** 삭제 예약: 즉시 화면에서 치우고 5초 Undo 토스트, 시간 지나면 실제 DB 삭제 */
-function scheduleDelete(id: string, name: string, el: HTMLElement, listEl: HTMLElement | null): void {
+function scheduleDelete(place: Place, el: HTMLElement, listEl: HTMLElement | null): void {
   el.remove();
   if (listEl) {
     updateZoneCount(listEl);
@@ -527,41 +764,40 @@ function scheduleDelete(id: string, name: string, el: HTMLElement, listEl: HTMLE
 
   const toastContainer = document.getElementById('bd-toast-container');
   if (!toastContainer) {
-    // 안전장치: 토스트 컨테이너가 없으면 즉시 삭제로 폴백
-    markRecentlyMutated(id);
-    deleteIdeaNow(id);
+    markRecentlyMutated(place.id);
+    deleteIdeaNow(place.id);
     return;
   }
 
   const toast = document.createElement('div');
   toast.className = 'bd-toast';
   toast.innerHTML = [
-    '<span class="bd-toast-text">"' + escapeHtml(name) + '" 삭제됨</span>',
+    '<span class="bd-toast-text">"' + escapeHtml(place.name) + '" 삭제됨</span>',
     '<button class="bd-toast-undo" type="button">실행취소</button>',
   ].join('');
   toastContainer.appendChild(toast);
   requestAnimationFrame(() => toast.classList.add('show'));
 
   const timer = setTimeout(() => {
-    pendingDeletes.delete(id);
-    markRecentlyMutated(id);
-    deleteIdeaNow(id);
+    pendingDeletes.delete(place.id);
+    markRecentlyMutated(place.id);
+    deleteIdeaNow(place.id);
     dismissToast(toast);
   }, 5000);
 
-  pendingDeletes.set(id, { timer, toastEl: toast });
+  pendingDeletes.set(place.id, { timer, toastEl: toast });
 
   const undoBtn = toast.querySelector('.bd-toast-undo') as HTMLButtonElement;
   undoBtn.addEventListener('click', () => {
-    const pending = pendingDeletes.get(id);
+    const pending = pendingDeletes.get(place.id);
     if (!pending) return;
     clearTimeout(pending.timer);
-    pendingDeletes.delete(id);
+    pendingDeletes.delete(place.id);
     dismissToast(toast);
 
     if (listEl) {
       removeEmptyState(listEl);
-      const restored = listEl.dataset.zone === '' ? createTicket(id, name) : createBoardingCard(id, name);
+      const restored = listEl.dataset.zone === '' ? createTicket(place) : createBoardingCard(place);
       listEl.appendChild(restored);
       triggerLightSweep(restored);
       updateZoneCount(listEl);
@@ -590,9 +826,9 @@ function attachDropzone(listEl: HTMLElement): void {
     const toZone = listEl.dataset.zone ?? '';
     if (!placeId || fromZone === toZone) return;
 
-    const el = document.querySelector('[data-place-id="' + placeId + '"]') as HTMLElement | null;
-    if (!el) return;
-    const name = el.querySelector('.bd-ticket-text, .bd-card-text')?.textContent ?? '';
+    const el = document.querySelector('[data-place-id="' + placeId + '"]') as PlaceEl | null;
+    if (!el || !el.placeData) return;
+    const place = el.placeData;
 
     // 게이트로 들어가는 이동일 때만 Security Check 스캔
     if (toZone !== '') {
@@ -613,7 +849,8 @@ function attachDropzone(listEl: HTMLElement): void {
     }
 
     removeEmptyState(listEl);
-    const newEl = toZone === '' ? createTicket(placeId, name) : createBoardingCard(placeId, name);
+    const movedPlace = { ...place, mood: zoneToMood(toZone) };
+    const newEl = toZone === '' ? createTicket(movedPlace) : createBoardingCard(movedPlace);
     listEl.appendChild(newEl);
     triggerLightSweep(newEl);
     updateZoneCount(listEl);
