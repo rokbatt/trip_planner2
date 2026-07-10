@@ -150,3 +150,105 @@ export function suggestGateFromCategory(category: string | null): string | null 
   if (!category) return null;
   return CATEGORY_TO_GATE[category] ?? null;
 }
+
+/* ============================================================
+   커스텀 자동완성 (직접 만든 드롭다운 UI용)
+   - AutocompleteService: 예측 목록 (텍스트만, 사진/평점 없음 → 비용 저렴)
+   - PlacesService.getDetails: 선택된 1곳만 상세정보 요청
+   - 세션 토큰을 공유해서 Google의 "세션 기반 자동완성" 할인 요금 유지
+   ============================================================ */
+
+let autocompleteService: any = null;
+let placesService: any = null;
+let sessionToken: any = null;
+
+function ensurePlacesServices(): void {
+  const g = window.google;
+  if (!autocompleteService) {
+    autocompleteService = new g.maps.places.AutocompleteService();
+  }
+  if (!placesService) {
+    // PlacesService는 지도나 DOM 노드가 필요함 (화면엔 안 보이는 더미 div로 충분)
+    const dummy = document.createElement('div');
+    placesService = new g.maps.places.PlacesService(dummy);
+  }
+}
+
+function ensureSessionToken(): void {
+  const g = window.google;
+  if (!sessionToken && g?.maps?.places?.AutocompleteSessionToken) {
+    sessionToken = new g.maps.places.AutocompleteSessionToken();
+  }
+}
+
+export interface PlacePrediction {
+  placeId: string;
+  mainText: string;
+  secondaryText: string;
+  types: string[];
+}
+
+/** 입력 텍스트로 예측 목록 요청 (텍스트만, 추가 과금 없음) */
+export function getPlacePredictions(input: string): Promise<PlacePrediction[]> {
+  return new Promise((resolve) => {
+    const g = window.google;
+    if (!g?.maps?.places || !input.trim()) {
+      resolve([]);
+      return;
+    }
+    ensurePlacesServices();
+    ensureSessionToken();
+
+    autocompleteService.getPlacePredictions(
+      { input, sessionToken },
+      (predictions: any[] | null, status: string) => {
+        if (status !== g.maps.places.PlacesServiceStatus.OK || !predictions) {
+          resolve([]);
+          return;
+        }
+        resolve(
+          predictions.map((p) => ({
+            placeId: p.place_id,
+            mainText: p.structured_formatting?.main_text ?? p.description,
+            secondaryText: p.structured_formatting?.secondary_text ?? '',
+            types: p.types ?? [],
+          }))
+        );
+      }
+    );
+  });
+}
+
+/** 사용자가 선택한 1곳만 상세정보 요청 (사진/평점 포함, 세션 토큰으로 할인 요금 적용) */
+export function getPlaceDetails(placeId: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const g = window.google;
+    if (!g?.maps?.places) {
+      reject(new Error('Google Maps가 준비되지 않았어요.'));
+      return;
+    }
+    ensurePlacesServices();
+
+    placesService.getDetails(
+      {
+        placeId,
+        fields: ['place_id', 'name', 'formatted_address', 'geometry', 'rating', 'types', 'photos'],
+        sessionToken,
+      },
+      (result: any, status: string) => {
+        sessionToken = null; // 세션 종료 → 다음 검색은 새 세션(요금 단위)으로 시작
+        if (status === g.maps.places.PlacesServiceStatus.OK && result) {
+          resolve(result);
+        } else {
+          reject(new Error('Place Details 요청 실패: ' + status));
+        }
+      }
+    );
+  });
+}
+
+/** 예측 항목의 types → 한글 카테고리 라벨 (드롭다운 아이콘/보조텍스트용) */
+export function getCategoryLabel(types: string[]): string | null {
+  const matched = types.find((t) => CATEGORY_MAP[t]);
+  return matched ? CATEGORY_MAP[matched] : null;
+}
