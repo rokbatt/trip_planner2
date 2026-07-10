@@ -366,38 +366,16 @@
 
 .bd-gates {
   flex: 1;
-  position: relative;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
-  gap: 20px;
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
   min-width: 0;
   height: 100%;
 }
 
-/* 십자 디바이더 (그리드 gap 중앙에 얇은 선) */
-.bd-gates::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: calc(50% - 0.5px);
-  width: 1px;
-  background: rgba(130,150,170,0.22);
-  pointer-events: none;
-}
-.bd-gates::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(50% - 0.5px);
-  height: 1px;
-  background: rgba(130,150,170,0.22);
-  pointer-events: none;
-}
-
 .bd-gate {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   background: rgba(255,255,255,0.6);
@@ -614,13 +592,10 @@
     writing-mode: horizontal-tb;
   }
   .bd-gates {
-    grid-template-columns: 1fr;
-    grid-template-rows: repeat(4, 340px);
+    flex-direction: column;
     height: auto;
   }
-  .bd-gates::before { display: none; }
-  .bd-gates::after { display: none; }
-  .bd-gate { min-height: 0; }
+  .bd-gate { min-height: 340px; flex: none; }
 }
 
 /* ============================================================
@@ -691,4 +666,159 @@
   .bd-toast-container { bottom: 16px; left: 16px; right: 16px; transform: none; }
   .bd-toast { width: 100%; box-sizing: border-box; }
   .bd-toast-text { max-width: none; flex: 1; }
+}
+
+/* ============================================================
+   리치 카드/티켓 (Google Place 데이터 있을 때)
+   ============================================================ */
+
+.bd-chip {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #0B7CC4;
+  background: #EAF6FD;
+  border-radius: 6px;
+  padding: 2px 7px;
+  margin-top: 6px;
+}
+
+.bd-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #F59E0B;
+  flex-shrink: 0;
+}
+.bd-rating svg { width: 12px; height: 12px; }
+
+/* ── 리치 티켓 (Inbox 컴팩트 프리뷰) ── */
+.bd-ticket-rich .bd-ticket-main {
+  align-items: flex-start;
+}
+.bd-ticket-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background-size: cover;
+  background-position: center;
+  background-color: #EAF6FD;
+  flex-shrink: 0;
+}
+.bd-ticket-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bd-ticket-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bd-ticket-rich .bd-chip { margin-top: 0; }
+
+/* ── 리치 게이트 카드 ── */
+.bd-card-rich {
+  padding: 0;
+  cursor: grab;
+}
+.bd-card-photo {
+  position: relative;
+  width: 100%;
+  height: 96px;
+  background-size: cover;
+  background-position: center;
+  background-color: #EAF6FD;
+  border-radius: 10px 10px 0 0;
+}
+
+.bd-card-kebab {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  border: none;
+  background: rgba(11,42,92,0.5);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 150ms ease, background 150ms ease;
+}
+.bd-card-rich:hover .bd-card-kebab { opacity: 1; }
+.bd-card-kebab:hover { background: rgba(11,42,92,0.75); }
+.bd-card-kebab svg { width: 13px; height: 13px; }
+
+.bd-card-kebab-menu {
+  position: absolute;
+  top: 32px;
+  right: 6px;
+  width: 148px;
+  background: #FFFFFF;
+  border: 1px solid rgba(130,150,170,0.18);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(11,42,92,0.18);
+  padding: 6px;
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 150ms ease, transform 150ms ease;
+  z-index: 10;
+}
+.bd-card-kebab-menu.open {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.bd-kmenu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  background: none;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  text-align: left;
+  transition: background 120ms ease;
+}
+.bd-kmenu-item:hover { background: #F1F6FB; }
+.bd-kmenu-item svg { width: 14px; height: 14px; flex-shrink: 0; }
+.bd-kmenu-item.danger { color: #C0392B; }
+.bd-kmenu-divider { height: 1px; background: rgba(130,150,170,0.16); margin: 4px 2px; }
+
+.bd-card-body { padding: 10px 12px 12px; }
+.bd-card-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.bd-card-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1E293B;
+  line-height: 1.4;
+}
+.bd-card-address {
+  font-size: 10.5px;
+  color: #94A3B8;
+  margin-top: 5px;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
