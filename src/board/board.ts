@@ -2,8 +2,8 @@ import { supabase } from '../supabase';
 import { store } from '../store';
 import type { Database } from '../types/database';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { loadGoogleMapsScript, extractPlaceResult, suggestGateFromCategory } from '../utils/googleMaps';
-import type { GooglePlaceResult } from '../utils/googleMaps';
+import { loadGoogleMapsScript, extractPlaceResult, suggestGateFromCategory, getPlacePredictions, getPlaceDetails, getCategoryLabel } from '../utils/googleMaps';
+import type { GooglePlaceResult, PlacePrediction } from '../utils/googleMaps';
 import './board.css';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -21,6 +21,8 @@ const ICON_TICKET = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 const ICON_STAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.8 6.3.6-4.8 4.2 1.4 6.2L12 16.9l-5.5 2.9 1.4-6.2-4.8-4.2 6.3-.6z"/></svg>';
 const ICON_STAR_FILL = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l2.6 5.8 6.3.6-4.8 4.2 1.4 6.2L12 16.9l-5.5 2.9 1.4-6.2-4.8-4.2 6.3-.6z"/></svg>';
 const ICON_BED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20v-8a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v8M2 20v-3a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3M2 20h20M6 10V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4"/></svg>';
+const ICON_SEARCH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
+const ICON_CLEAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
 const ICON_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
 const ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z"/></svg>';
 const ICON_PLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12L22 5L15 22L11 14L2 12Z"/></svg>';
@@ -111,7 +113,13 @@ let realtimeChannel: RealtimeChannel | null = null;
 let securityEl: HTMLElement | null = null;
 let placesCache = new Map<string, Place>(); // id → 최신 place 데이터 (rebuild 용)
 let boardGeneration = 0; // 렌더링마다 증가 — 오래된 렌더의 비동기 콜백을 걸러내는 용도
-let currentAutocomplete: any = null; // 이전 게이트 방문에서 남은 위젯 정리용
+
+/* ── 커스텀 자동완성 드롭다운 상태 ── */
+let acDropdownEl: HTMLElement | null = null;
+let acDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let acPredictions: PlacePrediction[] = [];
+let acActiveIndex = -1;
+let acDocClickHandler: ((e: MouseEvent) => void) | null = null;
 
 export function teardownBoard(): void {
   boardGeneration++; // 진행 중인 재시도/콜백을 즉시 무효화
@@ -126,14 +134,22 @@ export function teardownBoard(): void {
   cleanupAutocomplete();
 }
 
-/** 이전 Autocomplete 위젯의 전역 리스너와 드롭다운 DOM을 정리 (누적되면 검색이 멈춤) */
+/** 자동완성 드롭다운/디바운스 타이머 정리 */
 function cleanupAutocomplete(): void {
-  const g = window.google;
-  if (currentAutocomplete && g?.maps?.event) {
-    g.maps.event.clearInstanceListeners(currentAutocomplete);
+  if (acDebounceTimer) clearTimeout(acDebounceTimer);
+  acDebounceTimer = null;
+  closeAcDropdown();
+  if (acDocClickHandler) {
+    document.removeEventListener('click', acDocClickHandler);
+    acDocClickHandler = null;
   }
-  currentAutocomplete = null;
-  document.querySelectorAll('.pac-container').forEach((el) => el.remove());
+}
+
+function closeAcDropdown(): void {
+  acDropdownEl?.remove();
+  acDropdownEl = null;
+  acPredictions = [];
+  acActiveIndex = -1;
 }
 
 async function loadPlaces(tripId: string): Promise<Place[]> {
@@ -402,7 +418,11 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
     '</div>',
     '<div class="bd-inbox-list bd-dropzone" id="inbox-list" data-zone=""></div>',
     '<form class="bd-inbox-form" id="bd-inbox-form">',
-    '  <input class="bd-inbox-input" id="bd-inbox-input" type="text" placeholder="장소 · 링크 · 메모를 입력하세요" autocomplete="off" />',
+    '  <div class="bd-inbox-input-wrap">',
+    '    <span class="bd-inbox-search-icon">' + ICON_SEARCH + '</span>',
+    '    <input class="bd-inbox-input" id="bd-inbox-input" type="text" placeholder="장소 · 링크 · 메모를 입력하세요" autocomplete="off" />',
+    '    <button type="button" class="bd-inbox-clear" id="bd-inbox-clear" style="display:none">' + ICON_CLEAR + '</button>',
+    '  </div>',
     '  <button type="submit" class="bd-inbox-btn">' + ICON_PLUS + '</button>',
     '</form>',
   ].join('\n');
@@ -418,7 +438,15 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
 
   const form = inbox.querySelector('#bd-inbox-form') as HTMLFormElement;
   const input = inbox.querySelector('#bd-inbox-input') as HTMLInputElement;
+  const clearBtn = inbox.querySelector('#bd-inbox-clear') as HTMLButtonElement;
   requestAnimationFrame(() => input.focus());
+
+  clearBtn.addEventListener('click', () => {
+    input.value = '';
+    toggleClearButton(false);
+    closeAcDropdown();
+    input.focus();
+  });
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -460,7 +488,21 @@ function attachAutocompleteWithRetry(tripId: string, myGeneration: number, attem
   attachAutocomplete(tripId, input);
 }
 
-/** Google Places Autocomplete를 Inbox 입력창에 연결 */
+/** 카테고리 라벨 → 드롭다운에 보여줄 아이콘 (사진 대신, 추가 과금 없음) */
+function iconForCategory(label: string | null): string {
+  switch (label) {
+    case '음식점': case '카페': case '베이커리': case '바':
+      return ICON_FORK;
+    case '숙소':
+      return ICON_BED;
+    case '쇼핑': case '나이트라이프': case '테마파크': case '명소':
+      return ICON_TICKET;
+    default:
+      return ICON_PIN;
+  }
+}
+
+/** Google Places 커스텀 자동완성을 Inbox 입력창에 연결 (직접 만든 드롭다운) */
 function attachAutocomplete(tripId: string, input: HTMLInputElement): void {
   const g = window.google;
 
@@ -469,20 +511,138 @@ function attachAutocomplete(tripId: string, input: HTMLInputElement): void {
     return;
   }
 
-  // 이전 게이트 방문에서 남은 위젯이 있으면 먼저 정리 (누적 시 검색이 멈추는 원인)
   cleanupAutocomplete();
+  console.log('[GoogleMaps] 커스텀 자동완성 연결 완료');
 
-  const autocomplete = new g.maps.places.Autocomplete(input, {
-    fields: ['place_id', 'name', 'formatted_address', 'geometry', 'rating', 'types', 'photos'],
+  input.addEventListener('input', () => {
+    const query = input.value.trim();
+    toggleClearButton(query.length > 0);
+
+    if (acDebounceTimer) clearTimeout(acDebounceTimer);
+    if (!query) {
+      closeAcDropdown();
+      return;
+    }
+    acDebounceTimer = setTimeout(async () => {
+      const predictions = await getPlacePredictions(query);
+      acPredictions = predictions;
+      acActiveIndex = -1;
+      if (predictions.length > 0) {
+        renderAcDropdown(input, tripId);
+      } else {
+        closeAcDropdown();
+      }
+    }, 280);
   });
-  currentAutocomplete = autocomplete;
-  console.log('[GoogleMaps] 자동완성 연결 완료');
 
-  autocomplete.addListener('place_changed', async () => {
-    const place = autocomplete.getPlace();
-    const result = extractPlaceResult(place);
-    input.value = '';
-    if (!result) return; // 사용자가 드롭다운 선택 없이 그냥 입력했을 때 (place_id 없음)
+  input.addEventListener('keydown', (e) => {
+    if (!acDropdownEl || acPredictions.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      acActiveIndex = Math.min(acActiveIndex + 1, acPredictions.length - 1);
+      highlightAcItem();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      acActiveIndex = Math.max(acActiveIndex - 1, 0);
+      highlightAcItem();
+    } else if (e.key === 'Enter' && acActiveIndex >= 0) {
+      e.preventDefault();
+      selectPrediction(acPredictions[acActiveIndex], tripId, input);
+    } else if (e.key === 'Escape') {
+      closeAcDropdown();
+    }
+  });
+
+  acDocClickHandler = (e: MouseEvent) => {
+    if (acDropdownEl && !acDropdownEl.contains(e.target as Node) && e.target !== input) {
+      closeAcDropdown();
+    }
+  };
+  document.addEventListener('click', acDocClickHandler);
+}
+
+function toggleClearButton(show: boolean): void {
+  const clearBtn = document.getElementById('bd-inbox-clear') as HTMLElement | null;
+  if (clearBtn) clearBtn.style.display = show ? 'flex' : 'none';
+}
+
+function renderAcDropdown(input: HTMLInputElement, tripId: string): void {
+  closeAcDropdown_keepPredictions();
+
+  const dropdown = document.createElement('div');
+  dropdown.className = 'bd-ac-dropdown';
+  dropdown.innerHTML = acPredictions.map((p, i) => {
+    const label = getCategoryLabel(p.types);
+    return [
+      '<button type="button" class="bd-ac-item" data-idx="' + i + '">',
+      '  <span class="bd-ac-icon">' + iconForCategory(label) + '</span>',
+      '  <span class="bd-ac-text">',
+      '    <span class="bd-ac-main">' + escapeHtml(p.mainText) + '</span>',
+      '    <span class="bd-ac-secondary">' + escapeHtml(p.secondaryText) + '</span>',
+      '  </span>',
+      '</button>',
+    ].join('');
+  }).join('');
+
+  document.body.appendChild(dropdown);
+  acDropdownEl = dropdown;
+  positionAcDropdown(dropdown, input);
+
+  dropdown.querySelectorAll('.bd-ac-item').forEach((item) => {
+    item.addEventListener('click', () => {
+      const idx = Number((item as HTMLElement).dataset.idx);
+      selectPrediction(acPredictions[idx], tripId, input);
+    });
+  });
+}
+
+/** acPredictions는 유지한 채 드롭다운 DOM만 제거 (재렌더용) */
+function closeAcDropdown_keepPredictions(): void {
+  acDropdownEl?.remove();
+  acDropdownEl = null;
+}
+
+/** 입력창 아래 공간이 부족하면 위로 열림 (Inbox 입력창이 화면 하단에 있어서 자주 발생) */
+function positionAcDropdown(dropdown: HTMLElement, input: HTMLInputElement): void {
+  const rect = input.getBoundingClientRect();
+  const estimatedHeight = Math.min(acPredictions.length * 56 + 16, 320);
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const spaceAbove = rect.top;
+  const openUpward = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
+
+  dropdown.style.position = 'fixed';
+  dropdown.style.left = rect.left + 'px';
+  dropdown.style.width = rect.width + 'px';
+
+  if (openUpward) {
+    dropdown.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
+    dropdown.style.top = 'auto';
+    dropdown.classList.add('up');
+  } else {
+    dropdown.style.top = (rect.bottom + 8) + 'px';
+    dropdown.style.bottom = 'auto';
+    dropdown.classList.remove('up');
+  }
+}
+
+function highlightAcItem(): void {
+  if (!acDropdownEl) return;
+  acDropdownEl.querySelectorAll('.bd-ac-item').forEach((el, i) => {
+    el.classList.toggle('active', i === acActiveIndex);
+    if (i === acActiveIndex) (el as HTMLElement).scrollIntoView({ block: 'nearest' });
+  });
+}
+
+async function selectPrediction(prediction: PlacePrediction, tripId: string, input: HTMLInputElement): Promise<void> {
+  closeAcDropdown();
+  input.value = '';
+  toggleClearButton(false);
+
+  try {
+    const details = await getPlaceDetails(prediction.placeId);
+    const result = extractPlaceResult(details);
+    if (!result) return;
 
     const listEl = document.getElementById('inbox-list');
     const newPlace = await addRichIdea(tripId, null, result);
@@ -495,8 +655,10 @@ function attachAutocomplete(tripId: string, input: HTMLInputElement): void {
       triggerLightSweep(el);
       updateZoneCount(listEl);
     }
-    input.focus();
-  });
+  } catch (err) {
+    console.error('[GoogleMaps] Place Details 실패:', (err as Error).message);
+  }
+  input.focus();
 }
 
 function buildInboxEmpty(): string {
