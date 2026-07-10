@@ -822,3 +822,16 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ============================================================
+   Google Places 자동완성 드롭다운 — 우리 UI(토스트 z-index:250, Drawer 등)에
+   가려지지 않도록 최상위로 강제
+   ============================================================ */
+.pac-container {
+  z-index: 9999 !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(130,150,170,0.2) !important;
+  box-shadow: 0 12px 32px rgba(11,42,92,0.18) !important;
+  font-family: inherit !important;
+  margin-top: 4px !important;
+}
