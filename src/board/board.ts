@@ -7,6 +7,17 @@ import type { GooglePlaceResult, PlacePrediction } from '../utils/googleMaps';
 import './board.css';
 
 type Place = Database['public']['Tables']['places']['Row'];
+type PlacesDbRow = Database['public']['Tables']['places_db']['Row'];
+
+/** 자동완성 드롭다운에 표시할 통합 예측 항목 — DB 캐시 결과와 Google 실시간 예측을 하나로 다룸 */
+interface UnifiedPrediction {
+  source: 'cache' | 'google';
+  placeId: string;
+  mainText: string;
+  secondaryText: string;
+  types: string[];
+  cachedRow?: PlacesDbRow;
+}
 
 interface GateConfig {
   key: string;      // mood 값 (DB 저장값)
@@ -118,7 +129,7 @@ let boardGeneration = 0; // 렌더링마다 증가 — 오래된 렌더의 비�
 /* ── 커스텀 자동완성 드롭다운 상태 ── */
 let acDropdownEl: HTMLElement | null = null;
 let acDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-let acPredictions: PlacePrediction[] = [];
+let acPredictions: UnifiedPrediction[] = [];
 let acActiveIndex = -1;
 let acDocClickHandler: ((e: MouseEvent) => void) | null = null;
 
@@ -256,8 +267,38 @@ async function cacheToPlacesDb(g: GooglePlaceResult): Promise<void> {
     google_place_id: g.place_id,
     google_rating: g.rating,
     photo_url: g.photoUrl,
+    opening_hours: g.openingHours,
     source: 'google_autocomplete',
   });
+}
+
+/** 검색창 입력값으로 우리 DB(places_db)를 먼저 조회 — 무료, 즉시 응답 */
+async function searchCachedPlaces(query: string): Promise<PlacesDbRow[]> {
+  const { data, error } = await supabase
+    .from('places_db')
+    .select('*')
+    .ilike('name', '%' + query + '%')
+    .limit(5);
+
+  if (error) {
+    console.error('캐시 검색 실패:', error.message);
+    return [];
+  }
+  return data ?? [];
+}
+
+function cachedRowToGoogleResult(row: PlacesDbRow): GooglePlaceResult {
+  return {
+    place_id: row.google_place_id ?? '',
+    name: row.name,
+    address: row.address,
+    lat: row.lat,
+    lng: row.lng,
+    rating: row.google_rating,
+    category: row.category,
+    photoUrl: row.photo_url,
+    openingHours: (row.opening_hours as string[] | null) ?? null,
+  };
 }
 
 async function deleteIdeaNow(placeId: string): Promise<boolean> {
@@ -547,10 +588,34 @@ function attachAutocomplete(tripId: string, input: HTMLInputElement): void {
       return;
     }
     acDebounceTimer = setTimeout(async () => {
-      const predictions = await getPlacePredictions(query);
-      acPredictions = predictions;
+      const [cachedRows, googlePredictions] = await Promise.all([
+        searchCachedPlaces(query),
+        getPlacePredictions(query),
+      ]);
+
+      const cachedItems: UnifiedPrediction[] = cachedRows.map((row) => ({
+        source: 'cache',
+        placeId: row.google_place_id ?? row.id,
+        mainText: row.name,
+        secondaryText: row.address ?? row.category,
+        types: [],
+        cachedRow: row,
+      }));
+
+      const cachedPlaceIds = new Set(cachedItems.map((c) => c.placeId));
+      const googleItems: UnifiedPrediction[] = googlePredictions
+        .filter((p) => !cachedPlaceIds.has(p.placeId)) // 이미 캐시에 있는 곳은 중복 표시 안 함
+        .map((p) => ({
+          source: 'google',
+          placeId: p.placeId,
+          mainText: p.mainText,
+          secondaryText: p.secondaryText,
+          types: p.types,
+        }));
+
+      acPredictions = [...cachedItems, ...googleItems];
       acActiveIndex = -1;
-      if (predictions.length > 0) {
+      if (acPredictions.length > 0) {
         renderAcDropdown(input, tripId);
       } else {
         closeAcDropdown();
@@ -596,12 +661,13 @@ function renderAcDropdown(input: HTMLInputElement, tripId: string): void {
   const dropdown = document.createElement('div');
   dropdown.className = 'bd-ac-dropdown';
   dropdown.innerHTML = acPredictions.map((p, i) => {
-    const label = getCategoryLabel(p.types);
+    const label = p.source === 'cache' ? (p.cachedRow?.category ?? null) : getCategoryLabel(p.types);
+    const badge = p.source === 'cache' ? '<span class="bd-ac-cached">저장됨</span>' : '';
     return [
       '<button type="button" class="bd-ac-item" data-idx="' + i + '">',
       '  <span class="bd-ac-icon">' + iconForCategory(label) + '</span>',
       '  <span class="bd-ac-text">',
-      '    <span class="bd-ac-main">' + escapeHtml(p.mainText) + '</span>',
+      '    <span class="bd-ac-main">' + escapeHtml(p.mainText) + badge + '</span>',
       '    <span class="bd-ac-secondary">' + escapeHtml(p.secondaryText) + '</span>',
       '  </span>',
       '</button>',
@@ -657,29 +723,40 @@ function highlightAcItem(): void {
   });
 }
 
-async function selectPrediction(prediction: PlacePrediction, tripId: string, input: HTMLInputElement): Promise<void> {
+async function selectPrediction(prediction: UnifiedPrediction, tripId: string, input: HTMLInputElement): Promise<void> {
   closeAcDropdown();
   input.value = '';
   toggleClearButton(false);
 
-  try {
-    const details = await getPlaceDetails(prediction.placeId);
-    const result = extractPlaceResult(details);
-    if (!result) return;
+  let result: GooglePlaceResult | null = null;
 
-    const listEl = document.getElementById('inbox-list');
-    const newPlace = await addRichIdea(tripId, null, result);
-    if (newPlace && listEl) {
-      placesCache.set(newPlace.id, newPlace);
-      markRecentlyMutated(newPlace.id);
-      removeEmptyState(listEl);
-      const el = createTicket(newPlace);
-      listEl.appendChild(el);
-      triggerLightSweep(el);
-      updateZoneCount(listEl);
+  if (prediction.source === 'cache' && prediction.cachedRow) {
+    // DB에 이미 있는 장소 — Place Details 재요청 없이 캐시된 데이터 그대로 사용 (비용 0원)
+    result = cachedRowToGoogleResult(prediction.cachedRow);
+  } else {
+    try {
+      const details = await getPlaceDetails(prediction.placeId);
+      result = extractPlaceResult(details);
+    } catch (err) {
+      console.error('[GoogleMaps] Place Details 실패:', (err as Error).message);
     }
-  } catch (err) {
-    console.error('[GoogleMaps] Place Details 실패:', (err as Error).message);
+  }
+
+  if (!result) {
+    input.focus();
+    return;
+  }
+
+  const listEl = document.getElementById('inbox-list');
+  const newPlace = await addRichIdea(tripId, null, result);
+  if (newPlace && listEl) {
+    placesCache.set(newPlace.id, newPlace);
+    markRecentlyMutated(newPlace.id);
+    removeEmptyState(listEl);
+    const el = createTicket(newPlace);
+    listEl.appendChild(el);
+    triggerLightSweep(el);
+    updateZoneCount(listEl);
   }
   input.focus();
 }
