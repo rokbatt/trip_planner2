@@ -87,6 +87,7 @@ export interface GooglePlaceResult {
   rating: number | null;
   category: string | null;
   photoUrl: string | null;
+  openingHours: string[] | null;
 }
 
 /** Google Place types → 몽실이 한글 카테고리 라벨 매핑 */
@@ -125,6 +126,10 @@ export function extractPlaceResult(place: any): GooglePlaceResult | null {
     }
   }
 
+  const openingHours: string[] | null = Array.isArray(place.opening_hours?.weekday_text)
+    ? place.opening_hours.weekday_text
+    : null;
+
   return {
     place_id: place.place_id,
     name: place.name || '',
@@ -134,6 +139,7 @@ export function extractPlaceResult(place: any): GooglePlaceResult | null {
     rating: typeof place.rating === 'number' ? place.rating : null,
     category: matchedType ? CATEGORY_MAP[matchedType] : null,
     photoUrl,
+    openingHours,
   };
 }
 
@@ -232,7 +238,7 @@ export function getPlaceDetails(placeId: string): Promise<any> {
     placesService.getDetails(
       {
         placeId,
-        fields: ['place_id', 'name', 'formatted_address', 'geometry', 'rating', 'types', 'photos'],
+        fields: ['place_id', 'name', 'formatted_address', 'geometry', 'rating', 'types', 'photos', 'opening_hours'],
         sessionToken,
       },
       (result: any, status: string) => {
