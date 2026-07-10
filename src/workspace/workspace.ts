@@ -496,6 +496,18 @@ function buildDetailPanelShell(place: any): string {
   const category = place.category
     ? '<span class="ws-chip">' + escapeHtml(place.category) + '</span>'
     : '';
+
+  // API 호출 없이 URL만 조합 — place_id 우선, 없으면 주소/이름으로 검색 링크
+  const mapsUrl = place.google_place_id
+    ? 'https://www.google.com/maps/place/?q=place_id:' + place.google_place_id
+    : 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(place.address || place.name);
+  const mapsLink = [
+    '<a class="ws-maps-link" href="' + mapsUrl + '" target="_blank" rel="noopener noreferrer">',
+    IC.mapPin,
+    '<span>Google 지도에서 보기</span>',
+    '</a>',
+  ].join('');
+
   const address = place.address
     ? '<div class="ws-detail-section"><span class="ws-detail-label">주소</span><div class="ws-detail-text">' + escapeHtml(place.address) + '</div></div>'
     : '';
@@ -520,6 +532,7 @@ function buildDetailPanelShell(place: any): string {
            rating,
     '    </div>',
     '    <span class="ws-detail-save-hint" id="detail-name-hint"></span>',
+         mapsLink,
          category,
          address,
          hours,
