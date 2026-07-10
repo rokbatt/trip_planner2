@@ -315,6 +315,30 @@
   flex-shrink: 0;
 }
 
+/* ── Security Check 스캐닝 상태 (드래그로 게이트 진입 시) ── */
+.bd-security.scanning .bd-security-icon {
+  border-color: #8FD8F8;
+  color: #0B7CC4;
+  animation: bd-scan-pulse 900ms ease-in-out infinite;
+}
+.bd-security.scanning .bd-security-label {
+  color: #0B7CC4;
+  animation: bd-scan-fade 900ms ease-in-out infinite;
+}
+@keyframes bd-scan-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(143,216,248,0.5); }
+  50% { box-shadow: 0 0 0 6px rgba(143,216,248,0); }
+}
+@keyframes bd-scan-fade {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+/* 스캐닝 중 세로 점선을 스카이블루로 강조 */
+.bd-security.scanning::before,
+.bd-security.scanning::after {
+  background: repeating-linear-gradient(to bottom, rgba(143,216,248,0.6) 0 4px, transparent 4px 9px);
+}
+
 /* ============================================================
    우측: 4개 게이트
    ============================================================ */
@@ -492,4 +516,69 @@
   .bd-gates::before { display: none; }
   .bd-gates::after { display: none; }
   .bd-gate { min-height: 0; }
+}
+
+/* ============================================================
+   Undo 삭제 토스트
+   ============================================================ */
+
+.bd-toast-container {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 250;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.bd-toast {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #0B2A5C;
+  color: #FFFFFF;
+  box-shadow: 0 12px 32px rgba(11,42,92,0.28);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 200ms cubic-bezier(0.2,0.8,0.2,1), transform 200ms cubic-bezier(0.2,0.8,0.2,1);
+  pointer-events: auto;
+}
+.bd-toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.bd-toast-text {
+  font-size: 13px;
+  color: rgba(255,255,255,0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+}
+
+.bd-toast-undo {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(255,255,255,0.14);
+  color: #8FD8F8;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.bd-toast-undo:hover { background: rgba(255,255,255,0.22); }
+
+@media (max-width: 640px) {
+  .bd-toast-container { bottom: 16px; left: 16px; right: 16px; transform: none; }
+  .bd-toast { width: 100%; box-sizing: border-box; }
+  .bd-toast-text { max-width: none; flex: 1; }
 }
