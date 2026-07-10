@@ -64,7 +64,15 @@ export interface Database {
           avatar_url?: string | null;
         };
         Update: Partial<Database['public']['Tables']['trip_members']['Insert']>;
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: 'trip_members_trip_id_fkey';
+            columns: ['trip_id'];
+            isOneToOne: false;
+            referencedRelation: 'trips';
+            referencedColumns: ['id'];
+          },
+        ];
       };
 
       places: {
@@ -220,7 +228,20 @@ export interface Database {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      get_trip_by_invite_code: {
+        Args: { p_invite_code: string };
+        Returns: {
+          id: string;
+          name: string;
+          destinations: string[] | null;
+          start_date: string | null;
+          end_date: string | null;
+          headcount: number | null;
+          member_count: number;
+        }[];
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };
