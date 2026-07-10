@@ -108,8 +108,10 @@ const pendingDeletes = new Map<string, PendingDelete>();
 let realtimeChannel: RealtimeChannel | null = null;
 let securityEl: HTMLElement | null = null;
 let placesCache = new Map<string, Place>(); // id → 최신 place 데이터 (rebuild 용)
+let boardGeneration = 0; // 렌더링마다 증가 — 오래된 렌더의 비동기 콜백을 걸러내는 용도
 
 export function teardownBoard(): void {
+  boardGeneration++; // 진행 중인 재시도/콜백을 즉시 무효화
   if (realtimeChannel) {
     supabase.removeChannel(realtimeChannel);
     realtimeChannel = null;
@@ -260,6 +262,7 @@ function runSecurityScan(): Promise<void> {
  *  ───────────────────────────────────────────── */
 export async function renderBoardContent(container: HTMLElement, tripId: string): Promise<void> {
   teardownBoard();
+  const myGeneration = ++boardGeneration;
 
   container.innerHTML = [
     '<div class="bd-layout" id="bd-layout">',
@@ -269,6 +272,8 @@ export async function renderBoardContent(container: HTMLElement, tripId: string)
   ].join('');
 
   const places = await loadPlaces(tripId);
+  if (myGeneration !== boardGeneration) return; // 그 사이 다른 렌더가 시작됨
+
   places.forEach((p) => placesCache.set(p.id, p));
 
   const layout = container.querySelector('#bd-layout') as HTMLElement;
@@ -286,8 +291,12 @@ export async function renderBoardContent(container: HTMLElement, tripId: string)
   // Google Maps는 백그라운드에서 로드 (실패해도 텍스트 입력은 그대로 동작)
   loadGoogleMapsScript()
     .then(() => {
+      if (myGeneration !== boardGeneration) {
+        console.log('[GoogleMaps] 로드는 됐지만 이미 다른 화면으로 이동해서 건너뜀');
+        return;
+      }
       console.log('[GoogleMaps] 로드 완료, 자동완성 연결 중...');
-      attachAutocomplete(tripId);
+      attachAutocompleteWithRetry(tripId, myGeneration);
     })
     .catch((err) => console.error('[GoogleMaps] 로드 실패, 텍스트 입력만 사용:', err.message));
 }
@@ -420,15 +429,27 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
   return inbox;
 }
 
-/** Google Places Autocomplete를 Inbox 입력창에 연결 */
-function attachAutocomplete(tripId: string): void {
-  const input = document.getElementById('bd-inbox-input') as HTMLInputElement | null;
-  const g = window.google;
+/** input이 아직 안 붙었을 짧은 타이밍 창을 대비한 재시도 래퍼 */
+function attachAutocompleteWithRetry(tripId: string, myGeneration: number, attempt = 0): void {
+  if (myGeneration !== boardGeneration) return;
 
+  const input = document.getElementById('bd-inbox-input') as HTMLInputElement | null;
   if (!input) {
-    console.error('[GoogleMaps] #bd-inbox-input을 찾지 못했어요 (아직 렌더 전이거나 DOM이 바뀜)');
+    if (attempt >= 10) {
+      console.error('[GoogleMaps] #bd-inbox-input을 끝내 찾지 못했어요 (다른 화면으로 이동했을 가능성)');
+      return;
+    }
+    setTimeout(() => attachAutocompleteWithRetry(tripId, myGeneration, attempt + 1), 200);
     return;
   }
+
+  attachAutocomplete(tripId, input);
+}
+
+/** Google Places Autocomplete를 Inbox 입력창에 연결 */
+function attachAutocomplete(tripId: string, input: HTMLInputElement): void {
+  const g = window.google;
+
   if (!g?.maps?.places) {
     console.error('[GoogleMaps] window.google.maps.places가 없어요. 스크립트 로드는 됐지만 places 라이브러리 준비가 안 됨');
     return;
