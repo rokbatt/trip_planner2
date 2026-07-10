@@ -846,6 +846,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.bd-ac-cached {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #EAF6FD;
+  color: #0B7CC4;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  vertical-align: middle;
+}
 .bd-ac-secondary {
   font-size: 11.5px;
   color: #94A3B8;
