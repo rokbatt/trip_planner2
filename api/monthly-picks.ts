@@ -17,6 +17,8 @@
 
 // 이 프로젝트엔 @types/node를 추가하지 않아서 최소한의 타입만 선언
 // (Vercel 배포 환경에는 실제 Node.js process 객체가 있음)
+import { createClient } from '@supabase/supabase-js';
+
 declare const process: { env: Record<string, string | undefined> };
 
 interface VercelRequest {
@@ -55,7 +57,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const { createClient } = await import('@supabase/supabase-js');
   const supabase = createClient(supabaseUrl, serviceKey);
 
   // 1. DB 먼저 조회
