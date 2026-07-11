@@ -446,6 +446,7 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
     if (commentsBody) {
       await initComments(place.id);
       renderCommentsUI(commentsBody, place.id);
+      window.dispatchEvent(new CustomEvent('mongsil:commentsViewed', { detail: { placeId: place.id } }));
     }
   }
 
