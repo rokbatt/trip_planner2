@@ -875,10 +875,10 @@ function createTicket(place: Place): HTMLElement {
 
   const suggestion = place.google_place_id ? classifyPlace(place) : classify(place.name);
   const commentBadge = '<span class="bd-comment-badge">0</span>';
+  let innerHtml = '';
 
   if (place.photo_url) {
-    ticket.innerHTML = [
-      commentBadge,
+    innerHtml = [
       '<div class="bd-ticket-main">',
       '  <div class="bd-ticket-thumb" style="background-image:url(\'' + place.photo_url + '\')"></div>',
       '  <div class="bd-ticket-info">',
@@ -893,8 +893,7 @@ function createTicket(place: Place): HTMLElement {
       suggestion ? buildSuggestionChip(suggestion) : '',
     ].join('');
   } else {
-    ticket.innerHTML = [
-      commentBadge,
+    innerHtml = [
       '<div class="bd-ticket-main">',
       ICON_PLANE,
       '<span class="bd-ticket-text">' + escapeHtml(place.name) + '</span>',
@@ -903,6 +902,8 @@ function createTicket(place: Place): HTMLElement {
       suggestion ? buildSuggestionChip(suggestion) : '',
     ].join('');
   }
+
+  ticket.innerHTML = commentBadge + '<div class="bd-ticket-clip">' + innerHtml + '</div>';
 
   if (suggestion) {
     bindSuggestionChip(ticket, place.id, suggestion);
@@ -1028,10 +1029,10 @@ function createBoardingCard(place: Place): HTMLElement {
   card.dataset.placeId = place.id;
 
   const commentBadge = '<span class="bd-comment-badge">0</span>';
+  let innerHtml = '';
 
   if (place.photo_url) {
-    card.innerHTML = [
-      commentBadge,
+    innerHtml = [
       '<div class="bd-card-photo" style="background-image:url(\'' + place.photo_url + '\')">',
       '  <button class="bd-card-kebab" id="kebab-' + place.id + '">' + ICON_KEBAB + '</button>',
       '  <div class="bd-card-kebab-menu" id="kmenu-' + place.id + '">',
@@ -1061,12 +1062,13 @@ function createBoardingCard(place: Place): HTMLElement {
       '</div>',
     ].join('');
   } else {
-    card.innerHTML = [
-      commentBadge,
+    innerHtml = [
       '<span class="bd-card-text">' + escapeHtml(place.name) + '</span>',
       '<button class="bd-card-delete" id="cdel-' + place.id + '">' + ICON_TRASH + '</button>',
     ].join('');
   }
+
+  card.innerHTML = commentBadge + '<div class="bd-card-clip">' + innerHtml + '</div>';
 
   bindItemBehavior(card, place);
 
