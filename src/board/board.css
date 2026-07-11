@@ -28,8 +28,9 @@
   border-color: #8FD8F8 !important;
 }
 
-/* ── 라이트 스윕 (공통 모션) ── */
-.sweep::after {
+/* ── 라이트 스윕 (공통 모션) — 내부 클립 래퍼 안에서만 재생되도록 스코프 지정 ── */
+.sweep > .bd-card-clip::after,
+.sweep > .bd-ticket-clip::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -200,14 +201,19 @@
   border: 1px solid rgba(130,150,170,0.2);
   border-left: 3px dashed #CDEBFB;
   border-radius: 8px;
-  padding: 10px 30px 10px 12px;
   font-size: 12.5px;
   color: #1E293B;
   cursor: grab;
   transition: border-color 180ms cubic-bezier(0.2,0.8,0.2,1),
               box-shadow 180ms cubic-bezier(0.2,0.8,0.2,1),
               opacity 180ms cubic-bezier(0.2,0.8,0.2,1);
+}
+
+.bd-ticket-clip {
+  position: relative;
+  padding: 10px 30px 10px 12px;
   overflow: hidden;
+  border-radius: inherit;
 }
 
 .bd-ticket-main {
@@ -475,7 +481,6 @@
   background: #FFFFFF;
   border: 1px solid rgba(130,150,170,0.18);
   border-radius: 10px;
-  padding: 11px 13px;
   font-size: 13px;
   line-height: 1.5;
   color: #1E293B;
@@ -483,8 +488,13 @@
   transition: border-color 180ms cubic-bezier(0.2,0.8,0.2,1),
               box-shadow 180ms cubic-bezier(0.2,0.8,0.2,1),
               opacity 180ms cubic-bezier(0.2,0.8,0.2,1);
-  word-break: break-word;
+}
+.bd-card-clip {
+  position: relative;
+  padding: 11px 13px;
   overflow: hidden;
+  border-radius: inherit;
+  word-break: break-word;
 }
 .bd-card:hover { border-color: #8FD8F8; box-shadow: 0 4px 14px rgba(11,124,196,0.10); }
 .bd-card.dragging {
@@ -685,9 +695,8 @@
 .bd-ticket-rich .bd-chip { margin-top: 0; }
 
 /* ── 리치 게이트 카드 ── */
-.bd-card-rich {
+.bd-card-rich .bd-card-clip {
   padding: 0;
-  cursor: grab;
 }
 .bd-card-photo {
   position: relative;
@@ -868,30 +877,25 @@
 
 /* ============================================================
    댓글 안읽음 배지 (카드/티켓 공통)
+   — 카드 컴포넌트 우측 상단 테두리에 걸치도록 배치
    ============================================================ */
 .bd-comment-badge {
   position: absolute;
-  top: 6px;
-  left: 6px;
-  min-width: 17px;
-  height: 17px;
-  padding: 0 4px;
+  top: -7px;
+  right: -7px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
   border-radius: 999px;
   background: #DC2626;
   color: #fff;
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
+  line-height: 1;
   display: none;
   align-items: center;
   justify-content: center;
-  z-index: 5;
-  box-shadow: 0 2px 6px rgba(220,38,38,0.35);
+  text-align: center;
+  z-index: 6;
 }
 .bd-comment-badge.visible { display: flex; }
-
-/* 리치 카드는 사진 위에 얹히므로 살짝 더 크고 그림자 강조 */
-.bd-card-rich .bd-comment-badge {
-  top: 8px;
-  left: 8px;
-  border: 2px solid rgba(255,255,255,0.9);
-}
