@@ -114,6 +114,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const supabase = createClient(supabaseUrl, serviceKey);
 
+  const BATCH_SIZE = 15; // 한 번 호출에 이만큼만 처리 (5분 타임아웃 안에 여유 있게 끝나도록)
+
   const summary = {
     places_migrated: 0,
     places_failed: 0,
@@ -126,7 +128,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .from('places')
     .select('id, name, photo_url, google_place_id')
     .not('photo_url', 'is', null)
-    .not('photo_url', 'ilike', '%supabase.co/storage%');
+    .not('photo_url', 'ilike', '%supabase.co/storage%')
+    .limit(BATCH_SIZE);
 
   if (placesError) {
     res.status(500).json({ error: 'places 조회 실패: ' + placesError.message });
@@ -149,32 +152,64 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  const { data: placesDb, error: placesDbError } = await supabase
-    .from('places_db')
-    .select('id, name, photo_url, google_place_id')
+  // places 배치가 꽉 찼으면(BATCH_SIZE만큼 처리했으면) places_db는 이번엔 건너뛰고
+  // 다음 호출에서 이어서 처리 — 한 번의 실행에 너무 많은 일을 몰아넣지 않기 위함
+  const placesBatchFull = (places?.length ?? 0) >= BATCH_SIZE;
+
+  let placesDbRemaining = 0;
+  if (!placesBatchFull) {
+    const remainingBudget = BATCH_SIZE - (places?.length ?? 0);
+
+    const { data: placesDb, error: placesDbError } = await supabase
+      .from('places_db')
+      .select('id, name, photo_url, google_place_id')
+      .not('photo_url', 'is', null)
+      .not('photo_url', 'ilike', '%supabase.co/storage%')
+      .limit(remainingBudget);
+
+    if (placesDbError) {
+      res.status(500).json({ error: 'places_db 조회 실패: ' + placesDbError.message, summary });
+      return;
+    }
+
+    for (const p of placesDb ?? []) {
+      if (!p.google_place_id || !p.photo_url) continue;
+      try {
+        const result = await rehostGooglePhoto(supabase, p.photo_url, p.google_place_id, serverMapsKey);
+        const { error: updateError } = await supabase
+          .from('places_db')
+          .update({ photo_url: result.url })
+          .eq('id', p.id);
+        if (updateError) throw updateError;
+        summary.places_db_migrated++;
+      } catch (e) {
+        summary.places_db_failed++;
+        summary.errors.push('places_db."' + p.name + '": ' + (e as Error).message);
+      }
+    }
+
+    const { count } = await supabase
+      .from('places_db')
+      .select('id', { count: 'exact', head: true })
+      .not('photo_url', 'is', null)
+      .not('photo_url', 'ilike', '%supabase.co/storage%');
+    placesDbRemaining = count ?? 0;
+  }
+
+  const { count: placesRemaining } = await supabase
+    .from('places')
+    .select('id', { count: 'exact', head: true })
     .not('photo_url', 'is', null)
     .not('photo_url', 'ilike', '%supabase.co/storage%');
 
-  if (placesDbError) {
-    res.status(500).json({ error: 'places_db 조회 실패: ' + placesDbError.message, summary });
-    return;
-  }
+  const totalRemaining = (placesRemaining ?? 0) + placesDbRemaining;
 
-  for (const p of placesDb ?? []) {
-    if (!p.google_place_id || !p.photo_url) continue;
-    try {
-      const result = await rehostGooglePhoto(supabase, p.photo_url, p.google_place_id, serverMapsKey);
-      const { error: updateError } = await supabase
-        .from('places_db')
-        .update({ photo_url: result.url })
-        .eq('id', p.id);
-      if (updateError) throw updateError;
-      summary.places_db_migrated++;
-    } catch (e) {
-      summary.places_db_failed++;
-      summary.errors.push('places_db."' + p.name + '": ' + (e as Error).message);
-    }
-  }
-
-  res.status(200).json(summary);
+  res.status(200).json({
+    ...summary,
+    remaining: totalRemaining,
+    done: totalRemaining === 0,
+    hint: totalRemaining > 0
+      ? '아직 ' + totalRemaining + '개 남음 — 같은 요청을 한 번 더 보내면 이어서 처리돼요.'
+      : '전부 완료됐어요.',
+  });
 }
