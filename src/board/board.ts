@@ -346,7 +346,13 @@ async function rehostPhoto(photoUrl: string, placeId: string): Promise<string> {
       body: JSON.stringify({ photoUrl, placeId }),
     });
     const data = await res.json();
-    if (res.ok && data.url) return data.url;
+    if (res.ok && data.url) {
+      console.log(
+        '[Verify][사진 재호스팅] ' + (data.cached ? '이미 Storage에 있음(재다운로드 안 함)' : 'Google에서 새로 다운로드 → Storage 업로드') +
+        ' → ' + data.url
+      );
+      return data.url;
+    }
     console.error('[Photo] 재호스팅 실패, 원본 URL 사용:', data.error);
   } catch (e) {
     console.error('[Photo] 재호스팅 네트워크 오류, 원본 URL 사용:', (e as Error).message);
@@ -361,9 +367,13 @@ async function cacheToPlacesDb(g: GooglePlaceResult): Promise<void> {
     .select('id')
     .eq('google_place_id', g.place_id)
     .maybeSingle();
-  if (existing) return;
 
-  await supabase.from('places_db').insert({
+  if (existing) {
+    console.log('[Verify][6단계: 이미 캐시됨] "' + g.name + '"은 이미 places_db에 있어서 재저장 안 함');
+    return;
+  }
+
+  const { error } = await supabase.from('places_db').insert({
     name: g.name,
     category: g.category ?? '기타',
     country: '',
@@ -377,10 +387,18 @@ async function cacheToPlacesDb(g: GooglePlaceResult): Promise<void> {
     opening_hours: g.openingHours,
     source: 'google_autocomplete',
   });
+
+  if (error) {
+    console.error('[Verify][5단계 실패] places_db 저장 실패:', error.message);
+  } else {
+    console.log('[Verify][5단계 완료] "' + g.name + '"을 places_db에 저장함 → 다음 검색부터는 DB만 조회');
+  }
 }
 
 /** 검색창 입력값으로 우리 DB(places_db)를 먼저 조회 — 무료, 즉시 응답 */
 async function searchCachedPlaces(query: string): Promise<PlacesDbRow[]> {
+  console.log('[Verify][1단계: DB 먼저 조회] places_db에서 검색:', query);
+
   const { data, error } = await supabase
     .from('places_db')
     .select('*')
@@ -388,9 +406,11 @@ async function searchCachedPlaces(query: string): Promise<PlacesDbRow[]> {
     .limit(5);
 
   if (error) {
-    console.error('캐시 검색 실패:', error.message);
+    console.error('[Verify] 캐시 검색 실패:', error.message);
     return [];
   }
+
+  console.log('[Verify][1단계 결과] DB 히트 ' + (data?.length ?? 0) + '건', data?.map((d) => d.name));
   return data ?? [];
 }
 
@@ -464,6 +484,17 @@ export async function renderBoardContent(container: HTMLElement, tripId: string)
   if (myGeneration !== boardGeneration) return; // 그 사이 다른 렌더가 시작됨
 
   places.forEach((p) => placesCache.set(p.id, p));
+
+  console.log('[Verify][1단계 사진 확인] 보드에 있는 카드들의 photo_url 상태:');
+  places.forEach((p) => {
+    if (!p.photo_url) {
+      console.log('  · "' + p.name + '" — 사진 없음');
+    } else if (p.photo_url.includes('supabase.co/storage')) {
+      console.log('  · "' + p.name + '" — ✅ 우리 Storage에서 서빙 (Google API 재호출 없음)');
+    } else {
+      console.log('  · "' + p.name + '" — ⚠️ 아직 Google URL 그대로 저장됨 (재호스팅 전 데이터, 이미지 로드 시 Google에 요청 나감)', p.photo_url);
+    }
+  });
 
   const layout = container.querySelector('#bd-layout') as HTMLElement;
 
@@ -851,13 +882,16 @@ async function selectPrediction(prediction: UnifiedPrediction, tripId: string, i
 
   if (prediction.source === 'cache' && prediction.cachedRow) {
     // DB에 이미 있는 장소 — Place Details 재요청 없이 캐시된 데이터 그대로 사용 (비용 0원)
+    console.log('[Verify][3단계: DB 히트 → Google 호출 생략]', prediction.mainText, '— Place Details 요청 안 나감');
     result = cachedRowToGoogleResult(prediction.cachedRow);
   } else {
+    console.log('[Verify][4단계: DB 미스 → Google Place Details 호출]', prediction.mainText, '(Network 탭에서 place-details/getDetails 관련 요청 확인)');
     try {
       const details = await getPlaceDetails(prediction.placeId);
       result = extractPlaceResult(details);
       if (result?.photoUrl) {
         result.photoUrl = await rehostPhoto(result.photoUrl, result.place_id);
+        console.log('[Verify][사진 재호스팅 완료] 최종 저장될 photo_url:', result.photoUrl);
       }
     } catch (err) {
       console.error('[GoogleMaps] Place Details 실패:', (err as Error).message);
