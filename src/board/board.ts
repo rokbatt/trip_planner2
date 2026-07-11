@@ -113,6 +113,79 @@ function markRecentlyMutated(id: string): void {
   setTimeout(() => recentlyMutatedIds.delete(id), 2500);
 }
 
+/* ── 댓글 안읽음 배지 ── */
+function getCommentLastRead(placeId: string): string {
+  return localStorage.getItem(COMMENT_READ_PREFIX + placeId) || new Date(0).toISOString();
+}
+
+function markCommentsRead(placeId: string): void {
+  localStorage.setItem(COMMENT_READ_PREFIX + placeId, new Date().toISOString());
+}
+
+function updateCommentBadge(placeId: string, count: number): void {
+  const badgeEl = document.querySelector(
+    '[data-place-id="' + placeId + '"] .bd-comment-badge'
+  ) as HTMLElement | null;
+  if (!badgeEl) return;
+  badgeEl.textContent = String(count);
+  badgeEl.classList.toggle('visible', count > 0);
+}
+
+/** 보드에 있는 모든 카드의 초기 안읽은 댓글 배지 계산 (본인이 단 댓글은 제외) */
+async function loadInitialCommentBadges(placeIds: string[]): Promise<void> {
+  if (placeIds.length === 0) return;
+
+  const { data, error } = await supabase
+    .from('place_comments')
+    .select('place_id, created_at, user_id')
+    .in('place_id', placeIds);
+
+  if (error || !data) return;
+
+  const myId = store.get('user')?.id;
+  const counts = new Map<string, number>();
+
+  data.forEach((row) => {
+    if (row.user_id === myId) return;
+    const lastRead = getCommentLastRead(row.place_id);
+    if (row.created_at > lastRead) {
+      counts.set(row.place_id, (counts.get(row.place_id) ?? 0) + 1);
+    }
+  });
+
+  counts.forEach((count, placeId) => updateCommentBadge(placeId, count));
+}
+
+/** 보드에 있는 장소 아무 곳에나 새 댓글이 달리면 실시간으로 배지 갱신 */
+function subscribeCommentActivity(): void {
+  const myId = store.get('user')?.id;
+
+  commentRealtimeChannel = supabase
+    .channel('place_comments_board:' + Math.random().toString(36).slice(2))
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'place_comments' },
+      (payload) => {
+        const row = payload.new as { place_id: string; user_id: string };
+        if (row.user_id === myId) return;
+        if (!placesCache.has(row.place_id)) return; // 지금 보드에 없는 장소면 무시
+
+        const badgeEl = document.querySelector(
+          '[data-place-id="' + row.place_id + '"] .bd-comment-badge'
+        ) as HTMLElement | null;
+        const current = badgeEl ? Number(badgeEl.textContent || '0') : 0;
+        updateCommentBadge(row.place_id, current + 1);
+      }
+    )
+    .subscribe();
+
+  commentsViewedHandler = ((e: CustomEvent<{ placeId: string }>) => {
+    markCommentsRead(e.detail.placeId);
+    updateCommentBadge(e.detail.placeId, 0);
+  }) as EventListener;
+  window.addEventListener('mongsil:commentsViewed', commentsViewedHandler);
+}
+
 /* ── 삭제 대기(Undo) 상태 ── */
 interface PendingDelete {
   timer: ReturnType<typeof setTimeout>;
@@ -137,11 +210,24 @@ let acDocClickHandler: ((e: MouseEvent) => void) | null = null;
 let draggingEl: HTMLElement | null = null;
 let draggingFromZone = '';
 
+/* ── 댓글 안읽음 배지 상태 ── */
+let commentRealtimeChannel: RealtimeChannel | null = null;
+let commentsViewedHandler: ((e: Event) => void) | null = null;
+const COMMENT_READ_PREFIX = 'mongsil_comment_read_';
+
 export function teardownBoard(): void {
   boardGeneration++; // 진행 중인 재시도/콜백을 즉시 무효화
   if (realtimeChannel) {
     supabase.removeChannel(realtimeChannel);
     realtimeChannel = null;
+  }
+  if (commentRealtimeChannel) {
+    supabase.removeChannel(commentRealtimeChannel);
+    commentRealtimeChannel = null;
+  }
+  if (commentsViewedHandler) {
+    window.removeEventListener('mongsil:commentsViewed', commentsViewedHandler);
+    commentsViewedHandler = null;
   }
   pendingDeletes.forEach((p) => clearTimeout(p.timer));
   pendingDeletes.clear();
@@ -369,6 +455,8 @@ export async function renderBoardContent(container: HTMLElement, tripId: string)
   layout.appendChild(buildGates(tripId, places));
 
   subscribeRealtime(tripId);
+  subscribeCommentActivity();
+  loadInitialCommentBadges(places.map((p) => p.id));
 
   // Google Maps는 백그라운드에서 로드 (실패해도 텍스트 입력은 그대로 동작)
   loadGoogleMapsScript()
@@ -786,9 +874,11 @@ function createTicket(place: Place): HTMLElement {
   ticket.dataset.placeId = place.id;
 
   const suggestion = place.google_place_id ? classifyPlace(place) : classify(place.name);
+  const commentBadge = '<span class="bd-comment-badge">0</span>';
 
   if (place.photo_url) {
     ticket.innerHTML = [
+      commentBadge,
       '<div class="bd-ticket-main">',
       '  <div class="bd-ticket-thumb" style="background-image:url(\'' + place.photo_url + '\')"></div>',
       '  <div class="bd-ticket-info">',
@@ -804,6 +894,7 @@ function createTicket(place: Place): HTMLElement {
     ].join('');
   } else {
     ticket.innerHTML = [
+      commentBadge,
       '<div class="bd-ticket-main">',
       ICON_PLANE,
       '<span class="bd-ticket-text">' + escapeHtml(place.name) + '</span>',
@@ -936,8 +1027,11 @@ function createBoardingCard(place: Place): HTMLElement {
   card.draggable = true;
   card.dataset.placeId = place.id;
 
+  const commentBadge = '<span class="bd-comment-badge">0</span>';
+
   if (place.photo_url) {
     card.innerHTML = [
+      commentBadge,
       '<div class="bd-card-photo" style="background-image:url(\'' + place.photo_url + '\')">',
       '  <button class="bd-card-kebab" id="kebab-' + place.id + '">' + ICON_KEBAB + '</button>',
       '  <div class="bd-card-kebab-menu" id="kmenu-' + place.id + '">',
@@ -968,6 +1062,7 @@ function createBoardingCard(place: Place): HTMLElement {
     ].join('');
   } else {
     card.innerHTML = [
+      commentBadge,
       '<span class="bd-card-text">' + escapeHtml(place.name) + '</span>',
       '<button class="bd-card-delete" id="cdel-' + place.id + '">' + ICON_TRASH + '</button>',
     ].join('');
