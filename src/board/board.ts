@@ -337,6 +337,23 @@ async function addRichIdea(tripId: string, mood: string | null, g: GooglePlaceRe
   return data;
 }
 
+/** Google 사진 URL을 우리 Storage로 재호스팅 (실패하면 원본 URL로 폴백) */
+async function rehostPhoto(photoUrl: string, placeId: string): Promise<string> {
+  try {
+    const res = await fetch('/api/cache-photo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ photoUrl, placeId }),
+    });
+    const data = await res.json();
+    if (res.ok && data.url) return data.url;
+    console.error('[Photo] 재호스팅 실패, 원본 URL 사용:', data.error);
+  } catch (e) {
+    console.error('[Photo] 재호스팅 네트워크 오류, 원본 URL 사용:', (e as Error).message);
+  }
+  return photoUrl;
+}
+
 async function cacheToPlacesDb(g: GooglePlaceResult): Promise<void> {
   if (!g.place_id) return;
   const { data: existing } = await supabase
@@ -839,6 +856,9 @@ async function selectPrediction(prediction: UnifiedPrediction, tripId: string, i
     try {
       const details = await getPlaceDetails(prediction.placeId);
       result = extractPlaceResult(details);
+      if (result?.photoUrl) {
+        result.photoUrl = await rehostPhoto(result.photoUrl, result.place_id);
+      }
     } catch (err) {
       console.error('[GoogleMaps] Place Details 실패:', (err as Error).message);
     }
@@ -1009,6 +1029,10 @@ async function addAiPickToInbox(tripId: string, name: string, destination: strin
     if (!result) {
       alert('"' + name + '"의 상세 정보를 가져오지 못했어요.');
       return false;
+    }
+
+    if (result.photoUrl) {
+      result.photoUrl = await rehostPhoto(result.photoUrl, result.place_id);
     }
 
     const newPlace = await addRichIdea(tripId, null, result);
