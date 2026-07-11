@@ -84,11 +84,28 @@ const originalHandleRoute = () => {
 };
 
 // ─── 인증 상태 감지 ───
+// 주의: Supabase 클라이언트는 브라우저 탭이 포커스를 다시 얻을 때
+// 세션을 재검증하면서 SIGNED_IN을 다시 쏘는 경우가 있음(실제 재로그인 아님).
+// 이걸 그냥 rerender()하면 지금 보고 있는 화면(특히 보드)이 통째로 다시 그려져서
+// 입력 중이던 내용이나 자동완성 상태가 날아가버림 — 그래서 실제로 로그인 상태가
+// "바뀐" 경우에만 재렌더링하도록 막음
+let lastKnownUserId: string | null = null;
+
 supabase.auth.onAuthStateChange((event, session) => {
   console.log('[Auth]', event, session?.user?.email ?? '(no user)');
 
+  const newUserId = session?.user?.id ?? null;
+  const userChanged = newUserId !== lastKnownUserId;
+  const wasFirstCheck = !store.get('authChecked');
+  lastKnownUserId = newUserId;
+
   store.set('user', session?.user ?? null);
   store.set('authChecked', true);
+
+  if (!userChanged && !wasFirstCheck) {
+    // 같은 사용자로 다시 발화된 SIGNED_IN(탭 포커스 복귀 등) — 화면 그대로 둠
+    return;
+  }
 
   // 로그인 직후, 초대 링크를 통해 들어왔던 거라면 그 초대 페이지로 되돌아감
   if (session?.user) {
