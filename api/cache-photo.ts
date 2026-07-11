@@ -18,6 +18,12 @@
  * 필요한 Vercel 환경변수 (서버 전용):
  * - SUPABASE_URL
  * - SUPABASE_SERVICE_ROLE_KEY
+ * - GOOGLE_MAPS_SERVER_KEY
+ *   ⚠️ 브라우저용 VITE_GOOGLE_MAPS_KEY와는 다른 키여야 함.
+ *   그 키는 HTTP referrer(도메인) 제한이 걸려있어서 서버(referrer 없음)에서
+ *   호출하면 403이 남. Google Cloud Console에서 referrer 제한 없는
+ *   (대신 "API 제한"으로 Places API만 쓸 수 있게 좁힌) 서버 전용 키를
+ *   새로 발급해서 이 변수에 넣어야 함.
  */
 
 declare const process: { env: Record<string, string | undefined> };
@@ -71,10 +77,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
+  const serverMapsKey = process.env.GOOGLE_MAPS_SERVER_KEY;
+  if (!serverMapsKey) {
+    res.status(500).json({ error: 'GOOGLE_MAPS_SERVER_KEY가 설정되지 않았어요. (브라우저 키는 referrer 제한 때문에 서버에서 못 씀)' });
+    return;
+  }
+
+  // photoUrl에 이미 브라우저용 key가 박혀있으니, referrer 제한 없는 서버 전용 key로 교체
+  let fetchUrl: string;
+  try {
+    const urlObj = new URL(photoUrl);
+    urlObj.searchParams.set('key', serverMapsKey);
+    fetchUrl = urlObj.toString();
+  } catch (e) {
+    res.status(400).json({ error: '유효하지 않은 photoUrl이에요.' });
+    return;
+  }
+
   // Google 사진을 서버에서 다운로드 (딱 한 번)
   let imgRes: Response;
   try {
-    imgRes = await fetch(photoUrl);
+    imgRes = await fetch(fetchUrl);
   } catch (e) {
     res.status(502).json({ error: '사진 다운로드 네트워크 오류: ' + (e as Error).message });
     return;
