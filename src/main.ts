@@ -1,141 +1,901 @@
-/**
- * main.ts — 앱 엔트리포인트
- */
+/* ============================================================
+   몽실이 브레인스토밍 보드
+   Check-in Counter (Inbox) → Security Check → 4 Gates
+   ============================================================ */
 
-import './styles/global.css';
-
-import { supabase } from './supabase';
-import { store } from './store';
-import { addRoute, setNotFound, startRouter, navigate, rerender, currentPath } from './router';
-
-import { renderLogin } from './auth/auth';
-import { renderTripList } from './trips/trip-list';
-import { renderJoinPage, consumePendingInvite } from './trips/trip-join';
-import { renderWorkspace } from './workspace/workspace';
-
-// ─── 인증이 필요 없는 라우트 ───
-// join은 초대코드를 들고 온 비로그인 사용자도 접근해야 해서 public 처리
-// (renderJoinPage 내부에서 로그인 여부를 직접 분기함)
-const PUBLIC_ROUTES = ['login', 'join'];
-
-// ─── 라우트 등록 ───
-addRoute('login', () => {
-  renderLogin();
-});
-
-addRoute('trips', async () => {
-  const app = document.getElementById('app')!;
-  const el = await renderTripList();
-  app.replaceChildren(el);
-});
-
-// 새 워크스페이스 라우트: #trip/:tripId/:gate
-addRoute('trip', async (params) => {
-  const app = document.getElementById('app')!;
-  const el = await renderWorkspace(params.tripId ?? '', params.subPath);
-  app.replaceChildren(el);
-});
-
-// 초대 참여 라우트: #join/:inviteCode
-addRoute('join', async (params) => {
-  const app = document.getElementById('app')!;
-  const el = await renderJoinPage(params.tripId);
-  app.replaceChildren(el);
-});
-
-// 하위호환: 기존 #board/:tripId → #trip/:tripId/ideas 로 리다이렉트
-addRoute('board', (params) => {
-  navigate('trip/' + (params.tripId ?? '') + '/ideas');
-});
-
-setNotFound(() => {
-  const app = document.getElementById('app')!;
-  app.innerHTML = [
-    '<div style="padding:48px;text-align:center;">',
-    '  <p style="font-size:48px;margin-bottom:12px;">404</p>',
-    '  <p style="color:#697586;margin-bottom:20px;">페이지를 찾을 수 없어요</p>',
-    '  <button class="btn btn-primary" id="btn-go-home">홈으로</button>',
-    '</div>',
-  ].join('\n');
-  document.getElementById('btn-go-home')!.addEventListener('click', () => navigate('trips'));
-});
-
-// ─── 라우트 가드 ───
-const originalHandleRoute = () => {
-  const path = currentPath();
-  const isPublic = PUBLIC_ROUTES.includes(path);
-
-  if (!store.get('authChecked')) {
-    const app = document.getElementById('app')!;
-    app.innerHTML = [
-      '<div style="display:flex;align-items:center;justify-content:center;min-height:100dvh;color:#94A3B8;font-size:13px;">',
-      '  불러오는 중...',
-      '</div>',
-    ].join('');
-    return false;
-  }
-
-  if (!isPublic && !store.get('user')) {
-    navigate('login');
-    return false;
-  }
-
-  return true;
-};
-
-// ─── 인증 상태 감지 ───
-// 주의: Supabase 클라이언트는 브라우저 탭이 포커스를 다시 얻을 때
-// 세션을 재검증하면서 SIGNED_IN을 다시 쏘는 경우가 있음(실제 재로그인 아님).
-// 이걸 그냥 rerender()하면 지금 보고 있는 화면(특히 보드)이 통째로 다시 그려져서
-// 입력 중이던 내용이나 자동완성 상태가 날아가버림 — 그래서 실제로 로그인 상태가
-// "바뀐" 경우에만 재렌더링하도록 막음
-let lastKnownUserId: string | null = null;
-
-supabase.auth.onAuthStateChange((event, session) => {
-  console.log('[Auth]', event, session?.user?.email ?? '(no user)');
-
-  const newUserId = session?.user?.id ?? null;
-  const userChanged = newUserId !== lastKnownUserId;
-  const wasFirstCheck = !store.get('authChecked');
-  lastKnownUserId = newUserId;
-
-  store.set('user', session?.user ?? null);
-  store.set('authChecked', true);
-
-  if (!userChanged && !wasFirstCheck) {
-    // 같은 사용자로 다시 발화된 SIGNED_IN(탭 포커스 복귀 등) — 화면 그대로 둠
-    return;
-  }
-
-  // 로그인 직후, 초대 링크를 통해 들어왔던 거라면 그 초대 페이지로 되돌아감
-  if (session?.user) {
-    const pendingCode = consumePendingInvite();
-    if (pendingCode) {
-      navigate('join/' + pendingCode);
-      return;
-    }
-  }
-
-  if (originalHandleRoute()) {
-    rerender();
-  }
-});
-
-// ─── 라우터 시작 ───
-window.addEventListener('hashchange', () => {
-  if (originalHandleRoute()) rerender();
-});
-
-if (originalHandleRoute()) {
-  startRouter();
+.bd-layout {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 24px 28px 32px;
+  height: 100%;
+  box-sizing: border-box;
 }
 
-// ─── 안전장치: 5초 타임아웃 ───
-setTimeout(() => {
-  if (!store.get('authChecked')) {
-    console.warn('[Auth] 세션 확인 타임아웃');
-    store.set('authChecked', true);
-    store.set('user', null);
-    if (originalHandleRoute()) rerender();
+.bd-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  color: #94A3B8;
+  font-size: 13px;
+  padding: 80px 0;
+}
+
+/* ── 공통: 드롭존 하이라이트 ── */
+.bd-dropzone.drag-over {
+  background: rgba(234,246,253,0.85);
+  border-color: #8FD8F8 !important;
+}
+
+/* ── 라이트 스윕 (공통 모션) — 내부 클립 래퍼 안에서만 재생되도록 스코프 지정 ── */
+.sweep > .bd-card-clip::after,
+.sweep > .bd-ticket-clip::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 30%, rgba(143,216,248,0.35) 50%, transparent 70%);
+  transform: translateX(-140%);
+  animation: bd-sweep 600ms cubic-bezier(0.2,0.8,0.2,1);
+  pointer-events: none;
+  border-radius: inherit;
+}
+@keyframes bd-sweep {
+  to { transform: translateX(140%); }
+}
+
+/* ============================================================
+   좌측: Inbox — 체크인 카운터
+   ============================================================ */
+
+.bd-inbox {
+  flex: 0 0 250px;
+  display: flex;
+  flex-direction: column;
+  background: rgba(255,255,255,0.6);
+  backdrop-filter: saturate(140%) blur(8px);
+  -webkit-backdrop-filter: saturate(140%) blur(8px);
+  border: 1px solid rgba(130,150,170,0.16);
+  border-radius: 18px;
+  padding: 16px;
+  height: 100%;
+  margin-right: 4px;
+}
+
+.bd-inbox-header { margin-bottom: 14px; }
+
+.bd-inbox-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #0B7CC4;
+  margin-bottom: 6px;
+}
+.bd-inbox-title {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0B2A5C;
+  margin-bottom: 5px;
+}
+
+/* 체크인 입력 — 하단 고정 컴포저 */
+.bd-inbox-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(130,150,170,0.24);
+  flex-shrink: 0;
+}
+.bd-inbox-input-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.bd-inbox-search-icon {
+  position: absolute;
+  left: 12px;
+  width: 15px;
+  height: 15px;
+  color: #94A3B8;
+  pointer-events: none;
+  display: flex;
+}
+.bd-inbox-search-icon svg { width: 100%; height: 100%; }
+
+.bd-inbox-input {
+  width: 100%;
+  padding: 12px 34px 12px 34px;
+  border: 1.5px solid rgba(130,150,170,0.22);
+  border-radius: 12px;
+  background: #FFFFFF;
+  font-size: 14px;
+  font-family: inherit;
+  color: #0B2A5C;
+  transition: border-color 180ms cubic-bezier(0.2,0.8,0.2,1), box-shadow 180ms cubic-bezier(0.2,0.8,0.2,1);
+}
+.bd-inbox-input:focus {
+  outline: none;
+  border-color: #8FD8F8;
+  box-shadow: 0 0 0 3px rgba(143,216,248,0.18);
+}
+.bd-inbox-input::placeholder { color: #A8B7C7; }
+
+.bd-inbox-clear {
+  position: absolute;
+  right: 10px;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: none;
+  color: #94A3B8;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background 150ms ease, color 150ms ease;
+}
+.bd-inbox-clear:hover { background: #F1F6FB; color: #0B2A5C; }
+.bd-inbox-clear svg { width: 100%; height: 100%; }
+
+.bd-inbox-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: none;
+  background: #0B2A5C;
+  color: #fff;
+  cursor: pointer;
+  transition: background 180ms cubic-bezier(0.2,0.8,0.2,1);
+}
+.bd-inbox-btn:hover { background: #0E3676; }
+.bd-inbox-btn svg { width: 16px; height: 16px; }
+
+.bd-inbox-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(130,150,170,0.16);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94A3B8;
+}
+.bd-inbox-count {
+  color: #0B7CC4;
+  background: #EAF6FD;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.bd-inbox-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  overflow-y: auto;
+  border-radius: 10px;
+  transition: background 180ms ease, border-color 180ms ease;
+  border: 1px solid transparent;
+  padding: 10px 8px 2px 2px;
+}
+
+/* ── 티켓 스텁 ── */
+.bd-ticket {
+  position: relative;
+  background: #FFFFFF;
+  border: 1px solid rgba(130,150,170,0.2);
+  border-left: 3px dashed #CDEBFB;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: #1E293B;
+  cursor: grab;
+  transition: border-color 180ms cubic-bezier(0.2,0.8,0.2,1),
+              box-shadow 180ms cubic-bezier(0.2,0.8,0.2,1),
+              opacity 180ms cubic-bezier(0.2,0.8,0.2,1);
+}
+
+.bd-ticket-clip {
+  position: relative;
+  padding: 10px 30px 10px 12px;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.bd-ticket-main {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+/* ── 분류 제안 칩 (규칙 기반, 진짜 AI 아님) ── */
+.bd-suggest {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(130,150,170,0.22);
+}
+.bd-suggest-text {
+  flex: 1;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #0B7CC4;
+  letter-spacing: -0.01em;
+}
+.bd-suggest-apply,
+.bd-suggest-dismiss {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.bd-suggest-apply {
+  background: #0B2A5C;
+  color: #fff;
+}
+.bd-suggest-apply:hover { background: #0E3676; }
+.bd-suggest-dismiss {
+  background: transparent;
+  color: #94A3B8;
+}
+.bd-suggest-dismiss:hover { background: #F1F6FB; }
+.bd-suggest-note {
+  font-size: 9px;
+  color: #B0BCC9;
+  margin-top: 3px;
+}
+.bd-ticket svg {
+  width: 13px;
+  height: 13px;
+  color: #8FD8F8;
+  flex-shrink: 0;
+}
+
+.bd-ticket-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  background-size: cover;
+  background-position: center;
+  background-color: #EAF6FD;
+  flex-shrink: 0;
+}
+
+.bd-ticket-rating {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #0B7CC4;
+  flex-shrink: 0;
+}
+.bd-ticket-rating svg { width: 10px; height: 10px; color: #F5A623; }
+.bd-ticket-text {
+  flex: 1;
+  word-break: break-word;
+  line-height: 1.4;
+}
+.bd-ticket:hover { border-color: #8FD8F8; box-shadow: 0 3px 10px rgba(11,124,196,0.10); }
+.bd-ticket.dragging {
+  opacity: 0.85;
+  border-color: #8FD8F8;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 6px 18px rgba(11,124,196,0.14);
+}
+
+.bd-ticket-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #94A3B8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+.bd-ticket-delete:hover { background: #FDEEEC; color: #C0392B; }
+.bd-ticket-delete svg { width: 12px; height: 12px; color: inherit; }
+.bd-ticket-delete.confirm {
+  background: #C0392B; color: #fff; font-size: 8.5px; font-weight: 700;
+  width: auto; padding: 0 7px; border-radius: 7px;
+}
+
+/* ============================================================
+   중앙: Security Check 사이니지 (장식 + 안내, 비활성 상태 표기)
+   ============================================================ */
+
+.bd-security {
+  flex: 0 0 68px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px 6px;
+  align-self: stretch;
+  position: relative;
+}
+.bd-security::before,
+.bd-security::after {
+  content: '';
+  flex: 1;
+  width: 1px;
+  background: repeating-linear-gradient(to bottom, rgba(130,150,170,0.3) 0 4px, transparent 4px 9px);
+}
+.bd-security-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(130,150,170,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94A3B8;
+  flex-shrink: 0;
+}
+.bd-security-icon svg { width: 15px; height: 15px; }
+.bd-security-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #64748B;
+  flex-shrink: 0;
+}
+.bd-security-note {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 9.5px;
+  color: #B8C4D4;
+  line-height: 1.5;
+  flex-shrink: 0;
+}
+
+/* ── Security Check 스캐닝 상태 (드래그로 게이트 진입 시) ── */
+.bd-security.scanning .bd-security-icon {
+  border-color: #8FD8F8;
+  color: #0B7CC4;
+  animation: bd-scan-pulse 900ms ease-in-out infinite;
+}
+.bd-security.scanning .bd-security-label {
+  color: #0B7CC4;
+  animation: bd-scan-fade 900ms ease-in-out infinite;
+}
+@keyframes bd-scan-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(143,216,248,0.5); }
+  50% { box-shadow: 0 0 0 6px rgba(143,216,248,0); }
+}
+@keyframes bd-scan-fade {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+/* 스캐닝 중 세로 점선을 스카이블루로 강조 */
+.bd-security.scanning::before,
+.bd-security.scanning::after {
+  background: repeating-linear-gradient(to bottom, rgba(143,216,248,0.6) 0 4px, transparent 4px 9px);
+}
+
+/* ============================================================
+   우측: 4개 게이트
+   ============================================================ */
+
+.bd-gates {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  min-width: 0;
+  height: 100%;
+}
+
+.bd-gate {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: rgba(255,255,255,0.6);
+  backdrop-filter: saturate(140%) blur(8px);
+  -webkit-backdrop-filter: saturate(140%) blur(8px);
+  border: 1px solid rgba(130,150,170,0.16);
+  border-radius: 16px;
+  padding: 16px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.bd-gate-header { margin-bottom: 10px; }
+
+.bd-gate-step {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #94A3B8;
+  margin-bottom: 4px;
+}
+
+.bd-gate-label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid rgba(130,150,170,0.16);
+}
+.bd-gate-icon { width: 15px; height: 15px; color: #0B2A5C; flex-shrink: 0; }
+.bd-gate-icon svg { width: 100%; height: 100%; }
+.bd-gate-label {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #0B2A5C;
+}
+.bd-gate-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: #0B7CC4;
+}
+
+.bd-gate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+  padding: 10px 8px 2px 2px;
+  margin: 8px -2px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  transition: background 180ms ease, border-color 180ms ease;
+}
+
+/* ── 보딩패스 카드 (텍스트 전용) ── */
+.bd-card {
+  position: relative;
+  background: #FFFFFF;
+  border: 1px solid rgba(130,150,170,0.18);
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #1E293B;
+  cursor: grab;
+  transition: border-color 180ms cubic-bezier(0.2,0.8,0.2,1),
+              box-shadow 180ms cubic-bezier(0.2,0.8,0.2,1),
+              opacity 180ms cubic-bezier(0.2,0.8,0.2,1);
+}
+.bd-card-clip {
+  position: relative;
+  padding: 11px 13px;
+  overflow: hidden;
+  border-radius: inherit;
+  word-break: break-word;
+}
+.bd-card:hover { border-color: #8FD8F8; box-shadow: 0 4px 14px rgba(11,124,196,0.10); }
+.bd-card.dragging {
+  opacity: 0.85;
+  border-color: #8FD8F8;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 6px 18px rgba(11,124,196,0.14);
+}
+.bd-card .bd-card-text {
+  padding-right: 28px;
+  display: block;
+}
+
+.bd-card-delete {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #94A3B8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 150ms ease, background 150ms ease, color 150ms ease;
+}
+.bd-card:hover .bd-card-delete { opacity: 1; }
+.bd-card-delete:hover { background: #FDEEEC; color: #C0392B; }
+.bd-card-delete svg { width: 13px; height: 13px; }
+.bd-card-delete.confirm {
+  background: #C0392B;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  width: auto;
+  padding: 0 8px;
+  border-radius: 8px;
+  opacity: 1;
+}
+
+/* ── Empty States ── */
+.bd-empty { padding: 20px 8px; text-align: center; }
+.bd-empty-sm { padding: 28px 8px; }
+.bd-empty-hint {
+  font-size: 12px;
+  color: #94A3B8;
+  line-height: 1.7;
+}
+
+/* ── 반응형 ── */
+@media (max-width: 980px) {
+  .bd-layout { flex-direction: column; gap: 16px; padding: 16px; height: auto; }
+  .bd-inbox { flex: none; width: 100%; height: 320px; margin-right: 0; }
+  .bd-security {
+    flex-direction: row;
+    width: 100%;
+    padding: 6px 0;
+    flex: none;
   }
-}, 5000);
+  .bd-security::before, .bd-security::after {
+    height: 1px; width: auto; flex: 1;
+    background: repeating-linear-gradient(to right, rgba(130,150,170,0.3) 0 4px, transparent 4px 9px);
+  }
+  .bd-security-label, .bd-security-note {
+    writing-mode: horizontal-tb;
+  }
+  .bd-gates {
+    flex-direction: column;
+    height: auto;
+  }
+  .bd-gate { min-height: 340px; flex: none; }
+}
+
+/* ============================================================
+   Undo 삭제 토스트
+   ============================================================ */
+
+.bd-toast-container {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 250;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.bd-toast {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #0B2A5C;
+  color: #FFFFFF;
+  box-shadow: 0 12px 32px rgba(11,42,92,0.28);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 200ms cubic-bezier(0.2,0.8,0.2,1), transform 200ms cubic-bezier(0.2,0.8,0.2,1);
+  pointer-events: auto;
+}
+.bd-toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.bd-toast-stub {
+  background: #334155;
+  padding: 10px 16px;
+}
+
+.bd-toast-text {
+  font-size: 13px;
+  color: rgba(255,255,255,0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+}
+
+.bd-toast-undo {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(255,255,255,0.14);
+  color: #8FD8F8;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.bd-toast-undo:hover { background: rgba(255,255,255,0.22); }
+
+@media (max-width: 640px) {
+  .bd-toast-container { bottom: 16px; left: 16px; right: 16px; transform: none; }
+  .bd-toast { width: 100%; box-sizing: border-box; }
+  .bd-toast-text { max-width: none; flex: 1; }
+}
+
+/* ============================================================
+   리치 카드/티켓 (Google Place 데이터 있을 때)
+   ============================================================ */
+
+.bd-chip {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #0B7CC4;
+  background: #EAF6FD;
+  border-radius: 6px;
+  padding: 2px 7px;
+  margin-top: 6px;
+}
+
+.bd-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #F59E0B;
+  flex-shrink: 0;
+}
+.bd-rating svg { width: 12px; height: 12px; }
+
+/* ── 리치 티켓 (Inbox 컴팩트 프리뷰) ── */
+.bd-ticket-rich .bd-ticket-main {
+  align-items: flex-start;
+}
+.bd-ticket-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background-size: cover;
+  background-position: center;
+  background-color: #EAF6FD;
+  flex-shrink: 0;
+}
+.bd-ticket-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bd-ticket-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bd-ticket-rich .bd-chip { margin-top: 0; }
+
+/* ── 리치 게이트 카드 ── */
+.bd-card-rich .bd-card-clip {
+  padding: 0;
+}
+.bd-card-photo {
+  position: relative;
+  width: 100%;
+  height: 128px;
+  background-size: cover;
+  background-position: center;
+  background-color: #EAF6FD;
+  border-radius: 10px 10px 0 0;
+}
+
+.bd-card-kebab {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  border: none;
+  background: rgba(11,42,92,0.5);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 150ms ease, background 150ms ease;
+}
+.bd-card-rich:hover .bd-card-kebab { opacity: 1; }
+.bd-card-kebab:hover { background: rgba(11,42,92,0.75); }
+.bd-card-kebab svg { width: 13px; height: 13px; }
+
+.bd-card-kebab-menu {
+  position: absolute;
+  top: 32px;
+  right: 6px;
+  width: 148px;
+  background: #FFFFFF;
+  border: 1px solid rgba(130,150,170,0.18);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(11,42,92,0.18);
+  padding: 6px;
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 150ms ease, transform 150ms ease;
+  z-index: 10;
+}
+.bd-card-kebab-menu.open {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.bd-kmenu-move { display: none; }
+.bd-kmenu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  background: none;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  text-align: left;
+  transition: background 120ms ease;
+}
+.bd-kmenu-item:hover { background: #F1F6FB; }
+.bd-kmenu-item svg { width: 14px; height: 14px; flex-shrink: 0; }
+.bd-kmenu-item.danger { color: #C0392B; }
+.bd-kmenu-divider { height: 1px; background: rgba(130,150,170,0.16); margin: 4px 2px; }
+
+.bd-card-body { padding: 10px 12px 12px; }
+.bd-card-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.bd-card-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1E293B;
+  line-height: 1.4;
+}
+.bd-card-address {
+  font-size: 10.5px;
+  color: #94A3B8;
+  margin-top: 5px;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ============================================================
+   커스텀 자동완성 드롭다운
+   ============================================================ */
+.bd-ac-dropdown {
+  background: #FFFFFF;
+  border: 1px solid rgba(130,150,170,0.2);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(11,42,92,0.18);
+  padding: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 9999;
+}
+
+.bd-ac-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  background: none;
+  border-radius: 9px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 120ms ease;
+}
+.bd-ac-item:hover,
+.bd-ac-item.active {
+  background: #F0F9FF;
+}
+
+.bd-ac-icon {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: #EAF6FD;
+  color: #0B7CC4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.bd-ac-icon svg { width: 15px; height: 15px; }
+
+.bd-ac-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.bd-ac-main {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1E293B;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bd-ac-cached {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #EAF6FD;
+  color: #0B7CC4;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  vertical-align: middle;
+}
+.bd-ac-secondary {
+  font-size: 11.5px;
+  color: #94A3B8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ============================================================
+   댓글 안읽음 배지 (카드/티켓 공통)
+   — 카드 컴포넌트 우측 상단 테두리에 걸치도록 배치
+   ============================================================ */
+.bd-comment-badge {
+  position: absolute;
+  top: -7px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #DC2626;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  z-index: 6;
+}
+.bd-comment-badge.visible { display: flex; }
