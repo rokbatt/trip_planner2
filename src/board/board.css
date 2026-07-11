@@ -899,3 +899,160 @@
   z-index: 6;
 }
 .bd-comment-badge.visible { display: flex; }
+
+/* ============================================================
+   AI Monthly Picks
+   ============================================================ */
+
+.bd-ai-picks {
+  margin-top: 10px;
+  border-top: 1px solid rgba(130,150,170,0.16);
+  padding-top: 10px;
+}
+
+.bd-ai-picks-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid rgba(130,150,170,0.2);
+  border-radius: 10px;
+  background: #F8FBFE;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+.bd-ai-picks-toggle:hover { background: #EAF6FD; border-color: #8FD8F8; }
+.bd-ai-picks-toggle.open { border-color: #8FD8F8; background: #EAF6FD; }
+
+.bd-ai-picks-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0B2A5C;
+}
+
+.bd-ai-picks-chevron {
+  width: 15px;
+  height: 15px;
+  color: #64748B;
+  transition: transform 200ms cubic-bezier(0.2,0.8,0.2,1);
+}
+.bd-ai-picks-chevron svg { width: 100%; height: 100%; }
+.bd-ai-picks-toggle.open .bd-ai-picks-chevron { transform: rotate(180deg); }
+
+.bd-ai-picks-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 260ms cubic-bezier(0.2,0.8,0.2,1);
+}
+.bd-ai-picks-body.open {
+  max-height: 640px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+
+.bd-ai-picks-loading,
+.bd-ai-picks-error {
+  padding: 16px 8px;
+  text-align: center;
+  font-size: 12px;
+  color: #94A3B8;
+}
+.bd-ai-picks-error { color: #C0392B; }
+
+.bd-ai-pick-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 4px 10px;
+}
+.bd-ai-pick-dest {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0B2A5C;
+}
+.bd-ai-pick-month {
+  font-size: 11px;
+  color: #94A3B8;
+  font-family: inherit;
+}
+
+.bd-ai-pick-section { margin-bottom: 12px; }
+.bd-ai-pick-section:last-child { margin-bottom: 4px; }
+
+.bd-ai-pick-section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #0B7CC4;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  padding: 0 4px;
+}
+.bd-ai-pick-section-head svg { width: 13px; height: 13px; }
+
+.bd-ai-pick-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bd-ai-pick-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: #FFFFFF;
+  border: 1px solid rgba(130,150,170,0.16);
+}
+
+.bd-ai-pick-name {
+  font-size: 12px;
+  color: #1E293B;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bd-ai-pick-empty {
+  padding: 6px 10px;
+  font-size: 11.5px;
+  color: #A8B7C7;
+  list-style: none;
+}
+
+.bd-ai-pick-add {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: none;
+  background: #0B2A5C;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.bd-ai-pick-add:hover { background: #0E3676; }
+.bd-ai-pick-add:disabled { background: #16A34A; cursor: default; }
+.bd-ai-pick-add svg { width: 12px; height: 12px; }
+
+.bd-ai-pick-spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid rgba(255,255,255,0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: bd-ai-spin 600ms linear infinite;
+}
+@keyframes bd-ai-spin {
+  to { transform: rotate(360deg); }
+}
