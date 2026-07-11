@@ -33,6 +33,8 @@ const ICON_STAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const ICON_STAR_FILL = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l2.6 5.8 6.3.6-4.8 4.2 1.4 6.2L12 16.9l-5.5 2.9 1.4-6.2-4.8-4.2 6.3-.6z"/></svg>';
 const ICON_BED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20v-8a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v8M2 20v-3a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3M2 20h20M6 10V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4"/></svg>';
 const ICON_SEARCH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
+const ICON_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+const ICON_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
 const ICON_CLEAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
 const ICON_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
 const ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z"/></svg>';
@@ -233,6 +235,8 @@ export function teardownBoard(): void {
   pendingDeletes.clear();
   securityEl = null;
   placesCache = new Map();
+  aiPicksCache = null;
+  aiPicksExpanded = false;
   cleanupAutocomplete();
 }
 
@@ -577,6 +581,13 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
     '  </div>',
     '  <button type="submit" class="bd-inbox-btn">' + ICON_PLUS + '</button>',
     '</form>',
+    '<div class="bd-ai-picks">',
+    '  <button type="button" class="bd-ai-picks-toggle" id="ai-picks-toggle">',
+    '    <span class="bd-ai-picks-title">✨ AI Monthly Picks</span>',
+    '    <span class="bd-ai-picks-chevron">' + ICON_CHEVRON_DOWN + '</span>',
+    '  </button>',
+    '  <div class="bd-ai-picks-body" id="ai-picks-body"></div>',
+    '</div>',
   ].join('\n');
 
   const listEl = inbox.querySelector('#inbox-list') as HTMLElement;
@@ -619,6 +630,8 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
       updateZoneCount(listEl);
     }
   });
+
+  bindAiPicksToggle(inbox, tripId);
 
   return inbox;
 }
@@ -858,6 +871,166 @@ function buildInboxEmpty(): string {
     '  <div class="bd-empty-hint">🎤 통화 중 나온 아이디어를 기록하세요</div>',
     '</div>',
   ].join('');
+}
+
+/* ── AI Monthly Picks ── */
+let aiPicksCache: Record<string, string[]> | null = null; // 세션 내 재요청 방지용 캐시
+let aiPicksExpanded = false;
+
+function bindAiPicksToggle(inbox: HTMLElement, tripId: string): void {
+  const toggleBtn = inbox.querySelector('#ai-picks-toggle') as HTMLButtonElement | null;
+  const body = inbox.querySelector('#ai-picks-body') as HTMLElement | null;
+  if (!toggleBtn || !body) return;
+
+  toggleBtn.classList.toggle('open', aiPicksExpanded);
+  body.classList.toggle('open', aiPicksExpanded);
+  if (aiPicksExpanded && aiPicksCache) {
+    body.innerHTML = buildAiPicksContent(aiPicksCache, tripId);
+    bindAiPickAddButtons(body, tripId);
+  }
+
+  toggleBtn.addEventListener('click', async () => {
+    aiPicksExpanded = !aiPicksExpanded;
+    toggleBtn.classList.toggle('open', aiPicksExpanded);
+    body.classList.toggle('open', aiPicksExpanded);
+
+    if (!aiPicksExpanded) return; // 접을 땐 그냥 숨기기만, 데이터는 유지
+
+    if (aiPicksCache) {
+      body.innerHTML = buildAiPicksContent(aiPicksCache, tripId);
+      bindAiPickAddButtons(body, tripId);
+      return;
+    }
+
+    const destination = getTripDestination();
+    if (!destination) {
+      body.innerHTML = '<div class="bd-ai-picks-error">여행지 정보를 찾을 수 없어요.</div>';
+      return;
+    }
+
+    body.innerHTML = '<div class="bd-ai-picks-loading">AI가 이번 달 추천을 준비하고 있어요...</div>';
+
+    try {
+      const res = await fetch('/api/monthly-picks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ destination }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        body.innerHTML = '<div class="bd-ai-picks-error">' + escapeHtml(data.error || '추천을 불러오지 못했어요.') + '</div>';
+        return;
+      }
+
+      aiPicksCache = data.picks;
+      body.innerHTML = buildAiPicksContent(data.picks, tripId);
+      bindAiPickAddButtons(body, tripId);
+    } catch (err) {
+      body.innerHTML = '<div class="bd-ai-picks-error">네트워크 오류로 추천을 불러오지 못했어요.</div>';
+      console.error('[AI Picks] 요청 실패:', (err as Error).message);
+    }
+  });
+}
+
+function getTripDestination(): string {
+  const trip = store.get('currentTrip');
+  if (!trip) return '';
+  return trip.destinations?.[0] ?? trip.name ?? '';
+}
+
+function buildAiPicksContent(picks: Record<string, string[]>, _tripId: string): string {
+  const destination = getTripDestination();
+  const now = new Date();
+  const yearMonthLabel = now.getFullYear() + '.' + String(now.getMonth() + 1).padStart(2, '0');
+
+  const sections = GATES.map((gate) => {
+    const names = picks[gate.key] ?? [];
+    const items = names.slice(0, 5).map((name) => [
+      '<li class="bd-ai-pick-item">',
+      '  <span class="bd-ai-pick-name">' + escapeHtml(name) + '</span>',
+      '  <button type="button" class="bd-ai-pick-add" data-pick-name="' + escapeHtml(name) + '" data-pick-gate="' + gate.key + '">' + ICON_PLUS + '</button>',
+      '</li>',
+    ].join('')).join('');
+
+    return [
+      '<div class="bd-ai-pick-section">',
+      '  <div class="bd-ai-pick-section-head">' + gate.icon + '<span>' + gate.label + '</span></div>',
+      '  <ul class="bd-ai-pick-list">' + (items || '<li class="bd-ai-pick-empty">추천 없음</li>') + '</ul>',
+      '</div>',
+    ].join('');
+  }).join('');
+
+  return [
+    '<div class="bd-ai-pick-meta">',
+    '  <span class="bd-ai-pick-dest">' + escapeHtml(destination) + '</span>',
+    '  <span class="bd-ai-pick-month">' + yearMonthLabel + '</span>',
+    '</div>',
+    sections,
+  ].join('');
+}
+
+function bindAiPickAddButtons(body: HTMLElement, tripId: string): void {
+  body.querySelectorAll('.bd-ai-pick-add').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const button = btn as HTMLButtonElement;
+      const name = button.dataset.pickName ?? '';
+      if (!name || button.disabled) return;
+
+      button.disabled = true;
+      button.innerHTML = '<span class="bd-ai-pick-spinner"></span>';
+
+      const destination = getTripDestination();
+      const success = await addAiPickToInbox(tripId, name, destination);
+
+      if (success) {
+        button.innerHTML = ICON_CHECK;
+      } else {
+        button.disabled = false;
+        button.innerHTML = ICON_PLUS;
+      }
+    });
+  });
+}
+
+/** AI 추천 장소 이름으로 Google Places를 찾아 Inbox에 추가 (+ 누르기 전까진 API 호출 안 함) */
+async function addAiPickToInbox(tripId: string, name: string, destination: string): Promise<boolean> {
+  try {
+    const query = destination ? name + ' ' + destination : name;
+    const predictions = await getPlacePredictions(query);
+
+    if (predictions.length === 0) {
+      alert('"' + name + '"의 장소 정보를 찾지 못했어요.');
+      return false;
+    }
+
+    const details = await getPlaceDetails(predictions[0].placeId);
+    const result = extractPlaceResult(details);
+    if (!result) {
+      alert('"' + name + '"의 상세 정보를 가져오지 못했어요.');
+      return false;
+    }
+
+    const newPlace = await addRichIdea(tripId, null, result);
+    if (!newPlace) return false;
+
+    placesCache.set(newPlace.id, newPlace);
+    markRecentlyMutated(newPlace.id);
+
+    const listEl = document.getElementById('inbox-list');
+    if (listEl) {
+      removeEmptyState(listEl);
+      const el = createTicket(newPlace);
+      listEl.appendChild(el);
+      triggerLightSweep(el);
+      updateZoneCount(listEl);
+    }
+
+    return true;
+  } catch (err) {
+    console.error('[AI Picks] 장소 추가 실패:', (err as Error).message);
+    return false;
+  }
 }
 
 /* ── 공통: 별점 표시 ── */
