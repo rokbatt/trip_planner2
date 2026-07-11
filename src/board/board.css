@@ -865,3 +865,33 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ============================================================
+   댓글 안읽음 배지 (카드/티켓 공통)
+   ============================================================ */
+.bd-comment-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #DC2626;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  box-shadow: 0 2px 6px rgba(220,38,38,0.35);
+}
+.bd-comment-badge.visible { display: flex; }
+
+/* 리치 카드는 사진 위에 얹히므로 살짝 더 크고 그림자 강조 */
+.bd-card-rich .bd-comment-badge {
+  top: 8px;
+  left: 8px;
+  border: 2px solid rgba(255,255,255,0.9);
+}
