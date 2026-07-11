@@ -4,16 +4,15 @@
  * POST /api/backfill-photos
  * headers: { x-admin-secret: string }
  *
- * places / places_db 테이블에서 photo_url이 아직 Google URL 그대로인 행을
- * 전부 찾아서 Storage로 재호스팅하고 DB를 업데이트함.
- * 한 번만 수동으로 실행하면 되는 관리자용 엔드포인트라
- * 아무나 못 부르게 시크릿 헤더로 보호함.
+ * 다른 로컬 파일을 import하지 않고 이 파일 안에 로직을 전부 포함시킴
+ * (lib/*.ts를 따로 두고 import하면 Vercel 배포 시 해당 파일이
+ *  번들에서 누락되는 문제가 있어서, 파일 간 의존을 아예 없앰)
  *
  * 필요한 Vercel 환경변수 (서버 전용):
  * - SUPABASE_URL
  * - SUPABASE_SERVICE_ROLE_KEY
  * - GOOGLE_MAPS_SERVER_KEY
- * - ADMIN_SECRET (아무 임의의 긴 문자열 — 이 엔드포인트 호출을 막는 용도)
+ * - ADMIN_SECRET
  *
  * 실행 방법 (브라우저 콘솔에서 한 번):
  *   fetch('/api/backfill-photos', { method:'POST', headers:{'x-admin-secret':'값'} })
@@ -21,7 +20,6 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { rehostGooglePhoto } from '../lib/rehostPhoto';
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -33,6 +31,49 @@ interface VercelRequest {
 interface VercelResponse {
   status: (code: number) => VercelResponse;
   json: (body: any) => void;
+}
+
+const BUCKET = 'place-photos';
+
+async function rehostGooglePhoto(
+  supabase: any,
+  photoUrl: string,
+  placeId: string,
+  serverMapsKey: string
+): Promise<{ url: string; cached: boolean; sizeBytes?: number }> {
+  const path = 'places/' + placeId + '.jpg';
+
+  const { data: existing } = await supabase.storage.from(BUCKET).list('places', {
+    search: placeId + '.jpg',
+  });
+  if (existing && existing.length > 0) {
+    const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
+    return { url: pub.publicUrl, cached: true };
+  }
+
+  const urlObj = new URL(photoUrl);
+  urlObj.searchParams.set('key', serverMapsKey);
+  const fetchUrl = urlObj.toString();
+
+  const imgRes = await fetch(fetchUrl);
+  if (!imgRes.ok) {
+    throw new Error('사진 다운로드 실패 (' + imgRes.status + ')');
+  }
+
+  const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
+  const arrayBuffer = await imgRes.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+
+  const { error: uploadError } = await supabase.storage
+    .from(BUCKET)
+    .upload(path, bytes, { contentType, upsert: true, cacheControl: '2592000' });
+
+  if (uploadError) {
+    throw new Error('Storage 업로드 실패: ' + uploadError.message);
+  }
+
+  const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  return { url: pub.publicUrl, cached: false, sizeBytes: bytes.byteLength };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -81,7 +122,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     errors: [] as string[],
   };
 
-  // 1. places 테이블 — Storage URL이 아닌(=아직 Google URL인) 행만 대상
   const { data: places, error: placesError } = await supabase
     .from('places')
     .select('id, name, photo_url, google_place_id')
@@ -109,7 +149,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  // 2. places_db 테이블도 동일하게
   const { data: placesDb, error: placesDbError } = await supabase
     .from('places_db')
     .select('id, name, photo_url, google_place_id')
