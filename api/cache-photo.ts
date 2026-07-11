@@ -10,6 +10,9 @@
  * - GOOGLE_MAPS_SERVER_KEY (referrer 제한 없는 서버 전용 키)
  */
 
+import { createClient } from '@supabase/supabase-js';
+import { rehostGooglePhoto } from '../lib/rehostPhoto';
+
 declare const process: { env: Record<string, string | undefined> };
 
 interface VercelRequest {
@@ -49,8 +52,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const { createClient } = await import('@supabase/supabase-js');
-  const { rehostGooglePhoto } = await import('../lib/rehostPhoto');
   const supabase = createClient(supabaseUrl, serviceKey);
 
   try {
