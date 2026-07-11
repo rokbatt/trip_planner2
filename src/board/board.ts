@@ -302,7 +302,22 @@ async function addIdea(tripId: string, mood: string | null, text: string): Promi
 }
 
 /** Google Place 자동완성으로 선택된 장소를 리치 데이터와 함께 저장 */
-async function addRichIdea(tripId: string, mood: string | null, g: GooglePlaceResult): Promise<Place | null> {
+async function addRichIdea(tripId: string, mood: string | null, g: GooglePlaceResult): Promise<{ place: Place; isDuplicate: boolean } | null> {
+  // 이 트립에 같은 장소(google_place_id)가 이미 있으면 중복 생성하지 않음
+  if (g.place_id) {
+    const { data: existing } = await supabase
+      .from('places')
+      .select('*')
+      .eq('trip_id', tripId)
+      .eq('google_place_id', g.place_id)
+      .maybeSingle();
+
+    if (existing) {
+      console.log('[Verify][중복 방지] "' + g.name + '"은 이미 이 여행에 추가되어 있어서 다시 만들지 않음');
+      return { place: existing, isDuplicate: true };
+    }
+  }
+
   const user = store.get('user');
   const { data, error } = await supabase
     .from('places')
@@ -334,7 +349,7 @@ async function addRichIdea(tripId: string, mood: string | null, g: GooglePlaceRe
   // 크라우드소싱 캐싱: 다음 사용자를 위해 places_db에도 저장 (실패해도 무시)
   cacheToPlacesDb(g).catch(() => {});
 
-  return data;
+  return { place: data, isDuplicate: false };
 }
 
 /** Google 사진 URL을 우리 Storage로 재호스팅 (실패하면 원본 URL로 폴백) */
@@ -904,15 +919,28 @@ async function selectPrediction(prediction: UnifiedPrediction, tripId: string, i
   }
 
   const listEl = document.getElementById('inbox-list');
-  const newPlace = await addRichIdea(tripId, null, result);
-  if (newPlace && listEl) {
+  const addResult = await addRichIdea(tripId, null, result);
+
+  if (addResult) {
+    const newPlace = addResult.place;
     placesCache.set(newPlace.id, newPlace);
-    markRecentlyMutated(newPlace.id);
-    removeEmptyState(listEl);
-    const el = createTicket(newPlace);
-    listEl.appendChild(el);
-    triggerLightSweep(el);
-    updateZoneCount(listEl);
+
+    if (addResult.isDuplicate) {
+      // 이미 추가된 장소 — 새 카드를 만들지 않고, 기존 카드가 화면에 있으면 살짝 흔들어서 알려줌
+      const existingEl = document.querySelector('[data-place-id="' + newPlace.id + '"]') as HTMLElement | null;
+      if (existingEl) {
+        existingEl.classList.remove('shake');
+        void existingEl.offsetWidth;
+        existingEl.classList.add('shake');
+      }
+    } else if (listEl) {
+      markRecentlyMutated(newPlace.id);
+      removeEmptyState(listEl);
+      const el = createTicket(newPlace);
+      listEl.appendChild(el);
+      triggerLightSweep(el);
+      updateZoneCount(listEl);
+    }
   }
   input.focus();
 }
@@ -1069,10 +1097,17 @@ async function addAiPickToInbox(tripId: string, name: string, destination: strin
       result.photoUrl = await rehostPhoto(result.photoUrl, result.place_id);
     }
 
-    const newPlace = await addRichIdea(tripId, null, result);
-    if (!newPlace) return false;
+    const newAdd = await addRichIdea(tripId, null, result);
+    if (!newAdd) return false;
 
+    const newPlace = newAdd.place;
     placesCache.set(newPlace.id, newPlace);
+
+    if (newAdd.isDuplicate) {
+      alert('"' + name + '"은 이미 이 여행에 추가되어 있어요.');
+      return true; // 버튼은 완료(체크) 상태로 표시
+    }
+
     markRecentlyMutated(newPlace.id);
 
     const listEl = document.getElementById('inbox-list');
