@@ -15,10 +15,13 @@
  * - GOOGLE_MAPS_SERVER_KEY
  * - ADMIN_SECRET (아무 임의의 긴 문자열 — 이 엔드포인트 호출을 막는 용도)
  *
- * 실행 방법 (터미널에서 한 번):
- *   curl -X POST https://당신의도메인/api/backfill-photos \
- *     -H "x-admin-secret: ADMIN_SECRET에_넣은_값"
+ * 실행 방법 (브라우저 콘솔에서 한 번):
+ *   fetch('/api/backfill-photos', { method:'POST', headers:{'x-admin-secret':'값'} })
+ *     .then(r=>r.json()).then(console.log)
  */
+
+import { createClient } from '@supabase/supabase-js';
+import { rehostGooglePhoto } from '../lib/rehostPhoto';
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -68,8 +71,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const { createClient } = await import('@supabase/supabase-js');
-  const { rehostGooglePhoto } = await import('../lib/rehostPhoto');
   const supabase = createClient(supabaseUrl, serviceKey);
 
   const summary = {
