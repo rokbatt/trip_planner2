@@ -32,10 +32,19 @@ const MOOD_COLOR: Record<string, string> = {
 interface Zone {
   id: string;
   name: string;
+  keyword: string;
   places: Place[];
   centerLat: number;
   centerLng: number;
+  avgRating: number | null;
+  avgInternalWalkMin: number | null;
+  recommendedNights: number;
+  topPlaces: Place[];
 }
+
+let highlightedZoneId: string | null = null;
+let zoneCircles: any[] = [];
+let markersByZone = new Map<string, any[]>();
 
 /* ── 모듈 상태 ── */
 let currentTripId = '';
@@ -58,6 +67,9 @@ export function teardownShortlist(): void {
   confirmedIds = new Set();
   mapInstance = null;
   mapMarkers = [];
+  highlightedZoneId = null;
+  zoneCircles = [];
+  markersByZone = new Map();
 }
 
 function escapeHtml(str: string): string {
@@ -123,22 +135,37 @@ function clusterPlaces(places: Place[], thresholdKm = 2.2): Place[][] {
 }
 
 /** 클러스터 내 장소들의 address에서 가장 흔한 지역명 후보를 뽑아냄 (추가 API 호출 없음) */
-function guessZoneName(places: Place[], index: number): string {
+/** AI 이름이 도착하기 전 즉시 보여줄 임시 이름 (주소 기반, 정확하지 않을 수 있음) */
+function fallbackZoneName(places: Place[], index: number): string {
   const segments: string[] = [];
   places.forEach((p) => {
     if (!p.address) return;
     const parts = p.address.split(',').map((s) => s.trim()).filter(Boolean);
-    // 보통 맨 앞은 번지수, 그 다음 1~2개 세그먼트가 동네/구 단위인 경우가 많음
     if (parts[1]) segments.push(parts[1]);
-    if (parts[2]) segments.push(parts[2]);
   });
-
   if (segments.length === 0) return 'Zone ' + (index + 1);
-
   const counts = new Map<string, number>();
   segments.forEach((s) => counts.set(s, (counts.get(s) ?? 0) + 1));
   const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
   return sorted[0][0] || 'Zone ' + (index + 1);
+}
+
+/** 권역 내부 장소들끼리의 평균 거리를 도보 예상 시간으로 환산 (직선거리 기준 추정치) */
+function avgInternalWalkMinutes(places: Place[]): number | null {
+  const withCoords = places.filter((p) => p.lat != null && p.lng != null);
+  if (withCoords.length < 2) return null;
+
+  let total = 0;
+  let count = 0;
+  for (let i = 0; i < withCoords.length; i++) {
+    for (let j = i + 1; j < withCoords.length; j++) {
+      total += haversineKm(withCoords[i].lat!, withCoords[i].lng!, withCoords[j].lat!, withCoords[j].lng!);
+      count++;
+    }
+  }
+  if (count === 0) return null;
+  const avgKm = total / count;
+  return Math.max(2, Math.round(avgKm * 12)); // 도보 약 5km/h 기준
 }
 
 function buildZones(places: Place[]): Zone[] {
@@ -146,14 +173,59 @@ function buildZones(places: Place[]): Zone[] {
   return clusters.map((cluster, i) => {
     const lat = cluster.reduce((s, p) => s + (p.lat ?? 0), 0) / cluster.length;
     const lng = cluster.reduce((s, p) => s + (p.lng ?? 0), 0) / cluster.length;
+
+    const rated = cluster.filter((p) => typeof p.google_rating === 'number');
+    const avgRating = rated.length > 0
+      ? rated.reduce((s, p) => s + (p.google_rating ?? 0), 0) / rated.length
+      : null;
+
+    const topPlaces = [...cluster]
+      .filter((p) => typeof p.google_rating === 'number')
+      .sort((a, b) => (b.google_rating ?? 0) - (a.google_rating ?? 0))
+      .slice(0, 3);
+
+    // 장소 밀도 기준 대략적인 추천 숙박일수 (정밀한 산정이 아닌 참고용 가이드)
+    const recommendedNights = Math.max(1, Math.min(4, Math.ceil(cluster.length / 3)));
+
     return {
       id: 'zone-' + i,
-      name: guessZoneName(cluster, i),
+      name: fallbackZoneName(cluster, i),
+      keyword: cluster.length + '곳',
       places: cluster,
       centerLat: lat,
       centerLng: lng,
+      avgRating,
+      avgInternalWalkMin: avgInternalWalkMinutes(cluster),
+      recommendedNights,
+      topPlaces,
     };
   });
+}
+
+/** AI에게 권역별 실제 장소 목록을 보내 여행자 친화적 이름 받아오기 (진행 중 실패해도 fallback 이름 유지) */
+async function fetchZoneLabels(destination: string, zoneList: Zone[]): Promise<void> {
+  try {
+    const res = await fetch('/api/zone-labels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        destination,
+        zones: zoneList.map((z) => ({ id: z.id, placeNames: z.places.map((p) => p.name) })),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !Array.isArray(data.labels)) return;
+
+    data.labels.forEach((label: { id: string; name: string; keyword: string }) => {
+      const zone = zones.find((z) => z.id === label.id);
+      if (zone) {
+        zone.name = label.name;
+        zone.keyword = label.keyword;
+      }
+    });
+  } catch (e) {
+    console.error('[Shortlist] 권역 이름 생성 실패, 임시 이름 유지:', (e as Error).message);
+  }
 }
 
 /* ── 데이터 로드 ── */
@@ -238,6 +310,20 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
   }
 
   await renderStep(container);
+
+  // 즉시 임시 이름으로 먼저 보여주고, AI 이름은 백그라운드로 받아서 카드만 갱신 (1단계에서만)
+  if (step === 1) {
+    const destination = getTripDestination();
+    fetchZoneLabels(destination, zones).then(() => {
+      const bodyEl = container.querySelector('#sl-body');
+      if (bodyEl && step === 1) renderZoneCards(bodyEl as HTMLElement);
+    });
+  }
+}
+
+function getTripDestination(): string {
+  if (!currentTrip) return '';
+  return currentTrip.destinations?.[0] ?? currentTrip.name ?? '';
 }
 
 async function renderStep(container: HTMLElement): Promise<void> {
@@ -310,25 +396,46 @@ function renderZoneCards(body: HTMLElement): void {
   const listEl = body.querySelector('#sl-zone-list') as HTMLElement;
   listEl.innerHTML = zones
     .map((zone, i) => {
-      const moodCounts = countByMood(zone.places);
+      const stars = zone.avgRating != null ? buildStars(zone.avgRating) : '';
       return [
         '<button type="button" class="sl-zone-card" data-zone-id="' + zone.id + '" style="--zone-color:' + zoneColor(i) + '">',
-        '  <div class="sl-zone-card-name">' + escapeHtml(zone.name) + '</div>',
-        '  <div class="sl-zone-card-count">' + zone.places.length + '개 장소</div>',
-        '  <div class="sl-zone-card-moods">',
-        Object.entries(moodCounts)
-          .map(([mood, count]) => '<span class="sl-mood-chip" style="--chip-color:' + MOOD_COLOR[mood] + '">' + MOOD_LABEL[mood] + ' ' + count + '</span>')
-          .join(''),
+        '  <div class="sl-zone-card-top">',
+        '    <div>',
+        '      <div class="sl-zone-card-name">' + escapeHtml(zone.name) + '</div>',
+        '      <div class="sl-zone-card-keyword">' + escapeHtml(zone.keyword) + '</div>',
+        '    </div>',
+        stars ? '<div class="sl-zone-card-stars">' + stars + '</div>' : '',
         '  </div>',
+        '  <div class="sl-zone-card-stats">',
+        '    <div class="sl-zone-stat"><span class="sl-zone-stat-label">장소</span><span class="sl-zone-stat-value">' + zone.places.length + '개</span></div>',
+        zone.avgInternalWalkMin != null
+          ? '<div class="sl-zone-stat"><span class="sl-zone-stat-label">평균 이동</span><span class="sl-zone-stat-value">도보 ' + zone.avgInternalWalkMin + '분</span></div>'
+          : '',
+        '    <div class="sl-zone-stat"><span class="sl-zone-stat-label">추천 숙박</span><span class="sl-zone-stat-value">' + zone.recommendedNights + '박</span></div>',
+        '  </div>',
+        zone.topPlaces.length > 0
+          ? '  <div class="sl-zone-card-thumbs">' +
+            zone.topPlaces
+              .map((p) =>
+                p.photo_url
+                  ? '<div class="sl-zone-thumb" style="background-image:url(\'' + p.photo_url + '\')" title="' + escapeHtml(p.name) + '"></div>'
+                  : ''
+              )
+              .join('') +
+            '</div>'
+          : '',
         '</button>',
       ].join('');
     })
     .join('');
 
   listEl.querySelectorAll('.sl-zone-card').forEach((card) => {
+    const zoneId = (card as HTMLElement).dataset.zoneId!;
+    card.addEventListener('mouseenter', () => highlightZone(zoneId));
+    card.addEventListener('mouseleave', () => highlightZone(null));
     card.addEventListener('click', () => {
-      const zoneId = (card as HTMLElement).dataset.zoneId;
-      selectedZone = zones.find((z) => z.id === zoneId) ?? null;
+      const zone = zones.find((z) => z.id === zoneId) ?? null;
+      selectedZone = zone;
       selectedBasecamp = null;
       confirmedIds = new Set();
       step = 2;
@@ -347,9 +454,55 @@ function countByMood(places: Place[]): Record<string, number> {
   return counts;
 }
 
+function buildStars(rating: number): string {
+  const rounded = Math.round(rating);
+  return '★'.repeat(Math.min(5, Math.max(0, rounded))) + ' <span class="sl-zone-rating-num">' + rating.toFixed(1) + '</span>';
+}
+
 const ZONE_PALETTE = ['#E24B4A', '#1D9E75', '#7F77DD', '#F5A623', '#D4537E', '#378ADD'];
 function zoneColor(i: number): string {
   return ZONE_PALETTE[i % ZONE_PALETTE.length];
+}
+
+/** 카드에 마우스를 올리면 해당 권역만 지도에서 크게/진하게, 나머지는 흐리게 */
+function highlightZone(zoneId: string | null): void {
+  highlightedZoneId = zoneId;
+  const g = (window as any).google;
+  if (!g?.maps || !mapInstance) return;
+
+  markersByZone.forEach((markers, id) => {
+    const isHighlighted = zoneId === null || id === zoneId;
+    markers.forEach((marker) => {
+      marker.setIcon({
+        path: g.maps.SymbolPath.CIRCLE,
+        scale: isHighlighted ? 8 : 5,
+        fillColor: marker.get('zoneColor'),
+        fillOpacity: isHighlighted ? 0.95 : 0.25,
+        strokeColor: '#fff',
+        strokeWeight: isHighlighted ? 2 : 1,
+      });
+      marker.setZIndex(isHighlighted ? 20 : 1);
+    });
+  });
+
+  zoneCircles.forEach((circle) => {
+    const isHighlighted = zoneId === null || circle.get('zoneId') === zoneId;
+    circle.setOptions({
+      fillOpacity: zoneId === null ? 0.06 : isHighlighted ? 0.16 : 0.02,
+      strokeOpacity: zoneId === null ? 0.35 : isHighlighted ? 0.7 : 0.08,
+    });
+  });
+
+  if (zoneId) {
+    const zone = zones.find((z) => z.id === zoneId);
+    if (zone) {
+      const bounds = new g.maps.LatLngBounds();
+      zone.places.forEach((p) => {
+        if (p.lat != null && p.lng != null) bounds.extend({ lat: p.lat, lng: p.lng });
+      });
+      if (!bounds.isEmpty()) mapInstance.fitBounds(bounds, 60);
+    }
+  }
 }
 
 async function initMap(body: HTMLElement): Promise<void> {
@@ -381,8 +534,13 @@ async function initMap(body: HTMLElement): Promise<void> {
 
   const bounds = new g.maps.LatLngBounds();
   mapMarkers = [];
+  markersByZone = new Map();
+  zoneCircles = [];
 
   zones.forEach((zone, i) => {
+    const color = zoneColor(i);
+    const zoneMarkers: any[] = [];
+
     zone.places.forEach((p) => {
       if (p.lat == null || p.lng == null) return;
       const marker = new g.maps.Marker({
@@ -391,16 +549,42 @@ async function initMap(body: HTMLElement): Promise<void> {
         title: p.name,
         icon: {
           path: g.maps.SymbolPath.CIRCLE,
-          scale: 6,
-          fillColor: zoneColor(i),
-          fillOpacity: 0.9,
+          scale: 5,
+          fillColor: color,
+          fillOpacity: 0.25,
           strokeColor: '#fff',
-          strokeWeight: 1.5,
+          strokeWeight: 1,
         },
       });
+      marker.set('zoneColor', color);
+      zoneMarkers.push(marker);
       mapMarkers.push(marker);
       bounds.extend({ lat: p.lat, lng: p.lng });
     });
+
+    markersByZone.set(zone.id, zoneMarkers);
+
+    // 권역 전체를 감싸는 반투명 영역 (권역이 한눈에 보이도록)
+    let maxDist = 0.4;
+    zone.places.forEach((p) => {
+      if (p.lat == null || p.lng == null) return;
+      const d = haversineKm(zone.centerLat, zone.centerLng, p.lat, p.lng);
+      if (d > maxDist) maxDist = d;
+    });
+
+    const circle = new g.maps.Circle({
+      map: mapInstance,
+      center: { lat: zone.centerLat, lng: zone.centerLng },
+      radius: (maxDist + 0.3) * 1000,
+      fillColor: color,
+      fillOpacity: 0.06,
+      strokeColor: color,
+      strokeOpacity: 0.35,
+      strokeWeight: 1.5,
+      clickable: false,
+    });
+    circle.set('zoneId', zone.id);
+    zoneCircles.push(circle);
   });
 
   if (!bounds.isEmpty()) mapInstance.fitBounds(bounds, 40);
