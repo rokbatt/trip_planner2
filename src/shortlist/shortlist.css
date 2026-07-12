@@ -144,19 +144,48 @@
   border-left: 4px solid var(--zone-color);
   background: #FFFFFF;
   cursor: pointer;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
-.sl-zone-card:hover { box-shadow: 0 4px 14px rgba(11,42,92,0.08); }
-.sl-zone-card-name { font-size: 15px; font-weight: 700; color: #0B2A5C; margin-bottom: 2px; }
-.sl-zone-card-count { font-size: 12px; color: #94A3B8; margin-bottom: 10px; }
-.sl-zone-card-moods { display: flex; flex-wrap: wrap; gap: 6px; }
-.sl-mood-chip {
-  font-size: 10.5px;
+.sl-zone-card:hover { box-shadow: 0 6px 18px rgba(11,42,92,0.12); transform: translateY(-1px); }
+
+.sl-zone-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.sl-zone-card-name { font-size: 16px; font-weight: 700; color: #0B2A5C; }
+.sl-zone-card-keyword { font-size: 12px; color: #64748B; margin-top: 2px; }
+.sl-zone-card-stars {
+  font-size: 12px;
+  color: #F5A623;
   font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--chip-color) 14%, white);
-  color: var(--chip-color);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.sl-zone-rating-num { color: #94A3B8; font-weight: 600; margin-left: 2px; }
+
+.sl-zone-card-stats {
+  display: flex;
+  gap: 14px;
+  padding: 10px 0;
+  border-top: 1px dashed rgba(130,150,170,0.24);
+  border-bottom: 1px dashed rgba(130,150,170,0.24);
+  margin-bottom: 10px;
+}
+.sl-zone-stat { display: flex; flex-direction: column; gap: 2px; }
+.sl-zone-stat-label { font-size: 10px; color: #94A3B8; font-weight: 600; }
+.sl-zone-stat-value { font-size: 12.5px; color: #0B2A5C; font-weight: 700; }
+
+.sl-zone-card-thumbs { display: flex; gap: 6px; }
+.sl-zone-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background-size: cover;
+  background-position: center;
+  background-color: #EAF6FD;
 }
 
 /* ── STEP 2: 숙소 후보 ── */
