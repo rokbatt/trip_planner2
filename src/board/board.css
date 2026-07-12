@@ -928,10 +928,21 @@
 .bd-ai-picks-toggle.open { border-color: #8FD8F8; background: #EAF6FD; }
 
 .bd-ai-picks-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-size: 12.5px;
   font-weight: 700;
   color: #0B2A5C;
 }
+
+.bd-ai-picks-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  display: inline-flex;
+}
+.bd-ai-picks-icon img { width: 100%; height: 100%; object-fit: contain; }
 
 .bd-ai-picks-chevron {
   width: 15px;
