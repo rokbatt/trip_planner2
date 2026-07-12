@@ -312,7 +312,7 @@
 
 /* ── Drawer 플로팅 버튼 (닫혀있을 때만 노출) ── */
 .ws-drawer-fab {
-  position: absolute;
+  position: fixed;
   right: 24px;
   bottom: 24px;
   width: 52px;
@@ -329,7 +329,7 @@
   transition: transform 180ms cubic-bezier(0.2,0.8,0.2,1),
               opacity 180ms cubic-bezier(0.2,0.8,0.2,1),
               background 150ms ease;
-  z-index: 30;
+  z-index: 300;
 }
 .ws-drawer-fab:hover { background: #0E3676; }
 .ws-drawer-fab svg { width: 21px; height: 21px; }
