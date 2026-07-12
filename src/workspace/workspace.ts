@@ -30,6 +30,7 @@ const IC = {
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
   collapse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 17l-5-5 5-5M18 17l-5-5 5-5"/></svg>',
   menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
+  share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7M16 6l-4-4-4 4M12 2v14"/></svg>',
   ideas: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>',
   shortlist: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20l-7-7h4V4h6v9h4z"/></svg>',
   route: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3V7z"/><path d="M9 4v13M15 7v13"/></svg>',
@@ -97,6 +98,26 @@ async function getTrip(tripId: string): Promise<Trip | null> {
   return data;
 }
 
+interface TripMemberLite {
+  id: string;
+  display_name: string | null;
+  avatar_url: string | null;
+}
+
+async function getTripMembers(tripId: string): Promise<TripMemberLite[]> {
+  const { data, error } = await supabase
+    .from('trip_members')
+    .select('id, display_name, avatar_url')
+    .eq('trip_id', tripId)
+    .order('joined_at', { ascending: true });
+
+  if (error) {
+    console.error('Trip members load error:', error.message);
+    return [];
+  }
+  return data ?? [];
+}
+
 function formatDateShort(d: string): string {
   const dt = new Date(d);
   return (dt.getMonth() + 1) + '.' + String(dt.getDate()).padStart(2, '0');
@@ -138,6 +159,11 @@ export async function renderWorkspace(tripId: string, subPath?: string): Promise
 
   const header = page.querySelector('#ws-header') as HTMLElement;
   header.innerHTML = buildContentHeader(trip, activeGate);
+
+  getTripMembers(tripId).then((members) => {
+    const avatarsEl = header.querySelector('#ws-member-avatars');
+    if (avatarsEl) avatarsEl.outerHTML = buildMemberAvatars(members);
+  });
 
   const body = page.querySelector('#ws-body') as HTMLElement;
   await renderGate(body, tripId, activeGate);
@@ -212,7 +238,32 @@ function buildContentHeader(trip: Trip, activeGate: string): string {
     '  </div>',
     '  <div class="ws-header-meta">' + escapeHtml(destCity) + ' &middot; ' + escapeHtml(dateRange) + '</div>',
     '</div>',
+    '<div class="ws-header-right">',
+    '  <div class="ws-member-avatars" id="ws-member-avatars"></div>',
+    '  <button class="ws-share-btn" id="ws-share-btn">' + IC.share + ' <span>공유</span></button>',
+    '</div>',
   ].join('\n');
+}
+
+/** 트립 멤버 아바타를 겹쳐서 보여주고, 4명 넘으면 +N 뱃지 */
+function buildMemberAvatars(members: TripMemberLite[]): string {
+  const MAX_VISIBLE = 4;
+  const visible = members.slice(0, MAX_VISIBLE);
+  const overflow = members.length - visible.length;
+
+  const avatarsHtml = visible.map((m) => {
+    const initial = (m.display_name || '?').charAt(0);
+    const img = m.avatar_url
+      ? '<img src="' + m.avatar_url + '" alt="" referrerpolicy="no-referrer" />'
+      : escapeHtml(initial);
+    return '<div class="ws-avatar" title="' + escapeHtml(m.display_name || '멤버') + '">' + img + '</div>';
+  }).join('');
+
+  const overflowHtml = overflow > 0
+    ? '<div class="ws-avatar ws-avatar-overflow">+' + overflow + '</div>'
+    : '';
+
+  return '<div class="ws-member-avatars" id="ws-member-avatars">' + avatarsHtml + overflowHtml + '</div>';
 }
 
 /** 우측 슬라이드 패널 (Drawer) — Collaborate / Assistant 세그먼트 컨트롤 */
@@ -322,6 +373,19 @@ function bindEvents(page: HTMLElement, tripId: string): void {
   });
 
   page.querySelector('#ws-invite')?.addEventListener('click', () => {
+    const trip = store.get('currentTrip');
+    if (trip && trip.invite_code) {
+      const url = window.location.origin + '/#join/' + trip.invite_code;
+      navigator.clipboard.writeText(url).then(
+        () => alert('초대 링크가 복사되었어요!\n\n' + url),
+        () => alert('초대 코드: ' + trip.invite_code)
+      );
+    } else {
+      alert('초대 코드를 찾을 수 없어요.');
+    }
+  });
+
+  page.querySelector('#ws-share-btn')?.addEventListener('click', () => {
     const trip = store.get('currentTrip');
     if (trip && trip.invite_code) {
       const url = window.location.origin + '/#join/' + trip.invite_code;
