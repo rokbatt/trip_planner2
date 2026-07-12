@@ -1018,13 +1018,34 @@ function buildPopularSites(): string {
 
   return [
     '<div class="bd-popular-sites">',
-    '  <div class="bd-popular-sites-title">🔗 Popular Search Sites</div>',
-    '  <div class="bd-site-list">' + items + '</div>',
+    '  <button type="button" class="bd-popular-sites-toggle" id="popular-sites-toggle">',
+    '    <span class="bd-popular-sites-title">🔗 Popular Search Sites</span>',
+    '    <span class="bd-popular-sites-chevron">' + ICON_CHEVRON_DOWN + '</span>',
+    '  </button>',
+    '  <div class="bd-popular-sites-body" id="popular-sites-body">',
+    '    <div class="bd-site-list">' + items + '</div>',
+    '  </div>',
     '</div>',
   ].join('\n');
 }
 
+let popularSitesExpanded = false;
+
 function bindPopularSites(inbox: HTMLElement): void {
+  const toggleBtn = inbox.querySelector('#popular-sites-toggle') as HTMLButtonElement | null;
+  const body = inbox.querySelector('#popular-sites-body') as HTMLElement | null;
+
+  if (toggleBtn && body) {
+    toggleBtn.classList.toggle('open', popularSitesExpanded);
+    body.classList.toggle('open', popularSitesExpanded);
+
+    toggleBtn.addEventListener('click', () => {
+      popularSitesExpanded = !popularSitesExpanded;
+      toggleBtn.classList.toggle('open', popularSitesExpanded);
+      body.classList.toggle('open', popularSitesExpanded);
+    });
+  }
+
   inbox.querySelectorAll('.bd-site-link').forEach((link) => {
     link.addEventListener('click', (e) => {
       e.preventDefault();
