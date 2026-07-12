@@ -35,6 +35,7 @@ const ICON_BED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const ICON_SEARCH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
 const ICON_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
 const ICON_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+const ICON_EXTERNAL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>';
 const ICON_CLEAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
 const ICON_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
 const ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z"/></svg>';
@@ -646,6 +647,7 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
     '  </button>',
     '  <div class="bd-ai-picks-body" id="ai-picks-body"></div>',
     '</div>',
+    buildPopularSites(),
     '<div class="bd-inbox-list-header">',
     '  <span>대기 중</span>',
     '  <span class="bd-inbox-count" id="inbox-count">' + items.length + '</span>',
@@ -695,6 +697,7 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
   });
 
   bindAiPicksToggle(inbox, tripId);
+  bindPopularSites(inbox);
 
   return inbox;
 }
@@ -958,6 +961,81 @@ function buildInboxEmpty(): string {
 /* ── AI Monthly Picks ── */
 let aiPicksCache: Record<string, string[]> | null = null; // 세션 내 재요청 방지용 캐시
 let aiPicksExpanded = false;
+
+/* ── Popular Search Sites: 여행지 기준으로 바로 이동되는 외부 사이트 링크 ── */
+interface SiteLink {
+  name: string;
+  icon: string;
+  buildUrl: (destination: string) => string;
+}
+
+const POPULAR_SITES: SiteLink[] = [
+  {
+    name: 'Google 지도',
+    icon: ICON_PIN,
+    buildUrl: (d) => 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(d),
+  },
+  {
+    name: 'Booking.com',
+    icon: ICON_BED,
+    buildUrl: (d) => 'https://www.booking.com/searchresults.ko.html?ss=' + encodeURIComponent(d),
+  },
+  {
+    name: 'Agoda',
+    icon: ICON_BED,
+    buildUrl: (d) => 'https://www.agoda.com/ko-kr/search?q=' + encodeURIComponent(d),
+  },
+  {
+    name: 'Airbnb',
+    icon: ICON_BED,
+    buildUrl: (d) => 'https://www.airbnb.co.kr/s/' + encodeURIComponent(d) + '/homes',
+  },
+  {
+    name: 'Tripadvisor',
+    icon: ICON_STAR,
+    buildUrl: (d) => 'https://www.tripadvisor.com/Search?q=' + encodeURIComponent(d),
+  },
+  {
+    name: 'Klook (투어/티켓)',
+    icon: ICON_TICKET,
+    buildUrl: (d) => 'https://www.klook.com/ko/search/?query=' + encodeURIComponent(d),
+  },
+  {
+    name: '네이버 여행 후기',
+    icon: ICON_SEARCH,
+    buildUrl: (d) => 'https://search.naver.com/search.naver?query=' + encodeURIComponent(d + ' 여행 후기'),
+  },
+];
+
+function buildPopularSites(): string {
+  const items = POPULAR_SITES.map((site) =>
+    '<a class="bd-site-link" href="#" data-site-name="' + escapeHtml(site.name) + '">' +
+    '<span class="bd-site-icon">' + site.icon + '</span>' +
+    '<span class="bd-site-name">' + escapeHtml(site.name) + '</span>' +
+    '<span class="bd-site-arrow">' + ICON_EXTERNAL + '</span>' +
+    '</a>'
+  ).join('');
+
+  return [
+    '<div class="bd-popular-sites">',
+    '  <div class="bd-popular-sites-title">🔗 Popular Search Sites</div>',
+    '  <div class="bd-site-list">' + items + '</div>',
+    '</div>',
+  ].join('\n');
+}
+
+function bindPopularSites(inbox: HTMLElement): void {
+  inbox.querySelectorAll('.bd-site-link').forEach((link) => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const siteName = (link as HTMLElement).dataset.siteName;
+      const site = POPULAR_SITES.find((s) => s.name === siteName);
+      if (!site) return;
+      const destination = getTripDestination() || '';
+      window.open(site.buildUrl(destination), '_blank', 'noopener,noreferrer');
+    });
+  });
+}
 
 function bindAiPicksToggle(inbox: HTMLElement, tripId: string): void {
   const toggleBtn = inbox.querySelector('#ai-picks-toggle') as HTMLButtonElement | null;
