@@ -965,44 +965,44 @@ let aiPicksExpanded = false;
 /* ── Popular Search Sites: 여행지 기준으로 바로 이동되는 외부 사이트 링크 ── */
 interface SiteLink {
   name: string;
-  icon: string;
+  domain: string;
   buildUrl: (destination: string) => string;
 }
 
 const POPULAR_SITES: SiteLink[] = [
   {
     name: 'Google 지도',
-    icon: ICON_PIN,
+    domain: 'maps.google.com',
     buildUrl: (d) => 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(d),
   },
   {
     name: 'Booking.com',
-    icon: ICON_BED,
+    domain: 'booking.com',
     buildUrl: (d) => 'https://www.booking.com/searchresults.ko.html?ss=' + encodeURIComponent(d),
   },
   {
     name: 'Agoda',
-    icon: ICON_BED,
+    domain: 'agoda.com',
     buildUrl: (d) => 'https://www.agoda.com/ko-kr/search?q=' + encodeURIComponent(d),
   },
   {
     name: 'Airbnb',
-    icon: ICON_BED,
+    domain: 'airbnb.co.kr',
     buildUrl: (d) => 'https://www.airbnb.co.kr/s/' + encodeURIComponent(d) + '/homes',
   },
   {
     name: 'Tripadvisor',
-    icon: ICON_STAR,
+    domain: 'tripadvisor.com',
     buildUrl: (d) => 'https://www.tripadvisor.com/Search?q=' + encodeURIComponent(d),
   },
   {
     name: 'Klook (투어/티켓)',
-    icon: ICON_TICKET,
+    domain: 'klook.com',
     buildUrl: (d) => 'https://www.klook.com/ko/search/?query=' + encodeURIComponent(d),
   },
   {
     name: '네이버 여행 후기',
-    icon: ICON_SEARCH,
+    domain: 'naver.com',
     buildUrl: (d) => 'https://search.naver.com/search.naver?query=' + encodeURIComponent(d + ' 여행 후기'),
   },
 ];
@@ -1010,7 +1010,7 @@ const POPULAR_SITES: SiteLink[] = [
 function buildPopularSites(): string {
   const items = POPULAR_SITES.map((site) =>
     '<a class="bd-site-link" href="#" data-site-name="' + escapeHtml(site.name) + '">' +
-    '<span class="bd-site-icon">' + site.icon + '</span>' +
+    '<span class="bd-site-icon"><img src="https://www.google.com/s2/favicons?domain=' + site.domain + '&sz=64" alt="" loading="lazy" /></span>' +
     '<span class="bd-site-name">' + escapeHtml(site.name) + '</span>' +
     '<span class="bd-site-arrow">' + ICON_EXTERNAL + '</span>' +
     '</a>'
