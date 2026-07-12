@@ -642,7 +642,7 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
     '</form>',
     '<div class="bd-ai-picks">',
     '  <button type="button" class="bd-ai-picks-toggle" id="ai-picks-toggle">',
-    '    <span class="bd-ai-picks-title">✨ AI Monthly Picks</span>',
+    '    <span class="bd-ai-picks-title"><span class="bd-ai-picks-icon"><img src="https://www.google.com/s2/favicons?domain=gemini.google.com&sz=64" alt="" loading="lazy" /></span> AI Monthly Picks</span>',
     '    <span class="bd-ai-picks-chevron">' + ICON_CHEVRON_DOWN + '</span>',
     '  </button>',
     '  <div class="bd-ai-picks-body" id="ai-picks-body"></div>',
