@@ -24,6 +24,10 @@ export interface Database {
           dest_lng: number | null;
           destinations: string[] | null;
           dest_coords: Record<string, unknown> | null;
+          shortlist_zone_name: string | null;
+          shortlist_zone_place_ids: string[] | null;
+          shortlist_basecamp_place_id: string | null;
+          shortlist_confirmed_place_ids: string[] | null;
         };
         Insert: {
           id?: string;
@@ -39,6 +43,10 @@ export interface Database {
           dest_lng?: number | null;
           destinations?: string[] | null;
           dest_coords?: Record<string, unknown> | null;
+          shortlist_zone_name?: string | null;
+          shortlist_zone_place_ids?: string[] | null;
+          shortlist_basecamp_place_id?: string | null;
+          shortlist_confirmed_place_ids?: string[] | null;
         };
         Update: Partial<Database['public']['Tables']['trips']['Insert']>;
         Relationships: [];
