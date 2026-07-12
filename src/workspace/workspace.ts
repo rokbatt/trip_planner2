@@ -316,17 +316,27 @@ function buildAiDemoContent(): string {
 
 /** 'ideas' 게이트를 벗어날 때 realtime 채널을 정리하기 위한 참조 */
 let boardModuleRef: { teardownBoard: () => void } | null = null;
+let shortlistModuleRef: { teardownShortlist: () => void } | null = null;
+let navigateGateHandlerRef: EventListener | null = null;
 
 async function renderGate(body: HTMLElement, tripId: string, gate: string): Promise<void> {
   if (gate !== 'ideas' && boardModuleRef) {
     boardModuleRef.teardownBoard();
     boardModuleRef = null;
   }
+  if (gate !== 'shortlist' && shortlistModuleRef) {
+    shortlistModuleRef.teardownShortlist();
+    shortlistModuleRef = null;
+  }
 
   if (gate === 'ideas') {
     const mod = await import('../board/board');
     boardModuleRef = mod;
     await mod.renderBoardContent(body, tripId);
+  } else if (gate === 'shortlist') {
+    const mod = await import('../shortlist/shortlist');
+    shortlistModuleRef = mod;
+    await mod.renderShortlistContent(body, tripId);
   } else {
     const title = GATE_TITLES[gate] || gate;
     body.innerHTML = [
@@ -344,8 +354,18 @@ function bindEvents(page: HTMLElement, tripId: string): void {
     teardownChat();
     boardModuleRef?.teardownBoard();
     boardModuleRef = null;
+    shortlistModuleRef?.teardownShortlist();
+    shortlistModuleRef = null;
     navigate('trips');
   });
+
+  if (navigateGateHandlerRef) {
+    window.removeEventListener('mongsil:navigateGate', navigateGateHandlerRef);
+  }
+  navigateGateHandlerRef = ((e: CustomEvent<{ tripId: string; gate: string }>) => {
+    navigate('trip/' + e.detail.tripId + '/' + e.detail.gate);
+  }) as EventListener;
+  window.addEventListener('mongsil:navigateGate', navigateGateHandlerRef);
 
   const sidebar = page.querySelector('#ws-sidebar') as HTMLElement;
   page.querySelector('#ws-toggle')?.addEventListener('click', () => {
