@@ -438,13 +438,15 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow-y: auto;
 }
 
 /* ── AI 데모 콘텐츠 ── */
 .ws-ai-demo {
   padding: 18px;
   position: relative;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 .ws-ai-demo-badge {
   position: absolute;
@@ -587,6 +589,9 @@
   display: flex;
   flex-direction: column;
   padding: 0;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .ws-detail-photo {
