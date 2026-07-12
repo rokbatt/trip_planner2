@@ -35,6 +35,21 @@ interface VercelResponse {
 
 const BUCKET = 'place-photos';
 
+async function fetchFreshPhotoUrl(placeId: string, serverMapsKey: string): Promise<string | null> {
+  try {
+    const detailsRes = await fetch(
+      'https://places.googleapis.com/v1/places/' + placeId + '?fields=photos&key=' + serverMapsKey
+    );
+    if (!detailsRes.ok) return null;
+    const data: any = await detailsRes.json();
+    const photoName = data?.photos?.[0]?.name;
+    if (!photoName) return null;
+    return 'https://places.googleapis.com/v1/' + photoName + '/media?maxWidthPx=480&maxHeightPx=480&key=' + serverMapsKey;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function rehostGooglePhoto(
   supabase: any,
   photoUrl: string,
@@ -55,9 +70,18 @@ async function rehostGooglePhoto(
   urlObj.searchParams.set('key', serverMapsKey);
   const fetchUrl = urlObj.toString();
 
-  const imgRes = await fetch(fetchUrl);
+  let imgRes = await fetch(fetchUrl);
+
   if (!imgRes.ok) {
-    throw new Error('사진 다운로드 실패 (' + imgRes.status + ')');
+    // 원본 사진 URL이 만료됐을 가능성 — Place Details로 최신 사진 URL을 다시 받아 재시도
+    const freshUrl = await fetchFreshPhotoUrl(placeId, serverMapsKey);
+    if (freshUrl) {
+      imgRes = await fetch(freshUrl);
+    }
+  }
+
+  if (!imgRes.ok) {
+    throw new Error('사진 다운로드 실패 (' + imgRes.status + ') — 원본 URL 만료 + 재발급도 실패');
   }
 
   const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
