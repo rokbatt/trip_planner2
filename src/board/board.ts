@@ -631,11 +631,6 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
     '  <div class="bd-inbox-eyebrow">CHECK-IN COUNTER</div>',
     '  <div class="bd-inbox-title">아이디어 체크인</div>',
     '</div>',
-    '<div class="bd-inbox-list-header">',
-    '  <span>대기 중</span>',
-    '  <span class="bd-inbox-count" id="inbox-count">' + items.length + '</span>',
-    '</div>',
-    '<div class="bd-inbox-list bd-dropzone" id="inbox-list" data-zone=""></div>',
     '<form class="bd-inbox-form" id="bd-inbox-form">',
     '  <div class="bd-inbox-input-wrap">',
     '    <span class="bd-inbox-search-icon">' + ICON_SEARCH + '</span>',
@@ -651,6 +646,11 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
     '  </button>',
     '  <div class="bd-ai-picks-body" id="ai-picks-body"></div>',
     '</div>',
+    '<div class="bd-inbox-list-header">',
+    '  <span>대기 중</span>',
+    '  <span class="bd-inbox-count" id="inbox-count">' + items.length + '</span>',
+    '</div>',
+    '<div class="bd-inbox-list bd-dropzone" id="inbox-list" data-zone=""></div>',
   ].join('\n');
 
   const listEl = inbox.querySelector('#inbox-list') as HTMLElement;
