@@ -1,0 +1,320 @@
+/* ============================================================
+   몽실이 — Shortlist (Departure Hall + Immigration)
+   ============================================================ */
+
+.sl-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #94A3B8;
+  font-size: 13px;
+}
+
+.sl-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 40px;
+  text-align: center;
+  gap: 8px;
+}
+.sl-empty-title { font-size: 16px; font-weight: 700; color: #0B2A5C; }
+.sl-empty-hint { font-size: 13px; color: #94A3B8; max-width: 360px; }
+
+.sl-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 24px 32px;
+  overflow-y: auto;
+}
+
+/* ── 스테퍼 ── */
+.sl-stepper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 28px;
+}
+.sl-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px 7px 7px;
+  border-radius: 999px;
+  background: #F1F6FB;
+  color: #94A3B8;
+}
+.sl-step.active { background: #0B2A5C; color: #fff; }
+.sl-step.done { background: #EAF6FD; color: #0B7CC4; cursor: pointer; }
+.sl-step.clickable:hover { background: #DCEEFB; }
+.sl-step-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+.sl-step.done .sl-step-num { background: rgba(11,124,196,0.14); }
+.sl-step.done .sl-step-num svg { width: 12px; height: 12px; }
+.sl-step-label { font-size: 12.5px; font-weight: 700; }
+.sl-step-line { width: 24px; height: 1px; background: rgba(130,150,170,0.3); }
+
+/* ── 공통 헤더 ── */
+.sl-step1-header { margin-bottom: 20px; }
+.sl-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #0B7CC4;
+  margin-bottom: 6px;
+}
+.sl-title {
+  font-size: 22px;
+  font-weight: 400;
+  font-family: 'Instrument Serif', Georgia, serif;
+  color: #0B2A5C;
+  letter-spacing: -0.01em;
+  margin-bottom: 6px;
+}
+.sl-sub { font-size: 13px; color: #64748B; }
+
+.sl-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  color: #64748B;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 16px;
+  padding: 0;
+}
+.sl-back-link:hover { color: #0B2A5C; }
+.sl-back-link svg { width: 14px; height: 14px; }
+
+/* ── 레이아웃: 지도 + 리스트 ── */
+.sl-step1-layout {
+  display: flex;
+  gap: 20px;
+  flex: 1;
+  min-height: 480px;
+}
+
+.sl-map-wrap {
+  flex: 1.4;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(130,150,170,0.16);
+  background: #EAF6FD;
+}
+.sl-map { width: 100%; height: 100%; min-height: 480px; }
+.sl-map-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #94A3B8;
+  font-size: 13px;
+}
+
+/* ── Zone 카드 ── */
+.sl-zone-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+.sl-zone-card {
+  text-align: left;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(130,150,170,0.18);
+  border-left: 4px solid var(--zone-color);
+  background: #FFFFFF;
+  cursor: pointer;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.sl-zone-card:hover { box-shadow: 0 4px 14px rgba(11,42,92,0.08); }
+.sl-zone-card-name { font-size: 15px; font-weight: 700; color: #0B2A5C; margin-bottom: 2px; }
+.sl-zone-card-count { font-size: 12px; color: #94A3B8; margin-bottom: 10px; }
+.sl-zone-card-moods { display: flex; flex-wrap: wrap; gap: 6px; }
+.sl-mood-chip {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--chip-color) 14%, white);
+  color: var(--chip-color);
+}
+
+/* ── STEP 2: 숙소 후보 ── */
+.sl-basecamp-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+.sl-basecamp-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(130,150,170,0.18);
+  background: #FFFFFF;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.sl-basecamp-card:hover { border-color: #8FD8F8; }
+.sl-basecamp-card.selected { border-color: #185FA5; background: #E6F1FB; }
+.sl-basecamp-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  background-size: cover;
+  background-position: center;
+  background-color: #EAF6FD;
+  flex-shrink: 0;
+}
+.sl-basecamp-thumb-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8FD8F8;
+}
+.sl-basecamp-thumb-empty svg { width: 22px; height: 22px; }
+.sl-basecamp-info { flex: 1; min-width: 0; }
+.sl-basecamp-name { font-size: 13.5px; font-weight: 700; color: #0B2A5C; }
+.sl-basecamp-rating { font-size: 12px; color: #F5A623; font-weight: 700; margin-top: 2px; }
+.sl-basecamp-selected-badge {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #185FA5;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.sl-basecamp-selected-badge svg { width: 12px; height: 12px; }
+
+.sl-no-candidates {
+  padding: 24px;
+  text-align: center;
+  color: #94A3B8;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ── STEP 3: 확정 리스트 ── */
+.sl-ai-note {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: #E1F5EE;
+  color: #0F6E56;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.sl-confirm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 24px;
+}
+.sl-confirm-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(130,150,170,0.18);
+  background: #FFFFFF;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.sl-confirm-item:hover { border-color: #8FD8F8; }
+.sl-confirm-item.checked { background: #F8FBFE; border-color: #8FD8F8; }
+.sl-confirm-item input[type="checkbox"] { width: 17px; height: 17px; accent-color: #0B2A5C; cursor: pointer; }
+.sl-confirm-mood-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dot-color);
+  flex-shrink: 0;
+}
+.sl-confirm-name { flex: 1; font-size: 13.5px; font-weight: 600; color: #1E293B; }
+.sl-confirm-travel {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #64748B;
+  white-space: nowrap;
+}
+.sl-confirm-travel svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+/* ── 보딩패스 ── */
+.sl-boarding-pass { display: flex; justify-content: center; padding-bottom: 20px; }
+.sl-pass-card {
+  width: 100%;
+  max-width: 560px;
+  background: #FFFFFF;
+  border: 1px solid #CDEBFB;
+  border-radius: 18px;
+  box-shadow: 0 12px 32px rgba(11,42,92,0.10);
+  padding: 24px 28px;
+}
+.sl-pass-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+.sl-pass-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; color: #0B7CC4; }
+.sl-pass-zone { font-size: 18px; font-weight: 700; color: #0B2A5C; font-family: 'Instrument Serif', Georgia, serif; }
+.sl-pass-divider { border-top: 1px dashed rgba(130,150,170,0.3); margin: 14px 0; }
+.sl-pass-row { display: flex; gap: 24px; flex-wrap: wrap; }
+.sl-pass-field { display: flex; flex-direction: column; gap: 3px; }
+.sl-pass-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #0F6E56; }
+.sl-pass-value { font-size: 15px; font-weight: 700; color: #0B2A5C; }
+
+.sl-pass-cta {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 13px;
+  border-radius: 12px;
+  border: none;
+  background: #0B2A5C;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.sl-pass-cta:hover { background: #0E3676; }
+.sl-pass-cta:disabled { background: #A8B7C7; cursor: not-allowed; }
+.sl-pass-cta svg { width: 16px; height: 16px; }
+
+@media (max-width: 900px) {
+  .sl-step1-layout { flex-direction: column; }
+  .sl-map { min-height: 280px; }
+}
