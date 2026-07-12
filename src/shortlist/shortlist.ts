@@ -103,51 +103,31 @@ function estimateTravel(km: number): { mode: string; icon: string; label: string
 }
 
 /* ── 지역 클러스터링 (거리 기반, API 호출 없음) ── */
-function clusterPlaces(places: Place[], thresholdKm = 2.2): Place[][] {
-  const withCoords = places.filter((p) => p.lat != null && p.lng != null);
-  const visited = new Set<string>();
-  const clusters: Place[][] = [];
-
-  for (const p of withCoords) {
-    if (visited.has(p.id)) continue;
-    const cluster: Place[] = [p];
-    visited.add(p.id);
-
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const q of withCoords) {
-        if (visited.has(q.id)) continue;
-        const closeToCluster = cluster.some(
-          (c) => haversineKm(c.lat!, c.lng!, q.lat!, q.lng!) <= thresholdKm
-        );
-        if (closeToCluster) {
-          cluster.push(q);
-          visited.add(q.id);
-          changed = true;
-        }
-      }
-    }
-    clusters.push(cluster);
-  }
-
-  return clusters.sort((a, b) => b.length - a.length);
+interface ZoneSeed {
+  name: string;
+  keyword: string;
+  lat: number;
+  lng: number;
 }
 
-/** 클러스터 내 장소들의 address에서 가장 흔한 지역명 후보를 뽑아냄 (추가 API 호출 없음) */
-/** AI 이름이 도착하기 전 즉시 보여줄 임시 이름 (주소 기반, 정확하지 않을 수 있음) */
-function fallbackZoneName(places: Place[], index: number): string {
-  const segments: string[] = [];
-  places.forEach((p) => {
-    if (!p.address) return;
-    const parts = p.address.split(',').map((s) => s.trim()).filter(Boolean);
-    if (parts[1]) segments.push(parts[1]);
-  });
-  if (segments.length === 0) return 'Zone ' + (index + 1);
-  const counts = new Map<string, number>();
-  segments.forEach((s) => counts.set(s, (counts.get(s) ?? 0) + 1));
-  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  return sorted[0][0] || 'Zone ' + (index + 1);
+/**
+ * 여행지의 유명 지역 목록을 가져옴 (트립마다 새로 계산하지 않고, 여행지 단위로 DB 캐싱됨).
+ * 같은 여행지를 여러 트립이 가더라도 Gemini는 그 여행지 최초 1회만 호출됨.
+ */
+async function fetchDestinationZones(destination: string): Promise<ZoneSeed[]> {
+  try {
+    const res = await fetch('/api/destination-zones', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ destination }),
+    });
+    const data = await res.json();
+    if (!res.ok || !Array.isArray(data.zones)) return [];
+    return data.zones;
+  } catch (e) {
+    console.error('[Shortlist] 여행지 지역 목록 로드 실패:', (e as Error).message);
+    return [];
+  }
 }
 
 /** 권역 내부 장소들끼리의 평균 거리를 도보 예상 시간으로 환산 (직선거리 기준 추정치) */
@@ -168,64 +148,62 @@ function avgInternalWalkMinutes(places: Place[]): number | null {
   return Math.max(2, Math.round(avgKm * 12)); // 도보 약 5km/h 기준
 }
 
-function buildZones(places: Place[]): Zone[] {
-  const clusters = clusterPlaces(places);
-  return clusters.map((cluster, i) => {
-    const lat = cluster.reduce((s, p) => s + (p.lat ?? 0), 0) / cluster.length;
-    const lng = cluster.reduce((s, p) => s + (p.lng ?? 0), 0) / cluster.length;
+/**
+ * 미리 받아온 "유명 지역" 목록에 브레인스토밍 장소들을 배정해서 Zone[]으로 만듦.
+ * 각 장소는 가장 가까운 지역 중심점에 배정됨 (클라이언트에서 거리 계산만, API 호출 없음).
+ * 장소가 하나도 배정되지 않은 지역은 화면에서 제외.
+ */
+function assignPlacesToZones(seeds: ZoneSeed[], places: Place[]): Zone[] {
+  const withCoords = places.filter((p) => p.lat != null && p.lng != null);
+  const buckets = new Map<number, Place[]>();
 
-    const rated = cluster.filter((p) => typeof p.google_rating === 'number');
+  withCoords.forEach((p) => {
+    let nearestIdx = 0;
+    let nearestDist = Infinity;
+    seeds.forEach((seed, i) => {
+      const d = haversineKm(seed.lat, seed.lng, p.lat!, p.lng!);
+      if (d < nearestDist) {
+        nearestDist = d;
+        nearestIdx = i;
+      }
+    });
+    const bucket = buckets.get(nearestIdx) ?? [];
+    bucket.push(p);
+    buckets.set(nearestIdx, bucket);
+  });
+
+  const result: Zone[] = [];
+  buckets.forEach((bucketPlaces, seedIdx) => {
+    if (bucketPlaces.length === 0) return;
+    const seed = seeds[seedIdx];
+
+    const rated = bucketPlaces.filter((p) => typeof p.google_rating === 'number');
     const avgRating = rated.length > 0
       ? rated.reduce((s, p) => s + (p.google_rating ?? 0), 0) / rated.length
       : null;
 
-    const topPlaces = [...cluster]
+    const topPlaces = [...bucketPlaces]
       .filter((p) => typeof p.google_rating === 'number')
       .sort((a, b) => (b.google_rating ?? 0) - (a.google_rating ?? 0))
       .slice(0, 3);
 
-    // 장소 밀도 기준 대략적인 추천 숙박일수 (정밀한 산정이 아닌 참고용 가이드)
-    const recommendedNights = Math.max(1, Math.min(4, Math.ceil(cluster.length / 3)));
+    const recommendedNights = Math.max(1, Math.min(4, Math.ceil(bucketPlaces.length / 3)));
 
-    return {
-      id: 'zone-' + i,
-      name: fallbackZoneName(cluster, i),
-      keyword: cluster.length + '곳',
-      places: cluster,
-      centerLat: lat,
-      centerLng: lng,
+    result.push({
+      id: 'zone-' + seedIdx,
+      name: seed.name,
+      keyword: seed.keyword,
+      places: bucketPlaces,
+      centerLat: seed.lat,
+      centerLng: seed.lng,
       avgRating,
-      avgInternalWalkMin: avgInternalWalkMinutes(cluster),
+      avgInternalWalkMin: avgInternalWalkMinutes(bucketPlaces),
       recommendedNights,
       topPlaces,
-    };
+    });
   });
-}
 
-/** AI에게 권역별 실제 장소 목록을 보내 여행자 친화적 이름 받아오기 (진행 중 실패해도 fallback 이름 유지) */
-async function fetchZoneLabels(destination: string, zoneList: Zone[]): Promise<void> {
-  try {
-    const res = await fetch('/api/zone-labels', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        destination,
-        zones: zoneList.map((z) => ({ id: z.id, placeNames: z.places.map((p) => p.name) })),
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok || !Array.isArray(data.labels)) return;
-
-    data.labels.forEach((label: { id: string; name: string; keyword: string }) => {
-      const zone = zones.find((z) => z.id === label.id);
-      if (zone) {
-        zone.name = label.name;
-        zone.keyword = label.keyword;
-      }
-    });
-  } catch (e) {
-    console.error('[Shortlist] 권역 이름 생성 실패, 임시 이름 유지:', (e as Error).message);
-  }
+  return result.sort((a, b) => b.places.length - a.places.length);
 }
 
 /* ── 데이터 로드 ── */
@@ -288,7 +266,20 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
     return;
   }
 
-  zones = buildZones(allPlaces);
+  const destination = getTripDestination();
+  const seeds = await fetchDestinationZones(destination);
+
+  if (seeds.length === 0) {
+    container.innerHTML = [
+      '<div class="sl-empty">',
+      '  <div class="sl-empty-title">이 여행지의 지역 정보를 불러오지 못했어요</div>',
+      '  <div class="sl-empty-hint">잠시 후 다시 시도해주세요.</div>',
+      '</div>',
+    ].join('\n');
+    return;
+  }
+
+  zones = assignPlacesToZones(seeds, allPlaces);
 
   // 이미 저장된 선택 상태가 있으면 복원
   if (trip?.shortlist_zone_name && trip.shortlist_zone_place_ids) {
@@ -310,15 +301,6 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
   }
 
   await renderStep(container);
-
-  // 즉시 임시 이름으로 먼저 보여주고, AI 이름은 백그라운드로 받아서 카드만 갱신 (1단계에서만)
-  if (step === 1) {
-    const destination = getTripDestination();
-    fetchZoneLabels(destination, zones).then(() => {
-      const bodyEl = container.querySelector('#sl-body');
-      if (bodyEl && step === 1) renderZoneCards(bodyEl as HTMLElement);
-    });
-  }
 }
 
 function getTripDestination(): string {
