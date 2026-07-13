@@ -1,20 +1,19 @@
 /**
- * Vercel 서버리스 함수 — 여행지별 유명 지역 목록 (캐싱)
+ * Vercel 서버리스 함수 — 여행지별 "숙박 생활권" 목록
  *
  * POST /api/destination-zones
  * body: { destination: string }
- * response: { zones: [{ name, keyword, lat, lng }], cached: boolean }
+ * response: { zones: [{ name, features, lat, lng }], source: 'curated' | 'ai_fallback' }
  *
  * 흐름:
- * 1. destination_zones 테이블에서 이 여행지가 이미 있는지 먼저 확인
- * 2. 있으면 그대로 반환 (Gemini 호출 안 함) — 다른 트립이 같은 여행지를 가도 재사용됨
- * 3. 없으면 Gemini에 "이 도시의 유명 지역 5~8개 + 대략적인 중심 좌표"를 한 번만 물어보고 캐싱
+ * 1. stay_zones(큐레이션 DB, 조사·검수된 고정 데이터)에서 이 여행지를 먼저 찾음
+ * 2. 있으면 그대로 반환 — AI 호출 전혀 안 함 (이게 기본 경로여야 함)
+ * 3. 큐레이션 DB에 아직 없는 여행지면, 어쩔 수 없이 Gemini로 폴백
+ *    (이 경로는 "관광명소"가 아니라 "실제 숙박 생활권"만 나오도록 프롬프트를 엄격하게 제한함.
+ *     단, AI 폴백 결과는 별도 검수 없이 그대로 쓰이므로 큐레이션 데이터보다 신뢰도가 낮음.
+ *     장기적으로는 자주 검색되는 여행지를 stay_zones에 수동으로 추가하는 게 맞음.)
  *
- * 주의: 좌표는 Gemini의 학습 지식 기반 근사치임 (정밀 측량 좌표 아님).
- * 장소를 "가장 가까운 유명 지역"에 배정하는 용도로는 충분하지만,
- * 정밀한 경계선이 필요한 용도로는 쓰면 안 됨.
- *
- * 필요한 Vercel 환경변수: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GEMINI_API_KEY
+ * 필요한 Vercel 환경변수: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GEMINI_API_KEY(폴백용)
  */
 
 import { createClient } from '@supabase/supabase-js';
@@ -52,7 +51,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const geminiKey = process.env.GEMINI_API_KEY;
 
   if (!supabaseUrl || !serviceKey) {
     res.status(500).json({ error: '서버 환경변수(SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)가 설정되지 않았어요.' });
@@ -61,43 +59,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const supabase = createClient(supabaseUrl, serviceKey);
 
-  // 1. DB 먼저 조회
-  const { data: existing, error: selectError } = await supabase
-    .from('destination_zones')
-    .select('zones')
+  // 1. 큐레이션 DB 먼저 조회 (조사·검수된 고정 데이터, AI 아님)
+  const { data: curated, error: selectError } = await supabase
+    .from('stay_zones')
+    .select('name, features, lat, lng')
     .eq('destination', destination)
-    .maybeSingle();
+    .order('sort_order', { ascending: true });
 
   if (selectError) {
     res.status(500).json({ error: 'DB 조회 실패: ' + selectError.message });
     return;
   }
 
-  if (existing) {
-    const cachedZones = existing.zones as any[];
-    const isFreshSchema = Array.isArray(cachedZones) && cachedZones.every(
-      (z) => Array.isArray(z.features) && typeof z.name === 'string' && Number.isFinite(z.lat) && Number.isFinite(z.lng)
-    );
-    if (isFreshSchema) {
-      res.status(200).json({ zones: cachedZones, cached: true });
-      return;
-    }
-    // 예전 스키마(keyword 등)로 캐싱된 오래된 데이터 — 무시하고 아래에서 새로 생성
-    console.log('[destination-zones] 오래된 캐시 스키마 감지, 재생성:', destination);
+  if (curated && curated.length > 0) {
+    res.status(200).json({ zones: curated, source: 'curated' });
+    return;
   }
 
-  // 2. 캐시 없음 → Gemini 호출 (이 여행지에 대해 딱 한 번만)
+  // 2. 큐레이션 DB에 없는 여행지 — AI 폴백 (신뢰도가 큐레이션보다 낮음, 프롬프트로 최대한 제한)
+  const geminiKey = process.env.GEMINI_API_KEY;
   if (!geminiKey) {
-    res.status(500).json({ error: 'GEMINI_API_KEY가 설정되지 않았어요.' });
+    // 폴백조차 불가능하면 빈 배열 반환 (프론트에서 "지원 안 되는 여행지" 처리)
+    res.status(200).json({ zones: [], source: 'unsupported' });
     return;
   }
 
   const prompt = [
-    destination + '를 여행하는 사람들이 흔히 구분해서 부르는 유명 지역/동네를 5~8개 알려줘.',
-    '각 지역마다 그 지역다운 짧은 이름(5글자 이내), 그 지역의 특징을 나타내는 키워드 2~4개(각 2~5글자, 예: "맛집 천국","쇼핑","나이트라이프","교통 편리"), 대략적인 중심 위도/경도를 줘.',
-    '행정구역 공식 명칭이 아니라 여행자들이 실제로 부르는 지역 이름으로.',
+    destination + '에서 여행자가 "숙소를 잡는 기준"으로 삼는 실제 생활권(거주/숙박 지역) 이름을 8~12개 알려줘.',
+    '',
+    '엄격한 조건:',
+    '- 반드시 "동네/생활권" 단위여야 함. 예: 방콕이면 Sukhumvit, Siam, Silom, Riverside, Old Town 같은 것.',
+    '- 특정 관광명소, 쇼핑몰, 랜드마크, 건물 이름은 절대 지역명으로 쓰지 마.',
+    '  (예: "아이콘시암", "아시아틱", "왓아룬"처럼 하나의 장소/건물 이름은 금지 — 이런 건 생활권이 아니라 그 안의 개별 POI임)',
+    '- 실제로 그 동네에 호텔/숙소가 밀집되어 있어서 여행자가 "여기서 묵을까?"라고 고민하는 지역이어야 함',
+    '- 행정구역 공식 명칭이 아니라 여행자·현지인이 실제로 부르는 이름으로',
+    '- 이름은 한국 여행자들이 실제로 쓰는 한국어 표기로 (번역이 아니라 통용되는 한글 표기, 예: "수쿰빗", "시암")',
+    '',
+    '각 생활권마다 이름, 대표 특징(2~4글자 단어 2~3개), 그 생활권의 대략적인 중심 위도/경도를 줘.',
     '아래 JSON 배열 형식으로만 응답하고 다른 텍스트는 절대 붙이지 마:',
-    '[{"name":"올드타운","features":["역사·문화","전통","관광 명소"],"lat":13.75,"lng":100.49}, ...]',
+    '[{"name":"수쿰빗","features":["나이트라이프","맛집","교통 편리"],"lat":13.7356,"lng":100.5562}, ...]',
   ].join('\n');
 
   let geminiRes: Response;
@@ -141,21 +141,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const isValid = Array.isArray(zones) && zones.every(
-    (z) => typeof z.name === 'string' && Array.isArray(z.features) && Number.isFinite(z.lat) && Number.isFinite(z.lng)
+    (z) => Array.isArray(z.features) && typeof z.name === 'string' && Number.isFinite(z.lat) && Number.isFinite(z.lng)
   );
   if (!isValid) {
     res.status(502).json({ error: 'Gemini 응답 형태가 예상과 달라요.' });
     return;
   }
 
-  // 3. DB에 캐싱 (동시 요청 경쟁 대비 upsert)
-  const { error: upsertError } = await supabase
-    .from('destination_zones')
-    .upsert({ destination, zones }, { onConflict: 'destination' });
-
-  if (upsertError) {
-    console.error('캐싱 실패(응답은 그대로 반환):', upsertError.message);
-  }
-
-  res.status(200).json({ zones, cached: false });
+  // 참고: AI 폴백 결과는 검수 전이라 stay_zones에 자동 저장하지 않음.
+  // 이 여행지가 자주 검색되면 관리자가 조사 후 stay_zones에 수동으로 넣는 게 맞음.
+  res.status(200).json({ zones, source: 'ai_fallback' });
 }
