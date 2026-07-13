@@ -452,8 +452,6 @@ function renderZoneCards(body: HTMLElement): void {
 
   listEl.querySelectorAll('.sl-zone-card').forEach((card) => {
     const zoneId = (card as HTMLElement).dataset.zoneId!;
-    card.addEventListener('mouseenter', () => highlightZone(zoneId));
-    card.addEventListener('mouseleave', () => highlightZone(pendingSelectedZoneId));
     card.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).classList.contains('sl-zone-thumb-more')) return;
       pendingSelectedZoneId = zoneId;
