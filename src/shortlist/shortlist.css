@@ -28,7 +28,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 24px 32px;
+  padding: 16px 28px;
   overflow-y: auto;
 }
 
@@ -37,13 +37,13 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 28px;
+  margin-bottom: 16px;
 }
 .sl-step {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 14px 7px 7px;
+  gap: 7px;
+  padding: 5px 12px 5px 5px;
   border-radius: 999px;
   background: #F1F6FB;
   color: #94A3B8;
@@ -52,40 +52,40 @@
 .sl-step.done { background: #EAF6FD; color: #0B7CC4; cursor: pointer; }
 .sl-step.clickable:hover { background: #DCEEFB; }
 .sl-step-num {
-  width: 22px;
-  height: 22px;
+  width: 19px;
+  height: 19px;
   border-radius: 50%;
   background: rgba(255,255,255,0.25);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
 }
 .sl-step.done .sl-step-num { background: rgba(11,124,196,0.14); }
-.sl-step.done .sl-step-num svg { width: 12px; height: 12px; }
-.sl-step-label { font-size: 12.5px; font-weight: 700; }
-.sl-step-line { width: 24px; height: 1px; background: rgba(130,150,170,0.3); }
+.sl-step.done .sl-step-num svg { width: 11px; height: 11px; }
+.sl-step-label { font-size: 12px; font-weight: 700; }
+.sl-step-line { width: 20px; height: 1px; background: rgba(130,150,170,0.3); }
 
 /* ── 공통 헤더 ── */
-.sl-step1-header { margin-bottom: 20px; }
+.sl-step1-header { margin-bottom: 12px; }
 .sl-eyebrow {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: #0B7CC4;
-  margin-bottom: 6px;
+  margin-bottom: 3px;
 }
 .sl-title {
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 400;
   font-family: 'Instrument Serif', Georgia, serif;
   color: #0B2A5C;
   letter-spacing: -0.01em;
-  margin-bottom: 6px;
+  margin-bottom: 3px;
 }
-.sl-sub { font-size: 13px; color: #64748B; }
+.sl-sub { font-size: 12px; color: #64748B; }
 
 .sl-back-link {
   display: inline-flex;
@@ -106,10 +106,10 @@
 /* ── 레이아웃: 지도 + 리스트 ── */
 .sl-step1-layout {
   display: flex;
-  gap: 20px;
+  gap: 18px;
   flex: 1;
-  min-height: 420px;
-  max-height: 560px;
+  min-height: 480px;
+  max-height: 660px;
 }
 
 .sl-map-wrap {
@@ -120,7 +120,7 @@
   border: 1px solid rgba(130,150,170,0.16);
   background: #F8FBFE;
 }
-.sl-map { width: 100%; height: 100%; min-height: 420px; }
+.sl-map { width: 100%; height: 100%; min-height: 480px; }
 .sl-map-error {
   display: flex;
   align-items: center;
@@ -177,14 +177,14 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   overflow-y: auto;
 }
 .sl-zone-card {
   position: relative;
   text-align: left;
-  padding: 16px;
-  border-radius: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
   border: 1px solid rgba(130,150,170,0.18);
   border-left: 4px solid var(--zone-color);
   background: #FFFFFF;
@@ -199,13 +199,13 @@
 
 .sl-zone-card-rank {
   position: absolute;
-  top: -8px;
+  top: -7px;
   left: 12px;
   background: var(--zone-color);
   color: #fff;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
-  padding: 2px 8px;
+  padding: 2px 7px;
   border-radius: 999px;
 }
 
@@ -214,12 +214,12 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 8px;
-  margin-top: 4px;
+  margin-bottom: 6px;
+  margin-top: 3px;
 }
-.sl-zone-card-name { font-size: 16px; font-weight: 700; color: #0B2A5C; }
+.sl-zone-card-name { font-size: 15px; font-weight: 700; color: #0B2A5C; }
 .sl-zone-card-stars {
-  font-size: 12px;
+  font-size: 11.5px;
   color: #F5A623;
   font-weight: 700;
   white-space: nowrap;
@@ -231,7 +231,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 .sl-zone-tag {
   font-size: 10.5px;
