@@ -703,6 +703,14 @@ async function initMap(body: HTMLElement): Promise<void> {
     styles: MAP_STYLE_LIGHT,
   });
 
+  // 폴리곤/마커/라벨이 아닌 지도 빈 공간을 클릭하면 강조 해제
+  mapInstance.addListener('click', () => {
+    pendingSelectedZoneId = null;
+    highlightZone(null);
+    renderZoneCards(body);
+    renderSelectBar(body);
+  });
+
   const bounds = new g.maps.LatLngBounds();
   mapMarkers = [];
   markersByZone = new Map();
