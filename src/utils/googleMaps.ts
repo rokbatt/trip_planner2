@@ -64,7 +64,7 @@ export function loadGoogleMapsScript(): Promise<void> {
 
     const script = document.createElement('script');
     script.id = 'mongsil-gmaps-script';
-    script.src = 'https://maps.googleapis.com/maps/api/js?key=' + key + '&libraries=places&callback=' + callbackName;
+    script.src = 'https://maps.googleapis.com/maps/api/js?key=' + key + '&libraries=places&language=ko&region=KR&callback=' + callbackName;
     script.async = true;
     script.defer = true;
     script.onerror = () => {
