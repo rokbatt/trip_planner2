@@ -108,18 +108,19 @@
   display: flex;
   gap: 20px;
   flex: 1;
-  min-height: 480px;
+  min-height: 420px;
+  max-height: 560px;
 }
 
 .sl-map-wrap {
-  flex: 1.3;
+  flex: 1;
   position: relative;
   border-radius: 16px;
   overflow: hidden;
   border: 1px solid rgba(130,150,170,0.16);
   background: #F8FBFE;
 }
-.sl-map { width: 100%; height: 100%; min-height: 480px; }
+.sl-map { width: 100%; height: 100%; min-height: 420px; }
 .sl-map-error {
   display: flex;
   align-items: center;
@@ -155,10 +156,10 @@
 
 /* ── Zone 패널 ── */
 .sl-zone-panel {
-  flex: 1;
+  flex: 1.15;
   display: flex;
   flex-direction: column;
-  min-width: 320px;
+  min-width: 340px;
 }
 .sl-zone-panel-head {
   display: flex;
@@ -173,6 +174,7 @@
 
 .sl-zone-list {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -279,25 +281,121 @@
   overflow: hidden;
   transition: max-height 220ms ease;
 }
-.sl-select-bar.visible { max-height: 60px; margin-top: 16px; }
-.sl-select-bar-btn {
-  width: 100%;
+.sl-select-bar.visible {
+  max-height: 60px;
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: #0B2A5C;
+  color: #fff;
+}
+.sl-select-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.sl-select-bar-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  color: #8FD8F8;
+}
+.sl-select-bar-icon svg { width: 100%; height: 100%; }
+.sl-select-bar-btn {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  padding: 14px;
-  border-radius: 12px;
+  padding: 10px 18px;
+  border-radius: 10px;
   border: none;
-  background: #0B2A5C;
+  background: #185FA5;
   color: #fff;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 700;
   cursor: pointer;
+  white-space: nowrap;
   transition: background 150ms ease;
 }
-.sl-select-bar-btn:hover { background: #0E3676; }
-.sl-select-bar-btn svg { width: 16px; height: 16px; }
+.sl-select-bar-btn:hover { background: #1E71C0; }
+.sl-select-bar-btn svg { width: 15px; height: 15px; }
+
+/* ── AI 추천 근거 ── */
+.sl-ai-reason {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #EAF6FD;
+  border: 1px solid #CDEBFB;
+}
+.sl-ai-reason-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: #0B7CC4;
+  margin-top: 1px;
+}
+.sl-ai-reason-icon svg { width: 100%; height: 100%; }
+.sl-ai-reason-title { font-size: 11.5px; font-weight: 700; color: #0B2A5C; margin-bottom: 2px; }
+.sl-ai-reason-text { font-size: 12px; color: #0C447C; line-height: 1.5; }
+
+/* ── 지도 위 지역 정보 라벨 (OverlayView) ── */
+.sl-map-zone-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  background: rgba(255,255,255,0.96);
+  border: 1.5px solid var(--zone-color);
+  border-radius: 12px;
+  padding: 8px 12px;
+  min-width: 120px;
+  box-shadow: 0 4px 14px rgba(11,42,92,0.14);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: box-shadow 150ms ease, transform 150ms ease;
+}
+.sl-map-zone-label:hover { box-shadow: 0 6px 20px rgba(11,42,92,0.22); }
+.sl-map-zone-label.selected {
+  border-width: 2px;
+  box-shadow: 0 6px 22px rgba(11,42,92,0.26);
+}
+.sl-map-label-badge {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  position: absolute;
+  top: -11px;
+  right: 8px;
+  background: #185FA5;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.sl-map-label-head { display: flex; align-items: center; gap: 6px; }
+.sl-map-label-icon { font-size: 13px; }
+.sl-map-label-name { font-size: 13px; font-weight: 700; color: #0B2A5C; white-space: nowrap; }
+.sl-map-label-sub { font-size: 10.5px; color: #64748B; margin-top: 2px; white-space: nowrap; }
+.sl-map-label-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  color: #64748B;
+  margin-top: 4px;
+  font-weight: 600;
+}
+.sl-map-label-star { color: #F5A623; }
 
 /* ── STEP 2: 숙소 후보 ── */
 .sl-basecamp-list {
