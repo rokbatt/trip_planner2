@@ -33,7 +33,7 @@ interface VercelResponse {
 
 interface ZoneSeed {
   name: string;
-  keyword: string;
+  features: string[];
   lat: number;
   lng: number;
 }
@@ -86,10 +86,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const prompt = [
     destination + '를 여행하는 사람들이 흔히 구분해서 부르는 유명 지역/동네를 5~8개 알려줘.',
-    '각 지역마다 그 지역다운 짧은 이름, 대표 키워드(그 지역에서 뭘 할 수 있는지 2~4글자), 대략적인 중심 위도/경도를 줘.',
+    '각 지역마다 그 지역다운 짧은 이름(5글자 이내), 그 지역의 특징을 나타내는 키워드 2~4개(각 2~5글자, 예: "맛집 천국","쇼핑","나이트라이프","교통 편리"), 대략적인 중심 위도/경도를 줘.',
     '행정구역 공식 명칭이 아니라 여행자들이 실제로 부르는 지역 이름으로.',
     '아래 JSON 배열 형식으로만 응답하고 다른 텍스트는 절대 붙이지 마:',
-    '[{"name":"올드타운","keyword":"왕궁·사원","lat":13.75,"lng":100.49}, ...]',
+    '[{"name":"올드타운","features":["역사·문화","전통","관광 명소"],"lat":13.75,"lng":100.49}, ...]',
   ].join('\n');
 
   let geminiRes: Response;
@@ -133,7 +133,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const isValid = Array.isArray(zones) && zones.every(
-    (z) => typeof z.name === 'string' && typeof z.lat === 'number' && typeof z.lng === 'number'
+    (z) => typeof z.name === 'string' && Array.isArray(z.features) && typeof z.lat === 'number' && typeof z.lng === 'number'
   );
   if (!isValid) {
     res.status(502).json({ error: 'Gemini 응답 형태가 예상과 달라요.' });
