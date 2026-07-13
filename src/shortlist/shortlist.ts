@@ -641,6 +641,7 @@ async function initMap(body: HTMLElement): Promise<void> {
     zoom: 12,
     disableDefaultUI: true,
     zoomControl: true,
+    gestureHandling: 'greedy',
     styles: MAP_STYLE_LIGHT,
   });
 
@@ -680,9 +681,14 @@ async function initMap(body: HTMLElement): Promise<void> {
 
     markersByZone.set(zone.id, zoneMarkers);
 
+    // 좌표가 유효하지 않으면(예전 캐시 데이터 등) 폴리곤을 그리지 않고 건너뜀 — 지도 전체를 뒤덮는 렌더링 오류 방지
+    if (!Number.isFinite(zone.centerLat) || !Number.isFinite(zone.centerLng)) {
+      return;
+    }
+
     // 권역 영역 — 장소들의 볼록 껍질을 살짝 확장해서 자연스러운 영역 모양으로
     const coordPoints = zone.places
-      .filter((p) => p.lat != null && p.lng != null)
+      .filter((p) => p.lat != null && p.lng != null && Number.isFinite(p.lat) && Number.isFinite(p.lng))
       .map((p) => ({ lat: p.lat!, lng: p.lng! }));
 
     let hullPoints: { lat: number; lng: number }[];
@@ -843,6 +849,7 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
     zoom: 14,
     disableDefaultUI: true,
     zoomControl: true,
+    gestureHandling: 'greedy',
     styles: MAP_STYLE_LIGHT,
   });
 
