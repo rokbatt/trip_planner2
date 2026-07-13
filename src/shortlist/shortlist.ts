@@ -66,6 +66,10 @@ let mapInstance: any = null;
 let mapMarkers: any[] = [];
 
 export function teardownShortlist(): void {
+  if (placeInfoWindow) {
+    placeInfoWindow.close();
+    placeInfoWindow = null;
+  }
   allPlaces = [];
   zones = [];
   step = 1;
@@ -607,22 +611,60 @@ const MOOD_ICON_SYMBOL: Record<string, string> = {
 };
 
 /** 카테고리별 색상이 채워진 원형 마커 아이콘 (data URI, 추가 요청 없음) */
+let placeInfoWindow: any = null;
+
+/**
+ * 마커 클릭 시 이미 우리 DB에 저장돼 있는 장소 정보(이름/카테고리/평점/주소/사진)를 보여줌.
+ * Google Place Details를 다시 호출하지 않음 — 추가 API 비용 0원.
+ * "Google Maps에서 보기" 링크도 google_place_id 기반 딥링크라 API 호출이 필요 없음.
+ */
+function showPlaceInfoWindow(g: any, marker: any, place: Place): void {
+  if (!placeInfoWindow) {
+    placeInfoWindow = new g.maps.InfoWindow();
+  }
+
+  const color = MOOD_COLOR[place.mood ?? ''] || '#94A3B8';
+  const moodLabel = MOOD_LABEL[place.mood ?? ''] || '';
+  const stars = typeof place.google_rating === 'number' ? '★ ' + place.google_rating.toFixed(1) : '';
+
+  const mapsUrl = place.google_place_id
+    ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(place.name) + '&query_place_id=' + place.google_place_id
+    : 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(place.name);
+
+  const content = [
+    '<div style="font-family:inherit;min-width:180px;max-width:220px;">',
+    place.photo_url
+      ? '<div style="width:100%;height:90px;border-radius:8px;background-size:cover;background-position:center;background-image:url(\'' + place.photo_url + '\');margin-bottom:8px;"></div>'
+      : '',
+    '<div style="font-size:13.5px;font-weight:700;color:#0B2A5C;margin-bottom:2px;">' + escapeHtml(place.name) + '</div>',
+    moodLabel
+      ? '<span style="display:inline-block;font-size:10px;font-weight:700;color:' + color + ';background:' + color + '1A;padding:2px 7px;border-radius:999px;margin-bottom:4px;">' + moodLabel + '</span>'
+      : '',
+    stars ? '<div style="font-size:11.5px;color:#F5A623;font-weight:700;margin-top:4px;">' + stars + '</div>' : '',
+    place.address ? '<div style="font-size:11px;color:#64748B;margin-top:4px;line-height:1.4;">' + escapeHtml(place.address) + '</div>' : '',
+    '<a href="' + mapsUrl + '" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-top:8px;font-size:11.5px;font-weight:700;color:#185FA5;text-decoration:none;">Google Maps에서 보기 →</a>',
+    '</div>',
+  ].join('');
+
+  placeInfoWindow.setContent(content);
+  placeInfoWindow.open({ map: mapInstance, anchor: marker });
+}
+
 function buildCategoryIcon(g: any, mood: string | null): any {
   const color = MOOD_COLOR[mood ?? ''] || '#94A3B8';
-  const emoji = MOOD_ICON_SYMBOL[mood ?? ''] || '📍';
 
+  // 참고 이미지 느낌의 클래식 핀 모양 — 위쪽 원 + 아래로 길게 뾰족한 형태, 내부는 흰 원(구멍)만
   const svg = [
-    '<svg xmlns="http://www.w3.org/2000/svg" width="30" height="36" viewBox="0 0 30 36">',
-    '<path d="M15 0C6.7 0 0 6.7 0 15c0 10.5 15 21 15 21s15-10.5 15-21C30 6.7 23.3 0 15 0z" fill="' + color + '"/>',
-    '<circle cx="15" cy="14.5" r="10.5" fill="white"/>',
-    '<text x="15" y="19.5" font-size="14" text-anchor="middle">' + emoji + '</text>',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="26" height="34" viewBox="0 0 26 34">',
+    '<path d="M13 0C5.8 0 0 5.8 0 13c0 9.3 13 21 13 21s13-11.7 13-21C26 5.8 20.2 0 13 0z" fill="' + color + '"/>',
+    '<circle cx="13" cy="12.5" r="5" fill="white"/>',
     '</svg>',
   ].join('');
 
   return {
     url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
-    scaledSize: new g.maps.Size(30, 36),
-    anchor: new g.maps.Point(15, 36),
+    scaledSize: new g.maps.Size(26, 34),
+    anchor: new g.maps.Point(13, 34),
   };
 }
 
@@ -734,6 +776,9 @@ async function initMap(body: HTMLElement): Promise<void> {
         map: mapInstance,
         title: p.name,
         icon: buildCategoryIcon(g, p.mood),
+      });
+      marker.addListener('click', () => {
+        showPlaceInfoWindow(g, marker, p);
       });
       zoneMarkers.push(marker);
       mapMarkers.push(marker);
