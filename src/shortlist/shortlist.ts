@@ -742,10 +742,13 @@ async function initMap(body: HTMLElement): Promise<void> {
     center: { lat: avgLat, lng: avgLng },
     zoom: 12,
     disableDefaultUI: true,
-    zoomControl: true,
+    zoomControl: false,
+    isFractionalZoomEnabled: true,
     gestureHandling: 'greedy',
     styles: MAP_STYLE_LIGHT,
   });
+
+  addCustomZoomControl(mapInstance, body.querySelector('#sl-map') as HTMLElement);
 
   // 폴리곤/마커/라벨이 아닌 지도 빈 공간을 클릭하면 강조 해제
   mapInstance.addListener('click', () => {
@@ -891,6 +894,26 @@ function createZoneLabelOverlay(g: any, zone: Zone, color: string): any {
 }
 
 /** 프리미엄 화이트 + 공항 라운지 컨셉에 맞춘 미니멀 지도 스타일 — 도로/행정구역/POI 라벨 최대한 축소 */
+/** 기본 줌 버튼(1레벨씩)보다 절반 단위(0.5레벨씩)로 세밀하게 확대/축소되는 커스텀 버튼 */
+function addCustomZoomControl(map: any, mapEl: HTMLElement): void {
+  const g = (window as any).google;
+  const wrap = document.createElement('div');
+  wrap.className = 'sl-zoom-control';
+  wrap.innerHTML = [
+    '<button type="button" class="sl-zoom-btn" data-dir="in">+</button>',
+    '<button type="button" class="sl-zoom-btn" data-dir="out">−</button>',
+  ].join('');
+
+  wrap.querySelector('[data-dir="in"]')?.addEventListener('click', () => {
+    map.setZoom((map.getZoom() ?? 14) + 0.5);
+  });
+  wrap.querySelector('[data-dir="out"]')?.addEventListener('click', () => {
+    map.setZoom((map.getZoom() ?? 14) - 0.5);
+  });
+
+  map.controls[g.maps.ControlPosition.RIGHT_BOTTOM].push(wrap);
+}
+
 const MAP_STYLE_LIGHT = [
   { elementType: 'geometry', stylers: [{ color: '#F8FBFE' }] },
   { elementType: 'labels.text.fill', stylers: [{ color: '#94A3B8' }] },
@@ -995,10 +1018,13 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
     center: { lat: selectedZone.centerLat, lng: selectedZone.centerLng },
     zoom: 14,
     disableDefaultUI: true,
-    zoomControl: true,
+    zoomControl: false,
+    isFractionalZoomEnabled: true,
     gestureHandling: 'greedy',
     styles: MAP_STYLE_LIGHT,
   });
+
+  addCustomZoomControl(map, mapEl);
 
   selectedZone.places.forEach((p) => {
     if (p.lat == null || p.lng == null) return;
