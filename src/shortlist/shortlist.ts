@@ -612,7 +612,14 @@ function highlightZone(zoneId: string | null): void {
       zone.places.forEach((p) => {
         if (p.lat != null && p.lng != null) bounds.extend({ lat: p.lat, lng: p.lng });
       });
-      if (!bounds.isEmpty()) mapInstance.fitBounds(bounds, 80);
+      if (!bounds.isEmpty()) {
+        mapInstance.fitBounds(bounds, 80);
+        // 장소가 1~2개뿐인 좁은 권역은 과도하게 확대되어 지도가 안 그려진 것처럼
+        // 보일 수 있어서, fitBounds 직후 줌 레벨에 상한을 둠
+        g.maps.event.addListenerOnce(mapInstance, 'idle', () => {
+          if (mapInstance.getZoom() > 16) mapInstance.setZoom(16);
+        });
+      }
     }
   }
 }
@@ -716,8 +723,6 @@ async function initMap(body: HTMLElement): Promise<void> {
       clickable: true,
     });
     polygon.set('zoneId', zone.id);
-    polygon.addListener('mouseover', () => highlightZone(zone.id));
-    polygon.addListener('mouseout', () => highlightZone(pendingSelectedZoneId));
     polygon.addListener('click', () => {
       pendingSelectedZoneId = zone.id;
       highlightZone(zone.id);
