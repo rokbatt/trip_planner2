@@ -14,6 +14,8 @@ const IC_TRAIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const IC_TAXI = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M5 17a2 2 0 1 0 4 0M15 17a2 2 0 1 0 4 0M5 17l1.5-5h11L19 17M8 12V8h8v4"/></svg>';
 const IC_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
 const IC_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+const IC_SPARK = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.8 5.6L19.4 9.4 13.8 11.2 12 17l-1.8-5.8L4.6 9.4l5.6-1.8L12 2z"/></svg>';
+const IC_PLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 19.5l19-7.5-19-7.5 4 7.5-4 7.5z"/></svg>';
 const IC_BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>';
 
 const MOOD_LABEL: Record<string, string> = {
@@ -47,6 +49,7 @@ interface Zone {
 let highlightedZoneId: string | null = null;
 let pendingSelectedZoneId: string | null = null;
 let zonePolygons: any[] = [];
+let zoneLabelOverlays: any[] = [];
 let markersByZone = new Map<string, any[]>();
 
 /* ── 모듈 상태 ── */
@@ -73,6 +76,7 @@ export function teardownShortlist(): void {
   highlightedZoneId = null;
   pendingSelectedZoneId = null;
   zonePolygons = [];
+  zoneLabelOverlays = [];
   markersByZone = new Map();
 }
 
@@ -399,6 +403,13 @@ async function renderStep1(body: HTMLElement): Promise<void> {
     '    <div class="sl-zone-panel">',
     '      <div class="sl-zone-panel-head"><span>AI 추천 지역</span><span class="sl-zone-panel-sort">추천 순</span></div>',
     '      <div class="sl-zone-list" id="sl-zone-list"></div>',
+    '      <div class="sl-ai-reason">',
+    '        <span class="sl-ai-reason-icon">' + IC_SPARK + '</span>',
+    '        <div>',
+    '          <div class="sl-ai-reason-title">AI 추천 근거</div>',
+    '          <div class="sl-ai-reason-text">평점 · 장소 밀집도 · 권역 내 평균 이동시간을 종합해서 순위를 매겼어요.</div>',
+    '        </div>',
+    '      </div>',
     '    </div>',
     '  </div>',
     '  <div class="sl-select-bar" id="sl-select-bar"></div>',
@@ -494,11 +505,14 @@ function renderSelectBar(body: HTMLElement): void {
 
   barEl.classList.add('visible');
   barEl.innerHTML = [
+    '<div class="sl-select-bar-left">',
+    '  <span class="sl-select-bar-icon">' + IC_PLANE + '</span>',
+    '  <span>' + escapeHtml(zone.name) + ' 지역을 중심으로 숙소를 선택할까요?</span>',
+    '</div>',
     '<button type="button" class="sl-select-bar-btn" id="sl-confirm-zone">',
-    escapeHtml(zone.name) + ' 지역을 중심으로 숙소를 선택할게요',
-    ' ' + IC_ARROW,
+    '  다음 단계: 숙소 선택 ' + IC_ARROW,
     '</button>',
-  ].join('');
+  ].join('\n');
 
   barEl.querySelector('#sl-confirm-zone')?.addEventListener('click', () => {
     selectedZone = zone;
@@ -605,6 +619,12 @@ function highlightZone(zoneId: string | null): void {
     });
   });
 
+  zoneLabelOverlays.forEach((overlay) => {
+    if (typeof overlay.updateSelected === 'function') {
+      overlay.updateSelected(overlay.div?.dataset.zoneId === pendingSelectedZoneId);
+    }
+  });
+
   if (zoneId) {
     const zone = zones.find((z) => z.id === zoneId);
     if (zone) {
@@ -656,6 +676,8 @@ async function initMap(body: HTMLElement): Promise<void> {
   mapMarkers = [];
   markersByZone = new Map();
   zonePolygons = [];
+  zoneLabelOverlays.forEach((o) => o.setMap(null));
+  zoneLabelOverlays = [];
 
   zones.forEach((zone) => {
     const color = zoneColor(zone.id);
@@ -727,25 +749,89 @@ async function initMap(body: HTMLElement): Promise<void> {
       pendingSelectedZoneId = zone.id;
       highlightZone(zone.id);
       renderZoneCards(body);
+      renderSelectBar(body);
     });
     zonePolygons.push(polygon);
 
-    // 지역 이름 라벨
-    new g.maps.Marker({
-      position: { lat: zone.centerLat, lng: zone.centerLng },
-      map: mapInstance,
-      icon: { path: g.maps.SymbolPath.CIRCLE, scale: 0 },
-      label: {
-        text: zone.name,
-        color,
-        fontWeight: '700',
-        fontSize: '13px',
-      },
-      zIndex: 5,
-    });
+    // 지역 정보 라벨 (아이콘 + 이름 + 대표 특징 + 장소 수 + 평점) — 지도 위에서 바로 비교 가능하도록
+    const overlay = createZoneLabelOverlay(g, zone, color);
+    overlay.setMap(mapInstance);
+    zoneLabelOverlays.push(overlay);
   });
 
   if (!bounds.isEmpty()) mapInstance.fitBounds(bounds, 40);
+}
+
+const ZONE_ICON: Record<string, string> = {
+  '가고싶어': '📷',
+  '먹고싶어': '🍴',
+  '하고싶어': '🎟',
+  '숙소': '🛏',
+};
+
+/** 지도 위에 뜨는 지역 정보 카드 (Google Maps 커스텀 OverlayView, 실제 DOM 엘리먼트) */
+function createZoneLabelOverlay(g: any, zone: Zone, color: string): any {
+  class ZoneLabelOverlay extends g.maps.OverlayView {
+    div: HTMLDivElement | null = null;
+
+    onAdd() {
+      const div = document.createElement('div');
+      div.className = 'sl-map-zone-label';
+      div.dataset.zoneId = zone.id;
+      div.style.setProperty('--zone-color', color);
+
+      const dominantMood = Object.entries(countByMood(zone.places)).sort((a, b) => b[1] - a[1])[0]?.[0];
+      const icon = ZONE_ICON[dominantMood ?? ''] || '📍';
+      const stars = zone.avgRating != null ? '★ ' + zone.avgRating.toFixed(1) : '';
+
+      div.innerHTML = [
+        '<div class="sl-map-label-badge" style="display:' + (pendingSelectedZoneId === zone.id ? 'flex' : 'none') + '">✓ 추천</div>',
+        '<div class="sl-map-label-head"><span class="sl-map-label-icon">' + icon + '</span><span class="sl-map-label-name">' + escapeHtml(zone.name) + '</span></div>',
+        '<div class="sl-map-label-sub">' + escapeHtml((zone.features ?? [])[0] ?? '') + '</div>',
+        '<div class="sl-map-label-meta"><span>' + zone.places.length + '개 장소</span>' + (stars ? '<span class="sl-map-label-star">' + stars + '</span>' : '') + '</div>',
+      ].join('');
+
+      div.addEventListener('click', () => {
+        pendingSelectedZoneId = zone.id;
+        highlightZone(zone.id);
+        const bodyEl = document.querySelector('.sl-step1') as HTMLElement;
+        if (bodyEl) {
+          renderZoneCards(bodyEl);
+          renderSelectBar(bodyEl);
+        }
+      });
+
+      this.div = div;
+      const panes = this.getPanes();
+      panes.overlayMouseTarget.appendChild(div);
+    }
+
+    draw() {
+      if (!this.div) return;
+      const projection = this.getProjection();
+      if (!projection) return;
+      const pos = projection.fromLatLngToDivPixel(new g.maps.LatLng(zone.centerLat, zone.centerLng));
+      if (!pos) return;
+      this.div.style.left = pos.x + 'px';
+      this.div.style.top = pos.y + 'px';
+    }
+
+    onRemove() {
+      if (this.div) {
+        this.div.remove();
+        this.div = null;
+      }
+    }
+
+    updateSelected(isSelected: boolean) {
+      if (!this.div) return;
+      const badge = this.div.querySelector('.sl-map-label-badge') as HTMLElement | null;
+      if (badge) badge.style.display = isSelected ? 'flex' : 'none';
+      this.div.classList.toggle('selected', isSelected);
+    }
+  }
+
+  return new ZoneLabelOverlay();
 }
 
 /** 프리미엄 화이트 + 공항 라운지 컨셉에 맞춘 미니멀 지도 스타일 — 도로/행정구역/POI 라벨 최대한 축소 */
