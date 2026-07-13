@@ -50,6 +50,7 @@ let highlightedZoneId: string | null = null;
 let pendingSelectedZoneId: string | null = null;
 let zonePolygons: any[] = [];
 let zoneLabelOverlays: any[] = [];
+let zoneBlobPoints = new Map<string, { lat: number; lng: number }[]>();
 let markersByZone = new Map<string, any[]>();
 
 /* ── 모듈 상태 ── */
@@ -83,6 +84,7 @@ export function teardownShortlist(): void {
   pendingSelectedZoneId = null;
   zonePolygons = [];
   zoneLabelOverlays = [];
+  zoneBlobPoints = new Map();
   markersByZone = new Map();
 }
 
@@ -702,16 +704,16 @@ function highlightZone(zoneId: string | null): void {
     const zone = zones.find((z) => z.id === zoneId);
     if (zone) {
       const bounds = new g.maps.LatLngBounds();
-      zone.places.forEach((p) => {
-        if (p.lat != null && p.lng != null) bounds.extend({ lat: p.lat, lng: p.lng });
-      });
-      if (!bounds.isEmpty()) {
-        mapInstance.fitBounds(bounds, 80);
-        // 장소가 1~2개뿐인 좁은 권역은 과도하게 확대되어 지도가 안 그려진 것처럼
-        // 보일 수 있어서, fitBounds 직후 줌 레벨에 상한을 둠
-        g.maps.event.addListenerOnce(mapInstance, 'idle', () => {
-          if (mapInstance.getZoom() > 16) mapInstance.setZoom(16);
+      const blob = zoneBlobPoints.get(zoneId);
+      if (blob && blob.length > 0) {
+        blob.forEach((pt) => bounds.extend(pt));
+      } else {
+        zone.places.forEach((p) => {
+          if (p.lat != null && p.lng != null) bounds.extend({ lat: p.lat, lng: p.lng });
         });
+      }
+      if (!bounds.isEmpty()) {
+        mapInstance.fitBounds(bounds, 24);
       }
     }
   }
@@ -759,6 +761,7 @@ async function initMap(body: HTMLElement): Promise<void> {
   zonePolygons = [];
   zoneLabelOverlays.forEach((o) => o.setMap(null));
   zoneLabelOverlays = [];
+  zoneBlobPoints = new Map();
 
   zones.forEach((zone) => {
     const color = zoneColor(zone.id);
@@ -797,6 +800,7 @@ async function initMap(body: HTMLElement): Promise<void> {
 
     // 권역 영역 — 저장된 장소 개수와 무관하게 그 동네다운 자연스러운 크기의 얼룩 모양으로
     const hullPoints = generateZoneBlob(zone);
+    zoneBlobPoints.set(zone.id, hullPoints);
 
     const polygon = new g.maps.Polygon({
       map: mapInstance,
