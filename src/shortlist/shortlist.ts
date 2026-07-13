@@ -205,7 +205,7 @@ function assignPlacesToZones(seeds: ZoneSeed[], places: Place[]): Zone[] {
     draft.push({
       id: 'zone-' + seedIdx,
       name: seed.name,
-      features: seed.features,
+      features: seed.features ?? [],
       places: bucketPlaces,
       centerLat: seed.lat,
       centerLng: seed.lng,
@@ -425,7 +425,7 @@ function renderZoneCards(body: HTMLElement): void {
         stars ? '<div class="sl-zone-card-stars">' + stars + '</div>' : '',
         '  </div>',
         '  <div class="sl-zone-card-tags">',
-        zone.features.slice(0, 4).map((f) => '<span class="sl-zone-tag">' + escapeHtml(f) + '</span>').join(''),
+        (zone.features ?? []).slice(0, 4).map((f) => '<span class="sl-zone-tag">' + escapeHtml(f) + '</span>').join(''),
         '  </div>',
         '  <div class="sl-zone-card-stats">',
         '    <div class="sl-zone-stat"><span class="sl-zone-stat-label">장소 수</span><span class="sl-zone-stat-value">' + zone.places.length + '개</span></div>',
