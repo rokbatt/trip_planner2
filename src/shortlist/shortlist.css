@@ -282,27 +282,27 @@
   transition: max-height 220ms ease;
 }
 .sl-select-bar.visible {
-  max-height: 60px;
-  margin-top: 16px;
+  max-height: 44px;
+  margin-top: 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 14px 18px;
-  border-radius: 12px;
+  gap: 14px;
+  padding: 8px 14px;
+  border-radius: 10px;
   background: #0B2A5C;
   color: #fff;
 }
 .sl-select-bar-left {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 13.5px;
+  gap: 8px;
+  font-size: 12.5px;
   font-weight: 600;
 }
 .sl-select-bar-icon {
-  width: 20px;
-  height: 20px;
+  width: 15px;
+  height: 15px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -313,20 +313,20 @@
 .sl-select-bar-btn {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 18px;
-  border-radius: 10px;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
   border: none;
   background: #185FA5;
   color: #fff;
-  font-size: 13.5px;
+  font-size: 12.5px;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
   transition: background 150ms ease;
 }
 .sl-select-bar-btn:hover { background: #1E71C0; }
-.sl-select-bar-btn svg { width: 15px; height: 15px; }
+.sl-select-bar-btn svg { width: 13px; height: 13px; }
 
 /* ── AI 추천 근거 ── */
 .sl-ai-reason {
@@ -527,3 +527,29 @@
   .sl-step1-layout { flex-direction: column; }
   .sl-map { min-height: 280px; }
 }
+
+/* ── 커스텀 줌 컨트롤 (0.5 단위) ── */
+.sl-zoom-control {
+  display: flex;
+  flex-direction: column;
+  margin: 0 10px 10px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(11,42,92,0.18);
+}
+.sl-zoom-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: #fff;
+  color: #334155;
+  font-size: 17px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 120ms ease;
+}
+.sl-zoom-btn:first-child { border-bottom: 1px solid rgba(130,150,170,0.2); }
+.sl-zoom-btn:hover { background: #F1F6FB; }
