@@ -187,7 +187,9 @@
   border-radius: 12px;
   border: 1px solid rgba(130,150,170,0.18);
   border-left: 4px solid var(--zone-color);
-  background: #FFFFFF;
+  background: rgba(255,255,255,0.82);
+  backdrop-filter: saturate(140%) blur(6px);
+  -webkit-backdrop-filter: saturate(140%) blur(6px);
   cursor: pointer;
   transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
@@ -201,8 +203,9 @@
   position: absolute;
   top: -7px;
   left: 12px;
-  background: var(--zone-color);
-  color: #fff;
+  background: color-mix(in srgb, var(--zone-color) 5%, transparent);
+  color: color-mix(in srgb, var(--zone-color) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--zone-color) 60%, transparent);
   font-size: 9.5px;
   font-weight: 700;
   padding: 2px 7px;
@@ -247,13 +250,22 @@
   flex-wrap: wrap;
   gap: 12px 14px;
   padding: 10px 0;
-  border-top: 1px dashed rgba(130,150,170,0.24);
-  border-bottom: 1px dashed rgba(130,150,170,0.24);
+  border-top: 1px dashed rgba(130,150,170,0.18);
+  border-bottom: 1px dashed rgba(130,150,170,0.18);
   margin-bottom: 10px;
 }
 .sl-zone-stat { display: flex; flex-direction: column; gap: 2px; }
-.sl-zone-stat-label { font-size: 10px; color: #94A3B8; font-weight: 600; }
-.sl-zone-stat-value { font-size: 12.5px; color: #0B2A5C; font-weight: 700; }
+.sl-zone-stat-label {
+  font-size: 11px;
+  color: #697586;
+  font-weight: 600;
+}
+.sl-zone-stat-value {
+  font-size: 12.5px;
+  color: #17212B;
+  font-weight: 700;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
 .sl-zone-eff { color: #0F6E56; }
 
 .sl-zone-card-thumbs { display: flex; gap: 6px; align-items: center; }
