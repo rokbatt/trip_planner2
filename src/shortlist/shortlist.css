@@ -200,9 +200,7 @@
 }
 
 .sl-zone-card-rank {
-  position: absolute;
-  top: -7px;
-  left: 12px;
+  display: inline-block;
   background: color-mix(in srgb, var(--zone-color) 5%, transparent);
   color: color-mix(in srgb, var(--zone-color) 60%, transparent);
   border: 1px solid color-mix(in srgb, var(--zone-color) 60%, transparent);
@@ -210,6 +208,7 @@
   font-weight: 700;
   padding: 2px 7px;
   border-radius: 999px;
+  margin-bottom: 6px;
 }
 
 .sl-zone-card-top {
@@ -218,7 +217,6 @@
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 6px;
-  margin-top: 3px;
 }
 .sl-zone-card-name { font-size: 15px; font-weight: 700; color: #0B2A5C; }
 .sl-zone-card-stars {
