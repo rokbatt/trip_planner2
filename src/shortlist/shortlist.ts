@@ -574,12 +574,23 @@ function seededRandom(seed: string): () => number {
 function generateZoneBlob(zone: Zone): { lat: number; lng: number }[] {
   const rand = seededRandom(zone.id + zone.name);
   const baseRadiusKm = Math.min(2.4, Math.max(1.1, 0.95 + Math.sqrt(zone.places.length) * 0.22));
-  const numPoints = 14;
-  const points: { lat: number; lng: number }[] = [];
+  const numPoints = 28;
 
+  // 저주파 사인파 여러 개를 합성해서 각지지 않고 부드럽게 굴곡진 얼룩 모양을 만듦
+  // (점마다 독립적인 난수를 쓰면 뾰족뾰족한 별 모양이 되기 쉬움)
+  const harmonics = [
+    { freq: 2, amp: 0.10 + rand() * 0.07, phase: rand() * Math.PI * 2 },
+    { freq: 3, amp: 0.07 + rand() * 0.05, phase: rand() * Math.PI * 2 },
+    { freq: 5, amp: 0.04 + rand() * 0.03, phase: rand() * Math.PI * 2 },
+  ];
+
+  const points: { lat: number; lng: number }[] = [];
   for (let i = 0; i < numPoints; i++) {
     const angle = (i / numPoints) * Math.PI * 2;
-    const variance = 0.72 + rand() * 0.56; // 0.72 ~ 1.28배로 굴곡 있게
+    let variance = 1;
+    harmonics.forEach((h) => {
+      variance += h.amp * Math.sin(h.freq * angle + h.phase);
+    });
     const r = baseRadiusKm * variance;
     const dLat = (r / 111) * Math.cos(angle);
     const dLng = (r / (111 * Math.cos((zone.centerLat * Math.PI) / 180))) * Math.sin(angle);
@@ -598,13 +609,20 @@ const MOOD_ICON_SYMBOL: Record<string, string> = {
 /** 카테고리별 색상이 채워진 원형 마커 아이콘 (data URI, 추가 요청 없음) */
 function buildCategoryIcon(g: any, mood: string | null): any {
   const color = MOOD_COLOR[mood ?? ''] || '#94A3B8';
+  const emoji = MOOD_ICON_SYMBOL[mood ?? ''] || '📍';
+
+  const svg = [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="30" height="36" viewBox="0 0 30 36">',
+    '<path d="M15 0C6.7 0 0 6.7 0 15c0 10.5 15 21 15 21s15-10.5 15-21C30 6.7 23.3 0 15 0z" fill="' + color + '"/>',
+    '<circle cx="15" cy="14.5" r="10.5" fill="white"/>',
+    '<text x="15" y="19.5" font-size="14" text-anchor="middle">' + emoji + '</text>',
+    '</svg>',
+  ].join('');
+
   return {
-    path: g.maps.SymbolPath.CIRCLE,
-    scale: 9,
-    fillColor: color,
-    fillOpacity: 0.95,
-    strokeColor: '#fff',
-    strokeWeight: 2,
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new g.maps.Size(30, 36),
+    anchor: new g.maps.Point(15, 36),
   };
 }
 
@@ -708,10 +726,6 @@ async function initMap(body: HTMLElement): Promise<void> {
         map: mapInstance,
         title: p.name,
         icon: buildCategoryIcon(g, p.mood),
-        label: {
-          text: MOOD_ICON_SYMBOL[p.mood ?? ''] || '',
-          fontSize: '10px',
-        },
       });
       zoneMarkers.push(marker);
       mapMarkers.push(marker);
