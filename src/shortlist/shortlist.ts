@@ -59,6 +59,7 @@ let allPlaces: Place[] = [];
 let zones: Zone[] = [];
 let step: 1 | 2 | 3 = 1;
 let selectedZone: Zone | null = null;
+let zoneDataSource = 'curated';
 let selectedBasecamp: Place | null = null;
 let confirmedIds = new Set<string>();
 let mapInstance: any = null;
@@ -69,6 +70,7 @@ export function teardownShortlist(): void {
   zones = [];
   step = 1;
   selectedZone = null;
+  zoneDataSource = 'curated';
   selectedBasecamp = null;
   confirmedIds = new Set();
   mapInstance = null;
@@ -119,10 +121,11 @@ interface ZoneSeed {
 }
 
 /**
- * 여행지의 유명 지역 목록을 가져옴 (트립마다 새로 계산하지 않고, 여행지 단위로 DB 캐싱됨).
- * 같은 여행지를 여러 트립이 가더라도 Gemini는 그 여행지 최초 1회만 호출됨.
+ * 여행지의 숙박 생활권 목록을 가져옴.
+ * 큐레이션 DB(stay_zones)에 있으면 그걸 쓰고, AI 호출은 전혀 안 함.
+ * 아직 큐레이션 안 된 여행지만 AI 폴백으로 대체됨 (신뢰도가 상대적으로 낮음).
  */
-async function fetchDestinationZones(destination: string): Promise<ZoneSeed[]> {
+async function fetchDestinationZones(destination: string): Promise<{ seeds: ZoneSeed[]; source: string }> {
   try {
     const res = await fetch('/api/destination-zones', {
       method: 'POST',
@@ -130,11 +133,11 @@ async function fetchDestinationZones(destination: string): Promise<ZoneSeed[]> {
       body: JSON.stringify({ destination }),
     });
     const data = await res.json();
-    if (!res.ok || !Array.isArray(data.zones)) return [];
-    return data.zones;
+    if (!res.ok || !Array.isArray(data.zones)) return { seeds: [], source: 'error' };
+    return { seeds: data.zones, source: data.source ?? 'unknown' };
   } catch (e) {
     console.error('[Shortlist] 여행지 지역 목록 로드 실패:', (e as Error).message);
-    return [];
+    return { seeds: [], source: 'error' };
   }
 }
 
@@ -294,18 +297,19 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
   }
 
   const destination = getTripDestination();
-  const seeds = await fetchDestinationZones(destination);
+  const { seeds, source } = await fetchDestinationZones(destination);
 
   if (seeds.length === 0) {
     container.innerHTML = [
       '<div class="sl-empty">',
-      '  <div class="sl-empty-title">이 여행지의 지역 정보를 불러오지 못했어요</div>',
-      '  <div class="sl-empty-hint">잠시 후 다시 시도해주세요.</div>',
+      '  <div class="sl-empty-title">' + escapeHtml(destination) + '의 숙박 생활권 정보가 아직 없어요</div>',
+      '  <div class="sl-empty-hint">이 여행지는 아직 검수된 지역 데이터가 준비되지 않았어요. 조만간 추가될 예정이에요.</div>',
       '</div>',
     ].join('\n');
     return;
   }
 
+  zoneDataSource = source;
   zones = assignPlacesToZones(seeds, allPlaces);
 
   // 이미 저장된 선택 상태가 있으면 복원
@@ -407,7 +411,9 @@ async function renderStep1(body: HTMLElement): Promise<void> {
     '        <span class="sl-ai-reason-icon">' + IC_SPARK + '</span>',
     '        <div>',
     '          <div class="sl-ai-reason-title">AI 추천 근거</div>',
-    '          <div class="sl-ai-reason-text">평점 · 장소 밀집도 · 권역 내 평균 이동시간을 종합해서 순위를 매겼어요.</div>',
+    '          <div class="sl-ai-reason-text">평점 · 장소 밀집도 · 권역 내 평균 이동시간을 종합해서 순위를 매겼어요.' +
+      (zoneDataSource === 'ai_fallback' ? ' (이 여행지는 아직 검수된 지역 데이터가 없어 AI가 추정한 생활권을 사용 중이에요.)' : '') +
+      '</div>',
     '        </div>',
     '      </div>',
     '    </div>',
