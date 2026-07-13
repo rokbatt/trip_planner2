@@ -74,8 +74,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (existing) {
-    res.status(200).json({ zones: existing.zones, cached: true });
-    return;
+    const cachedZones = existing.zones as any[];
+    const isFreshSchema = Array.isArray(cachedZones) && cachedZones.every(
+      (z) => Array.isArray(z.features) && typeof z.name === 'string' && typeof z.lat === 'number' && typeof z.lng === 'number'
+    );
+    if (isFreshSchema) {
+      res.status(200).json({ zones: cachedZones, cached: true });
+      return;
+    }
+    // 예전 스키마(keyword 등)로 캐싱된 오래된 데이터 — 무시하고 아래에서 새로 생성
+    console.log('[destination-zones] 오래된 캐시 스키마 감지, 재생성:', destination);
   }
 
   // 2. 캐시 없음 → Gemini 호출 (이 여행지에 대해 딱 한 번만)
