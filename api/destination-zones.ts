@@ -76,7 +76,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (existing) {
     const cachedZones = existing.zones as any[];
     const isFreshSchema = Array.isArray(cachedZones) && cachedZones.every(
-      (z) => Array.isArray(z.features) && typeof z.name === 'string' && typeof z.lat === 'number' && typeof z.lng === 'number'
+      (z) => Array.isArray(z.features) && typeof z.name === 'string' && Number.isFinite(z.lat) && Number.isFinite(z.lng)
     );
     if (isFreshSchema) {
       res.status(200).json({ zones: cachedZones, cached: true });
@@ -141,7 +141,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const isValid = Array.isArray(zones) && zones.every(
-    (z) => typeof z.name === 'string' && Array.isArray(z.features) && typeof z.lat === 'number' && typeof z.lng === 'number'
+    (z) => typeof z.name === 'string' && Array.isArray(z.features) && Number.isFinite(z.lat) && Number.isFinite(z.lng)
   );
   if (!isValid) {
     res.status(502).json({ error: 'Gemini 응답 형태가 예상과 달라요.' });
