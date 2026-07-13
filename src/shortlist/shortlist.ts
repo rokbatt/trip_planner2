@@ -653,18 +653,18 @@ function showPlaceInfoWindow(g: any, marker: any, place: Place): void {
 function buildCategoryIcon(g: any, mood: string | null): any {
   const color = MOOD_COLOR[mood ?? ''] || '#94A3B8';
 
-  // 참고 이미지 느낌의 클래식 핀 모양 — 위쪽 원 + 아래로 길게 뾰족한 형태, 내부는 흰 원(구멍)만
+  // 기본 축소 상태에서도 거슬리지 않도록 작고 얇은 핀 (폭:높이 비율을 좁게)
   const svg = [
-    '<svg xmlns="http://www.w3.org/2000/svg" width="26" height="34" viewBox="0 0 26 34">',
-    '<path d="M13 0C5.8 0 0 5.8 0 13c0 9.3 13 21 13 21s13-11.7 13-21C26 5.8 20.2 0 13 0z" fill="' + color + '"/>',
-    '<circle cx="13" cy="12.5" r="5" fill="white"/>',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="22" viewBox="0 0 16 22">',
+    '<path d="M8 0C3.6 0 0 3.6 0 8c0 6 8 14 8 14s8-8 8-14c0-4.4-3.6-8-8-8z" fill="' + color + '"/>',
+    '<circle cx="8" cy="7.7" r="2.7" fill="white"/>',
     '</svg>',
   ].join('');
 
   return {
     url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
-    scaledSize: new g.maps.Size(26, 34),
-    anchor: new g.maps.Point(13, 34),
+    scaledSize: new g.maps.Size(16, 22),
+    anchor: new g.maps.Point(8, 22),
   };
 }
 
