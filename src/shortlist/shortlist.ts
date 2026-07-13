@@ -770,17 +770,7 @@ function createZoneLabelOverlay(g: any, zone: Zone, color: string): any {
       div.className = 'sl-map-zone-label';
       div.dataset.zoneId = zone.id;
       div.style.setProperty('--zone-color', color);
-
-      const dominantMood = Object.entries(countByMood(zone.places)).sort((a, b) => b[1] - a[1])[0]?.[0];
-      const icon = ZONE_ICON[dominantMood ?? ''] || '📍';
-      const stars = zone.avgRating != null ? '★ ' + zone.avgRating.toFixed(1) : '';
-
-      div.innerHTML = [
-        '<div class="sl-map-label-badge" style="display:' + (pendingSelectedZoneId === zone.id ? 'flex' : 'none') + '">✓ 추천</div>',
-        '<div class="sl-map-label-head"><span class="sl-map-label-icon">' + icon + '</span><span class="sl-map-label-name">' + escapeHtml(zone.name) + '</span></div>',
-        '<div class="sl-map-label-sub">' + escapeHtml((zone.features ?? []).slice(0, 3).join(' · ')) + '</div>',
-        '<div class="sl-map-label-meta"><span>' + zone.places.length + '개 장소</span>' + (stars ? '<span class="sl-map-label-star">' + stars + '</span>' : '') + '</div>',
-      ].join('');
+      div.innerHTML = '<span class="sl-map-label-name">' + escapeHtml(zone.name) + '</span>';
 
       div.addEventListener('click', () => {
         pendingSelectedZoneId = zone.id;
@@ -816,8 +806,6 @@ function createZoneLabelOverlay(g: any, zone: Zone, color: string): any {
 
     updateSelected(isSelected: boolean) {
       if (!this.div) return;
-      const badge = this.div.querySelector('.sl-map-label-badge') as HTMLElement | null;
-      if (badge) badge.style.display = isSelected ? 'flex' : 'none';
       this.div.classList.toggle('selected', isSelected);
     }
   }
