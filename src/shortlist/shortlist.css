@@ -183,8 +183,8 @@
 .sl-zone-card {
   position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 0;
+  align-items: stretch;
+  gap: 12px;
   text-align: left;
   padding: 12px 14px;
   border-radius: 12px;
@@ -202,20 +202,13 @@
   box-shadow: 0 0 0 2px var(--zone-color), 0 8px 22px rgba(11,42,92,0.14);
 }
 
-/* 사진 + 지역명/평점/태그를 한 줄로 묶어서 카드 전체 높이를 절약 */
-.sl-zone-card-headline {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
+/* 왼쪽 정사각형 사진 — 카드 전체 높이만큼 (오른쪽 콘텐츠가 짧아진 만큼 사진도 컴팩트해짐) */
 .sl-zone-card-hero {
   position: relative;
-  width: 56px;
-  height: 56px;
+  width: 88px;
   flex-shrink: 0;
-  border-radius: 8px;
+  align-self: stretch;
+  border-radius: 9px;
   background-size: cover;
   background-position: center;
   background-color: #EAF6FD;
@@ -227,17 +220,19 @@
 }
 .sl-zone-card-hero .sl-zone-card-rank {
   position: absolute;
-  top: -5px;
-  left: -5px;
+  top: 6px;
+  left: 6px;
   margin-bottom: 0;
   background: #fff;
   box-shadow: 0 1px 4px rgba(11,42,92,0.2);
 }
 
-.sl-zone-card-headline-text {
+.sl-zone-card-main {
   flex: 1;
   min-width: 0;
-  padding-top: 1px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .sl-zone-card-rank {
@@ -275,6 +270,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
+  margin-bottom: 8px;
 }
 .sl-zone-tag {
   font-size: 10px;
@@ -285,63 +281,68 @@
   border-radius: 999px;
 }
 
+/* 통계와 썸네일을 같은 줄에 배치해서 세로 한 줄을 절약 */
+.sl-zone-card-bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(130,150,170,0.18);
+}
+
 .sl-zone-card-stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 14px;
-  padding: 8px 0;
-  border-top: 1px dashed rgba(130,150,170,0.18);
-  border-bottom: 1px dashed rgba(130,150,170,0.18);
-  margin-bottom: 8px;
+  gap: 8px 12px;
+  min-width: 0;
 }
 .sl-zone-stat { display: flex; flex-direction: column; gap: 2px; }
 .sl-zone-stat-label {
-  font-size: 11px;
+  font-size: 10px;
   color: #697586;
   font-weight: 600;
+  white-space: nowrap;
 }
 .sl-zone-stat-value {
-  font-size: 12.5px;
+  font-size: 12px;
   color: #17212B;
   font-weight: 700;
   font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  white-space: nowrap;
 }
 .sl-zone-eff { color: #0F6E56; }
 
-.sl-zone-card-thumbs { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
-.sl-zone-thumb-item {
+.sl-zone-card-thumbs {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-  width: 48px;
+  gap: 5px;
+  align-items: center;
+  flex-shrink: 0;
+}
+.sl-zone-card-thumbs.expanded {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 220px;
 }
 .sl-zone-thumb {
-  width: 48px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   border-radius: 6px;
   background-size: cover;
   background-position: center;
   background-color: #EAF6FD;
-}
-.sl-zone-thumb-caption {
-  font-size: 9px;
-  color: #697586;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: center;
+  flex-shrink: 0;
 }
 .sl-zone-thumb-more {
-  align-self: flex-start;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
   color: #0B7CC4;
-  padding: 3px 9px;
+  padding: 3px 8px;
   border-radius: 999px;
   background: #EAF6FD;
   cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* ── 하단 지역 확정 바 ── */
