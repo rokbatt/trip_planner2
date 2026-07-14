@@ -17,6 +17,11 @@ const IC_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const IC_SPARK = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.8 5.6L19.4 9.4 13.8 11.2 12 17l-1.8-5.8L4.6 9.4l5.6-1.8L12 2z"/></svg>';
 const IC_PLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 19.5l19-7.5-19-7.5 4 7.5-4 7.5z"/></svg>';
 const IC_BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>';
+const IC_SEARCH2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
+const IC_EXTLINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>';
+const IC_EDIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+const IC_XCLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+const IC_ROUTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>';
 
 const MOOD_LABEL: Record<string, string> = {
   '가고싶어': 'VISIT',
@@ -62,6 +67,9 @@ let step: 1 | 2 | 3 = 1;
 let selectedZone: Zone | null = null;
 let zoneDataSource = 'curated';
 let selectedBasecamp: Place | null = null;
+let pendingHotelId: string | null = null;
+let step2SortMode: 'rating' | 'distance' = 'rating';
+let step2FilterText = '';
 let confirmedIds = new Set<string>();
 let mapInstance: any = null;
 let mapMarkers: any[] = [];
@@ -77,6 +85,9 @@ export function teardownShortlist(): void {
   selectedZone = null;
   zoneDataSource = 'curated';
   selectedBasecamp = null;
+  pendingHotelId = null;
+  step2SortMode = 'rating';
+  step2FilterText = '';
   confirmedIds = new Set();
   mapInstance = null;
   mapMarkers = [];
@@ -951,29 +962,173 @@ async function renderStep2(body: HTMLElement): Promise<void> {
   }
 
   const candidates = selectedZone.places.filter((p) => p.mood === '숙소');
+  const destination = getTripDestination();
+  const dateRange = formatTripDateRange();
 
   body.innerHTML = [
     '<div class="sl-step2">',
-    '  <button class="sl-back-link" id="sl-back-1">' + IC_BACK + ' 지역 다시 선택</button>',
-    '  <div class="sl-step1-header">',
-    '    <div class="sl-eyebrow">BASE CAMP</div>',
-    '    <div class="sl-title">' + escapeHtml(selectedZone.name) + '에서 어디에 머물까요?</div>',
-    '    <div class="sl-sub">숙소를 바꾸면 지도 반경과 주변 장소 추천이 바로 다시 계산돼요.</div>',
+    '  <div class="sl-step2-topbar">',
+    '    <button class="sl-back-link" id="sl-back-1">' + IC_BACK + ' 지역 다시 선택</button>',
+    '    <div class="sl-step2-summary-card">',
+    '      <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">선택 지역</span><span class="sl-step2-summary-value">' + escapeHtml(selectedZone.name) + '</span></div>',
+    '      <div class="sl-step2-summary-divider"></div>',
+    '      <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">여행 기간</span><span class="sl-step2-summary-value">' + escapeHtml(dateRange) + '</span></div>',
+    '      <button class="sl-step2-summary-edit" id="sl-back-1b">' + IC_EDIT + ' 수정</button>',
+    '    </div>',
     '  </div>',
-    '  <div class="sl-step1-layout">',
-    '    <div class="sl-map-wrap"><div id="sl-map2" class="sl-map"></div></div>',
-    '    <div class="sl-basecamp-list" id="sl-basecamp-list"></div>',
+
+    '  <div class="sl-step1-header">',
+    '    <div class="sl-eyebrow">IMMIGRATION COUNTER</div>',
+    '    <div class="sl-title">숙소를 선택하면 여행의 중심이 결정됩니다</div>',
+    '    <div class="sl-sub">숙소를 기준으로 모든 장소의 이동시간이 계산돼요.</div>',
+    '  </div>',
+
+    '  <div class="sl-step2-layout">',
+
+    '    <div class="sl-step2-left">',
+    '      <div class="sl-step2-toolbar">',
+    '        <div class="sl-step2-sort">',
+    '          <span class="sl-step2-sort-label">정렬</span>',
+    '          <select id="sl-sort-select">',
+    '            <option value="rating"' + (step2SortMode === 'rating' ? ' selected' : '') + '>평점순</option>',
+    '            <option value="distance"' + (step2SortMode === 'distance' ? ' selected' : '') + '>지역 중심 거리순</option>',
+    '          </select>',
+    '        </div>',
+    '      </div>',
+    '      <div class="sl-map-wrap"><div id="sl-map2" class="sl-map"></div></div>',
+    '      <div class="sl-map-legend">',
+    '        <span><span class="sl-legend-dot" style="--dot:#E24B4A"></span>관광(VISIT)</span>',
+    '        <span><span class="sl-legend-dot" style="--dot:#1D9E75"></span>맛집(FOOD)</span>',
+    '        <span><span class="sl-legend-dot" style="--dot:#7F77DD"></span>액티비티(ACTIVITY)</span>',
+    '        <span><span class="sl-legend-dot" style="--dot:#185FA5"></span>숙소 후보(STAY)</span>',
+    '      </div>',
+    '    </div>',
+
+    '    <div class="sl-step2-right">',
+
+    '      <section class="sl-hotel-sites-section">',
+    '        <div class="sl-section-title">숙소 검색 사이트</div>',
+    '        <div class="sl-section-desc">선택한 지역 기준으로 바로 검색해보세요.</div>',
+    '        <div class="sl-hotel-sites-grid" id="sl-hotel-sites"></div>',
+    '      </section>',
+
+    '      <div class="sl-step2-divider"></div>',
+
+    '      <section class="sl-direct-select-section">',
+    '        <div class="sl-section-title">직접 숙소 선택하기</div>',
+    '        <div class="sl-section-desc">Brainstorm에서 담아둔 숙소 후보 중에서 골라보세요.</div>',
+    '        <div class="sl-direct-search-wrap">',
+    '          <span class="sl-direct-search-icon">' + IC_SEARCH2 + '</span>',
+    '          <input type="text" id="sl-hotel-filter" class="sl-direct-search-input" placeholder="숙소명으로 찾기" value="' + escapeHtml(step2FilterText) + '" />',
+    '        </div>',
+    '        <div class="sl-basecamp-list" id="sl-basecamp-list"></div>',
+    '      </section>',
+
+    '      <div class="sl-selected-hotel-wrap" id="sl-selected-hotel-wrap"></div>',
+
+    '      <button class="sl-step2-cta" id="sl-step2-cta" disabled>',
+    '        <span>' + IC_CHECK + ' 이 숙소를 여행 중심으로 선택하기</span>',
+    '      </button>',
+    '      <div class="sl-step2-cta-hint">선택한 숙소를 기준으로 이동시간과 동선을 계산해요.</div>',
+
+    '    </div>',
     '  </div>',
     '</div>',
   ].join('\n');
 
-  body.querySelector('#sl-back-1')?.addEventListener('click', () => {
+  const goBackToStep1 = () => {
     step = 1;
     const container = body.closest('.sl-shell')!.parentElement as HTMLElement;
     renderStep(container);
+  };
+  body.querySelector('#sl-back-1')?.addEventListener('click', goBackToStep1);
+  body.querySelector('#sl-back-1b')?.addEventListener('click', goBackToStep1);
+
+  body.querySelector('#sl-sort-select')?.addEventListener('change', (e) => {
+    step2SortMode = (e.target as HTMLSelectElement).value as 'rating' | 'distance';
+    renderBasecampList(body, candidates);
   });
 
+  body.querySelector('#sl-hotel-filter')?.addEventListener('input', (e) => {
+    step2FilterText = (e.target as HTMLInputElement).value;
+    renderBasecampList(body, candidates);
+  });
+
+  renderHotelSiteCards(body, destination, selectedZone.name);
+  renderBasecampList(body, candidates);
+  renderSelectedHotelPreview(body, candidates);
+
+  await initMapStep2(body, candidates);
+}
+
+function formatTripDateRange(): string {
+  const trip = currentTrip;
+  if (!trip?.start_date || !trip?.end_date) return '기간 미정';
+  const s = new Date(trip.start_date);
+  const e = new Date(trip.end_date);
+  const nights = Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
+  const fmt = (d: Date) => (d.getMonth() + 1) + '.' + String(d.getDate()).padStart(2, '0');
+  return fmt(s) + ' – ' + fmt(e) + ' / ' + nights + '박 ' + (nights + 1) + '일';
+}
+
+interface HotelSite {
+  name: string;
+  domain: string;
+  buildUrl: (destination: string, zoneName: string) => string;
+}
+
+const HOTEL_SITES: HotelSite[] = [
+  {
+    name: 'Booking.com',
+    domain: 'booking.com',
+    buildUrl: (d, z) => 'https://www.booking.com/searchresults.ko.html?ss=' + encodeURIComponent(z + ' ' + d),
+  },
+  {
+    name: 'Agoda',
+    domain: 'agoda.com',
+    buildUrl: (d, z) => 'https://www.agoda.com/ko-kr/search?q=' + encodeURIComponent(z + ' ' + d),
+  },
+  {
+    name: 'Airbnb',
+    domain: 'airbnb.co.kr',
+    buildUrl: (d, z) => 'https://www.airbnb.co.kr/s/' + encodeURIComponent(z + ' ' + d) + '/homes',
+  },
+  {
+    name: 'Google Hotels',
+    domain: 'google.com',
+    buildUrl: (d, z) => 'https://www.google.com/travel/search?q=' + encodeURIComponent(z + ' ' + d + ' 호텔'),
+  },
+];
+
+function renderHotelSiteCards(body: HTMLElement, destination: string, zoneName: string): void {
+  const gridEl = body.querySelector('#sl-hotel-sites') as HTMLElement;
+  gridEl.innerHTML = HOTEL_SITES.map((site) => [
+    '<a class="sl-hotel-site-card" href="' + site.buildUrl(destination, zoneName) + '" target="_blank" rel="noopener noreferrer">',
+    '  <img class="sl-hotel-site-logo" src="https://www.google.com/s2/favicons?domain=' + site.domain + '&sz=64" alt="" />',
+    '  <div class="sl-hotel-site-name">' + escapeHtml(site.name) + '</div>',
+    '  <div class="sl-hotel-site-meta">' + escapeHtml(zoneName) + ' 지역</div>',
+    '  <div class="sl-hotel-site-cta">바로 검색 ' + IC_EXTLINK + '</div>',
+    '</a>',
+  ].join('')).join('');
+}
+
+function renderBasecampList(body: HTMLElement, candidates: Place[]): void {
   const listEl = body.querySelector('#sl-basecamp-list') as HTMLElement;
+  if (!listEl) return;
+
+  const filtered = candidates.filter((c) =>
+    step2FilterText.trim() === '' || c.name.toLowerCase().includes(step2FilterText.trim().toLowerCase())
+  );
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (step2SortMode === 'rating') {
+      return (b.google_rating ?? 0) - (a.google_rating ?? 0);
+    }
+    if (!selectedZone) return 0;
+    const da = a.lat != null && a.lng != null ? haversineKm(selectedZone.centerLat, selectedZone.centerLng, a.lat, a.lng) : Infinity;
+    const db = b.lat != null && b.lng != null ? haversineKm(selectedZone.centerLat, selectedZone.centerLng, b.lat, b.lng) : Infinity;
+    return da - db;
+  });
 
   if (candidates.length === 0) {
     listEl.innerHTML = [
@@ -982,39 +1137,91 @@ async function renderStep2(body: HTMLElement): Promise<void> {
       '  <div class="sl-sub">Brainstorm(IDEAS) 게이트에서 숙소 후보를 STAY로 분류해주세요.</div>',
       '</div>',
     ].join('\n');
-  } else {
-    listEl.innerHTML = candidates
-      .map((c) => {
-        const isSelected = selectedBasecamp?.id === c.id;
-        return [
-          '<button type="button" class="sl-basecamp-card' + (isSelected ? ' selected' : '') + '" data-place-id="' + c.id + '">',
-          c.photo_url ? '<div class="sl-basecamp-thumb" style="background-image:url(\'' + c.photo_url + '\')"></div>' : '<div class="sl-basecamp-thumb sl-basecamp-thumb-empty">' + IC_BED + '</div>',
-          '  <div class="sl-basecamp-info">',
-          '    <div class="sl-basecamp-name">' + escapeHtml(c.name) + '</div>',
-          typeof c.google_rating === 'number' ? '<div class="sl-basecamp-rating">★ ' + c.google_rating.toFixed(1) + '</div>' : '',
-          '  </div>',
-          isSelected ? '<span class="sl-basecamp-selected-badge">' + IC_CHECK + '</span>' : '',
-          '</button>',
-        ].join('');
-      })
-      .join('');
-
-    listEl.querySelectorAll('.sl-basecamp-card').forEach((card) => {
-      card.addEventListener('click', () => {
-        const placeId = (card as HTMLElement).dataset.placeId;
-        selectedBasecamp = candidates.find((c) => c.id === placeId) ?? null;
-        confirmedIds = new Set();
-        step = 3;
-        const container = body.closest('.sl-shell')!.parentElement as HTMLElement;
-        renderStep(container);
-      });
-    });
+    return;
   }
 
-  await initMapStep2(body, candidates);
+  if (sorted.length === 0) {
+    listEl.innerHTML = '<div class="sl-no-candidates"><div>검색 결과가 없어요.</div></div>';
+    return;
+  }
+
+  listEl.innerHTML = sorted
+    .map((c) => {
+      const isSelected = pendingHotelId === c.id;
+      return [
+        '<button type="button" class="sl-basecamp-card' + (isSelected ? ' selected' : '') + '" data-place-id="' + c.id + '">',
+        c.photo_url ? '<div class="sl-basecamp-thumb" style="background-image:url(\'' + c.photo_url + '\')"></div>' : '<div class="sl-basecamp-thumb sl-basecamp-thumb-empty">' + IC_BED + '</div>',
+        '  <div class="sl-basecamp-info">',
+        '    <div class="sl-basecamp-name">' + escapeHtml(c.name) + '</div>',
+        typeof c.google_rating === 'number' ? '<div class="sl-basecamp-rating">★ ' + c.google_rating.toFixed(1) + '</div>' : '',
+        '  </div>',
+        isSelected ? '<span class="sl-basecamp-selected-badge">' + IC_CHECK + '</span>' : '',
+        '</button>',
+      ].join('');
+    })
+    .join('');
+
+  listEl.querySelectorAll('.sl-basecamp-card').forEach((card) => {
+    card.addEventListener('click', () => {
+      const placeId = (card as HTMLElement).dataset.placeId;
+      pendingHotelId = placeId ?? null;
+      renderBasecampList(body, candidates);
+      renderSelectedHotelPreview(body, candidates);
+      highlightBasecampMarker(pendingHotelId);
+    });
+  });
 }
 
+function renderSelectedHotelPreview(body: HTMLElement, candidates: Place[]): void {
+  const wrapEl = body.querySelector('#sl-selected-hotel-wrap') as HTMLElement;
+  const ctaBtn = body.querySelector('#sl-step2-cta') as HTMLButtonElement;
+  if (!wrapEl || !ctaBtn) return;
+
+  const hotel = candidates.find((c) => c.id === pendingHotelId) ?? null;
+
+  if (!hotel) {
+    wrapEl.innerHTML = '';
+    ctaBtn.disabled = true;
+    return;
+  }
+
+  wrapEl.innerHTML = [
+    '<div class="sl-selected-hotel-card">',
+    hotel.photo_url
+      ? '<div class="sl-selected-hotel-photo" style="background-image:url(\'' + hotel.photo_url + '\')"></div>'
+      : '<div class="sl-selected-hotel-photo sl-selected-hotel-photo-empty">' + IC_BED + '</div>',
+    '  <div class="sl-selected-hotel-info">',
+    '    <div class="sl-selected-hotel-name">' + escapeHtml(hotel.name) + '</div>',
+    typeof hotel.google_rating === 'number' ? '<div class="sl-selected-hotel-rating">★ ' + hotel.google_rating.toFixed(1) + '</div>' : '',
+    hotel.address ? '<div class="sl-selected-hotel-address">' + escapeHtml(hotel.address) + '</div>' : '',
+    '  </div>',
+    '  <button type="button" class="sl-selected-hotel-remove" id="sl-remove-hotel">' + IC_XCLOSE + '</button>',
+    '</div>',
+  ].join('\n');
+
+  ctaBtn.disabled = false;
+
+  wrapEl.querySelector('#sl-remove-hotel')?.addEventListener('click', () => {
+    pendingHotelId = null;
+    renderBasecampList(body, candidates);
+    renderSelectedHotelPreview(body, candidates);
+    highlightBasecampMarker(null);
+  });
+
+  ctaBtn.onclick = () => {
+    selectedBasecamp = hotel;
+    confirmedIds = new Set();
+    step = 3;
+    const container = body.closest('.sl-shell')!.parentElement as HTMLElement;
+    renderStep(container);
+  };
+}
+
+let step2Markers = new Map<string, any>();
+
 async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<void> {
+  step2Markers = new Map();
+
   try {
     await loadGoogleMapsScript();
   } catch (e) {
@@ -1039,21 +1246,39 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
   selectedZone.places.forEach((p) => {
     if (p.lat == null || p.lng == null) return;
     const isCandidate = p.mood === '숙소';
-    new g.maps.Marker({
+    const marker = new g.maps.Marker({
       position: { lat: p.lat, lng: p.lng },
       map,
       title: p.name,
-      icon: {
-        path: g.maps.SymbolPath.CIRCLE,
-        scale: isCandidate ? 8 : 5,
-        fillColor: isCandidate ? '#185FA5' : '#E24B4A',
-        fillOpacity: 0.9,
-        strokeColor: '#fff',
-        strokeWeight: isCandidate ? 2 : 1.5,
-      },
+      icon: buildCategoryIcon(g, p.mood),
+      zIndex: isCandidate ? 20 : 1,
     });
+    if (isCandidate) {
+      step2Markers.set(p.id, marker);
+      marker.addListener('click', () => {
+        pendingHotelId = p.id;
+        renderBasecampList(body, candidates);
+        renderSelectedHotelPreview(body, candidates);
+        highlightBasecampMarker(p.id);
+      });
+    }
   });
 }
+
+/** 숙소 후보 리스트에서 클릭한 항목을 지도 마커에서도 확대·강조 */
+function highlightBasecampMarker(placeId: string | null): void {
+  const g = (window as any).google;
+  if (!g?.maps) return;
+  step2Markers.forEach((marker, id) => {
+    const isSelected = id === placeId;
+    marker.setZIndex(isSelected ? 50 : 20);
+    marker.setAnimation(isSelected ? g.maps.Animation.BOUNCE : null);
+    if (isSelected) {
+      setTimeout(() => marker.setAnimation(null), 700);
+    }
+  });
+}
+
 
 /* ══════════════════ STEP 3 — Confirm + Boarding Pass ══════════════════ */
 async function renderStep3(body: HTMLElement): Promise<void> {
