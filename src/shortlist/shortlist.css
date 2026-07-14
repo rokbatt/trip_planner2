@@ -182,9 +182,13 @@
 }
 .sl-zone-card {
   position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
   text-align: left;
-  padding: 12px 14px;
+  padding: 0;
   border-radius: 12px;
+  overflow: hidden;
   border: 1px solid rgba(130,150,170,0.18);
   border-left: 4px solid var(--zone-color);
   background: rgba(255,255,255,0.82);
@@ -192,6 +196,34 @@
   -webkit-backdrop-filter: saturate(140%) blur(6px);
   cursor: pointer;
   transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.sl-zone-card-hero {
+  position: relative;
+  width: 108px;
+  flex-shrink: 0;
+  background-size: cover;
+  background-position: center;
+  background-color: #EAF6FD;
+}
+.sl-zone-card-hero-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sl-zone-card-hero .sl-zone-card-rank {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  margin-bottom: 0;
+  background: rgba(255,255,255,0.92);
+  backdrop-filter: blur(3px);
+}
+
+.sl-zone-card-body {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 14px;
 }
 .sl-zone-card:hover { box-shadow: 0 6px 18px rgba(11,42,92,0.12); transform: translateY(-1px); }
 .sl-zone-card.selected {
@@ -266,14 +298,29 @@
 }
 .sl-zone-eff { color: #0F6E56; }
 
-.sl-zone-card-thumbs { display: flex; gap: 6px; align-items: center; }
+.sl-zone-card-thumbs { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+.sl-zone-thumb-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 52px;
+}
 .sl-zone-thumb {
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
+  width: 52px;
+  height: 40px;
+  border-radius: 6px;
   background-size: cover;
   background-position: center;
   background-color: #EAF6FD;
+}
+.sl-zone-thumb-caption {
+  font-size: 9.5px;
+  color: #697586;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
 }
 .sl-zone-thumb-more {
   font-size: 10.5px;
@@ -371,11 +418,17 @@
 .sl-map-zone-label:hover { transform: translate(-50%, -50%) scale(1.05); }
 .sl-map-zone-label.selected .sl-map-label-name { text-decoration: underline; text-underline-offset: 3px; }
 .sl-map-label-name {
-  font-size: 16px;
+  display: inline-block;
+  font-size: 13px;
   font-weight: 700;
   color: var(--zone-color);
   white-space: nowrap;
-  text-shadow: 0 1px 0 rgba(255,255,255,0.85), 0 0 8px rgba(255,255,255,0.6), 0 0 2px rgba(255,255,255,0.6);
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid rgba(130,150,170,0.2);
+  border-radius: 4px;
+  padding: 4px 9px;
 }
 
 /* ── STEP 2: 숙소 후보 ── */
