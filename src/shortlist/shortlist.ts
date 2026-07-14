@@ -1402,12 +1402,13 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
 
   const map = new g.maps.Map(mapEl, {
     center: { lat: selectedZone.centerLat, lng: selectedZone.centerLng },
-    zoom: 14,
+    zoom: 15,
     disableDefaultUI: true,
     zoomControl: false,
     isFractionalZoomEnabled: true,
     gestureHandling: 'greedy',
-    styles: MAP_STYLE_LIGHT,
+    // Step1과 달리 여기선 실제 구글맵 디테일(도로명, 건물, POI)이 필요해서
+    // 커스텀 스타일을 적용하지 않고 기본 렌더링을 그대로 씀
   });
 
   addCustomZoomControl(map, mapEl);
@@ -1526,6 +1527,87 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   });
 
   renderBoardingPass(body);
+
+  // 실제 길찾기(Distance Matrix API) — 직선거리 추정치를 실제 이동시간으로 백그라운드에서 교체
+  loadRealTravelTimes(selectedBasecamp, withDistance).then((realTimes) => {
+    if (!realTimes || step !== 3) return;
+    listEl.querySelectorAll('.sl-confirm-item').forEach((item) => {
+      const input = item.querySelector('input[type="checkbox"]') as HTMLInputElement;
+      const placeId = input?.dataset.placeId;
+      const real = placeId ? realTimes.get(placeId) : undefined;
+      if (!real) return;
+      const travelEl = item.querySelector('.sl-confirm-travel') as HTMLElement;
+      if (!travelEl) return;
+      const icon = real.mode === 'WALKING' ? IC_WALK : IC_TAXI;
+      travelEl.innerHTML = icon + escapeHtml((real.mode === 'WALKING' ? '도보 ' : '차량 ') + real.durationText + ' (실제 경로)');
+    });
+  });
+}
+
+interface RealTravelResult {
+  mode: 'WALKING' | 'DRIVING';
+  durationText: string;
+  durationMin: number;
+}
+
+/**
+ * 숙소 기준 실제 길찾기 (Google Distance Matrix API).
+ * 가까운 곳(≤2km)은 도보, 먼 곳은 차량 모드로 배치 조회.
+ * 실패해도 화면은 이미 직선거리 추정치로 채워져 있어서 조용히 무시됨.
+ *
+ * 필요: Google Cloud Console에서 "Distance Matrix API" 활성화 필요 (월 10,000건까지 무료 — Essentials 등급).
+ */
+async function loadRealTravelTimes(
+  basecamp: Place,
+  items: { place: Place; km: number }[]
+): Promise<Map<string, RealTravelResult> | null> {
+  if (basecamp.lat == null || basecamp.lng == null) return null;
+
+  try {
+    await loadGoogleMapsScript();
+  } catch (e) {
+    return null;
+  }
+  const g = (window as any).google;
+  if (!g?.maps?.DistanceMatrixService) return null;
+
+  const service = new g.maps.DistanceMatrixService();
+  const results = new Map<string, RealTravelResult>();
+
+  const closeItems = items.filter((i) => i.km <= 2 && i.place.lat != null && i.place.lng != null);
+  const farItems = items.filter((i) => i.km > 2 && i.place.lat != null && i.place.lng != null);
+
+  function runBatch(batchItems: { place: Place; km: number }[], mode: 'WALKING' | 'DRIVING'): Promise<void> {
+    if (batchItems.length === 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      service.getDistanceMatrix(
+        {
+          origins: [{ lat: basecamp.lat!, lng: basecamp.lng! }],
+          destinations: batchItems.map((i) => ({ lat: i.place.lat!, lng: i.place.lng! })),
+          travelMode: g.maps.TravelMode[mode],
+        },
+        (response: any, status: string) => {
+          if (status === 'OK' && response?.rows?.[0]) {
+            response.rows[0].elements.forEach((el: any, idx: number) => {
+              if (el.status === 'OK') {
+                results.set(batchItems[idx].place.id, {
+                  mode,
+                  durationText: el.duration.text,
+                  durationMin: Math.round(el.duration.value / 60),
+                });
+              }
+            });
+          } else {
+            console.error('[Shortlist] Distance Matrix 조회 실패(' + mode + '):', status);
+          }
+          resolve();
+        }
+      );
+    });
+  }
+
+  await Promise.all([runBatch(closeItems, 'WALKING'), runBatch(farItems, 'DRIVING')]);
+  return results;
 }
 
 function renderBoardingPass(body: HTMLElement): void {
