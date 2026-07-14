@@ -440,9 +440,14 @@ function renderZoneCards(body: HTMLElement): void {
     .map((zone) => {
       const stars = zone.avgRating != null ? buildStars(zone.avgRating) : '';
       const isSelected = pendingSelectedZoneId === zone.id;
+      const heroPhoto = zone.topPlaces.find((p) => p.photo_url)?.photo_url ?? null;
+
       return [
         '<button type="button" class="sl-zone-card' + (isSelected ? ' selected' : '') + '" data-zone-id="' + zone.id + '" style="--zone-color:' + zoneColor(zone.id) + '">',
-        '  <div class="sl-zone-card-rank">추천 ' + zone.rank + '</div>',
+        heroPhoto
+          ? '<div class="sl-zone-card-hero" style="background-image:url(\'' + heroPhoto + '\')"><span class="sl-zone-card-rank">추천 ' + zone.rank + '</span></div>'
+          : '<div class="sl-zone-card-hero sl-zone-card-hero-empty"><span class="sl-zone-card-rank">추천 ' + zone.rank + '</span></div>',
+        '<div class="sl-zone-card-body">',
         '  <div class="sl-zone-card-top">',
         '    <div class="sl-zone-card-name">' + escapeHtml(zone.name) + '</div>',
         stars ? '<div class="sl-zone-card-stars">' + stars + '</div>' : '',
@@ -462,12 +467,16 @@ function renderZoneCards(body: HTMLElement): void {
           ? '  <div class="sl-zone-card-thumbs">' +
             zone.topPlaces.slice(0, 3).map((p) =>
               p.photo_url
-                ? '<div class="sl-zone-thumb" style="background-image:url(\'' + p.photo_url + '\')" title="' + escapeHtml(p.name) + '"></div>'
+                ? '<div class="sl-zone-thumb-item">' +
+                  '<div class="sl-zone-thumb" style="background-image:url(\'' + p.photo_url + '\')"></div>' +
+                  '<div class="sl-zone-thumb-caption">' + escapeHtml(p.name) + '</div>' +
+                  '</div>'
                 : ''
             ).join('') +
-            (zone.topPlaces.length > 3 ? '<div class="sl-zone-thumb-more" data-zone-id="' + zone.id + '">+ 더보기</div>' : '') +
+            (zone.places.length > 3 ? '<div class="sl-zone-thumb-more" data-zone-id="' + zone.id + '">+ 더보기</div>' : '') +
             '</div>'
           : '',
+        '</div>',
         '</button>',
       ].join('');
     })
@@ -491,9 +500,13 @@ function renderZoneCards(body: HTMLElement): void {
       const zone = zones.find((z) => z.id === zoneId);
       const thumbsEl = (btn.closest('.sl-zone-card-thumbs') as HTMLElement);
       if (!zone || !thumbsEl) return;
-      thumbsEl.innerHTML = zone.topPlaces.map((p) =>
+      // 이 권역의 모든 장소를 캡션과 함께 펼쳐서 표시
+      thumbsEl.innerHTML = zone.places.map((p) =>
         p.photo_url
-          ? '<div class="sl-zone-thumb" style="background-image:url(\'' + p.photo_url + '\')" title="' + escapeHtml(p.name) + '"></div>'
+          ? '<div class="sl-zone-thumb-item">' +
+            '<div class="sl-zone-thumb" style="background-image:url(\'' + p.photo_url + '\')"></div>' +
+            '<div class="sl-zone-thumb-caption">' + escapeHtml(p.name) + '</div>' +
+            '</div>'
           : ''
       ).join('');
     });
@@ -687,9 +700,9 @@ function highlightZone(zoneId: string | null): void {
   zonePolygons.forEach((polygon) => {
     const isHighlighted = zoneId === null || polygon.get('zoneId') === zoneId;
     polygon.setOptions({
-      fillOpacity: zoneId === null ? 0.14 : isHighlighted ? 0.32 : 0.04,
-      strokeOpacity: zoneId === null ? 0.55 : isHighlighted ? 0.95 : 0.12,
-      strokeWeight: isHighlighted && zoneId !== null ? 2.5 : 1.5,
+      fillOpacity: zoneId === null ? 0.05 : isHighlighted ? 0.16 : 0.02,
+      strokeOpacity: zoneId === null ? 0.4 : isHighlighted ? 0.8 : 0.1,
+      strokeWeight: isHighlighted && zoneId !== null ? 1.5 : 1,
       zIndex: isHighlighted ? 10 : 1,
     });
   });
@@ -809,10 +822,10 @@ async function initMap(body: HTMLElement): Promise<void> {
       map: mapInstance,
       paths: hullPoints,
       fillColor: color,
-      fillOpacity: 0.14,
+      fillOpacity: 0.05,
       strokeColor: color,
-      strokeOpacity: 0.55,
-      strokeWeight: 1.5,
+      strokeOpacity: 0.4,
+      strokeWeight: 1,
       clickable: true,
     });
     polygon.set('zoneId', zone.id);
