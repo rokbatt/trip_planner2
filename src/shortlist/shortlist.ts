@@ -26,7 +26,7 @@ const MOOD_LABEL: Record<string, string> = {
 };
 const MOOD_COLOR: Record<string, string> = {
   '가고싶어': '#E24B4A',
-  '먹고싶어': '#F5A623',
+  '먹고싶어': '#1D9E75',
   '하고싶어': '#7F77DD',
   '숙소': '#185FA5',
 };
