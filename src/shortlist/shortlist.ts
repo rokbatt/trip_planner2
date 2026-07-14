@@ -445,41 +445,38 @@ function renderZoneCards(body: HTMLElement): void {
 
       return [
         '<button type="button" class="sl-zone-card' + (isSelected ? ' selected' : '') + '" data-zone-id="' + zone.id + '" style="--zone-color:' + zoneColor(zone.id) + '">',
-        '<div class="sl-zone-card-headline">',
         heroPhoto
           ? '<div class="sl-zone-card-hero" style="background-image:url(\'' + heroPhoto + '\')"><span class="sl-zone-card-rank">' + zone.rank + '</span></div>'
           : '<div class="sl-zone-card-hero sl-zone-card-hero-empty"><span class="sl-zone-card-rank">' + zone.rank + '</span></div>',
-        '  <div class="sl-zone-card-headline-text">',
-        '    <div class="sl-zone-card-top">',
-        '      <div class="sl-zone-card-name">' + escapeHtml(zone.name) + '</div>',
+        '<div class="sl-zone-card-main">',
+        '  <div class="sl-zone-card-top">',
+        '    <div class="sl-zone-card-name">' + escapeHtml(zone.name) + '</div>',
         stars ? '<div class="sl-zone-card-stars">' + stars + '</div>' : '',
-        '    </div>',
-        '    <div class="sl-zone-card-tags">',
-        (zone.features ?? []).slice(0, 3).map((f) => '<span class="sl-zone-tag">' + escapeHtml(f) + '</span>').join(''),
-        '    </div>',
         '  </div>',
-        '</div>',
-        '<div class="sl-zone-card-stats">',
-        '  <div class="sl-zone-stat"><span class="sl-zone-stat-label">장소 수</span><span class="sl-zone-stat-value">' + zone.places.length + '개</span></div>',
+        '  <div class="sl-zone-card-tags">',
+        (zone.features ?? []).slice(0, 3).map((f) => '<span class="sl-zone-tag">' + escapeHtml(f) + '</span>').join(''),
+        '  </div>',
+        '  <div class="sl-zone-card-bottom-row">',
+        '    <div class="sl-zone-card-stats">',
+        '      <div class="sl-zone-stat"><span class="sl-zone-stat-label">장소 수</span><span class="sl-zone-stat-value">' + zone.places.length + '개</span></div>',
         zone.avgInternalWalkMin != null
           ? '<div class="sl-zone-stat"><span class="sl-zone-stat-label">평균 이동시간</span><span class="sl-zone-stat-value">' + zone.avgInternalWalkMin + '분</span></div>'
           : '',
-        '  <div class="sl-zone-stat"><span class="sl-zone-stat-label">추천 숙박일</span><span class="sl-zone-stat-value">' + zone.recommendedNights + '일</span></div>',
-        '  <div class="sl-zone-stat"><span class="sl-zone-stat-label">이동 효율</span><span class="sl-zone-stat-value sl-zone-eff">' + zone.efficiencyLabel + '</span></div>',
-        '</div>',
+        '      <div class="sl-zone-stat"><span class="sl-zone-stat-label">추천 숙박일</span><span class="sl-zone-stat-value">' + zone.recommendedNights + '일</span></div>',
+        '      <div class="sl-zone-stat"><span class="sl-zone-stat-label">이동 효율</span><span class="sl-zone-stat-value sl-zone-eff">' + zone.efficiencyLabel + '</span></div>',
+        '    </div>',
         zone.topPlaces.length > 0
-          ? '<div class="sl-zone-card-thumbs">' +
+          ? '    <div class="sl-zone-card-thumbs">' +
             zone.topPlaces.slice(0, THUMB_DEFAULT).map((p) =>
               p.photo_url
-                ? '<div class="sl-zone-thumb-item">' +
-                  '<div class="sl-zone-thumb" style="background-image:url(\'' + p.photo_url + '\')"></div>' +
-                  '<div class="sl-zone-thumb-caption">' + escapeHtml(p.name) + '</div>' +
-                  '</div>'
+                ? '<div class="sl-zone-thumb" style="background-image:url(\'' + p.photo_url + '\')" title="' + escapeHtml(p.name) + '"></div>'
                 : ''
             ).join('') +
-            (zone.places.length > THUMB_DEFAULT ? '<div class="sl-zone-thumb-more" data-zone-id="' + zone.id + '">+ ' + (zone.places.length - THUMB_DEFAULT) + '개 더보기</div>' : '') +
+            (zone.places.length > THUMB_DEFAULT ? '<div class="sl-zone-thumb-more" data-zone-id="' + zone.id + '">+' + (zone.places.length - THUMB_DEFAULT) + '</div>' : '') +
             '</div>'
           : '',
+        '  </div>',
+        '</div>',
         '</button>',
       ].join('');
     })
@@ -503,13 +500,10 @@ function renderZoneCards(body: HTMLElement): void {
       const zone = zones.find((z) => z.id === zoneId);
       const thumbsEl = (btn.closest('.sl-zone-card-thumbs') as HTMLElement);
       if (!zone || !thumbsEl) return;
-      // 이 권역의 모든 장소를 캡션과 함께 펼쳐서 표시
+      thumbsEl.classList.add('expanded');
       thumbsEl.innerHTML = zone.places.map((p) =>
         p.photo_url
-          ? '<div class="sl-zone-thumb-item">' +
-            '<div class="sl-zone-thumb" style="background-image:url(\'' + p.photo_url + '\')"></div>' +
-            '<div class="sl-zone-thumb-caption">' + escapeHtml(p.name) + '</div>' +
-            '</div>'
+          ? '<div class="sl-zone-thumb" style="background-image:url(\'' + p.photo_url + '\')" title="' + escapeHtml(p.name) + '"></div>'
           : ''
       ).join('');
     });
