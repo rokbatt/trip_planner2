@@ -1114,6 +1114,13 @@ async function renderStep2(body: HTMLElement): Promise<void> {
   renderBasecampList(body, candidates);
   renderSelectedHotelPreview(body, candidates);
 
+  // 실시간 환율은 백그라운드로 불러오고, 도착하면 사이트 카드만 조용히 갱신 (화면 로딩을 막지 않음)
+  loadLiveExchangeRate().then(() => {
+    if (step === 2 && selectedZone) {
+      renderHotelSiteCards(body, destination, selectedZone.name);
+    }
+  });
+
   await initMapStep2(body, candidates);
 }
 
@@ -1127,16 +1134,35 @@ function formatTripDateRange(): string {
   return fmt(s) + ' – ' + fmt(e) + ' / ' + nights + '박 ' + (nights + 1) + '일';
 }
 
-/* 예산 단계(1박 1인 기준, 원화) → 대략적인 USD 환산 (사이트 기본 통화가 USD인 경우가 많아 근사치로 매핑, 약 1,350원/$ 기준) */
-const KRW_PER_USD = 1495; // 2026.7 기준 실제 환율 근사치 — 시간이 지나면 다시 확인 필요
+/* 예산 단계(1박 1인 기준, 원화) → USD 환산 (사이트 기본 통화가 USD인 경우가 많아 근사 환산에 사용) */
 const BUDGET_PRESETS: Record<string, { minKRW: number; maxKRW: number; label: string }> = {
   'under5': { minKRW: 0, maxKRW: 50000, label: '5만원 이하' },
   'under10': { minKRW: 0, maxKRW: 100000, label: '10만원 이하' },
   'over20': { minKRW: 200000, maxKRW: 3000000, label: '20만원 이상' },
 };
 
+// 실시간 환율(Frankfurter API, 키 불필요) — 세션 동안 재사용, 실패 시 대략치로 폴백
+let liveKrwPerUsd: number | null = null;
+const FALLBACK_KRW_PER_USD = 1495;
+
+async function loadLiveExchangeRate(): Promise<void> {
+  if (liveKrwPerUsd != null) return;
+  try {
+    const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=KRW');
+    const data = await res.json();
+    const rate = data?.rates?.KRW;
+    if (typeof rate === 'number' && rate > 0) {
+      liveKrwPerUsd = rate;
+      console.log('[Shortlist] 실시간 환율 로드:', rate, '원/$');
+    }
+  } catch (e) {
+    console.error('[Shortlist] 실시간 환율 조회 실패, 대략치로 폴백:', (e as Error).message);
+  }
+}
+
 function krwToUsd(krw: number): number {
-  return Math.round(krw / KRW_PER_USD);
+  const rate = liveKrwPerUsd ?? FALLBACK_KRW_PER_USD;
+  return Math.round(krw / rate);
 }
 
 /** 현재 선택된 예산 필터를 min/max KRW로 환산 (프리셋 또는 직접설정) */
