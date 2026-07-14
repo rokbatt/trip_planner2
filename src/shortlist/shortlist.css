@@ -445,11 +445,229 @@
 }
 
 /* ── STEP 2: 숙소 후보 ── */
-.sl-basecamp-list {
+/* ══════════════════ STEP 2 — Immigration Counter (redesign) ══════════════════ */
+
+.sl-step2-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.sl-step2-summary-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(130,150,170,0.18);
+  background: rgba(255,255,255,0.82);
+}
+.sl-step2-summary-item { display: flex; flex-direction: column; gap: 1px; }
+.sl-step2-summary-label { font-size: 9.5px; color: #94A3B8; font-weight: 600; }
+.sl-step2-summary-value { font-size: 12.5px; color: #0B2A5C; font-weight: 700; }
+.sl-step2-summary-divider { width: 1px; height: 22px; background: rgba(130,150,170,0.24); }
+.sl-step2-summary-edit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: #F1F6FB;
+  color: #0B7CC4;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.sl-step2-summary-edit svg { width: 12px; height: 12px; }
+.sl-step2-summary-edit:hover { background: #E1F0FA; }
+
+.sl-step2-layout {
+  display: flex;
+  gap: 18px;
   flex: 1;
+  min-height: 480px;
+}
+
+.sl-step2-left {
+  flex: 1.4;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-width: 0;
+}
+
+.sl-step2-toolbar { display: flex; align-items: center; justify-content: flex-end; }
+.sl-step2-sort { display: flex; align-items: center; gap: 8px; }
+.sl-step2-sort-label { font-size: 12px; color: #64748B; font-weight: 600; }
+.sl-step2-sort select {
+  border: 1px solid rgba(130,150,170,0.24);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #0B2A5C;
+  font-weight: 600;
+  background: #fff;
+  cursor: pointer;
+}
+
+.sl-step2-right {
+  flex: 1;
+  min-width: 340px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.sl-section-title { font-size: 13.5px; font-weight: 700; color: #0B2A5C; }
+.sl-section-desc { font-size: 11.5px; color: #94A3B8; margin-top: 2px; margin-bottom: 10px; }
+
+.sl-hotel-sites-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.sl-hotel-site-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(130,150,170,0.18);
+  background: #fff;
+  text-decoration: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.sl-hotel-site-card:hover { border-color: #8FD8F8; box-shadow: 0 4px 12px rgba(11,42,92,0.08); }
+.sl-hotel-site-logo { width: 20px; height: 20px; border-radius: 5px; }
+.sl-hotel-site-name { font-size: 12.5px; font-weight: 700; color: #0B2A5C; }
+.sl-hotel-site-meta { font-size: 10.5px; color: #94A3B8; }
+.sl-hotel-site-cta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #0B7CC4;
+  margin-top: 2px;
+}
+.sl-hotel-site-cta svg { width: 11px; height: 11px; }
+
+.sl-step2-divider {
+  border-top: 1px dashed rgba(130,150,170,0.24);
+  margin: 16px 0;
+}
+
+.sl-direct-search-wrap {
+  position: relative;
+  margin-bottom: 10px;
+}
+.sl-direct-search-icon {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  color: #94A3B8;
+}
+.sl-direct-search-icon svg { width: 100%; height: 100%; }
+.sl-direct-search-input {
+  width: 100%;
+  padding: 9px 12px 9px 34px;
+  border-radius: 9px;
+  border: 1px solid rgba(130,150,170,0.24);
+  font-size: 12.5px;
+  color: #0B2A5C;
+  background: #fff;
+}
+.sl-direct-search-input:focus { outline: none; border-color: #8FD8F8; }
+
+.sl-selected-hotel-wrap { margin-top: 4px; }
+.sl-selected-hotel-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1.5px solid #185FA5;
+  background: #E6F1FB;
+  margin-bottom: 12px;
+}
+.sl-selected-hotel-photo {
+  width: 64px;
+  height: 64px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  background-size: cover;
+  background-position: center;
+  background-color: #fff;
+}
+.sl-selected-hotel-photo-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #185FA5;
+}
+.sl-selected-hotel-photo-empty svg { width: 24px; height: 24px; }
+.sl-selected-hotel-info { flex: 1; min-width: 0; }
+.sl-selected-hotel-name { font-size: 13.5px; font-weight: 700; color: #0B2A5C; }
+.sl-selected-hotel-rating { font-size: 11.5px; color: #F5A623; font-weight: 700; margin-top: 2px; }
+.sl-selected-hotel-address {
+  font-size: 10.5px;
+  color: #64748B;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sl-selected-hotel-remove {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.7);
+  color: #64748B;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.sl-selected-hotel-remove svg { width: 13px; height: 13px; }
+.sl-selected-hotel-remove:hover { background: #fff; color: #0B2A5C; }
+
+.sl-step2-cta {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 12px;
+  border: none;
+  background: #0B2A5C;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 150ms ease, opacity 150ms ease;
+  margin-top: auto;
+}
+.sl-step2-cta span { display: flex; align-items: center; gap: 8px; }
+.sl-step2-cta svg { width: 16px; height: 16px; }
+.sl-step2-cta:hover:not(:disabled) { background: #0E3676; }
+.sl-step2-cta:disabled { background: #C3D0DD; cursor: not-allowed; }
+.sl-step2-cta-hint { text-align: center; font-size: 11px; color: #94A3B8; margin-top: 6px; }
+
+.sl-basecamp-list {
+  max-height: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   overflow-y: auto;
 }
 .sl-basecamp-card {
