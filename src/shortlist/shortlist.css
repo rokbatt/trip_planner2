@@ -188,7 +188,6 @@
   text-align: left;
   padding: 0;
   border-radius: 12px;
-  overflow: hidden;
   border: 1px solid rgba(130,150,170,0.18);
   border-left: 4px solid var(--zone-color);
   background: rgba(255,255,255,0.82);
@@ -202,9 +201,11 @@
   position: relative;
   width: 108px;
   flex-shrink: 0;
+  align-self: stretch;
   background-size: cover;
   background-position: center;
   background-color: #EAF6FD;
+  border-radius: 9px 0 0 9px;
 }
 .sl-zone-card-hero-empty {
   display: flex;
