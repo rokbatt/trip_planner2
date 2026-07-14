@@ -88,6 +88,7 @@ export function teardownShortlist(): void {
   pendingHotelId = null;
   step2SortMode = 'rating';
   step2FilterText = '';
+  stayFilters = { budget: '', roomType: '' };
   confirmedIds = new Set();
   mapInstance = null;
   mapMarkers = [];
@@ -986,6 +987,24 @@ async function renderStep2(body: HTMLElement): Promise<void> {
     '  <div class="sl-step2-layout">',
 
     '    <div class="sl-step2-left">',
+    '      <div class="sl-step2-filters">',
+    '        <div class="sl-filter-group">',
+    '          <span class="sl-filter-label">예산 (1박 기준)</span>',
+    '          <div class="sl-filter-chips" id="sl-budget-chips">',
+    ['₩', '₩₩', '₩₩₩', '₩₩₩₩'].map((b) =>
+      '<button type="button" class="sl-filter-chip' + (stayFilters.budget === b ? ' active' : '') + '" data-budget="' + b + '">' + b + '</button>'
+    ).join(''),
+    '          </div>',
+    '        </div>',
+    '        <div class="sl-filter-group">',
+    '          <span class="sl-filter-label">숙소 타입</span>',
+    '          <div class="sl-filter-chips" id="sl-roomtype-chips">',
+    ['호텔', '호스텔', '리조트', '에어비앤비'].map((t) =>
+      '<button type="button" class="sl-filter-chip' + (stayFilters.roomType === t ? ' active' : '') + '" data-roomtype="' + t + '">' + escapeHtml(t) + '</button>'
+    ).join(''),
+    '          </div>',
+    '        </div>',
+    '      </div>',
     '      <div class="sl-step2-toolbar">',
     '        <div class="sl-step2-sort">',
     '          <span class="sl-step2-sort-label">정렬</span>',
@@ -1049,6 +1068,28 @@ async function renderStep2(body: HTMLElement): Promise<void> {
     renderBasecampList(body, candidates);
   });
 
+  body.querySelectorAll('#sl-budget-chips .sl-filter-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const val = (chip as HTMLElement).dataset.budget!;
+      stayFilters.budget = stayFilters.budget === val ? '' : val;
+      body.querySelectorAll('#sl-budget-chips .sl-filter-chip').forEach((c) =>
+        c.classList.toggle('active', (c as HTMLElement).dataset.budget === stayFilters.budget)
+      );
+      renderHotelSiteCards(body, destination, selectedZone!.name);
+    });
+  });
+
+  body.querySelectorAll('#sl-roomtype-chips .sl-filter-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const val = (chip as HTMLElement).dataset.roomtype!;
+      stayFilters.roomType = stayFilters.roomType === val ? '' : val;
+      body.querySelectorAll('#sl-roomtype-chips .sl-filter-chip').forEach((c) =>
+        c.classList.toggle('active', (c as HTMLElement).dataset.roomtype === stayFilters.roomType)
+      );
+      renderHotelSiteCards(body, destination, selectedZone!.name);
+    });
+  });
+
   body.querySelector('#sl-hotel-filter')?.addEventListener('input', (e) => {
     step2FilterText = (e.target as HTMLInputElement).value;
     renderBasecampList(body, candidates);
@@ -1071,42 +1112,110 @@ function formatTripDateRange(): string {
   return fmt(s) + ' – ' + fmt(e) + ' / ' + nights + '박 ' + (nights + 1) + '일';
 }
 
+/* 예산 단계 → 대략적인 USD 1박 가격 범위 (사이트 기본 통화가 USD인 경우가 많아 근사치로 매핑) */
+const BUDGET_RANGES: Record<string, { min: number; max: number; label: string }> = {
+  '₩': { min: 0, max: 50, label: '5만원 이하' },
+  '₩₩': { min: 50, max: 100, label: '5~10만원' },
+  '₩₩₩': { min: 100, max: 200, label: '10~20만원' },
+  '₩₩₩₩': { min: 200, max: 2000, label: '20만원 이상' },
+};
+
+const ROOM_TYPE_KO: Record<string, string> = {
+  '호텔': 'hotel',
+  '호스텔': 'shared_room',
+  '리조트': 'hotel',
+  '에어비앤비': 'entire_home',
+};
+
+interface StayFilters {
+  budget: string; // '' | '₩' | '₩₩' | '₩₩₩' | '₩₩₩₩'
+  roomType: string; // '' | '호텔' | '호스텔' | '리조트' | '에어비앤비'
+}
+
+let stayFilters: StayFilters = { budget: '', roomType: '' };
+
 interface HotelSite {
   name: string;
   domain: string;
-  buildUrl: (destination: string, zoneName: string) => string;
+  /** 이 사이트에 필터를 얼마나 신뢰성 있게 적용할 수 있는지 (사용자에게 투명하게 표시) */
+  filterSupport: 'confirmed' | 'best_effort';
+  /** 숙소 예약 목적으로 봤을 때 Claude가 매긴 종합 평가 (해당 사이트의 실제 이용자 평점이 아님) */
+  editorialRating: number;
+  buildUrl: (destination: string, zoneName: string, filters: StayFilters) => string;
 }
 
 const HOTEL_SITES: HotelSite[] = [
   {
     name: 'Booking.com',
     domain: 'booking.com',
-    buildUrl: (d, z) => 'https://www.booking.com/searchresults.ko.html?ss=' + encodeURIComponent(z + ' ' + d),
+    filterSupport: 'confirmed',
+    editorialRating: 4.6,
+    buildUrl: (d, z, f) => {
+      const url = new URL('https://www.booking.com/searchresults.ko.html');
+      url.searchParams.set('ss', z + ' ' + d);
+      const chips: string[] = [];
+      if (f.budget && BUDGET_RANGES[f.budget]) {
+        const r = BUDGET_RANGES[f.budget];
+        chips.push('price=USD-' + r.min + '-' + r.max + '-1');
+      }
+      if (chips.length > 0) url.searchParams.set('nflt', chips.join(';'));
+      return url.toString();
+    },
   },
   {
     name: 'Agoda',
     domain: 'agoda.com',
-    buildUrl: (d, z) => 'https://www.agoda.com/ko-kr/search?q=' + encodeURIComponent(z + ' ' + d),
+    filterSupport: 'best_effort',
+    editorialRating: 4.4,
+    buildUrl: (d, z, f) => {
+      let q = z + ' ' + d;
+      if (f.roomType) q += ' ' + f.roomType;
+      if (f.budget && BUDGET_RANGES[f.budget]) q += ' ' + BUDGET_RANGES[f.budget].label;
+      return 'https://www.agoda.com/ko-kr/search?q=' + encodeURIComponent(q);
+    },
   },
   {
     name: 'Airbnb',
     domain: 'airbnb.co.kr',
-    buildUrl: (d, z) => 'https://www.airbnb.co.kr/s/' + encodeURIComponent(z + ' ' + d) + '/homes',
+    filterSupport: 'confirmed',
+    editorialRating: 4.2,
+    buildUrl: (d, z, f) => {
+      const url = new URL('https://www.airbnb.co.kr/s/' + encodeURIComponent(z + ' ' + d) + '/homes');
+      if (f.budget && BUDGET_RANGES[f.budget]) {
+        const r = BUDGET_RANGES[f.budget];
+        url.searchParams.set('price_min', String(r.min));
+        url.searchParams.set('price_max', String(r.max));
+      }
+      if (f.roomType && ROOM_TYPE_KO[f.roomType]) {
+        url.searchParams.set('room_types[]', ROOM_TYPE_KO[f.roomType]);
+      }
+      return url.toString();
+    },
   },
   {
     name: 'Google Hotels',
     domain: 'google.com',
-    buildUrl: (d, z) => 'https://www.google.com/travel/search?q=' + encodeURIComponent(z + ' ' + d + ' 호텔'),
+    filterSupport: 'best_effort',
+    editorialRating: 4.3,
+    buildUrl: (d, z, f) => {
+      let q = z + ' ' + d + ' 호텔';
+      if (f.roomType) q += ' ' + f.roomType;
+      if (f.budget && BUDGET_RANGES[f.budget]) q += ' ' + BUDGET_RANGES[f.budget].label;
+      return 'https://www.google.com/travel/search?q=' + encodeURIComponent(q);
+    },
   },
 ];
 
 function renderHotelSiteCards(body: HTMLElement, destination: string, zoneName: string): void {
   const gridEl = body.querySelector('#sl-hotel-sites') as HTMLElement;
   gridEl.innerHTML = HOTEL_SITES.map((site) => [
-    '<a class="sl-hotel-site-card" href="' + site.buildUrl(destination, zoneName) + '" target="_blank" rel="noopener noreferrer">',
-    '  <img class="sl-hotel-site-logo" src="https://www.google.com/s2/favicons?domain=' + site.domain + '&sz=64" alt="" />',
+    '<a class="sl-hotel-site-card" href="' + site.buildUrl(destination, zoneName, stayFilters) + '" target="_blank" rel="noopener noreferrer">',
+    '  <div class="sl-hotel-site-head">',
+    '    <img class="sl-hotel-site-logo" src="https://www.google.com/s2/favicons?domain=' + site.domain + '&sz=64" alt="" />',
+    '    <span class="sl-hotel-site-rating">★ ' + site.editorialRating.toFixed(1) + '</span>',
+    '  </div>',
     '  <div class="sl-hotel-site-name">' + escapeHtml(site.name) + '</div>',
-    '  <div class="sl-hotel-site-meta">' + escapeHtml(zoneName) + ' 지역</div>',
+    '  <div class="sl-hotel-site-meta">' + escapeHtml(zoneName) + ' 지역' + (site.filterSupport === 'best_effort' ? ' · 필터 참고용' : '') + '</div>',
     '  <div class="sl-hotel-site-cta">바로 검색 ' + IC_EXTLINK + '</div>',
     '</a>',
   ].join('')).join('');
