@@ -88,7 +88,7 @@ export function teardownShortlist(): void {
   pendingHotelId = null;
   step2SortMode = 'rating';
   step2FilterText = '';
-  stayFilters = { budget: '', roomType: '' };
+  stayFilters = { budget: '', customMinKRW: null, customMaxKRW: null, roomType: '' };
   confirmedIds = new Set();
   mapInstance = null;
   mapMarkers = [];
@@ -974,6 +974,23 @@ async function renderStep2(body: HTMLElement): Promise<void> {
     '      <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">선택 지역</span><span class="sl-step2-summary-value">' + escapeHtml(selectedZone.name) + '</span></div>',
     '      <div class="sl-step2-summary-divider"></div>',
     '      <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">여행 기간</span><span class="sl-step2-summary-value">' + escapeHtml(dateRange) + '</span></div>',
+    '      <div class="sl-step2-summary-divider"></div>',
+    '      <div class="sl-step2-summary-item sl-step2-summary-budget">',
+    '        <span class="sl-step2-summary-label">예산 (1박 1인)</span>',
+    '        <select id="sl-budget-select" class="sl-budget-select">',
+    '          <option value=""' + (stayFilters.budget === '' ? ' selected' : '') + '>전체</option>',
+    '          <option value="under5"' + (stayFilters.budget === 'under5' ? ' selected' : '') + '>5만원 이하</option>',
+    '          <option value="under10"' + (stayFilters.budget === 'under10' ? ' selected' : '') + '>10만원 이하</option>',
+    '          <option value="over20"' + (stayFilters.budget === 'over20' ? ' selected' : '') + '>20만원 이상</option>',
+    '          <option value="custom"' + (stayFilters.budget === 'custom' ? ' selected' : '') + '>직접설정</option>',
+    '        </select>',
+    '        <div class="sl-budget-custom-row" id="sl-budget-custom-row" style="display:' + (stayFilters.budget === 'custom' ? 'flex' : 'none') + '">',
+    '          <input type="number" id="sl-budget-min" class="sl-budget-custom-input" placeholder="최소" value="' + (stayFilters.customMinKRW ?? '') + '" />',
+    '          <span>~</span>',
+    '          <input type="number" id="sl-budget-max" class="sl-budget-custom-input" placeholder="최대" value="' + (stayFilters.customMaxKRW ?? '') + '" />',
+    '          <span class="sl-budget-custom-unit">원</span>',
+    '        </div>',
+    '      </div>',
     '      <button class="sl-step2-summary-edit" id="sl-back-1b">' + IC_EDIT + ' 수정</button>',
     '    </div>',
     '  </div>',
@@ -988,14 +1005,6 @@ async function renderStep2(body: HTMLElement): Promise<void> {
 
     '    <div class="sl-step2-left">',
     '      <div class="sl-step2-filters">',
-    '        <div class="sl-filter-group">',
-    '          <span class="sl-filter-label">예산 (1박 기준)</span>',
-    '          <div class="sl-filter-chips" id="sl-budget-chips">',
-    ['₩', '₩₩', '₩₩₩', '₩₩₩₩'].map((b) =>
-      '<button type="button" class="sl-filter-chip' + (stayFilters.budget === b ? ' active' : '') + '" data-budget="' + b + '">' + b + '</button>'
-    ).join(''),
-    '          </div>',
-    '        </div>',
     '        <div class="sl-filter-group">',
     '          <span class="sl-filter-label">숙소 타입</span>',
     '          <div class="sl-filter-chips" id="sl-roomtype-chips">',
@@ -1068,16 +1077,22 @@ async function renderStep2(body: HTMLElement): Promise<void> {
     renderBasecampList(body, candidates);
   });
 
-  body.querySelectorAll('#sl-budget-chips .sl-filter-chip').forEach((chip) => {
-    chip.addEventListener('click', () => {
-      const val = (chip as HTMLElement).dataset.budget!;
-      stayFilters.budget = stayFilters.budget === val ? '' : val;
-      body.querySelectorAll('#sl-budget-chips .sl-filter-chip').forEach((c) =>
-        c.classList.toggle('active', (c as HTMLElement).dataset.budget === stayFilters.budget)
-      );
-      renderHotelSiteCards(body, destination, selectedZone!.name);
-    });
+  body.querySelector('#sl-budget-select')?.addEventListener('change', (e) => {
+    stayFilters.budget = (e.target as HTMLSelectElement).value;
+    const customRow = body.querySelector('#sl-budget-custom-row') as HTMLElement;
+    if (customRow) customRow.style.display = stayFilters.budget === 'custom' ? 'flex' : 'none';
+    renderHotelSiteCards(body, destination, selectedZone!.name);
   });
+
+  const applyCustomBudget = () => {
+    const minInput = body.querySelector('#sl-budget-min') as HTMLInputElement;
+    const maxInput = body.querySelector('#sl-budget-max') as HTMLInputElement;
+    stayFilters.customMinKRW = minInput?.value ? Number(minInput.value) : null;
+    stayFilters.customMaxKRW = maxInput?.value ? Number(maxInput.value) : null;
+    renderHotelSiteCards(body, destination, selectedZone!.name);
+  };
+  body.querySelector('#sl-budget-min')?.addEventListener('input', applyCustomBudget);
+  body.querySelector('#sl-budget-max')?.addEventListener('input', applyCustomBudget);
 
   body.querySelectorAll('#sl-roomtype-chips .sl-filter-chip').forEach((chip) => {
     chip.addEventListener('click', () => {
@@ -1112,13 +1127,28 @@ function formatTripDateRange(): string {
   return fmt(s) + ' – ' + fmt(e) + ' / ' + nights + '박 ' + (nights + 1) + '일';
 }
 
-/* 예산 단계 → 대략적인 USD 1박 가격 범위 (사이트 기본 통화가 USD인 경우가 많아 근사치로 매핑) */
-const BUDGET_RANGES: Record<string, { min: number; max: number; label: string }> = {
-  '₩': { min: 0, max: 50, label: '5만원 이하' },
-  '₩₩': { min: 50, max: 100, label: '5~10만원' },
-  '₩₩₩': { min: 100, max: 200, label: '10~20만원' },
-  '₩₩₩₩': { min: 200, max: 2000, label: '20만원 이상' },
+/* 예산 단계(1박 1인 기준, 원화) → 대략적인 USD 환산 (사이트 기본 통화가 USD인 경우가 많아 근사치로 매핑, 약 1,350원/$ 기준) */
+const KRW_PER_USD = 1495; // 2026.7 기준 실제 환율 근사치 — 시간이 지나면 다시 확인 필요
+const BUDGET_PRESETS: Record<string, { minKRW: number; maxKRW: number; label: string }> = {
+  'under5': { minKRW: 0, maxKRW: 50000, label: '5만원 이하' },
+  'under10': { minKRW: 0, maxKRW: 100000, label: '10만원 이하' },
+  'over20': { minKRW: 200000, maxKRW: 3000000, label: '20만원 이상' },
 };
+
+function krwToUsd(krw: number): number {
+  return Math.round(krw / KRW_PER_USD);
+}
+
+/** 현재 선택된 예산 필터를 min/max KRW로 환산 (프리셋 또는 직접설정) */
+function resolveBudgetRangeKRW(f: StayFilters): { minKRW: number; maxKRW: number; label: string } | null {
+  if (f.budget === 'custom') {
+    if (f.customMinKRW == null && f.customMaxKRW == null) return null;
+    const minKRW = f.customMinKRW ?? 0;
+    const maxKRW = f.customMaxKRW ?? 3000000;
+    return { minKRW, maxKRW, label: (f.customMinKRW ? minKRW.toLocaleString() + '원' : '') + '~' + (f.customMaxKRW ? maxKRW.toLocaleString() + '원' : '') };
+  }
+  return BUDGET_PRESETS[f.budget] ?? null;
+}
 
 const ROOM_TYPE_KO: Record<string, string> = {
   '호텔': 'hotel',
@@ -1128,11 +1158,13 @@ const ROOM_TYPE_KO: Record<string, string> = {
 };
 
 interface StayFilters {
-  budget: string; // '' | '₩' | '₩₩' | '₩₩₩' | '₩₩₩₩'
+  budget: string; // '' | 'under5' | 'under10' | 'over20' | 'custom'
+  customMinKRW: number | null;
+  customMaxKRW: number | null;
   roomType: string; // '' | '호텔' | '호스텔' | '리조트' | '에어비앤비'
 }
 
-let stayFilters: StayFilters = { budget: '', roomType: '' };
+let stayFilters: StayFilters = { budget: '', customMinKRW: null, customMaxKRW: null, roomType: '' };
 
 interface HotelSite {
   name: string;
@@ -1154,9 +1186,9 @@ const HOTEL_SITES: HotelSite[] = [
       const url = new URL('https://www.booking.com/searchresults.ko.html');
       url.searchParams.set('ss', z + ' ' + d);
       const chips: string[] = [];
-      if (f.budget && BUDGET_RANGES[f.budget]) {
-        const r = BUDGET_RANGES[f.budget];
-        chips.push('price=USD-' + r.min + '-' + r.max + '-1');
+      const range = resolveBudgetRangeKRW(f);
+      if (range) {
+        chips.push('price=USD-' + krwToUsd(range.minKRW) + '-' + krwToUsd(range.maxKRW) + '-1');
       }
       if (chips.length > 0) url.searchParams.set('nflt', chips.join(';'));
       return url.toString();
@@ -1170,7 +1202,8 @@ const HOTEL_SITES: HotelSite[] = [
     buildUrl: (d, z, f) => {
       let q = z + ' ' + d;
       if (f.roomType) q += ' ' + f.roomType;
-      if (f.budget && BUDGET_RANGES[f.budget]) q += ' ' + BUDGET_RANGES[f.budget].label;
+      const range = resolveBudgetRangeKRW(f);
+      if (range) q += ' ' + range.label;
       return 'https://www.agoda.com/ko-kr/search?q=' + encodeURIComponent(q);
     },
   },
@@ -1181,10 +1214,10 @@ const HOTEL_SITES: HotelSite[] = [
     editorialRating: 4.2,
     buildUrl: (d, z, f) => {
       const url = new URL('https://www.airbnb.co.kr/s/' + encodeURIComponent(z + ' ' + d) + '/homes');
-      if (f.budget && BUDGET_RANGES[f.budget]) {
-        const r = BUDGET_RANGES[f.budget];
-        url.searchParams.set('price_min', String(r.min));
-        url.searchParams.set('price_max', String(r.max));
+      const range = resolveBudgetRangeKRW(f);
+      if (range) {
+        url.searchParams.set('price_min', String(krwToUsd(range.minKRW)));
+        url.searchParams.set('price_max', String(krwToUsd(range.maxKRW)));
       }
       if (f.roomType && ROOM_TYPE_KO[f.roomType]) {
         url.searchParams.set('room_types[]', ROOM_TYPE_KO[f.roomType]);
@@ -1200,7 +1233,8 @@ const HOTEL_SITES: HotelSite[] = [
     buildUrl: (d, z, f) => {
       let q = z + ' ' + d + ' 호텔';
       if (f.roomType) q += ' ' + f.roomType;
-      if (f.budget && BUDGET_RANGES[f.budget]) q += ' ' + BUDGET_RANGES[f.budget].label;
+      const range = resolveBudgetRangeKRW(f);
+      if (range) q += ' ' + range.label;
       return 'https://www.google.com/travel/search?q=' + encodeURIComponent(q);
     },
   },
