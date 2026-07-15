@@ -1145,14 +1145,35 @@ function krwToUsd(krw: number): number {
 }
 
 /** 현재 선택된 예산 필터를 min/max KRW로 환산 (프리셋 또는 직접설정) */
+/** 트립에 설정된 인원수 (없으면 1명으로 취급) */
+function getTripHeadcount(): number {
+  const trip = currentTrip;
+  return trip?.headcount && trip.headcount > 0 ? trip.headcount : 1;
+}
+
+/**
+ * 예산 필터는 UI상 "1인 기준"으로 입력받지만, 숙소 사이트(Booking/Airbnb 등)는
+ * 객실 1박 전체 가격으로 필터링함(인원수로 나눈 값이 아님).
+ * 그래서 실제 사이트에 보낼 때는 1인 기준 금액 × 여행 인원수로 환산해야 함.
+ */
 function resolveBudgetRangeKRW(f: StayFilters): { minKRW: number; maxKRW: number; label: string } | null {
+  const headcount = getTripHeadcount();
+
   if (f.budget === 'custom') {
     if (f.customMinKRW == null && f.customMaxKRW == null) return null;
-    const minKRW = f.customMinKRW ?? 0;
-    const maxKRW = f.customMaxKRW ?? 3000000;
-    return { minKRW, maxKRW, label: (f.customMinKRW ? minKRW.toLocaleString() + '원' : '') + '~' + (f.customMaxKRW ? maxKRW.toLocaleString() + '원' : '') };
+    const minKRW = (f.customMinKRW ?? 0) * headcount;
+    const maxKRW = (f.customMaxKRW ?? 3000000) * headcount;
+    const label = (f.customMinKRW ? (f.customMinKRW).toLocaleString() + '원' : '') + '~' + (f.customMaxKRW ? (f.customMaxKRW).toLocaleString() + '원' : '');
+    return { minKRW, maxKRW, label };
   }
-  return BUDGET_PRESETS[f.budget] ?? null;
+
+  const preset = BUDGET_PRESETS[f.budget];
+  if (!preset) return null;
+  return {
+    minKRW: preset.minKRW * headcount,
+    maxKRW: preset.maxKRW * headcount,
+    label: preset.label,
+  };
 }
 
 interface StayFilters {
