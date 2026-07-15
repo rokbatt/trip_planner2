@@ -527,7 +527,7 @@
 }
 
 .sl-step2-left {
-  flex: 1;
+  flex: 1.35;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -549,8 +549,8 @@
 }
 
 .sl-step2-right {
-  flex: 1.3;
-  min-width: 460px;
+  flex: 1;
+  min-width: 360px;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -563,16 +563,16 @@
 .sl-hotel-sites-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
+  gap: 6px;
 }
 .sl-hotel-site-card {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 5px;
-  padding: 20px 12px 16px;
-  border-radius: 12px;
+  gap: 2px;
+  padding: 10px 4px 8px;
+  border-radius: 10px;
   border: 1px solid rgba(130,150,170,0.16);
   background: #fff;
   text-decoration: none;
@@ -584,27 +584,49 @@
   box-shadow: 0 3px 10px rgba(11,42,92,0.05);
 }
 .sl-hotel-site-logo {
-  width: 36px;
-  height: 36px;
-  border-radius: 9px;
-  margin-bottom: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  margin-bottom: 2px;
 }
-.sl-hotel-site-name { font-size: 15px; font-weight: 700; color: #0B2A5C; line-height: 1.3; }
-.sl-hotel-site-rating { font-size: 12px; font-weight: 700; color: #F5A623; }
-.sl-hotel-site-zone { font-size: 12px; color: #64748B; margin-top: 4px; }
-.sl-hotel-site-filter { font-size: 11px; color: #B0BAC5; margin-bottom: 8px; }
+.sl-hotel-site-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0B2A5C;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.sl-hotel-site-rating { font-size: 10.5px; font-weight: 700; color: #F5A623; }
+.sl-hotel-site-zone {
+  font-size: 10px;
+  color: #64748B;
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.sl-hotel-site-filter {
+  font-size: 9px;
+  color: #B0BAC5;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
 .sl-hotel-site-cta {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 12px;
+  gap: 3px;
+  font-size: 10.5px;
   font-weight: 700;
   color: #0B7CC4;
   margin-top: auto;
   transition: color 150ms ease;
 }
 .sl-hotel-site-card:hover .sl-hotel-site-cta { color: #0E3676; }
-.sl-hotel-site-cta svg { width: 11px; height: 11px; }
+.sl-hotel-site-cta svg { width: 10px; height: 10px; }
 
 .sl-step2-divider {
   border-top: 1px dashed rgba(130,150,170,0.24);
