@@ -527,7 +527,7 @@
 }
 
 .sl-step2-left {
-  flex: 1.4;
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -549,8 +549,8 @@
 }
 
 .sl-step2-right {
-  flex: 1;
-  min-width: 340px;
+  flex: 1.3;
+  min-width: 460px;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -562,60 +562,48 @@
 
 .sl-hotel-sites-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
 }
 .sl-hotel-site-card {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(130,150,170,0.18);
+  align-items: center;
+  text-align: center;
+  gap: 5px;
+  padding: 20px 12px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(130,150,170,0.16);
   background: #fff;
   text-decoration: none;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
 }
-.sl-hotel-site-card:hover { border-color: #8FD8F8; box-shadow: 0 4px 12px rgba(11,42,92,0.08); }
-.sl-hotel-site-head { display: flex; align-items: center; justify-content: space-between; width: 100%; }
-.sl-hotel-site-logo { width: 20px; height: 20px; border-radius: 5px; }
-.sl-hotel-site-rating { font-size: 10.5px; font-weight: 700; color: #F5A623; }
-
-/* ── Step2 필터 칩 (예산/숙소타입) ── */
-.sl-step2-filters {
-  display: flex;
-  gap: 20px;
-  margin-bottom: 10px;
-  flex-wrap: wrap;
+.sl-hotel-site-card:hover {
+  border-color: #8FD8F8;
+  transform: translateY(-2px);
+  box-shadow: 0 3px 10px rgba(11,42,92,0.05);
 }
-.sl-filter-group { display: flex; align-items: center; gap: 8px; }
-.sl-filter-label { font-size: 11.5px; color: #64748B; font-weight: 600; white-space: nowrap; }
-.sl-filter-chips { display: flex; gap: 5px; }
-.sl-filter-chip {
-  padding: 5px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(130,150,170,0.24);
-  background: #fff;
-  color: #64748B;
-  font-size: 11.5px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+.sl-hotel-site-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  margin-bottom: 4px;
 }
-.sl-filter-chip:hover { border-color: #8FD8F8; }
-.sl-filter-chip.active { background: #0B2A5C; border-color: #0B2A5C; color: #fff; }
-.sl-hotel-site-name { font-size: 12.5px; font-weight: 700; color: #0B2A5C; }
-.sl-hotel-site-meta { font-size: 10.5px; color: #94A3B8; }
+.sl-hotel-site-name { font-size: 15px; font-weight: 700; color: #0B2A5C; line-height: 1.3; }
+.sl-hotel-site-rating { font-size: 12px; font-weight: 700; color: #F5A623; }
+.sl-hotel-site-zone { font-size: 12px; color: #64748B; margin-top: 4px; }
+.sl-hotel-site-filter { font-size: 11px; color: #B0BAC5; margin-bottom: 8px; }
 .sl-hotel-site-cta {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: #0B7CC4;
-  margin-top: 2px;
+  margin-top: auto;
+  transition: color 150ms ease;
 }
+.sl-hotel-site-card:hover .sl-hotel-site-cta { color: #0E3676; }
 .sl-hotel-site-cta svg { width: 11px; height: 11px; }
 
 .sl-step2-divider {
