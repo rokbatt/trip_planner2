@@ -1145,15 +1145,16 @@ const FALLBACK_KRW_PER_USD = 1495;
 async function loadLiveExchangeRate(): Promise<void> {
   if (liveKrwPerUsd != null) return;
   try {
-    const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=KRW');
+    // 브라우저에서 Frankfurter를 직접 부르면 배포 환경에서 CORS로 막혀서,
+    // 우리 서버(/api/exchange-rate)가 대신 호출해서 프록시함
+    const res = await fetch('/api/exchange-rate');
     const data = await res.json();
-    const rate = data?.rates?.KRW;
-    if (typeof rate === 'number' && rate > 0) {
-      liveKrwPerUsd = rate;
-      console.log('[Shortlist] 실시간 환율 로드:', rate, '원/$');
+    if (typeof data?.rate === 'number' && data.rate > 0) {
+      liveKrwPerUsd = data.rate;
+      console.log('[Shortlist] 환율 로드(' + data.source + '):', data.rate, '원/$');
     }
   } catch (e) {
-    console.error('[Shortlist] 실시간 환율 조회 실패, 대략치로 폴백:', (e as Error).message);
+    console.error('[Shortlist] 환율 조회 실패, 대략치로 폴백:', (e as Error).message);
   }
 }
 
