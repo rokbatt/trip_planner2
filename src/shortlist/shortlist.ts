@@ -1281,14 +1281,15 @@ const HOTEL_SITES: HotelSite[] = [
 
 function renderHotelSiteCards(body: HTMLElement, destination: string, zoneName: string): void {
   const gridEl = body.querySelector('#sl-hotel-sites') as HTMLElement;
+  const filterNote = stayFilters.budget ? (BUDGET_PRESETS[stayFilters.budget]?.label ?? '직접설정 가격대') : '전체 숙소';
+
   gridEl.innerHTML = HOTEL_SITES.map((site) => [
     '<a class="sl-hotel-site-card" href="' + site.buildUrl(destination, zoneName, stayFilters) + '" target="_blank" rel="noopener noreferrer">',
-    '  <div class="sl-hotel-site-head">',
-    '    <img class="sl-hotel-site-logo" src="https://www.google.com/s2/favicons?domain=' + site.domain + '&sz=64" alt="" />',
-    '    <span class="sl-hotel-site-rating">★ ' + site.editorialRating.toFixed(1) + '</span>',
-    '  </div>',
+    '  <img class="sl-hotel-site-logo" src="https://www.google.com/s2/favicons?domain=' + site.domain + '&sz=128" alt="" />',
     '  <div class="sl-hotel-site-name">' + escapeHtml(site.name) + '</div>',
-    '  <div class="sl-hotel-site-meta">' + escapeHtml(zoneName) + ' 지역' + (site.filterSupport === 'best_effort' ? ' · 필터 참고용' : '') + '</div>',
+    '  <div class="sl-hotel-site-rating">★ ' + site.editorialRating.toFixed(1) + '</div>',
+    '  <div class="sl-hotel-site-zone">' + escapeHtml(zoneName) + ' 지역</div>',
+    '  <div class="sl-hotel-site-filter">' + escapeHtml(filterNote) + (site.filterSupport === 'best_effort' ? ' · 참고용' : '') + '</div>',
     '  <div class="sl-hotel-site-cta">바로 검색 ' + IC_EXTLINK + '</div>',
     '</a>',
   ].join('')).join('');
