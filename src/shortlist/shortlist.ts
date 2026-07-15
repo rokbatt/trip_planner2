@@ -1044,9 +1044,9 @@ async function renderStep2(body: HTMLElement): Promise<void> {
     '        <div class="sl-basecamp-list" id="sl-basecamp-list"></div>',
 
     '        <div class="sl-import-link-wrap">',
-    '          <span class="sl-import-link-label">예약 사이트에서 찾은 숙소 링크를 붙여넣으면 자동으로 추가돼요</span>',
+    '          <span class="sl-import-link-label">예약 사이트에서 본 숙소 이름을 붙여넣으면 자동으로 추가돼요</span>',
     '          <div class="sl-import-link-row">',
-    '            <input type="text" id="sl-import-link-input" class="sl-import-link-input" placeholder="https://www.booking.com/hotel/..." />',
+    '            <input type="text" id="sl-import-link-input" class="sl-import-link-input" placeholder="예: Grande Centre Point Siam" />',
     '            <button type="button" id="sl-import-link-btn" class="sl-import-link-btn">추가</button>',
     '          </div>',
     '          <div class="sl-import-link-status" id="sl-import-link-status"></div>',
@@ -1414,8 +1414,8 @@ let step2Markers = new Map<string, any>();
 let step2MapInstance: any = null;
 
 /**
- * 예약 사이트 링크를 붙여넣으면 자동으로 숙소를 추가.
- * 서버에서 링크의 제목을 읽고 → Google Places로 실제 장소를 찾은 뒤 →
+ * 숙소 이름을 붙여넣으면 자동으로 숙소를 추가.
+ * Google Places Text Search로 실제 장소를 찾은 뒤,
  * 이 트립의 places 테이블에 STAY로 저장하고, 화면(리스트+지도)에 즉시 반영함.
  */
 async function handleImportHotelLink(body: HTMLElement, candidates: Place[]): Promise<void> {
@@ -1424,8 +1424,8 @@ async function handleImportHotelLink(body: HTMLElement, candidates: Place[]): Pr
   const statusEl = body.querySelector('#sl-import-link-status') as HTMLElement;
   if (!input || !btn || !statusEl || !selectedZone) return;
 
-  const url = input.value.trim();
-  if (!url) return;
+  const name = input.value.trim();
+  if (!name) return;
 
   btn.disabled = true;
   btn.textContent = '확인 중...';
@@ -1433,10 +1433,10 @@ async function handleImportHotelLink(body: HTMLElement, candidates: Place[]): Pr
   statusEl.className = 'sl-import-link-status';
 
   try {
-    const res = await fetch('/api/import-hotel-link', {
+    const res = await fetch('/api/import-hotel', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, contextHint: selectedZone.name + ' ' + getTripDestination() }),
+      body: JSON.stringify({ name, contextHint: selectedZone.name + ' ' + getTripDestination() }),
     });
     const data = await res.json();
 
