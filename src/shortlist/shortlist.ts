@@ -88,7 +88,7 @@ export function teardownShortlist(): void {
   pendingHotelId = null;
   step2SortMode = 'rating';
   step2FilterText = '';
-  stayFilters = { budget: '', customMinKRW: null, customMaxKRW: null, roomType: '' };
+  stayFilters = { budget: '', customMinKRW: null, customMaxKRW: null };
   confirmedIds = new Set();
   mapInstance = null;
   mapMarkers = [];
@@ -1004,16 +1004,6 @@ async function renderStep2(body: HTMLElement): Promise<void> {
     '  <div class="sl-step2-layout">',
 
     '    <div class="sl-step2-left">',
-    '      <div class="sl-step2-filters">',
-    '        <div class="sl-filter-group">',
-    '          <span class="sl-filter-label">숙소 타입</span>',
-    '          <div class="sl-filter-chips" id="sl-roomtype-chips">',
-    ['호텔', '호스텔', '리조트', '에어비앤비'].map((t) =>
-      '<button type="button" class="sl-filter-chip' + (stayFilters.roomType === t ? ' active' : '') + '" data-roomtype="' + t + '">' + escapeHtml(t) + '</button>'
-    ).join(''),
-    '          </div>',
-    '        </div>',
-    '      </div>',
     '      <div class="sl-step2-toolbar">',
     '        <div class="sl-step2-sort">',
     '          <span class="sl-step2-sort-label">정렬</span>',
@@ -1094,17 +1084,6 @@ async function renderStep2(body: HTMLElement): Promise<void> {
   body.querySelector('#sl-budget-min')?.addEventListener('input', applyCustomBudget);
   body.querySelector('#sl-budget-max')?.addEventListener('input', applyCustomBudget);
 
-  body.querySelectorAll('#sl-roomtype-chips .sl-filter-chip').forEach((chip) => {
-    chip.addEventListener('click', () => {
-      const val = (chip as HTMLElement).dataset.roomtype!;
-      stayFilters.roomType = stayFilters.roomType === val ? '' : val;
-      body.querySelectorAll('#sl-roomtype-chips .sl-filter-chip').forEach((c) =>
-        c.classList.toggle('active', (c as HTMLElement).dataset.roomtype === stayFilters.roomType)
-      );
-      renderHotelSiteCards(body, destination, selectedZone!.name);
-    });
-  });
-
   body.querySelector('#sl-hotel-filter')?.addEventListener('input', (e) => {
     step2FilterText = (e.target as HTMLInputElement).value;
     renderBasecampList(body, candidates);
@@ -1176,21 +1155,20 @@ function resolveBudgetRangeKRW(f: StayFilters): { minKRW: number; maxKRW: number
   return BUDGET_PRESETS[f.budget] ?? null;
 }
 
-const ROOM_TYPE_KO: Record<string, string> = {
-  '호텔': 'hotel',
-  '호스텔': 'shared_room',
-  '리조트': 'hotel',
-  '에어비앤비': 'entire_home',
-};
-
 interface StayFilters {
   budget: string; // '' | 'under5' | 'under10' | 'over20' | 'custom'
   customMinKRW: number | null;
   customMaxKRW: number | null;
-  roomType: string; // '' | '호텔' | '호스텔' | '리조트' | '에어비앤비'
 }
 
-let stayFilters: StayFilters = { budget: '', customMinKRW: null, customMaxKRW: null, roomType: '' };
+let stayFilters: StayFilters = { budget: '', customMinKRW: null, customMaxKRW: null };
+
+/** 트립의 실제 여행 날짜를 YYYY-MM-DD로 반환 (사이트 검색 URL의 checkin/checkout에 사용) */
+function getTripDatesISO(): { checkin: string; checkout: string } | null {
+  const trip = currentTrip;
+  if (!trip?.start_date || !trip?.end_date) return null;
+  return { checkin: trip.start_date.slice(0, 10), checkout: trip.end_date.slice(0, 10) };
+}
 
 interface HotelSite {
   name: string;
@@ -1211,12 +1189,15 @@ const HOTEL_SITES: HotelSite[] = [
     buildUrl: (d, z, f) => {
       const url = new URL('https://www.booking.com/searchresults.ko.html');
       url.searchParams.set('ss', z + ' ' + d);
-      const chips: string[] = [];
+      const dates = getTripDatesISO();
+      if (dates) {
+        url.searchParams.set('checkin', dates.checkin);
+        url.searchParams.set('checkout', dates.checkout);
+      }
       const range = resolveBudgetRangeKRW(f);
       if (range) {
-        chips.push('price=USD-' + krwToUsd(range.minKRW) + '-' + krwToUsd(range.maxKRW) + '-1');
+        url.searchParams.set('nflt', 'price=USD-' + krwToUsd(range.minKRW) + '-' + krwToUsd(range.maxKRW) + '-1');
       }
-      if (chips.length > 0) url.searchParams.set('nflt', chips.join(';'));
       return url.toString();
     },
   },
@@ -1226,11 +1207,19 @@ const HOTEL_SITES: HotelSite[] = [
     filterSupport: 'best_effort',
     editorialRating: 4.4,
     buildUrl: (d, z, f) => {
-      let q = z + ' ' + d;
-      if (f.roomType) q += ' ' + f.roomType;
+      const url = new URL('https://www.agoda.com/ko-kr/search');
+      url.searchParams.set('q', z + ' ' + d);
+      const dates = getTripDatesISO();
+      if (dates) {
+        url.searchParams.set('checkIn', dates.checkin);
+        url.searchParams.set('checkOut', dates.checkout);
+      }
       const range = resolveBudgetRangeKRW(f);
-      if (range) q += ' ' + range.label;
-      return 'https://www.agoda.com/ko-kr/search?q=' + encodeURIComponent(q);
+      if (range) {
+        url.searchParams.set('priceFrom', String(krwToUsd(range.minKRW)));
+        url.searchParams.set('priceTo', String(krwToUsd(range.maxKRW)));
+      }
+      return url.toString();
     },
   },
   {
@@ -1240,13 +1229,15 @@ const HOTEL_SITES: HotelSite[] = [
     editorialRating: 4.2,
     buildUrl: (d, z, f) => {
       const url = new URL('https://www.airbnb.co.kr/s/' + encodeURIComponent(z + ' ' + d) + '/homes');
+      const dates = getTripDatesISO();
+      if (dates) {
+        url.searchParams.set('checkin', dates.checkin);
+        url.searchParams.set('checkout', dates.checkout);
+      }
       const range = resolveBudgetRangeKRW(f);
       if (range) {
         url.searchParams.set('price_min', String(krwToUsd(range.minKRW)));
         url.searchParams.set('price_max', String(krwToUsd(range.maxKRW)));
-      }
-      if (f.roomType && ROOM_TYPE_KO[f.roomType]) {
-        url.searchParams.set('room_types[]', ROOM_TYPE_KO[f.roomType]);
       }
       return url.toString();
     },
@@ -1258,7 +1249,8 @@ const HOTEL_SITES: HotelSite[] = [
     editorialRating: 4.3,
     buildUrl: (d, z, f) => {
       let q = z + ' ' + d + ' 호텔';
-      if (f.roomType) q += ' ' + f.roomType;
+      const dates = getTripDatesISO();
+      if (dates) q += ' ' + dates.checkin + ' ~ ' + dates.checkout;
       const range = resolveBudgetRangeKRW(f);
       if (range) q += ' ' + range.label;
       return 'https://www.google.com/travel/search?q=' + encodeURIComponent(q);
