@@ -919,3 +919,50 @@
 }
 .sl-zoom-btn:first-child { border-bottom: 1px solid rgba(130,150,170,0.2); }
 .sl-zoom-btn:hover { background: #F1F6FB; }
+
+/* ── 예약 사이트 링크로 숙소 추가 ── */
+.sl-import-link-wrap {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed rgba(130,150,170,0.24);
+}
+.sl-import-link-label {
+  display: block;
+  font-size: 11.5px;
+  color: #94A3B8;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+.sl-import-link-row { display: flex; gap: 8px; }
+.sl-import-link-input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1px solid rgba(130,150,170,0.24);
+  font-size: 12px;
+  color: #0B2A5C;
+  background: #fff;
+}
+.sl-import-link-input:focus { outline: none; border-color: #8FD8F8; }
+.sl-import-link-btn {
+  flex-shrink: 0;
+  padding: 9px 16px;
+  border-radius: 9px;
+  border: none;
+  background: #0B2A5C;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 150ms ease, opacity 150ms ease;
+}
+.sl-import-link-btn:hover:not(:disabled) { background: #0E3676; }
+.sl-import-link-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.sl-import-link-status {
+  font-size: 11.5px;
+  color: #0F6E56;
+  margin-top: 6px;
+  min-height: 14px;
+}
+.sl-import-link-status.error { color: #C0392B; }
