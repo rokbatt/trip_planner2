@@ -1195,7 +1195,7 @@ interface HotelSite {
   name: string;
   domain: string;
   /** 이 사이트에 필터를 얼마나 신뢰성 있게 적용할 수 있는지 (사용자에게 투명하게 표시) */
-  filterSupport: 'confirmed' | 'best_effort';
+  filterSupport: 'confirmed' | 'best_effort' | 'unsupported';
   /** 숙소 예약 목적으로 봤을 때 Claude가 매긴 종합 평가 (해당 사이트의 실제 이용자 평점이 아님) */
   editorialRating: number;
   buildUrl: (destination: string, zoneName: string, filters: StayFilters) => string;
@@ -1225,22 +1225,13 @@ const HOTEL_SITES: HotelSite[] = [
   {
     name: 'Agoda',
     domain: 'agoda.com',
-    filterSupport: 'best_effort',
+    filterSupport: 'unsupported',
     editorialRating: 4.4,
-    buildUrl: (d, z, f) => {
-      const url = new URL('https://www.agoda.com/ko-kr/search');
-      url.searchParams.set('q', z + ' ' + d);
-      const dates = getTripDatesISO();
-      if (dates) {
-        url.searchParams.set('checkIn', dates.checkin);
-        url.searchParams.set('checkOut', dates.checkout);
-      }
-      const range = resolveBudgetRangeKRW(f);
-      if (range) {
-        url.searchParams.set('priceFrom', String(krwToUsd(range.minKRW)));
-        url.searchParams.set('priceTo', String(krwToUsd(range.maxKRW)));
-      }
-      return url.toString();
+    buildUrl: (d, z) => {
+      // Agoda 실제 검색 URL은 도시 고유 숫자ID(city=1234) 기반이라 우리가 알 방법이 없음.
+      // checkIn/checkOut/price 파라미터를 텍스트 검색에 붙여봤지만 실제로 안 먹혀서(확인됨) 제거.
+      // 지역명 텍스트로만 검색되도록 단순화 — 날짜/가격은 사용자가 Agoda 화면에서 직접 설정 필요.
+      return 'https://www.agoda.com/ko-kr/search?text=' + encodeURIComponent(z + ' ' + d);
     },
   },
   {
@@ -1269,9 +1260,9 @@ const HOTEL_SITES: HotelSite[] = [
     filterSupport: 'best_effort',
     editorialRating: 4.3,
     buildUrl: (d, z, f) => {
+      // 날짜를 검색어에 자연어로 넣는 게 실제로 필터에 반영되는지 확인된 바가 없어서 뺐음
+      // (Google이 계정/세션 컨텍스트로 알아서 처리하는 것으로 보임)
       let q = z + ' ' + d + ' 호텔';
-      const dates = getTripDatesISO();
-      if (dates) q += ' ' + dates.checkin + ' ~ ' + dates.checkout;
       const range = resolveBudgetRangeKRW(f);
       if (range) q += ' ' + range.label;
       return 'https://www.google.com/travel/search?q=' + encodeURIComponent(q);
@@ -1289,7 +1280,7 @@ function renderHotelSiteCards(body: HTMLElement, destination: string, zoneName: 
     '  <div class="sl-hotel-site-name">' + escapeHtml(site.name) + '</div>',
     '  <div class="sl-hotel-site-rating">★ ' + site.editorialRating.toFixed(1) + '</div>',
     '  <div class="sl-hotel-site-zone">' + escapeHtml(zoneName) + ' 지역</div>',
-    '  <div class="sl-hotel-site-filter">' + escapeHtml(filterNote) + (site.filterSupport === 'best_effort' ? ' · 참고용' : '') + '</div>',
+    '  <div class="sl-hotel-site-filter">' + (site.filterSupport === 'unsupported' ? '지역만 검색' : escapeHtml(filterNote) + (site.filterSupport === 'best_effort' ? ' · 참고용' : '')) + '</div>',
     '  <div class="sl-hotel-site-cta">바로 검색 ' + IC_EXTLINK + '</div>',
     '</a>',
   ].join('')).join('');
