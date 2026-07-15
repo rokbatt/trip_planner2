@@ -1,6 +1,6 @@
 import { supabase } from '../supabase';
 import { store } from '../store';
-import { loadGoogleMapsScript } from '../utils/googleMaps';
+import { loadGoogleMapsScript, getCategoryLabel } from '../utils/googleMaps';
 import type { Database } from '../types/database';
 import './shortlist.css';
 
@@ -91,6 +91,8 @@ export function teardownShortlist(): void {
   stayFilters = { budget: '', customMinKRW: null, customMaxKRW: null };
   confirmedIds = new Set();
   mapInstance = null;
+  step2MapInstance = null;
+  step2Markers = new Map();
   mapMarkers = [];
   highlightedZoneId = null;
   pendingSelectedZoneId = null;
@@ -1040,6 +1042,15 @@ async function renderStep2(body: HTMLElement): Promise<void> {
     '          <input type="text" id="sl-hotel-filter" class="sl-direct-search-input" placeholder="숙소명으로 찾기" value="' + escapeHtml(step2FilterText) + '" />',
     '        </div>',
     '        <div class="sl-basecamp-list" id="sl-basecamp-list"></div>',
+
+    '        <div class="sl-import-link-wrap">',
+    '          <span class="sl-import-link-label">예약 사이트에서 찾은 숙소 링크를 붙여넣으면 자동으로 추가돼요</span>',
+    '          <div class="sl-import-link-row">',
+    '            <input type="text" id="sl-import-link-input" class="sl-import-link-input" placeholder="https://www.booking.com/hotel/..." />',
+    '            <button type="button" id="sl-import-link-btn" class="sl-import-link-btn">추가</button>',
+    '          </div>',
+    '          <div class="sl-import-link-status" id="sl-import-link-status"></div>',
+    '        </div>',
     '      </section>',
 
     '      <div class="sl-selected-hotel-wrap" id="sl-selected-hotel-wrap"></div>',
@@ -1087,6 +1098,13 @@ async function renderStep2(body: HTMLElement): Promise<void> {
   body.querySelector('#sl-hotel-filter')?.addEventListener('input', (e) => {
     step2FilterText = (e.target as HTMLInputElement).value;
     renderBasecampList(body, candidates);
+  });
+
+  body.querySelector('#sl-import-link-btn')?.addEventListener('click', () => {
+    handleImportHotelLink(body, candidates);
+  });
+  body.querySelector('#sl-import-link-input')?.addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key === 'Enter') handleImportHotelLink(body, candidates);
   });
 
   renderHotelSiteCards(body, destination, selectedZone.name);
@@ -1392,6 +1410,122 @@ function renderSelectedHotelPreview(body: HTMLElement, candidates: Place[]): voi
 }
 
 let step2Markers = new Map<string, any>();
+let step2MapInstance: any = null;
+
+/**
+ * 예약 사이트 링크를 붙여넣으면 자동으로 숙소를 추가.
+ * 서버에서 링크의 제목을 읽고 → Google Places로 실제 장소를 찾은 뒤 →
+ * 이 트립의 places 테이블에 STAY로 저장하고, 화면(리스트+지도)에 즉시 반영함.
+ */
+async function handleImportHotelLink(body: HTMLElement, candidates: Place[]): Promise<void> {
+  const input = body.querySelector('#sl-import-link-input') as HTMLInputElement;
+  const btn = body.querySelector('#sl-import-link-btn') as HTMLButtonElement;
+  const statusEl = body.querySelector('#sl-import-link-status') as HTMLElement;
+  if (!input || !btn || !statusEl || !selectedZone) return;
+
+  const url = input.value.trim();
+  if (!url) return;
+
+  btn.disabled = true;
+  btn.textContent = '확인 중...';
+  statusEl.textContent = '';
+  statusEl.className = 'sl-import-link-status';
+
+  try {
+    const res = await fetch('/api/import-hotel-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, contextHint: selectedZone.name + ' ' + getTripDestination() }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      statusEl.textContent = data.error || '숙소를 찾지 못했어요.';
+      statusEl.classList.add('error');
+      return;
+    }
+
+    // 이미 이 트립에 같은 장소가 있으면 중복 추가하지 않음
+    const existing = allPlaces.find((p) => p.google_place_id && p.google_place_id === data.place_id);
+    if (existing) {
+      statusEl.textContent = '"' + existing.name + '"은 이미 추가돼 있어요.';
+      pendingHotelId = existing.id;
+      renderBasecampList(body, candidates);
+      renderSelectedHotelPreview(body, candidates);
+      highlightBasecampMarker(existing.id);
+      return;
+    }
+
+    const user = store.get('user');
+    const category = getCategoryLabel(data.types ?? []);
+    const { data: inserted, error } = await supabase
+      .from('places')
+      .insert({
+        trip_id: currentTripId,
+        name: data.name,
+        mood: '숙소',
+        status: 'idea',
+        is_idea: false,
+        added_by: user?.id ?? null,
+        sort_order: Math.floor(Date.now() / 1000),
+        address: data.address,
+        lat: data.lat,
+        lng: data.lng,
+        google_place_id: data.place_id,
+        google_rating: data.rating,
+        category,
+        photo_url: data.photoUrl,
+      })
+      .select()
+      .single();
+
+    if (error || !inserted) {
+      statusEl.textContent = '저장 중 오류가 났어요: ' + (error?.message ?? '알 수 없는 오류');
+      statusEl.classList.add('error');
+      return;
+    }
+
+    // 화면 상태에 즉시 반영 (다시 불러오지 않고 메모리에서 바로 추가)
+    allPlaces.push(inserted);
+    selectedZone.places.push(inserted);
+    candidates.push(inserted);
+
+    input.value = '';
+    statusEl.textContent = '"' + inserted.name + '" 추가 완료!';
+    pendingHotelId = inserted.id;
+
+    renderBasecampList(body, candidates);
+    renderSelectedHotelPreview(body, candidates);
+    addMarkerForNewCandidate(inserted);
+  } catch (e) {
+    statusEl.textContent = '네트워크 오류: ' + (e as Error).message;
+    statusEl.classList.add('error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '추가';
+  }
+}
+
+/** 새로 추가된 숙소를 Step2 지도에 마커로 즉시 표시 (지도를 통째로 다시 그리지 않고 마커만 추가) */
+function addMarkerForNewCandidate(place: Place): void {
+  const g = (window as any).google;
+  if (!g?.maps || !step2MapInstance || place.lat == null || place.lng == null) return;
+
+  const marker = new g.maps.Marker({
+    position: { lat: place.lat, lng: place.lng },
+    map: step2MapInstance,
+    title: place.name,
+    icon: buildCategoryIcon(g, place.mood),
+    zIndex: 20,
+  });
+  step2Markers.set(place.id, marker);
+  marker.addListener('click', () => {
+    pendingHotelId = place.id;
+    highlightBasecampMarker(place.id);
+  });
+  step2MapInstance.panTo({ lat: place.lat, lng: place.lng });
+  highlightBasecampMarker(place.id);
+}
 
 async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<void> {
   step2Markers = new Map();
@@ -1415,6 +1549,7 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
     // Step1과 달리 여기선 실제 구글맵 디테일(도로명, 건물, POI)이 필요해서
     // 커스텀 스타일을 적용하지 않고 기본 렌더링을 그대로 씀
   });
+  step2MapInstance = map;
 
   addCustomZoomControl(map, mapEl);
 
