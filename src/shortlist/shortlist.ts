@@ -644,7 +644,7 @@ let placeInfoWindow: any = null;
  * Google Place Details를 다시 호출하지 않음 — 추가 API 비용 0원.
  * "Google Maps에서 보기" 링크도 google_place_id 기반 딥링크라 API 호출이 필요 없음.
  */
-function showPlaceInfoWindow(g: any, marker: any, place: Place): void {
+function showPlaceInfoWindow(g: any, map: any, marker: any, place: Place): void {
   if (!placeInfoWindow) {
     placeInfoWindow = new g.maps.InfoWindow();
   }
@@ -673,7 +673,7 @@ function showPlaceInfoWindow(g: any, marker: any, place: Place): void {
   ].join('');
 
   placeInfoWindow.setContent(content);
-  placeInfoWindow.open({ map: mapInstance, anchor: marker });
+  placeInfoWindow.open({ map, anchor: marker });
 }
 
 function buildCategoryIcon(g: any, mood: string | null): any {
@@ -808,7 +808,7 @@ async function initMap(body: HTMLElement): Promise<void> {
         icon: buildCategoryIcon(g, p.mood),
       });
       marker.addListener('click', () => {
-        showPlaceInfoWindow(g, marker, p);
+        showPlaceInfoWindow(g, mapInstance, marker, p);
       });
       zoneMarkers.push(marker);
       mapMarkers.push(marker);
@@ -1565,6 +1565,7 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
       icon: buildCategoryIcon(g, p.mood),
       zIndex: isCandidate ? 20 : 1,
     });
+
     if (isCandidate) {
       step2Markers.set(p.id, marker);
       marker.addListener('click', () => {
@@ -1572,6 +1573,12 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
         renderBasecampList(body, candidates);
         renderSelectedHotelPreview(body, candidates);
         highlightBasecampMarker(p.id);
+        showPlaceInfoWindow(g, map, marker, p);
+      });
+    } else {
+      // 숙소 후보가 아닌 장소는 선택 동작 없이 정보만 표시 (이미 저장된 데이터, 추가 API 호출 없음)
+      marker.addListener('click', () => {
+        showPlaceInfoWindow(g, map, marker, p);
       });
     }
   });
