@@ -1522,7 +1522,7 @@ function addMarkerForNewCandidate(place: Place): void {
     position: { lat: place.lat, lng: place.lng },
     map: step2MapInstance,
     title: place.name,
-    icon: buildCategoryIcon(g, place.mood, 'detailed-lg'),
+    icon: buildCategoryIcon(g, place.mood, 'detailed'),
     zIndex: 20,
   });
   step2Markers.set(place.id, marker);
@@ -1568,7 +1568,7 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
       position: { lat: p.lat, lng: p.lng },
       map,
       title: p.name,
-      icon: buildCategoryIcon(g, p.mood, isCandidate ? 'detailed-lg' : 'detailed'),
+      icon: buildCategoryIcon(g, p.mood, 'detailed'),
       zIndex: isCandidate ? 20 : 1,
     });
 
