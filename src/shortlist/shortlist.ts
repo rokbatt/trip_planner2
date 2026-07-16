@@ -676,21 +676,47 @@ function showPlaceInfoWindow(g: any, map: any, marker: any, place: Place): void 
   placeInfoWindow.open({ map, anchor: marker });
 }
 
-function buildCategoryIcon(g: any, mood: string | null): any {
+function buildCategoryIcon(g: any, mood: string | null, variant: 'compact' | 'detailed' | 'detailed-lg' = 'compact'): any {
   const color = MOOD_COLOR[mood ?? ''] || '#94A3B8';
 
-  // 기본 축소 상태에서도 거슬리지 않도록 작고 얇은 핀 (폭:높이 비율을 좁게)
+  if (variant === 'compact') {
+    // Step1의 추상화된 지도 위에서는 작고 얇은 핀이 오히려 자연스러움
+    const svg = [
+      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="22" viewBox="0 0 16 22">',
+      '<path d="M8 0C3.6 0 0 3.6 0 8c0 6 8 14 8 14s8-8 8-14c0-4.4-3.6-8-8-8z" fill="' + color + '"/>',
+      '<circle cx="8" cy="7.7" r="2.7" fill="white"/>',
+      '</svg>',
+    ].join('');
+    return {
+      url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+      scaledSize: new g.maps.Size(16, 22),
+      anchor: new g.maps.Point(8, 22),
+    };
+  }
+
+  // Step2처럼 정보가 많은 실제 구글맵 위에서는 두꺼운 흰 테두리 + 그림자로 대비를 크게 줘야 눈에 띔
+  const big = variant === 'detailed-lg';
+  const w = big ? 30 : 22;
+  const h = big ? 41 : 30;
+  const cx = w / 2;
+  const holeR = big ? 5.1 : 3.7;
+  const holeCy = big ? 14.4 : 10.6;
+  const pinPath = big
+    ? 'M15 0C6.75 0 0 6.75 0 15c0 15.75 15 26.25 15 26.25s15-10.5 15-26.25C30 6.75 23.25 0 15 0z'
+    : 'M11 0C4.95 0 0 4.95 0 11c0 8.25 11 19.25 11 19.25s11-11 11-19.25C22 4.95 17.05 0 11 0z';
+
   const svg = [
-    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="22" viewBox="0 0 16 22">',
-    '<path d="M8 0C3.6 0 0 3.6 0 8c0 6 8 14 8 14s8-8 8-14c0-4.4-3.6-8-8-8z" fill="' + color + '"/>',
-    '<circle cx="8" cy="7.7" r="2.7" fill="white"/>',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">',
+    '<defs><filter id="ds" x="-50%" y="-30%" width="200%" height="160%"><feDropShadow dx="0" dy="1.5" stdDeviation="1.3" flood-color="#0B2A5C" flood-opacity="0.5"/></filter></defs>',
+    '<path filter="url(#ds)" d="' + pinPath + '" fill="' + color + '" stroke="white" stroke-width="' + (big ? 3 : 2.4) + '" paint-order="stroke fill"/>',
+    '<circle cx="' + cx + '" cy="' + holeCy + '" r="' + holeR + '" fill="white"/>',
     '</svg>',
   ].join('');
 
   return {
     url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
-    scaledSize: new g.maps.Size(16, 22),
-    anchor: new g.maps.Point(8, 22),
+    scaledSize: new g.maps.Size(w, h),
+    anchor: new g.maps.Point(cx, h),
   };
 }
 
@@ -937,6 +963,15 @@ function addCustomZoomControl(map: any, mapEl: HTMLElement): void {
 
   map.controls[g.maps.ControlPosition.RIGHT_BOTTOM].push(wrap);
 }
+
+/** Step2용 절충 스타일 — 도로·건물·대중교통 등 실제 디테일은 그대로 두되,
+ *  기본 구글 업체 POI 아이콘(작은 색색 마커들)만 줄여서 우리 핀이 묻히지 않도록 함 */
+const MAP_STYLE_STEP2 = [
+  { featureType: 'poi.business', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.business', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi', elementType: 'labels.icon', stylers: [{ saturation: -40 }, { lightness: 25 }] },
+  { featureType: 'poi', elementType: 'labels.text', stylers: [{ visibility: 'simplified' }] },
+];
 
 const MAP_STYLE_LIGHT = [
   { elementType: 'geometry', stylers: [{ color: '#F8FBFE' }] },
@@ -1487,7 +1522,7 @@ function addMarkerForNewCandidate(place: Place): void {
     position: { lat: place.lat, lng: place.lng },
     map: step2MapInstance,
     title: place.name,
-    icon: buildCategoryIcon(g, place.mood),
+    icon: buildCategoryIcon(g, place.mood, 'detailed-lg'),
     zIndex: 20,
   });
   step2Markers.set(place.id, marker);
@@ -1518,8 +1553,9 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
     zoomControl: false,
     isFractionalZoomEnabled: true,
     gestureHandling: 'greedy',
-    // Step1과 달리 여기선 실제 구글맵 디테일(도로명, 건물, POI)이 필요해서
-    // 커스텀 스타일을 적용하지 않고 기본 렌더링을 그대로 씀
+    // Step1처럼 완전히 추상화하진 않고 도로명·건물 등 실제 디테일은 유지하되,
+    // 우리 핀이 묻히지 않도록 구글 기본 업체 POI 아이콘만 옅게 처리
+    styles: MAP_STYLE_STEP2,
   });
   step2MapInstance = map;
 
@@ -1532,7 +1568,7 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
       position: { lat: p.lat, lng: p.lng },
       map,
       title: p.name,
-      icon: buildCategoryIcon(g, p.mood),
+      icon: buildCategoryIcon(g, p.mood, isCandidate ? 'detailed-lg' : 'detailed'),
       zIndex: isCandidate ? 20 : 1,
     });
 
