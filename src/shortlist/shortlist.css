@@ -357,59 +357,44 @@
 }
 
 /* ── 하단 지역 확정 바 ── */
-.sl-select-bar {
-  max-height: 0;
-  overflow: hidden;
-  transition: max-height 220ms ease;
+/* 우측 지역 패널 자체의 스크롤 영역 안에서 하단에 고정되는 CTA
+   (페이지 레벨 sticky는 중첩 스크롤 컨테이너 문제로 불안정했음 — 패널 자체 스크롤 기준으로 고정) */
+.sl-zone-cta-sticky {
+  display: none;
 }
-.sl-select-bar.visible {
+.sl-zone-cta-sticky.visible {
+  display: block;
   position: sticky;
-  bottom: 8px;
+  bottom: 0;
   z-index: 30;
-  max-height: 44px;
   margin-top: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 8px 14px;
-  border-radius: 10px;
-  background: #0B2A5C;
-  color: #fff;
-  box-shadow: 0 8px 24px rgba(11,42,92,0.35);
+  padding-top: 10px;
+  background: linear-gradient(to bottom, rgba(248,251,254,0) 0%, #F8FBFE 30%);
 }
-.sl-select-bar-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-  font-weight: 600;
-}
-.sl-select-bar-icon {
-  width: 15px;
-  height: 15px;
-  flex-shrink: 0;
+.sl-zone-cta-btn {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #8FD8F8;
-}
-.sl-select-bar-icon svg { width: 100%; height: 100%; }
-.sl-select-bar-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  border-radius: 8px;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
   border: none;
-  background: #185FA5;
+  background: #0B2A5C;
   color: #fff;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-  white-space: nowrap;
+  box-shadow: 0 8px 20px rgba(11,42,92,0.28);
   transition: background 150ms ease;
 }
+.sl-zone-cta-btn span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.sl-zone-cta-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+.sl-zone-cta-btn:hover { background: #0E3676; }
 .sl-select-bar-btn:hover { background: #1E71C0; }
 .sl-select-bar-btn svg { width: 13px; height: 13px; }
 
