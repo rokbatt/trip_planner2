@@ -920,11 +920,9 @@
 .sl-zoom-btn:first-child { border-bottom: 1px solid rgba(130,150,170,0.2); }
 .sl-zoom-btn:hover { background: #F1F6FB; }
 
-/* ── 예약 사이트 링크로 숙소 추가 ── */
+/* ── 이름으로 숙소 추가 ── */
 .sl-import-link-wrap {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px dashed rgba(130,150,170,0.24);
+  margin-bottom: 14px;
 }
 .sl-import-link-label {
   display: block;
@@ -932,6 +930,13 @@
   color: #94A3B8;
   margin-bottom: 8px;
   line-height: 1.4;
+}
+.sl-direct-select-subtitle {
+  font-size: 11.5px;
+  color: #94A3B8;
+  padding-top: 14px;
+  margin-bottom: 8px;
+  border-top: 1px dashed rgba(130,150,170,0.24);
 }
 .sl-import-link-row { display: flex; gap: 8px; }
 .sl-import-link-input {
