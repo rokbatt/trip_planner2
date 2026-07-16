@@ -1054,8 +1054,6 @@ async function renderStep2(body: HTMLElement): Promise<void> {
     '        <div class="sl-basecamp-list" id="sl-basecamp-list"></div>',
     '      </section>',
 
-    '      <div class="sl-selected-hotel-wrap" id="sl-selected-hotel-wrap"></div>',
-
     '      <button class="sl-step2-cta" id="sl-step2-cta" disabled>',
     '        <span>' + IC_CHECK + ' 이 숙소를 여행 중심으로 선택하기</span>',
     '      </button>',
@@ -1358,7 +1356,7 @@ function renderBasecampList(body: HTMLElement, candidates: Place[]): void {
   listEl.querySelectorAll('.sl-basecamp-card').forEach((card) => {
     card.addEventListener('click', () => {
       const placeId = (card as HTMLElement).dataset.placeId;
-      pendingHotelId = placeId ?? null;
+      pendingHotelId = pendingHotelId === placeId ? null : (placeId ?? null);
       renderBasecampList(body, candidates);
       renderSelectedHotelPreview(body, candidates);
       highlightBasecampMarker(pendingHotelId);
@@ -1367,40 +1365,12 @@ function renderBasecampList(body: HTMLElement, candidates: Place[]): void {
 }
 
 function renderSelectedHotelPreview(body: HTMLElement, candidates: Place[]): void {
-  const wrapEl = body.querySelector('#sl-selected-hotel-wrap') as HTMLElement;
   const ctaBtn = body.querySelector('#sl-step2-cta') as HTMLButtonElement;
-  if (!wrapEl || !ctaBtn) return;
+  if (!ctaBtn) return;
 
   const hotel = candidates.find((c) => c.id === pendingHotelId) ?? null;
-
-  if (!hotel) {
-    wrapEl.innerHTML = '';
-    ctaBtn.disabled = true;
-    return;
-  }
-
-  wrapEl.innerHTML = [
-    '<div class="sl-selected-hotel-card">',
-    hotel.photo_url
-      ? '<div class="sl-selected-hotel-photo" style="background-image:url(\'' + hotel.photo_url + '\')"></div>'
-      : '<div class="sl-selected-hotel-photo sl-selected-hotel-photo-empty">' + IC_BED + '</div>',
-    '  <div class="sl-selected-hotel-info">',
-    '    <div class="sl-selected-hotel-name">' + escapeHtml(hotel.name) + '</div>',
-    typeof hotel.google_rating === 'number' ? '<div class="sl-selected-hotel-rating">★ ' + hotel.google_rating.toFixed(1) + '</div>' : '',
-    hotel.address ? '<div class="sl-selected-hotel-address">' + escapeHtml(hotel.address) + '</div>' : '',
-    '  </div>',
-    '  <button type="button" class="sl-selected-hotel-remove" id="sl-remove-hotel">' + IC_XCLOSE + '</button>',
-    '</div>',
-  ].join('\n');
-
-  ctaBtn.disabled = false;
-
-  wrapEl.querySelector('#sl-remove-hotel')?.addEventListener('click', () => {
-    pendingHotelId = null;
-    renderBasecampList(body, candidates);
-    renderSelectedHotelPreview(body, candidates);
-    highlightBasecampMarker(null);
-  });
+  ctaBtn.disabled = !hotel;
+  if (!hotel) return;
 
   ctaBtn.onclick = () => {
     selectedBasecamp = hotel;
