@@ -436,9 +436,9 @@ async function renderStep1(body: HTMLElement): Promise<void> {
       '</div>',
     '        </div>',
     '      </div>',
+    '      <div class="sl-zone-cta-sticky" id="sl-zone-cta-sticky"></div>',
     '    </div>',
     '  </div>',
-    '  <div class="sl-select-bar" id="sl-select-bar"></div>',
     '</div>',
   ].join('\n');
 
@@ -527,7 +527,7 @@ function renderZoneCards(body: HTMLElement): void {
 }
 
 function renderSelectBar(body: HTMLElement): void {
-  const barEl = body.querySelector('#sl-select-bar') as HTMLElement;
+  const barEl = body.querySelector('#sl-zone-cta-sticky') as HTMLElement;
   if (!barEl) return;
 
   if (!pendingSelectedZoneId) {
@@ -541,12 +541,9 @@ function renderSelectBar(body: HTMLElement): void {
 
   barEl.classList.add('visible');
   barEl.innerHTML = [
-    '<div class="sl-select-bar-left">',
-    '  <span class="sl-select-bar-icon">' + IC_PLANE + '</span>',
-    '  <span>' + escapeHtml(zone.name) + ' 지역을 중심으로 숙소를 선택할까요?</span>',
-    '</div>',
-    '<button type="button" class="sl-select-bar-btn" id="sl-confirm-zone">',
-    '  다음 단계: 숙소 선택 ' + IC_ARROW,
+    '<button type="button" class="sl-zone-cta-btn" id="sl-confirm-zone">',
+    '  <span>' + IC_PLANE + escapeHtml(zone.name) + ' 지역을 중심으로 숙소를 선택할게요</span>',
+    '  ' + IC_ARROW,
     '</button>',
   ].join('\n');
 
