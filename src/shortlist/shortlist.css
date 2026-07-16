@@ -29,7 +29,7 @@
   flex-direction: column;
   height: 100%;
   width: 100%;
-  max-width: min(94vw, 1680px);
+  max-width: min(84.6vw, 1512px);
   margin: 0 auto;
   padding: clamp(14px, 1.4vw, 22px) clamp(20px, 2.8vw, 40px);
   overflow-y: auto;
