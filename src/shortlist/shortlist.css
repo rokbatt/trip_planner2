@@ -717,20 +717,20 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 14px;
-  border-radius: 12px;
+  gap: 6px;
+  padding: 11px;
+  border-radius: 11px;
   border: none;
   background: #0B2A5C;
   color: #fff;
-  font-size: 14px;
+  font-size: 12.5px;
   font-weight: 700;
   cursor: pointer;
   transition: background 150ms ease, opacity 150ms ease;
-  margin-top: auto;
+  margin-top: 16px;
 }
-.sl-step2-cta span { display: flex; align-items: center; gap: 8px; }
-.sl-step2-cta svg { width: 16px; height: 16px; }
+.sl-step2-cta span { display: flex; align-items: center; gap: 6px; }
+.sl-step2-cta svg { width: 13px; height: 13px; }
 .sl-step2-cta:hover:not(:disabled) { background: #0E3676; }
 .sl-step2-cta:disabled { background: #C3D0DD; cursor: not-allowed; }
 .sl-step2-cta-hint { text-align: center; font-size: 11px; color: #94A3B8; margin-top: 6px; }
