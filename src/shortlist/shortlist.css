@@ -27,12 +27,10 @@
 .sl-shell {
   display: flex;
   flex-direction: column;
-  height: 100%;
   width: 100%;
   max-width: min(84.6vw, 1512px);
   margin: 0 auto;
   padding: clamp(14px, 1.4vw, 22px) clamp(20px, 2.8vw, 40px);
-  overflow-y: auto;
   box-sizing: border-box;
 }
 
@@ -193,7 +191,7 @@
   align-items: stretch;
   gap: 12px;
   text-align: left;
-  height: 132px;
+  height: 120px;
   padding: 12px 14px;
   border-radius: 12px;
   border: 1px solid rgba(130,150,170,0.18);
