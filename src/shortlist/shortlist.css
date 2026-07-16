@@ -193,6 +193,7 @@
   align-items: stretch;
   gap: 12px;
   text-align: left;
+  height: 132px;
   padding: 12px 14px;
   border-radius: 12px;
   border: 1px solid rgba(130,150,170,0.18);
@@ -201,6 +202,7 @@
   backdrop-filter: saturate(140%) blur(6px);
   -webkit-backdrop-filter: saturate(140%) blur(6px);
   cursor: pointer;
+  overflow: hidden;
   transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
 .sl-zone-card:hover { box-shadow: 0 6px 18px rgba(11,42,92,0.12); transform: translateY(-1px); }
@@ -275,7 +277,8 @@
 
 .sl-zone-card-tags {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow: hidden;
   gap: 5px;
   margin-bottom: 8px;
 }
@@ -286,6 +289,8 @@
   background: #F1F6FB;
   padding: 2px 7px;
   border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* 통계와 썸네일을 같은 줄에 배치해서 세로 한 줄을 절약 */
@@ -300,7 +305,8 @@
 
 .sl-zone-card-stats {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow: hidden;
   gap: 8px 12px;
   min-width: 0;
 }
@@ -359,6 +365,9 @@
   transition: max-height 220ms ease;
 }
 .sl-select-bar.visible {
+  position: sticky;
+  bottom: 8px;
+  z-index: 30;
   max-height: 44px;
   margin-top: 10px;
   display: flex;
@@ -369,6 +378,7 @@
   border-radius: 10px;
   background: #0B2A5C;
   color: #fff;
+  box-shadow: 0 8px 24px rgba(11,42,92,0.35);
 }
 .sl-select-bar-left {
   display: flex;
