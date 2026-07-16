@@ -232,7 +232,13 @@ export function teardownBoard(): void {
     window.removeEventListener('mongsil:commentsViewed', commentsViewedHandler);
     commentsViewedHandler = null;
   }
-  pendingDeletes.forEach((p) => clearTimeout(p.timer));
+  // 5초 실행취소 대기 중이던 삭제를 화면 이탈 시점에 그냥 취소해버리면
+  // DB엔 남아있는데 화면에서만 사라진 것처럼 보이다가 되돌아왔을 때 다시 나타나는 버그가 생김.
+  // 사용자가 이미 삭제 의도를 확정한 상태이므로, 이탈 시엔 즉시 커밋함.
+  pendingDeletes.forEach((p, id) => {
+    clearTimeout(p.timer);
+    deleteIdeaNow(id);
+  });
   pendingDeletes.clear();
   securityEl = null;
   placesCache = new Map();
