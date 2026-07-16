@@ -112,7 +112,6 @@
   display: grid;
   grid-template-columns: minmax(0, 62fr) minmax(0, 38fr);
   gap: clamp(14px, 1.6vw, 28px);
-  flex: 1;
   width: 100%;
   align-items: start;
 }
@@ -122,7 +121,6 @@
   width: 100%;
   aspect-ratio: 16 / 16;
   min-height: 360px;
-  max-height: clamp(420px, 54vh, 760px);
   border-radius: 16px;
   overflow: hidden;
   border: 1px solid rgba(130,150,170,0.16);
@@ -532,7 +530,6 @@
   display: grid;
   grid-template-columns: minmax(0, 62fr) minmax(0, 38fr);
   gap: clamp(14px, 1.6vw, 28px);
-  flex: 1;
   width: 100%;
   align-items: start;
 }
