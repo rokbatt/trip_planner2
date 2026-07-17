@@ -133,8 +133,8 @@
   min-height: 0;
 }
 
-.sl-step1-layout > .sl-map-wrap { flex: 60 1 0%; min-width: 0; }
-.sl-step1-layout > .sl-zone-panel { flex: 40 1 0%; min-width: 0; }
+.sl-step1-layout > .sl-map-wrap { flex: 55 1 0%; min-width: 0; }
+.sl-step1-layout > .sl-zone-panel { flex: 45 1 0%; min-width: 0; }
 
 .sl-map-wrap {
   position: relative;
@@ -327,7 +327,7 @@
   display: flex;
   flex-wrap: nowrap;
   overflow: hidden;
-  gap: 8px 12px;
+  gap: 6px 9px;
   min-width: 0;
 }
 .sl-zone-stat { display: flex; flex-direction: column; gap: 2px; }
