@@ -28,12 +28,12 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: calc(100dvh - 76px);
+  height: 100%;
+  min-height: 0;
   max-width: min(84.6vw, 1512px);
   margin: 0 auto;
   padding: clamp(14px, 1.4vw, 22px) clamp(20px, 2.8vw, 40px);
   box-sizing: border-box;
-  overflow: hidden;
 }
 
 /* ── 스테퍼 ── */
@@ -109,13 +109,16 @@
 
 /* ── 레이아웃: 지도 + 리스트 ── */
 .sl-step1-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 60fr) minmax(0, 40fr);
+  display: flex;
   gap: clamp(14px, 1.6vw, 24px);
   width: 100%;
+  height: 100%;
   flex: 1;
   min-height: 0;
 }
+
+.sl-step1-layout > .sl-map-wrap { flex: 60 1 0%; min-width: 0; }
+.sl-step1-layout > .sl-zone-panel { flex: 40 1 0%; min-width: 0; }
 
 .sl-map-wrap {
   position: relative;
@@ -522,19 +525,25 @@
 .sl-budget-custom-unit { font-size: 11px; color: #94A3B8; }
 
 .sl-step2-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 62fr) minmax(0, 38fr);
-  gap: clamp(14px, 1.6vw, 28px);
+  display: flex;
+  gap: clamp(14px, 1.6vw, 24px);
   width: 100%;
-  align-items: start;
+  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
+
+.sl-step2-layout > .sl-step2-left { flex: 60 1 0%; min-width: 0; }
+.sl-step2-layout > .sl-step2-right { flex: 40 1 0%; min-width: 0; }
 
 .sl-step2-left {
   display: flex;
   flex-direction: column;
   gap: clamp(8px, 1vw, 14px);
-  min-width: 0;
+  height: 100%;
+  min-height: 0;
 }
+.sl-step2-left .sl-map-wrap { flex: 1; min-height: 0; height: auto; }
 
 .sl-step2-toolbar { display: flex; align-items: center; justify-content: flex-end; }
 .sl-step2-sort { display: flex; align-items: center; gap: 8px; }
@@ -552,7 +561,7 @@
 
 .sl-step2-right {
   min-width: 0;
-  max-height: calc(100vh - 260px);
+  height: 100%;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -892,11 +901,14 @@
 .sl-pass-cta svg { width: 16px; height: 16px; }
 
 @media (max-width: 900px) {
-  .sl-shell { height: auto; overflow: visible; }
-  .sl-step1-layout, .sl-step2-layout { grid-template-columns: 1fr; max-width: 100%; flex: none; min-height: 0; }
-  .sl-map-wrap { height: auto; aspect-ratio: 16 / 11; max-height: 320px; }
+  .sl-shell { height: auto; min-height: 0; overflow: visible; }
+  .sl-step1-layout, .sl-step2-layout { flex-direction: column; height: auto; max-width: 100%; flex: none; min-height: 0; }
+  .sl-step1-layout > .sl-map-wrap, .sl-step1-layout > .sl-zone-panel,
+  .sl-step2-layout > .sl-step2-left, .sl-step2-layout > .sl-step2-right { flex: none; width: 100%; }
+  .sl-map-wrap, .sl-step2-left .sl-map-wrap { height: auto; flex: none; aspect-ratio: 16 / 11; max-height: 320px; }
   .sl-map { min-height: 280px; }
   .sl-zone-panel, .sl-step2-right { height: auto; max-height: none; overflow-y: visible; }
+  .sl-step2-left { height: auto; }
 }
 
 /* ── 커스텀 줌 컨트롤 (0.5 단위) ── */
