@@ -36,6 +36,22 @@
   box-sizing: border-box;
 }
 
+/* 이 셋에 CSS가 없으면 .sl-shell이 아무리 정확한 높이를 가져도
+   그 아래로 높이가 전달되지 않아서 지도 높이가 0으로 계산됨 (핵심 버그 지점) */
+.sl-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.sl-step1,
+.sl-step2 {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 /* ── 스테퍼 ── */
 .sl-stepper {
   display: flex;
