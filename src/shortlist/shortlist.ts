@@ -456,15 +456,9 @@ async function renderStep1(body: HTMLElement): Promise<void> {
     '    <div class="sl-zone-panel">',
     '      <div class="sl-zone-panel-head"><span>AI 추천 지역</span><span class="sl-zone-panel-sort">추천 순</span></div>',
     '      <div class="sl-zone-list" id="sl-zone-list"></div>',
-    '      <div class="sl-ai-reason">',
-    '        <span class="sl-ai-reason-icon">' + IC_SPARK + '</span>',
-    '        <div>',
-    '          <div class="sl-ai-reason-title">AI 추천 근거</div>',
-    '          <div class="sl-ai-reason-text">평점 · 장소 밀집도 · 권역 내 평균 이동시간을 종합해서 순위를 매겼어요.' +
-      (zoneDataSource === 'ai_fallback' ? ' (이 여행지는 아직 검수된 지역 데이터가 없어 AI가 추정한 생활권을 사용 중이에요.)' : '') +
-      '</div>',
-    '        </div>',
-    '      </div>',
+    zoneDataSource === 'ai_fallback'
+      ? '      <div class="sl-ai-reason sl-ai-reason-compact"><span class="sl-ai-reason-icon">' + IC_SPARK + '</span><span class="sl-ai-reason-text">이 여행지는 아직 검수된 지역 데이터가 없어 AI가 추정한 생활권을 사용 중이에요.</span></div>'
+      : '',
     '      <div class="sl-zone-cta-sticky" id="sl-zone-cta-sticky"></div>',
     '    </div>',
     '  </div>',
