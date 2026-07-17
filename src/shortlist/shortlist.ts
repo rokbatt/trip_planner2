@@ -75,6 +75,10 @@ let mapInstance: any = null;
 let mapMarkers: any[] = [];
 
 export function teardownShortlist(): void {
+  if (shellResizeHandler) {
+    window.removeEventListener('resize', shellResizeHandler);
+    shellResizeHandler = null;
+  }
   if (placeInfoWindow) {
     placeInfoWindow.close();
     placeInfoWindow = null;
@@ -359,6 +363,30 @@ function getTripDestination(): string {
   return currentTrip.destinations?.[0] ?? currentTrip.name ?? '';
 }
 
+let shellResizeHandler: (() => void) | null = null;
+
+/**
+ * `.sl-shell`의 높이를 CSS calc()로 추측하는 대신, 실제 화면에서 남은 공간을
+ * JS로 직접 측정해서 고정함. 여러 단계의 flex 상속 체인에 의존하는 CSS 방식은
+ * 브라우저/줌 레벨에 따라 어긋나기 쉬워서, 훨씬 확실한 이 방식으로 대체.
+ */
+function lockShellHeight(container: HTMLElement): void {
+  const shellEl = container.querySelector('.sl-shell') as HTMLElement;
+  if (!shellEl) return;
+
+  const applyHeight = () => {
+    const top = shellEl.getBoundingClientRect().top;
+    const available = window.innerHeight - top - 16; // 하단 여백 16px
+    shellEl.style.height = Math.max(400, available) + 'px';
+  };
+
+  applyHeight();
+
+  if (shellResizeHandler) window.removeEventListener('resize', shellResizeHandler);
+  shellResizeHandler = applyHeight;
+  window.addEventListener('resize', shellResizeHandler);
+}
+
 async function renderStep(container: HTMLElement): Promise<void> {
   container.innerHTML = [
     '<div class="sl-shell">',
@@ -368,6 +396,7 @@ async function renderStep(container: HTMLElement): Promise<void> {
   ].join('\n');
 
   renderStepper(container);
+  lockShellHeight(container);
 
   const body = container.querySelector('#sl-body') as HTMLElement;
   if (step === 1) await renderStep1(body);
@@ -766,6 +795,29 @@ function highlightZone(zoneId: string | null): void {
   }
 }
 
+/**
+ * Google Maps는 컨테이너 높이가 0인 상태에서 초기화되면 타일을 제대로 못 그리고
+ * 이후 컨테이너가 정상 크기로 바뀌어도 스스로 다시 그리지 않는 경우가 있음(잘 알려진 이슈).
+ * ResizeObserver로 컨테이너가 실제 크기를 갖는 순간을 감지해서 강제로 resize 이벤트를 쏴줌.
+ */
+function fixMapVisibilityOnResize(g: any, map: any, mapEl: HTMLElement, center: { lat: number; lng: number }): void {
+  let lastWidth = 0;
+  let lastHeight = 0;
+
+  const observer = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      const { width, height } = entry.contentRect;
+      if (width > 0 && height > 0 && (width !== lastWidth || height !== lastHeight)) {
+        lastWidth = width;
+        lastHeight = height;
+        g.maps.event.trigger(map, 'resize');
+        map.setCenter(center);
+      }
+    }
+  });
+  observer.observe(mapEl);
+}
+
 async function initMap(body: HTMLElement): Promise<void> {
   try {
     await loadGoogleMapsScript();
@@ -794,6 +846,8 @@ async function initMap(body: HTMLElement): Promise<void> {
     gestureHandling: 'greedy',
     styles: MAP_STYLE_LIGHT,
   });
+
+  fixMapVisibilityOnResize(g, mapInstance, mapEl, { lat: avgLat, lng: avgLng });
 
   addCustomZoomControl(mapInstance, body.querySelector('#sl-map') as HTMLElement);
 
@@ -1555,6 +1609,7 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
     styles: MAP_STYLE_STEP2,
   });
   step2MapInstance = map;
+  fixMapVisibilityOnResize(g, map, mapEl, { lat: selectedZone.centerLat, lng: selectedZone.centerLng });
 
   addCustomZoomControl(map, mapEl);
 
