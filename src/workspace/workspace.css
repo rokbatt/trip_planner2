@@ -230,7 +230,6 @@
 /* ── 메인 콘텐츠 ── */
 .ws-main {
   flex: 1;
-  height: 100vh;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -305,7 +304,6 @@
 
 .ws-content-body {
   flex: 1;
-  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   min-width: 0;
