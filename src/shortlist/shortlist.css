@@ -28,10 +28,12 @@
   display: flex;
   flex-direction: column;
   width: 100%;
+  height: calc(100dvh - 76px);
   max-width: min(84.6vw, 1512px);
   margin: 0 auto;
   padding: clamp(14px, 1.4vw, 22px) clamp(20px, 2.8vw, 40px);
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 /* ── 스테퍼 ── */
@@ -108,17 +110,17 @@
 /* ── 레이아웃: 지도 + 리스트 ── */
 .sl-step1-layout {
   display: grid;
-  grid-template-columns: minmax(0, 62fr) minmax(0, 38fr);
-  gap: clamp(14px, 1.6vw, 28px);
+  grid-template-columns: minmax(0, 60fr) minmax(0, 40fr);
+  gap: clamp(14px, 1.6vw, 24px);
   width: 100%;
-  align-items: start;
+  flex: 1;
+  min-height: 0;
 }
 
 .sl-map-wrap {
   position: relative;
   width: 100%;
-  aspect-ratio: 16 / 16;
-  min-height: 360px;
+  height: 100%;
   border-radius: 16px;
   overflow: hidden;
   border: 1px solid rgba(130,150,170,0.16);
@@ -163,7 +165,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  max-height: calc(100vh - 260px);
+  height: 100%;
   overflow-y: auto;
 }
 .sl-zone-panel-head {
@@ -890,9 +892,11 @@
 .sl-pass-cta svg { width: 16px; height: 16px; }
 
 @media (max-width: 900px) {
-  .sl-step1-layout, .sl-step2-layout { grid-template-columns: 1fr; max-width: 100%; }
-  .sl-map-wrap { aspect-ratio: 16 / 11; max-height: 320px; }
+  .sl-shell { height: auto; overflow: visible; }
+  .sl-step1-layout, .sl-step2-layout { grid-template-columns: 1fr; max-width: 100%; flex: none; min-height: 0; }
+  .sl-map-wrap { height: auto; aspect-ratio: 16 / 11; max-height: 320px; }
   .sl-map { min-height: 280px; }
+  .sl-zone-panel, .sl-step2-right { height: auto; max-height: none; overflow-y: visible; }
 }
 
 /* ── 커스텀 줌 컨트롤 (0.5 단위) ── */
