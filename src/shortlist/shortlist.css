@@ -473,8 +473,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
+  margin-bottom: 8px;
 }
+.sl-step2-topbar .sl-back-link { margin-bottom: 0; }
+.sl-step2 .sl-step1-header { margin-bottom: 6px; }
 
 .sl-step2-summary-card {
   display: flex;
