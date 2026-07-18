@@ -19,7 +19,6 @@ const IC_PLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const IC_BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>';
 const IC_SEARCH2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
 const IC_EXTLINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>';
-const IC_EDIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
 const IC_XCLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
 const IC_ROUTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>';
 
@@ -364,6 +363,7 @@ function getTripDestination(): string {
 }
 
 let shellResizeHandler: (() => void) | null = null;
+let step2MapResizeHandler: (() => void) | null = null;
 
 /**
  * `.sl-shell`의 높이를 CSS calc()로 추측하는 대신, 실제 화면에서 남은 공간을
@@ -387,6 +387,31 @@ function lockShellHeight(container: HTMLElement): void {
   window.addEventListener('resize', shellResizeHandler);
 }
 
+/**
+ * Step2의 sticky 지도는 부모(sl-step2-layout)가 우측 리스트만큼 길게 자라있어야
+ * 스크롤 내내 붙어있을 여유 공간이 생김. 그 상태에서 지도 자체 높이는
+ * "화면에 실제로 보이는 한 화면 분량"이어야 하므로, sl-shell과 동일하게
+ * CSS 추정 대신 JS로 (스크롤 뷰포트 높이 - 헤더 높이)를 직접 측정해서 고정.
+ */
+function lockStep2MapHeight(body: HTMLElement): void {
+  const leftEl = body.querySelector('.sl-step2-left') as HTMLElement;
+  const step2El = body.querySelector('.sl-step2') as HTMLElement;
+  const headerEl = body.querySelector('.sl-step2-header-row') as HTMLElement;
+  if (!leftEl || !step2El || !headerEl) return;
+
+  const applyHeight = () => {
+    const headerMarginBottom = parseFloat(getComputedStyle(headerEl).marginBottom || '0');
+    const available = step2El.clientHeight - headerEl.offsetHeight - headerMarginBottom;
+    leftEl.style.height = Math.max(380, available) + 'px';
+  };
+
+  applyHeight();
+
+  if (step2MapResizeHandler) window.removeEventListener('resize', step2MapResizeHandler);
+  step2MapResizeHandler = applyHeight;
+  window.addEventListener('resize', step2MapResizeHandler);
+}
+
 async function renderStep(container: HTMLElement): Promise<void> {
   container.innerHTML = [
     '<div class="sl-shell">',
@@ -397,6 +422,11 @@ async function renderStep(container: HTMLElement): Promise<void> {
 
   renderStepper(container);
   lockShellHeight(container);
+
+  if (step !== 2 && step2MapResizeHandler) {
+    window.removeEventListener('resize', step2MapResizeHandler);
+    step2MapResizeHandler = null;
+  }
 
   const body = container.querySelector('#sl-body') as HTMLElement;
   if (step === 1) await renderStep1(body);
@@ -1062,7 +1092,6 @@ async function renderStep2(body: HTMLElement): Promise<void> {
     '    </div>',
 
     '    <div class="sl-step2-topbar">',
-    '      <button class="sl-back-link" id="sl-back-1">' + IC_BACK + ' 지역 다시 선택</button>',
     '      <div class="sl-step2-summary-card">',
     '        <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">선택 지역</span><span class="sl-step2-summary-value">' + escapeHtml(selectedZone.name) + '</span></div>',
     '        <div class="sl-step2-summary-divider"></div>',
@@ -1084,8 +1113,8 @@ async function renderStep2(body: HTMLElement): Promise<void> {
     '            <span class="sl-budget-custom-unit">원</span>',
     '          </div>',
     '        </div>',
-    '        <button class="sl-step2-summary-edit" id="sl-back-1b">' + IC_EDIT + ' 수정</button>',
     '      </div>',
+    '      <button class="sl-back-link" id="sl-back-1">' + IC_BACK + ' 지역 다시 선택</button>',
     '    </div>',
     '  </div>',
 
@@ -1158,7 +1187,6 @@ async function renderStep2(body: HTMLElement): Promise<void> {
     renderStep(container);
   };
   body.querySelector('#sl-back-1')?.addEventListener('click', goBackToStep1);
-  body.querySelector('#sl-back-1b')?.addEventListener('click', goBackToStep1);
 
   body.querySelector('#sl-sort-select')?.addEventListener('change', (e) => {
     step2SortMode = (e.target as HTMLSelectElement).value as 'rating' | 'distance';
@@ -1205,6 +1233,7 @@ async function renderStep2(body: HTMLElement): Promise<void> {
     }
   });
 
+  lockStep2MapHeight(body);
   await initMapStep2(body, candidates);
 }
 
