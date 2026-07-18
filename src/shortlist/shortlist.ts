@@ -1660,7 +1660,7 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
 
   const inZoneIds = new Set(selectedZone.places.map((p) => p.id));
 
-  // 선택한 지역 밖 장소도 옅게 함께 찍어서, 사용자가 축소했을 때 트립 전체 장소를 파악할 수 있게 함
+  // 선택한 지역 밖 장소도 함께 찍어서, 사용자가 축소했을 때 트립 전체 장소를 파악할 수 있게 함
   allPlaces.forEach((p) => {
     if (p.lat == null || p.lng == null) return;
     if (inZoneIds.has(p.id)) return; // 지역 안 장소는 아래에서 강조된 스타일로 별도 처리
@@ -1670,7 +1670,6 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
       map,
       title: p.name,
       icon: buildCategoryIcon(g, p.mood, 'compact'),
-      opacity: 0.45,
       zIndex: 0,
     });
     marker.addListener('click', () => {
