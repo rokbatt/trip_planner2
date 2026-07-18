@@ -231,6 +231,7 @@
   flex-direction: column;
   gap: 8px;
   overflow-y: auto;
+  padding: 3px;
 }
 .sl-zone-card {
   position: relative;
@@ -238,7 +239,7 @@
   align-items: stretch;
   gap: 12px;
   text-align: left;
-  height: 120px;
+  height: 114px;
   flex-shrink: 0;
   padding: 12px 14px;
   border-radius: 12px;
