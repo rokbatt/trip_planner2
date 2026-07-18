@@ -402,8 +402,8 @@ function lockStep2MapHeight(body: HTMLElement): void {
   const applyHeight = () => {
     const headerMarginBottom = parseFloat(getComputedStyle(headerEl).marginBottom || '0');
     const available = step2El.clientHeight - headerEl.offsetHeight - headerMarginBottom;
-    // 지도 아래 남는 여백을 채우도록 기본 계산값보다 6% 키움
-    leftEl.style.height = Math.max(380, available * 1.06) + 'px';
+    // 지도 아래 남는 여백을 채우도록 기본 계산값보다 17% 키움
+    leftEl.style.height = Math.max(380, available * 1.17) + 'px';
   };
 
   applyHeight();
