@@ -523,8 +523,8 @@ function renderZoneCards(body: HTMLElement): void {
     const zoneId = (card as HTMLElement).dataset.zoneId!;
     card.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).classList.contains('sl-zone-thumb-more')) return;
-      pendingSelectedZoneId = zoneId;
-      highlightZone(zoneId);
+      pendingSelectedZoneId = pendingSelectedZoneId === zoneId ? null : zoneId;
+      highlightZone(pendingSelectedZoneId);
       renderZoneCards(body);
       renderSelectBar(body);
     });

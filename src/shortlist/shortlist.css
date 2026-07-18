@@ -254,8 +254,8 @@
 }
 .sl-zone-card:hover { box-shadow: 0 6px 18px rgba(11,42,92,0.12); transform: translateY(-1px); }
 .sl-zone-card.selected {
-  border-color: var(--zone-color);
-  box-shadow: 0 0 0 2px var(--zone-color), 0 8px 22px rgba(11,42,92,0.14);
+  border: 4px solid var(--zone-color);
+  box-shadow: 0 8px 22px rgba(11,42,92,0.14);
 }
 
 /* 왼쪽 정사각형 사진 — 카드 전체 높이만큼 (오른쪽 콘텐츠가 짧아진 만큼 사진도 컴팩트해짐) */
@@ -325,6 +325,7 @@
 .sl-zone-card-tags {
   display: flex;
   flex-wrap: nowrap;
+  flex-shrink: 0;
   overflow: hidden;
   gap: 5px;
   margin-bottom: 8px;
