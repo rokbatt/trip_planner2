@@ -181,9 +181,9 @@
 
 /* Step1 지도 범례: 좌측 하단 Google 워드마크 바로 옆에 초미니멀 컴팩트로 도킹 */
 .sl-step1-layout .sl-map-legend {
-  left: 54px;
+  left: 72px;
   right: auto;
-  bottom: 6px;
+  bottom: 2px;
   gap: 8px;
   align-items: center;
   background: rgba(255,255,255,0.85);
