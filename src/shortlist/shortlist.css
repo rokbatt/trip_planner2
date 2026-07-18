@@ -53,18 +53,20 @@
   flex: 1;
   min-height: 0;
 }
-/* Step2는 헤더+지도+리스트 전체가 하나의 스크롤 영역이 되도록 함
-   (기존: 리스트 영역만 따로 스크롤되던 이중 스크롤바 제거) */
-.sl-step2 {
-  overflow-y: auto;
-}
 
 /* ── 스테퍼 ── */
+/* 스테퍼와 그 오른쪽 슬롯(Step2의 필터 카드+뒤로가기)을 같은 줄에 정렬 */
+.sl-stepper-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
 .sl-stepper {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 16px;
 }
 .sl-step {
   display: flex;
@@ -507,18 +509,13 @@
 /* ── STEP 2: 숙소 후보 ── */
 /* ══════════════════ STEP 2 — Immigration Counter (redesign) ══════════════════ */
 
-/* 헤더(제목)와 뒤로가기+요약 카드를 한 줄로 묶어 Step1 헤더와 전체 높이를 맞춤 */
 .sl-step2-header-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
   margin-bottom: 12px;
 }
-.sl-step2-header-text { margin-bottom: 0; flex: 1 1 auto; min-width: 240px; }
+.sl-step2-header-text { margin-bottom: 0; }
 
-/* 필터(요약) 카드를 맨 위로, 뒤로가기 버튼은 그 아래 우측 정렬로 배치 */
+/* 필터(요약) 카드+뒤로가기 — 스테퍼 줄 우측(#sl-stepper-extra)에 배치되어
+   IMMIGRATION COUNTER 헤더보다 한 줄 위, 스테퍼와 같은 높이에 정렬됨 */
 .sl-step2-topbar {
   display: flex;
   flex-direction: column;
@@ -578,16 +575,18 @@
 .sl-budget-custom-input:focus { outline: none; border-color: #8FD8F8; }
 .sl-budget-custom-unit { font-size: 11px; color: #94A3B8; }
 
-/* height:auto — 우측 리스트(sl-step2-right)의 실제(긴) 콘텐츠 높이만큼
-   행 전체가 자라야 아래 sticky 지도가 스크롤 내내 붙어있을 여유 공간이 생김 */
+/* flex: none — flex:1(flex-basis:0%)을 쓰면 부모 높이에 맞춰 눌려버려서
+   height:auto가 무시되고, 그 결과 sticky 지도가 붙어있을 컨테이닝 블록
+   자체가 짧아져 sticky가 동작하지 않는 버그가 있었음.
+   flex:none + height:auto여야 우측 리스트(sl-step2-right)의 실제(긴)
+   콘텐츠 높이만큼 이 행 전체가 온전히 자람 */
 .sl-step2-layout {
   display: flex;
   align-items: flex-start;
   gap: clamp(14px, 1.6vw, 24px);
   width: 100%;
   height: auto;
-  flex: 1;
-  min-height: 0;
+  flex: none;
 }
 
 /* Step1(지도 55 : 리스트 45)과 동일한 비율 */
@@ -958,7 +957,6 @@
 
 @media (max-width: 900px) {
   .sl-shell { height: auto; min-height: 0; overflow: visible; }
-  .sl-step2 { overflow-y: visible; }
   .sl-step1-layout, .sl-step2-layout { flex-direction: column; height: auto; max-width: 100%; flex: none; min-height: 0; overflow-y: visible; }
   .sl-step1-layout > .sl-map-wrap, .sl-step1-layout > .sl-zone-panel,
   .sl-step2-layout > .sl-step2-left, .sl-step2-layout > .sl-step2-right { flex: none; width: 100%; }
@@ -966,8 +964,8 @@
   .sl-map { min-height: 280px; }
   .sl-zone-panel, .sl-step2-right { height: auto; max-height: none; overflow-y: visible; }
   .sl-step2-left { position: static; height: auto; }
-  .sl-step2-header-row { flex-direction: column; align-items: stretch; }
-  .sl-step2-topbar { flex-wrap: wrap; }
+  .sl-stepper-row { flex-direction: column; align-items: stretch; }
+  .sl-step2-topbar { align-items: stretch; }
 }
 
 /* ── 커스텀 줌 컨트롤 (0.5 단위) ── */
