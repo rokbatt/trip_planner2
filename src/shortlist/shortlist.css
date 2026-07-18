@@ -179,11 +179,11 @@
   flex-shrink: 0;
 }
 
-/* Step1 지도 범례: 우측 하단에 초미니멀 컴팩트로 도킹 */
+/* Step1 지도 범례: 좌측 하단 Google 워드마크 바로 옆에 초미니멀 컴팩트로 도킹 */
 .sl-step1-layout .sl-map-legend {
-  left: auto;
-  right: 16px;
-  bottom: 12px;
+  left: 54px;
+  right: auto;
+  bottom: 6px;
   gap: 8px;
   align-items: center;
   background: rgba(255,255,255,0.85);
