@@ -179,6 +179,32 @@
   flex-shrink: 0;
 }
 
+/* Step1 지도 범례: 우측 하단에 초미니멀 컴팩트로 도킹 */
+.sl-step1-layout .sl-map-legend {
+  left: auto;
+  right: 16px;
+  bottom: 12px;
+  gap: 8px;
+  align-items: center;
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(130,150,170,0.2);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 10px;
+  z-index: 5;
+}
+.sl-step1-layout .sl-map-legend span { align-items: center; gap: 4px; }
+.sl-step1-layout .sl-legend-dot { width: 6px; height: 6px; }
+
+/* Google Maps 기본 하단 UI(단축키/저작권/약관/오류신고) 숨김 */
+.sl-map-wrap .gm-style-cc,
+.sl-map-wrap .gmnoprint.gm-style-cc,
+.sl-map-wrap button[title="키보드 단축키"],
+.sl-map-wrap button[title="Keyboard shortcuts"] {
+  display: none !important;
+}
+
 /* ── Zone 패널 ── */
 .sl-zone-panel {
   display: flex;
