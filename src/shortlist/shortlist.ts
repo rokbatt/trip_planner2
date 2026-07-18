@@ -21,6 +21,11 @@ const IC_SEARCH2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 const IC_EXTLINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>';
 const IC_XCLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
 const IC_ROUTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>';
+const IC_CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>';
+const IC_PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-7.58 7-12A7 7 0 0 0 5 10c0 4.42 7 12 7 12z"/><circle cx="12" cy="10" r="2.4"/></svg>';
+const IC_GRID = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>';
+const IC_DOTS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg>';
+const IC_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
 
 const MOOD_LABEL: Record<string, string> = {
   '가고싶어': 'VISIT',
@@ -1721,7 +1726,24 @@ function highlightBasecampMarker(placeId: string | null): void {
 }
 
 
-/* ══════════════════ STEP 3 — Confirm + Boarding Pass ══════════════════ */
+/* ══════════════════ STEP 3 — Final Check ══════════════════ */
+
+interface Step3Item {
+  place: Place;
+  km: number;
+  minutes: number;
+  real: boolean;
+  realMode?: 'WALKING' | 'DRIVING';
+  realText?: string;
+}
+
+/** 평균 이동시간 등 집계용 분 단위 환산 — estimateTravel과 동일한 속도 가정(도보/대중교통/차량)을 모든 구간에 적용 */
+function estimateMinutes(km: number): number {
+  if (km <= 1.2) return Math.max(2, Math.round(km * 12));
+  if (km <= 4) return Math.max(8, Math.round(km * 4));
+  return Math.max(5, Math.round(km * 2.4));
+}
+
 async function renderStep3(body: HTMLElement): Promise<void> {
   if (!selectedZone || !selectedBasecamp) {
     step = 2;
@@ -1729,13 +1751,17 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     return;
   }
 
-  const others = selectedZone.places.filter((p) => p.id !== selectedBasecamp!.id);
-  const withDistance = others
+  const zone = selectedZone;
+  const basecamp = selectedBasecamp;
+  const dateRange = formatTripDateRange();
+
+  const others = zone.places.filter((p) => p.id !== basecamp.id);
+  const withDistance: Step3Item[] = others
     .filter((p) => p.lat != null && p.lng != null)
-    .map((p) => ({
-      place: p,
-      km: haversineKm(selectedBasecamp!.lat!, selectedBasecamp!.lng!, p.lat!, p.lng!),
-    }))
+    .map((p) => {
+      const km = haversineKm(basecamp.lat!, basecamp.lng!, p.lat!, p.lng!);
+      return { place: p, km, minutes: estimateMinutes(km), real: false };
+    })
     .sort((a, b) => a.km - b.km);
 
   // 처음 진입 시 기본적으로 가까운 곳(4km 이내)은 자동 체크
@@ -1746,72 +1772,146 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   }
 
   const closeCount = withDistance.filter((item) => item.km <= 1.5).length;
+  const budgetLabel = stayFilters.budget ? (BUDGET_PRESETS[stayFilters.budget]?.label ?? '직접설정') : '전체';
+
+  // 스테퍼 줄 우측: Step2와 동일한 요약 카드 + 뒤로가기로 흐름을 통일
+  const shellEl = body.closest('.sl-shell') as HTMLElement;
+  const stepperExtraEl = shellEl?.querySelector('#sl-stepper-extra') as HTMLElement;
+  if (stepperExtraEl) {
+    stepperExtraEl.innerHTML = [
+      '<div class="sl-step2-topbar">',
+      '  <div class="sl-step2-summary-card">',
+      '    <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">선택 지역</span><span class="sl-step2-summary-value">' + escapeHtml(zone.name) + '</span></div>',
+      '    <div class="sl-step2-summary-divider"></div>',
+      '    <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">여행 기간</span><span class="sl-step2-summary-value">' + escapeHtml(dateRange) + '</span></div>',
+      '    <div class="sl-step2-summary-divider"></div>',
+      '    <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">예산 (1박 1인)</span><span class="sl-step2-summary-value">' + escapeHtml(budgetLabel) + '</span></div>',
+      '  </div>',
+      '  <button class="sl-back-link" id="sl-back-2">' + IC_BACK + ' 숙소 다시 선택</button>',
+      '</div>',
+    ].join('\n');
+    stepperExtraEl.querySelector('#sl-back-2')?.addEventListener('click', () => {
+      step = 2;
+      const container = body.closest('.sl-shell')!.parentElement as HTMLElement;
+      renderStep(container);
+    });
+  }
+
+  const stars = typeof basecamp.google_rating === 'number' ? buildStars(basecamp.google_rating) : '';
+  const categoryLabel = basecamp.category || (basecamp.mood ? MOOD_LABEL[basecamp.mood] : '') || '숙소';
 
   body.innerHTML = [
     '<div class="sl-step3">',
-    '  <button class="sl-back-link" id="sl-back-2">' + IC_BACK + ' 숙소 다시 선택</button>',
-    '  <div class="sl-step1-header">',
-    '    <div class="sl-eyebrow">FINAL CHECK</div>',
-    '    <div class="sl-title">' + escapeHtml(selectedBasecamp.name) + ' 기준으로 갈 곳을 확정하세요</div>',
-    closeCount > 0
-      ? '<div class="sl-ai-note">' + closeCount + '곳은 숙소 기준 이동효율이 매우 좋아요.</div>'
-      : '',
+
+    '  <div class="sl-step2-header-row">',
+    '    <div class="sl-step1-header sl-step2-header-text">',
+    '      <div class="sl-eyebrow">FINAL CHECK</div>',
+    '      <div class="sl-title">이 숙소를 여행의 중심으로 확정할까요?</div>',
+    '      <div class="sl-sub">선택한 숙소를 기준으로 여행 동선과 정보를 최종 점검합니다.</div>',
+    '    </div>',
     '  </div>',
-    '  <div class="sl-confirm-list" id="sl-confirm-list"></div>',
-    '  <div class="sl-boarding-pass" id="sl-boarding-pass"></div>',
+
+    '  <div class="sl-step3-layout">',
+
+    '    <div class="sl-step3-left">',
+
+    '      <div class="sl-step3-card sl-step3-summary-card">',
+    '        <div class="sl-step3-summary-photo"' + (basecamp.photo_url ? ' style="background-image:url(\'' + basecamp.photo_url + '\')"' : '') + '>' + (basecamp.photo_url ? '' : IC_BED) + '</div>',
+    '        <div class="sl-step3-summary-body">',
+    '          <div class="sl-step3-summary-top">',
+    '            <div class="sl-step3-summary-name">' + escapeHtml(basecamp.name) + '</div>',
+    stars ? '            <div class="sl-step3-summary-stars">' + stars + '</div>' : '',
+    '          </div>',
+    '          <div class="sl-step3-summary-tags"><span class="sl-zone-tag">' + escapeHtml(categoryLabel) + '</span></div>',
+    basecamp.address ? '          <div class="sl-step3-summary-address">' + escapeHtml(basecamp.address) + '</div>' : '',
+    '          <div class="sl-step3-summary-grid">',
+    '            <div class="sl-step3-summary-field"><span class="sl-step3-summary-field-label">선택 지역</span><span class="sl-step3-summary-field-value">' + escapeHtml(zone.name) + '</span></div>',
+    '            <div class="sl-step3-summary-field"><span class="sl-step3-summary-field-label">여행 기간</span><span class="sl-step3-summary-field-value">' + escapeHtml(dateRange) + '</span></div>',
+    '            <div class="sl-step3-summary-field"><span class="sl-step3-summary-field-label">예산</span><span class="sl-step3-summary-field-value">' + escapeHtml(budgetLabel) + '</span></div>',
+    '          </div>',
+    '        </div>',
+    '      </div>',
+
+    '      <div class="sl-step3-card sl-step3-infra-card">',
+    '        <div class="sl-step3-card-title">주변 편의 인프라</div>',
+    '        <div class="sl-step3-card-desc">숙소를 기준으로 갈 곳을 확정하세요. 실제 이동시간은 백그라운드에서 갱신돼요.</div>',
+    closeCount > 0
+      ? '        <div class="sl-ai-note">' + closeCount + '곳은 숙소 기준 이동효율이 매우 좋아요.</div>'
+      : '',
+    '        <div class="sl-step3-infra-body">',
+    '          <div class="sl-map-wrap sl-step3-map-wrap">',
+    '            <div id="sl-map3" class="sl-map"></div>',
+    '            <div class="sl-map-legend">',
+    '              <span><span class="sl-legend-dot" style="--dot:#185FA5"></span>숙소</span>',
+    '              <span><span class="sl-legend-dot" style="--dot:#E24B4A"></span>관광(VISIT)</span>',
+    '              <span><span class="sl-legend-dot" style="--dot:#1D9E75"></span>맛집(FOOD)</span>',
+    '              <span><span class="sl-legend-dot" style="--dot:#7F77DD"></span>액티비티(ACTIVITY)</span>',
+    '            </div>',
+    '          </div>',
+    '          <div class="sl-step3-infra-list" id="sl-confirm-list"></div>',
+    '        </div>',
+    '      </div>',
+
+    '    </div>',
+
+    '    <div class="sl-step3-right">',
+
+    '      <div class="sl-step3-card">',
+    '        <div class="sl-step3-card-title">이 숙소를 선택하면</div>',
+    '        <div class="sl-step3-stat-grid" id="sl-step3-stats"></div>',
+    '      </div>',
+
+    '      <div class="sl-step3-card">',
+    '        <div class="sl-step3-card-title">놓친 장소 체크</div>',
+    '        <div class="sl-step3-card-desc">아직 확정하지 않은 주변 장소예요.</div>',
+    '        <div class="sl-step3-missed-list" id="sl-missed-list"></div>',
+    '      </div>',
+
+    '      <div class="sl-step3-card">',
+    '        <div class="sl-step3-card-title">예상 교통비 (1인 기준)</div>',
+    '        <div class="sl-step3-transport-row">',
+    '          <input type="number" class="sl-budget-custom-input sl-step3-transport-input" id="sl-transport-cost" placeholder="예: 100000" />',
+    '          <span class="sl-budget-custom-unit">원</span>',
+    '        </div>',
+    '        <div class="sl-step3-card-desc">Expense 탭에서 관리할 수 있어요.</div>',
+    '      </div>',
+
+    '    </div>',
+    '  </div>',
+
+    '  <div class="sl-step3-cta-wrap">',
+    '    <button class="sl-step2-cta" id="sl-proceed">' + IC_CHECK + ' 이 숙소를 여행 중심으로 확정하기</button>',
+    '    <div class="sl-step2-cta-hint">다음 단계에서 최적의 동선(Route)을 자동으로 생성해요.</div>',
+    '  </div>',
+
     '</div>',
   ].join('\n');
 
-  body.querySelector('#sl-back-2')?.addEventListener('click', () => {
-    step = 2;
-    const container = body.closest('.sl-shell')!.parentElement as HTMLElement;
-    renderStep(container);
+  body.querySelector('#sl-proceed')?.addEventListener('click', async () => {
+    const btn = body.querySelector('#sl-proceed') as HTMLButtonElement;
+    btn.disabled = true;
+    btn.textContent = '저장 중...';
+    await saveShortlistState();
+    window.dispatchEvent(
+      new CustomEvent('mongsil:navigateGate', { detail: { tripId: currentTripId, gate: 'route' } })
+    );
   });
 
-  const listEl = body.querySelector('#sl-confirm-list') as HTMLElement;
-  listEl.innerHTML = withDistance
-    .map(({ place, km }) => {
-      const travel = estimateTravel(km);
-      const checked = confirmedIds.has(place.id);
-      return [
-        '<label class="sl-confirm-item' + (checked ? ' checked' : '') + '">',
-        '  <input type="checkbox" data-place-id="' + place.id + '"' + (checked ? ' checked' : '') + ' />',
-        '  <span class="sl-confirm-mood-dot" style="--dot-color:' + (MOOD_COLOR[place.mood ?? ''] || '#94A3B8') + '"></span>',
-        '  <span class="sl-confirm-name">' + escapeHtml(place.name) + '</span>',
-        '  <span class="sl-confirm-travel">' + travel.icon + escapeHtml(travel.label) + '</span>',
-        '</label>',
-      ].join('');
-    })
-    .join('');
-
-  listEl.querySelectorAll('input[type="checkbox"]').forEach((input) => {
-    input.addEventListener('change', () => {
-      const placeId = (input as HTMLInputElement).dataset.placeId!;
-      if ((input as HTMLInputElement).checked) confirmedIds.add(placeId);
-      else confirmedIds.delete(placeId);
-      (input.closest('.sl-confirm-item') as HTMLElement).classList.toggle(
-        'checked',
-        (input as HTMLInputElement).checked
-      );
-      renderBoardingPass(body);
-    });
-  });
-
-  renderBoardingPass(body);
+  renderStep3Lists(body, withDistance);
+  initMapStep3(body, withDistance);
 
   // 실제 길찾기(Distance Matrix API) — 직선거리 추정치를 실제 이동시간으로 백그라운드에서 교체
-  loadRealTravelTimes(selectedBasecamp, withDistance).then((realTimes) => {
+  loadRealTravelTimes(basecamp, withDistance).then((realTimes) => {
     if (!realTimes || step !== 3) return;
-    listEl.querySelectorAll('.sl-confirm-item').forEach((item) => {
-      const input = item.querySelector('input[type="checkbox"]') as HTMLInputElement;
-      const placeId = input?.dataset.placeId;
-      const real = placeId ? realTimes.get(placeId) : undefined;
+    withDistance.forEach((item) => {
+      const real = realTimes.get(item.place.id);
       if (!real) return;
-      const travelEl = item.querySelector('.sl-confirm-travel') as HTMLElement;
-      if (!travelEl) return;
-      const icon = real.mode === 'WALKING' ? IC_WALK : IC_TAXI;
-      travelEl.innerHTML = icon + escapeHtml((real.mode === 'WALKING' ? '도보 ' : '차량 ') + real.durationText + ' (실제 경로)');
+      item.minutes = real.durationMin;
+      item.real = true;
+      item.realMode = real.mode;
+      item.realText = real.durationText;
     });
+    renderStep3Lists(body, withDistance);
   });
 }
 
@@ -1881,38 +1981,161 @@ async function loadRealTravelTimes(
   return results;
 }
 
-function renderBoardingPass(body: HTMLElement): void {
-  const passEl = body.querySelector('#sl-boarding-pass') as HTMLElement;
+/** 실제 경로가 도착했으면 그걸, 아니면 직선거리 추정치를 라벨로 */
+function step3TravelLabel(item: Step3Item): { icon: string; text: string } {
+  if (item.real && item.realMode && item.realText) {
+    const icon = item.realMode === 'WALKING' ? IC_WALK : IC_TAXI;
+    return { icon, text: (item.realMode === 'WALKING' ? '도보 ' : '차량 ') + item.realText };
+  }
+  const travel = estimateTravel(item.km);
+  return { icon: travel.icon, text: travel.label };
+}
+
+function buildStatTile(icon: string, title: string, value: string, desc: string, soon = false): string {
+  return [
+    '<div class="sl-step3-stat-tile' + (soon ? ' sl-step3-stat-tile--soon' : '') + '">',
+    '  <div class="sl-step3-stat-icon">' + icon + '</div>',
+    '  <div class="sl-step3-stat-title">' + title + '</div>',
+    '  <div class="sl-step3-stat-value">' + value + '</div>',
+    '  <div class="sl-step3-stat-desc">' + desc + '</div>',
+    '</div>',
+  ].join('');
+}
+
+/** 체크리스트 · 놓친 장소 · 통계 타일을 confirmedIds 기준으로 다시 그림 (확정/해제할 때마다 호출) */
+function renderStep3Lists(body: HTMLElement, withDistance: Step3Item[]): void {
   if (!selectedZone || !selectedBasecamp) return;
 
-  const confirmedPlaces = selectedZone.places.filter((p) => confirmedIds.has(p.id));
-  const counts = countByMood(confirmedPlaces);
+  const listEl = body.querySelector('#sl-confirm-list') as HTMLElement;
+  if (listEl) {
+    listEl.innerHTML = withDistance
+      .map((item) => {
+        const { icon, text } = step3TravelLabel(item);
+        const checked = confirmedIds.has(item.place.id);
+        return [
+          '<label class="sl-confirm-item' + (checked ? ' checked' : '') + '">',
+          '  <input type="checkbox" data-place-id="' + item.place.id + '"' + (checked ? ' checked' : '') + ' />',
+          '  <span class="sl-confirm-mood-dot" style="--dot-color:' + (MOOD_COLOR[item.place.mood ?? ''] || '#94A3B8') + '"></span>',
+          '  <span class="sl-confirm-name">' + escapeHtml(item.place.name) + '</span>',
+          '  <span class="sl-confirm-travel">' + icon + escapeHtml(text) + '</span>',
+          '</label>',
+        ].join('');
+      })
+      .join('');
 
-  passEl.innerHTML = [
-    '<div class="sl-pass-card">',
-    '  <div class="sl-pass-header">',
-    '    <span class="sl-pass-eyebrow">BASE</span>',
-    '    <span class="sl-pass-zone">' + escapeHtml(selectedZone.name) + '</span>',
-    '  </div>',
-    '  <div class="sl-pass-divider"></div>',
-    '  <div class="sl-pass-row">',
-    '    <div class="sl-pass-field"><span class="sl-pass-label">Hotel</span><span class="sl-pass-value">' + escapeHtml(selectedBasecamp.name) + '</span></div>',
-    '    <div class="sl-pass-field"><span class="sl-pass-label">Visit</span><span class="sl-pass-value">' + (counts['가고싶어'] ?? 0) + '</span></div>',
-    '    <div class="sl-pass-field"><span class="sl-pass-label">Food</span><span class="sl-pass-value">' + (counts['먹고싶어'] ?? 0) + '</span></div>',
-    '    <div class="sl-pass-field"><span class="sl-pass-label">Activity</span><span class="sl-pass-value">' + (counts['하고싶어'] ?? 0) + '</span></div>',
-    '  </div>',
-    '  <div class="sl-pass-divider"></div>',
-    '  <button class="sl-pass-cta" id="sl-proceed">Proceed to Route ' + IC_ARROW + '</button>',
-    '</div>',
-  ].join('\n');
+    listEl.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+      input.addEventListener('change', () => {
+        const placeId = (input as HTMLInputElement).dataset.placeId!;
+        if ((input as HTMLInputElement).checked) confirmedIds.add(placeId);
+        else confirmedIds.delete(placeId);
+        renderStep3Lists(body, withDistance);
+      });
+    });
+  }
 
-  passEl.querySelector('#sl-proceed')?.addEventListener('click', async () => {
-    const btn = passEl.querySelector('#sl-proceed') as HTMLButtonElement;
-    btn.disabled = true;
-    btn.textContent = '저장 중...';
-    await saveShortlistState();
-    window.dispatchEvent(
-      new CustomEvent('mongsil:navigateGate', { detail: { tripId: currentTripId, gate: 'route' } })
-    );
+  const missedEl = body.querySelector('#sl-missed-list') as HTMLElement;
+  if (missedEl) {
+    const missed = withDistance.filter((item) => !confirmedIds.has(item.place.id));
+    missedEl.innerHTML = missed.length
+      ? missed
+          .map((item) => {
+            const { text } = step3TravelLabel(item);
+            const moodLabel = MOOD_LABEL[item.place.mood ?? ''] || '';
+            return [
+              '<div class="sl-basecamp-card sl-missed-item">',
+              item.place.photo_url
+                ? '  <div class="sl-basecamp-thumb" style="background-image:url(\'' + item.place.photo_url + '\')"></div>'
+                : '  <div class="sl-basecamp-thumb sl-basecamp-thumb-empty">' + IC_PIN + '</div>',
+              '  <div class="sl-basecamp-info">',
+              '    <div class="sl-basecamp-name">' + escapeHtml(item.place.name) + '</div>',
+              '    <div class="sl-missed-tag">' + escapeHtml(moodLabel) + ' · ' + escapeHtml(text) + '</div>',
+              '  </div>',
+              '  <button type="button" class="sl-missed-add-btn" data-place-id="' + item.place.id + '">' + IC_PLUS + ' 추가</button>',
+              '</div>',
+            ].join('');
+          })
+          .join('')
+      : '<div class="sl-step3-missed-empty">모든 주변 장소를 확정했어요.</div>';
+
+    missedEl.querySelectorAll('.sl-missed-add-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const placeId = (btn as HTMLElement).dataset.placeId!;
+        confirmedIds.add(placeId);
+        renderStep3Lists(body, withDistance);
+      });
+    });
+  }
+
+  const statsEl = body.querySelector('#sl-step3-stats') as HTMLElement;
+  if (statsEl) {
+    const confirmedCount = withDistance.filter((item) => confirmedIds.has(item.place.id)).length;
+    const walkable = withDistance.filter((item) => item.km <= 1.5).length;
+    const avgMin = withDistance.length
+      ? Math.round(withDistance.reduce((sum, item) => sum + item.minutes, 0) / withDistance.length)
+      : 0;
+    const farthest = withDistance.length ? withDistance[withDistance.length - 1] : null;
+    const confirmedPlaces = selectedZone!.places.filter((p) => confirmedIds.has(p.id));
+    const counts = countByMood(confirmedPlaces);
+
+    statsEl.innerHTML = [
+      buildStatTile(IC_CLOCK, '평균 이동시간', avgMin + '분', '주변 장소 기준'),
+      buildStatTile(IC_WALK, '도보권 장소', walkable + '곳', '도보 15분 이내'),
+      buildStatTile(IC_CHECK, '확정한 장소', confirmedCount + ' / ' + withDistance.length + '곳', '체크한 장소 기준'),
+      buildStatTile(IC_PIN, '가장 먼 장소', farthest ? farthest.km.toFixed(1) + 'km' : '-', farthest ? escapeHtml(farthest.place.name) : '주변 장소 없음'),
+      buildStatTile(IC_GRID, '무드 구성', (counts['가고싶어'] ?? 0) + '·' + (counts['먹고싶어'] ?? 0) + '·' + (counts['하고싶어'] ?? 0), '관광·맛집·액티비티'),
+      buildStatTile(IC_DOTS, '생활 인프라', '준비 중', '대중교통·편의시설 등 (다음 업데이트)', true),
+    ].join('');
+  }
+}
+
+/** 숙소 + 주변 장소를 지도에 표시 (Step1/Step2와 동일한 Google Maps 컴포넌트 재사용, 신규 API 호출 없음) */
+async function initMapStep3(body: HTMLElement, withDistance: Step3Item[]): Promise<void> {
+  if (!selectedBasecamp) return;
+
+  try {
+    await loadGoogleMapsScript();
+  } catch (e) {
+    return;
+  }
+  const g = (window as any).google;
+  const mapEl = body.querySelector('#sl-map3') as HTMLElement;
+  if (!g?.maps || !mapEl || selectedBasecamp.lat == null || selectedBasecamp.lng == null) return;
+
+  const map = new g.maps.Map(mapEl, {
+    center: { lat: selectedBasecamp.lat, lng: selectedBasecamp.lng },
+    zoom: 14,
+    disableDefaultUI: true,
+    zoomControl: false,
+    fullscreenControl: false,
+    mapTypeControl: false,
+    streetViewControl: false,
+    keyboardShortcuts: false,
+    isFractionalZoomEnabled: true,
+    gestureHandling: 'greedy',
+    styles: MAP_STYLE_LIGHT,
+  });
+  fixMapVisibilityOnResize(g, map, mapEl, { lat: selectedBasecamp.lat, lng: selectedBasecamp.lng });
+  addCustomZoomControl(map, mapEl);
+
+  new g.maps.Marker({
+    position: { lat: selectedBasecamp.lat, lng: selectedBasecamp.lng },
+    map,
+    title: selectedBasecamp.name,
+    icon: buildCategoryIcon(g, '숙소', 'detailed'),
+    zIndex: 30,
+  });
+
+  withDistance.forEach((item) => {
+    if (item.place.lat == null || item.place.lng == null) return;
+    const marker = new g.maps.Marker({
+      position: { lat: item.place.lat, lng: item.place.lng },
+      map,
+      title: item.place.name,
+      icon: buildCategoryIcon(g, item.place.mood, 'compact'),
+      zIndex: confirmedIds.has(item.place.id) ? 10 : 1,
+    });
+    marker.addListener('click', () => {
+      showPlaceInfoWindow(g, map, marker, item.place);
+    });
   });
 }
