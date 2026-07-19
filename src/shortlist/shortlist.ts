@@ -23,9 +23,17 @@ const IC_XCLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const IC_ROUTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>';
 const IC_CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>';
 const IC_PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-7.58 7-12A7 7 0 0 0 5 10c0 4.42 7 12 7 12z"/><circle cx="12" cy="10" r="2.4"/></svg>';
-const IC_GRID = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>';
-const IC_DOTS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg>';
 const IC_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
+const IC_BUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="13" rx="2"/><path d="M4 11h16M7 20v-3M17 20v-3M8 8h8"/><circle cx="8" cy="14" r=".6" fill="currentColor"/><circle cx="16" cy="14" r=".6" fill="currentColor"/></svg>';
+const IC_HOUSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-6 8 6M6 10v9h12v-9M10 19v-5h4v5"/></svg>';
+const IC_BUILDING = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V6l7-3 7 3v15M9 21v-4h6v4M8 9h.01M12 9h.01M16 9h.01M8 13h.01M12 13h.01M16 13h.01"/></svg>';
+const IC_STORE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9l1-5h14l1 5M4 9v10h16V9M4 9h16M9 19v-6h6v6"/></svg>';
+const IC_COFFEE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13v5a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8z"/><path d="M17 9h2a2 2 0 0 1 0 4h-2M7 3v2M11 3v2"/></svg>';
+const IC_PHARM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v8M8 12h8"/></svg>';
+const IC_HOSPITAL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12.5c-2 3-8 7-8 7s-6-4-8-7a4.2 4.2 0 0 1 7-4.2A4.2 4.2 0 0 1 20 12.5z"/></svg>';
+const IC_ATM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h2M12 15h5"/></svg>';
+const IC_CART = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.2 11.2a1.5 1.5 0 0 0 1.5 1.2h8.3a1.5 1.5 0 0 0 1.5-1.2L21 8H6"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg>';
+const IC_STAR = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.3 6.9.7-5.1 4.6 1.4 6.8L12 17.6 5.9 20.4l1.4-6.8L2.2 9l6.9-.7L12 2z"/></svg>';
 
 const MOOD_LABEL: Record<string, string> = {
   '가고싶어': 'VISIT',
@@ -1737,6 +1745,39 @@ interface Step3Item {
   realText?: string;
 }
 
+/**
+ * 주변 편의 인프라 — 전세계 공통 시설 타입만 사용 (특정 국가 노선/브랜드 배제).
+ * ⚠️ 아래 거리/시간은 레이아웃 확인용 예시(샘플)이며, Phase 2에서 Google Places
+ *    Nearby Search 실데이터로 교체됨. 데이터가 붙기 전까지는 화면에도 "예시"로 명시.
+ */
+const INFRA_SAMPLE: { icon: string; color: string; name: string; dist: string; min: string }[] = [
+  { icon: IC_BUS, color: '#0B7CC4', name: '대중교통 (역/정류장)', dist: '210m', min: '3분' },
+  { icon: IC_STORE, color: '#1D9E75', name: '편의점', dist: '350m', min: '5분' },
+  { icon: IC_COFFEE, color: '#B45309', name: '카페', dist: '280m', min: '4분' },
+  { icon: IC_PHARM, color: '#E24B4A', name: '약국', dist: '430m', min: '6분' },
+  { icon: IC_HOSPITAL, color: '#D4537E', name: '병원/클리닉', dist: '450m', min: '6분' },
+  { icon: IC_ATM, color: '#F5A623', name: 'ATM', dist: '500m', min: '7분' },
+  { icon: IC_TAXI, color: '#D9931B', name: '택시 승차장', dist: '600m', min: '8분' },
+  { icon: IC_CART, color: '#7F77DD', name: '슈퍼마켓', dist: '520m', min: '7분' },
+];
+
+/**
+ * 여행 효율 점수 — Phase 2에서 Gemini가 정형화된 채점표로 산출할 예정.
+ * ⚠️ 아래 값은 UI 자리를 잡기 위한 예시(샘플). 안전도(야간)는 실측 소스가 없어 별점 항목에서 제외.
+ */
+const EFFICIENCY_SAMPLE = {
+  score: 88,
+  grade: 'Excellent',
+  note: '이 숙소는 여행 거점으로 적합해요',
+  items: [
+    { label: '이동 편의성', stars: 4 },
+    { label: '관광 접근성', stars: 5 },
+    { label: '편의시설', stars: 4 },
+    { label: '위치 만족도', stars: 4 },
+    { label: '가성비', stars: 4 },
+  ],
+};
+
 /** 평균 이동시간 등 집계용 분 단위 환산 — estimateTravel과 동일한 속도 가정(도보/대중교통/차량)을 모든 구간에 적용 */
 function estimateMinutes(km: number): number {
   if (km <= 1.2) return Math.max(2, Math.round(km * 12));
@@ -1774,9 +1815,16 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   const closeCount = withDistance.filter((item) => item.km <= 1.5).length;
   const budgetLabel = stayFilters.budget ? (BUDGET_PRESETS[stayFilters.budget]?.label ?? '직접설정') : '전체';
 
-  // 스테퍼 줄 우측: Step2와 동일한 요약 카드 + 뒤로가기로 흐름을 통일
+  void closeCount;
+
+  // 스테퍼 줄 우측: Step2와 동일한 요약 카드 + '수정'(숙소 다시 선택)으로 흐름을 통일
   const shellEl = body.closest('.sl-shell') as HTMLElement;
   const stepperExtraEl = shellEl?.querySelector('#sl-stepper-extra') as HTMLElement;
+  const goBackToStep2 = () => {
+    step = 2;
+    const container = body.closest('.sl-shell')!.parentElement as HTMLElement;
+    renderStep(container);
+  };
   if (stepperExtraEl) {
     stepperExtraEl.innerHTML = [
       '<div class="sl-step2-topbar">',
@@ -1786,23 +1834,44 @@ async function renderStep3(body: HTMLElement): Promise<void> {
       '    <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">여행 기간</span><span class="sl-step2-summary-value">' + escapeHtml(dateRange) + '</span></div>',
       '    <div class="sl-step2-summary-divider"></div>',
       '    <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">예산 (1박 1인)</span><span class="sl-step2-summary-value">' + escapeHtml(budgetLabel) + '</span></div>',
+      '    <button class="sl-step2-summary-edit" id="sl-back-2b">' + IC_EXTLINK + ' 수정</button>',
       '  </div>',
-      '  <button class="sl-back-link" id="sl-back-2">' + IC_BACK + ' 숙소 다시 선택</button>',
       '</div>',
     ].join('\n');
-    stepperExtraEl.querySelector('#sl-back-2')?.addEventListener('click', () => {
-      step = 2;
-      const container = body.closest('.sl-shell')!.parentElement as HTMLElement;
-      renderStep(container);
-    });
+    stepperExtraEl.querySelector('#sl-back-2b')?.addEventListener('click', goBackToStep2);
   }
 
   const stars = typeof basecamp.google_rating === 'number' ? buildStars(basecamp.google_rating) : '';
   const categoryLabel = basecamp.category || (basecamp.mood ? MOOD_LABEL[basecamp.mood] : '') || '숙소';
 
+  const eff = EFFICIENCY_SAMPLE;
+  const effRatings = eff.items
+    .map((it) => {
+      const filled = IC_STAR.repeat(it.stars);
+      const empty = '<span class="sl-eff-star-empty">' + IC_STAR + '</span>'.repeat(5 - it.stars);
+      return [
+        '<div class="sl-eff-rating">',
+        '  <span class="sl-eff-rating-label">' + escapeHtml(it.label) + '</span>',
+        '  <span class="sl-eff-rating-stars">' + filled + empty + '</span>',
+        '</div>',
+      ].join('');
+    })
+    .join('');
+
+  const infraRows = INFRA_SAMPLE
+    .map((f) => [
+      '<div class="sl-infra-row">',
+      '  <span class="sl-infra-icon" style="--infra-color:' + f.color + '">' + f.icon + '</span>',
+      '  <span class="sl-infra-name">' + escapeHtml(f.name) + '</span>',
+      '  <span class="sl-infra-dist">' + escapeHtml(f.min) + ' · ' + escapeHtml(f.dist) + '</span>',
+      '</div>',
+    ].join(''))
+    .join('');
+
   body.innerHTML = [
     '<div class="sl-step3">',
 
+    '  <button class="sl-back-link sl-step3-back" id="sl-back-2">' + IC_BACK + ' 숙소 다시 선택</button>',
     '  <div class="sl-step2-header-row">',
     '    <div class="sl-step1-header sl-step2-header-text">',
     '      <div class="sl-eyebrow">FINAL CHECK</div>',
@@ -1813,31 +1882,35 @@ async function renderStep3(body: HTMLElement): Promise<void> {
 
     '  <div class="sl-step3-layout">',
 
+    /* ── 좌측 메인 (65%) ── */
     '    <div class="sl-step3-left">',
 
+    // ① 여행 중심 요약
     '      <div class="sl-step3-card sl-step3-summary-card">',
-    '        <div class="sl-step3-summary-photo"' + (basecamp.photo_url ? ' style="background-image:url(\'' + basecamp.photo_url + '\')"' : '') + '>' + (basecamp.photo_url ? '' : IC_BED) + '</div>',
-    '        <div class="sl-step3-summary-body">',
-    '          <div class="sl-step3-summary-top">',
-    '            <div class="sl-step3-summary-name">' + escapeHtml(basecamp.name) + '</div>',
-    stars ? '            <div class="sl-step3-summary-stars">' + stars + '</div>' : '',
-    '          </div>',
-    '          <div class="sl-step3-summary-tags"><span class="sl-zone-tag">' + escapeHtml(categoryLabel) + '</span></div>',
-    basecamp.address ? '          <div class="sl-step3-summary-address">' + escapeHtml(basecamp.address) + '</div>' : '',
-    '          <div class="sl-step3-summary-grid">',
-    '            <div class="sl-step3-summary-field"><span class="sl-step3-summary-field-label">선택 지역</span><span class="sl-step3-summary-field-value">' + escapeHtml(zone.name) + '</span></div>',
-    '            <div class="sl-step3-summary-field"><span class="sl-step3-summary-field-label">여행 기간</span><span class="sl-step3-summary-field-value">' + escapeHtml(dateRange) + '</span></div>',
-    '            <div class="sl-step3-summary-field"><span class="sl-step3-summary-field-label">예산</span><span class="sl-step3-summary-field-value">' + escapeHtml(budgetLabel) + '</span></div>',
+    '        <div class="sl-step3-card-title">여행 중심 요약</div>',
+    '        <div class="sl-step3-summary-body-wrap">',
+    '          <div class="sl-step3-summary-photo"' + (basecamp.photo_url ? ' style="background-image:url(\'' + basecamp.photo_url + '\')"' : '') + '>' + (basecamp.photo_url ? '' : IC_BED) + '</div>',
+    '          <div class="sl-step3-summary-body">',
+    '            <div class="sl-step3-summary-top">',
+    '              <div class="sl-step3-summary-name">' + escapeHtml(basecamp.name) + '</div>',
+    stars ? '              <div class="sl-step3-summary-stars">' + stars + '</div>' : '',
+    '            </div>',
+    '            <div class="sl-step3-summary-tags"><span class="sl-zone-tag">' + escapeHtml(categoryLabel) + '</span></div>',
+    basecamp.address ? '            <div class="sl-step3-summary-address">' + escapeHtml(basecamp.address) + '</div>' : '',
+    '            <div class="sl-step3-summary-grid">',
+    '              <div class="sl-step3-summary-field"><span class="sl-step3-summary-field-label">선택 지역</span><span class="sl-step3-summary-field-value">' + escapeHtml(zone.name) + '</span></div>',
+    '              <div class="sl-step3-summary-field"><span class="sl-step3-summary-field-label">여행 기간</span><span class="sl-step3-summary-field-value">' + escapeHtml(dateRange) + '</span></div>',
+    '              <div class="sl-step3-summary-field"><span class="sl-step3-summary-field-label">예산 (1박 1인)</span><span class="sl-step3-summary-field-value">' + escapeHtml(budgetLabel) + '</span></div>',
+    '              <button class="sl-step2-summary-edit sl-step3-summary-edit" id="sl-back-2c">' + IC_EXTLINK + ' 수정</button>',
+    '            </div>',
     '          </div>',
     '        </div>',
     '      </div>',
 
+    // ② 주변 편의 인프라 — 지도 + 시설 리스트(Phase 2 예시)
     '      <div class="sl-step3-card sl-step3-infra-card">',
     '        <div class="sl-step3-card-title">주변 편의 인프라</div>',
-    '        <div class="sl-step3-card-desc">숙소를 기준으로 갈 곳을 확정하세요. 실제 이동시간은 백그라운드에서 갱신돼요.</div>',
-    closeCount > 0
-      ? '        <div class="sl-ai-note">' + closeCount + '곳은 숙소 기준 이동효율이 매우 좋아요.</div>'
-      : '',
+    '        <div class="sl-step3-card-desc">숙소를 기준으로 주요 편의시설까지의 거리입니다.</div>',
     '        <div class="sl-step3-infra-body">',
     '          <div class="sl-map-wrap sl-step3-map-wrap">',
     '            <div id="sl-map3" class="sl-map"></div>',
@@ -1848,49 +1921,82 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '              <span><span class="sl-legend-dot" style="--dot:#7F77DD"></span>액티비티(ACTIVITY)</span>',
     '            </div>',
     '          </div>',
-    '          <div class="sl-step3-infra-list" id="sl-confirm-list"></div>',
+    '          <div class="sl-step3-infra-side">',
+    '            <div class="sl-step3-infra-list">' + infraRows + '</div>',
+    '            <div class="sl-step3-infra-scale">',
+    '              <span><span class="sl-infra-scale-line" style="--sc:#1D9E75"></span>도보 5분 (400m)</span>',
+    '              <span><span class="sl-infra-scale-line" style="--sc:#0B7CC4"></span>도보 10분 (800m)</span>',
+    '              <span><span class="sl-infra-scale-line" style="--sc:#94A3B8"></span>도보 15분 (1.2km)</span>',
+    '            </div>',
+    '          </div>',
     '        </div>',
+    '        <div class="sl-step3-sample-note">* 시설별 거리는 레이아웃 예시예요. 실제 데이터는 곧 연동됩니다.</div>',
     '      </div>',
+
+    // ③ 여행 효율 점수 (Gemini 예정, 예시)
+    '      <div class="sl-step3-card sl-step3-eff-card">',
+    '        <div class="sl-step3-eff-score">',
+    '          <div class="sl-step3-eff-num">' + eff.score + '<span class="sl-step3-eff-max">/100</span></div>',
+    '          <div class="sl-step3-eff-grade">' + escapeHtml(eff.grade) + '</div>',
+    '          <div class="sl-step3-eff-note">' + escapeHtml(eff.note) + '</div>',
+    '        </div>',
+    '        <div class="sl-step3-eff-ratings">' + effRatings + '</div>',
+    '      </div>',
+    '      <div class="sl-step3-sample-note sl-step3-eff-samplenote">* AI가 분석할 예정이에요 (현재 예시 점수)</div>',
 
     '    </div>',
 
+    /* ── 우측 사이드 (35%) ── */
     '    <div class="sl-step3-right">',
 
+    // ① 이 숙소를 선택하면 (2x3 컬러 타일)
     '      <div class="sl-step3-card">',
     '        <div class="sl-step3-card-title">이 숙소를 선택하면</div>',
     '        <div class="sl-step3-stat-grid" id="sl-step3-stats"></div>',
+    '        <div class="sl-step3-sample-note">* 접근성 지표는 곧 실제 데이터로 연동돼요 (현재 예시)</div>',
     '      </div>',
 
+    // ② 놓친 장소 체크
     '      <div class="sl-step3-card">',
     '        <div class="sl-step3-card-title">놓친 장소 체크</div>',
-    '        <div class="sl-step3-card-desc">아직 확정하지 않은 주변 장소예요.</div>',
+    '        <div class="sl-step3-card-desc">선택하지 않은 주변 장소예요. 추가하면 여행이 더 풍성해져요.</div>',
     '        <div class="sl-step3-missed-list" id="sl-missed-list"></div>',
     '      </div>',
 
+    // ③ 예상 교통비
     '      <div class="sl-step3-card">',
     '        <div class="sl-step3-card-title">예상 교통비 (1인 기준)</div>',
+    '        <div class="sl-step3-card-desc">입력한 예산은 Expense 탭에 연동돼요.</div>',
     '        <div class="sl-step3-transport-row">',
-    '          <input type="number" class="sl-budget-custom-input sl-step3-transport-input" id="sl-transport-cost" placeholder="예: 100000" />',
+    '          <input type="number" class="sl-budget-custom-input sl-step3-transport-input" id="sl-transport-cost" placeholder="교통비 예산 입력 (예: 100000)" />',
     '          <span class="sl-budget-custom-unit">원</span>',
     '        </div>',
-    '        <div class="sl-step3-card-desc">Expense 탭에서 관리할 수 있어요.</div>',
+    '        <button class="sl-step3-expense-btn" id="sl-expense-link">Expense 탭에서 관리하기 ' + IC_EXTLINK + '</button>',
+    '      </div>',
+
+    // ④ 하단 CTA (우측 컬럼 맨 아래 — 레퍼런스와 동일)
+    '      <div class="sl-step3-cta-wrap">',
+    '        <button class="sl-step2-cta sl-step3-cta" id="sl-proceed"><span class="sl-step3-cta-main">' + IC_CHECK + ' 이 숙소를 여행 중심으로 확정하기</span><span class="sl-step3-cta-sub">다음 단계에서 최적의 동선(Route)을 자동으로 생성해요</span></button>',
     '      </div>',
 
     '    </div>',
-    '  </div>',
-
-    '  <div class="sl-step3-cta-wrap">',
-    '    <button class="sl-step2-cta" id="sl-proceed">' + IC_CHECK + ' 이 숙소를 여행 중심으로 확정하기</button>',
-    '    <div class="sl-step2-cta-hint">다음 단계에서 최적의 동선(Route)을 자동으로 생성해요.</div>',
     '  </div>',
 
     '</div>',
   ].join('\n');
 
+  body.querySelector('#sl-back-2')?.addEventListener('click', goBackToStep2);
+  body.querySelector('#sl-back-2c')?.addEventListener('click', goBackToStep2);
+  body.querySelector('#sl-expense-link')?.addEventListener('click', () => {
+    window.dispatchEvent(
+      new CustomEvent('mongsil:navigateGate', { detail: { tripId: currentTripId, gate: 'expense' } })
+    );
+  });
+
   body.querySelector('#sl-proceed')?.addEventListener('click', async () => {
     const btn = body.querySelector('#sl-proceed') as HTMLButtonElement;
     btn.disabled = true;
-    btn.textContent = '저장 중...';
+    btn.innerHTML = '저장 중...';
     await saveShortlistState();
     window.dispatchEvent(
       new CustomEvent('mongsil:navigateGate', { detail: { tripId: currentTripId, gate: 'route' } })
@@ -1991,10 +2097,10 @@ function step3TravelLabel(item: Step3Item): { icon: string; text: string } {
   return { icon: travel.icon, text: travel.label };
 }
 
-function buildStatTile(icon: string, title: string, value: string, desc: string, soon = false): string {
+function buildStatTile(icon: string, color: string, title: string, value: string, desc: string): string {
   return [
-    '<div class="sl-step3-stat-tile' + (soon ? ' sl-step3-stat-tile--soon' : '') + '">',
-    '  <div class="sl-step3-stat-icon">' + icon + '</div>',
+    '<div class="sl-step3-stat-tile">',
+    '  <span class="sl-step3-stat-icon" style="--stat-color:' + color + '">' + icon + '</span>',
     '  <div class="sl-step3-stat-title">' + title + '</div>',
     '  <div class="sl-step3-stat-value">' + value + '</div>',
     '  <div class="sl-step3-stat-desc">' + desc + '</div>',
@@ -2002,36 +2108,9 @@ function buildStatTile(icon: string, title: string, value: string, desc: string,
   ].join('');
 }
 
-/** 체크리스트 · 놓친 장소 · 통계 타일을 confirmedIds 기준으로 다시 그림 (확정/해제할 때마다 호출) */
+/** 놓친 장소 · 통계 타일을 confirmedIds 기준으로 다시 그림 (장소를 '추가'해 확정할 때마다 호출) */
 function renderStep3Lists(body: HTMLElement, withDistance: Step3Item[]): void {
   if (!selectedZone || !selectedBasecamp) return;
-
-  const listEl = body.querySelector('#sl-confirm-list') as HTMLElement;
-  if (listEl) {
-    listEl.innerHTML = withDistance
-      .map((item) => {
-        const { icon, text } = step3TravelLabel(item);
-        const checked = confirmedIds.has(item.place.id);
-        return [
-          '<label class="sl-confirm-item' + (checked ? ' checked' : '') + '">',
-          '  <input type="checkbox" data-place-id="' + item.place.id + '"' + (checked ? ' checked' : '') + ' />',
-          '  <span class="sl-confirm-mood-dot" style="--dot-color:' + (MOOD_COLOR[item.place.mood ?? ''] || '#94A3B8') + '"></span>',
-          '  <span class="sl-confirm-name">' + escapeHtml(item.place.name) + '</span>',
-          '  <span class="sl-confirm-travel">' + icon + escapeHtml(text) + '</span>',
-          '</label>',
-        ].join('');
-      })
-      .join('');
-
-    listEl.querySelectorAll('input[type="checkbox"]').forEach((input) => {
-      input.addEventListener('change', () => {
-        const placeId = (input as HTMLInputElement).dataset.placeId!;
-        if ((input as HTMLInputElement).checked) confirmedIds.add(placeId);
-        else confirmedIds.delete(placeId);
-        renderStep3Lists(body, withDistance);
-      });
-    });
-  }
 
   const missedEl = body.querySelector('#sl-missed-list') as HTMLElement;
   if (missedEl) {
@@ -2048,7 +2127,7 @@ function renderStep3Lists(body: HTMLElement, withDistance: Step3Item[]): void {
                 : '  <div class="sl-basecamp-thumb sl-basecamp-thumb-empty">' + IC_PIN + '</div>',
               '  <div class="sl-basecamp-info">',
               '    <div class="sl-basecamp-name">' + escapeHtml(item.place.name) + '</div>',
-              '    <div class="sl-missed-tag">' + escapeHtml(moodLabel) + ' · ' + escapeHtml(text) + '</div>',
+              '    <div class="sl-missed-tag"><span class="sl-missed-badge" style="--badge-color:' + (MOOD_COLOR[item.place.mood ?? ''] || '#94A3B8') + '">' + escapeHtml(moodLabel) + '</span>' + escapeHtml(text) + '</div>',
               '  </div>',
               '  <button type="button" class="sl-missed-add-btn" data-place-id="' + item.place.id + '">' + IC_PLUS + ' 추가</button>',
               '</div>',
@@ -2068,22 +2147,20 @@ function renderStep3Lists(body: HTMLElement, withDistance: Step3Item[]): void {
 
   const statsEl = body.querySelector('#sl-step3-stats') as HTMLElement;
   if (statsEl) {
-    const confirmedCount = withDistance.filter((item) => confirmedIds.has(item.place.id)).length;
     const walkable = withDistance.filter((item) => item.km <= 1.5).length;
     const avgMin = withDistance.length
       ? Math.round(withDistance.reduce((sum, item) => sum + item.minutes, 0) / withDistance.length)
       : 0;
-    const farthest = withDistance.length ? withDistance[withDistance.length - 1] : null;
-    const confirmedPlaces = selectedZone!.places.filter((p) => confirmedIds.has(p.id));
-    const counts = countByMood(confirmedPlaces);
 
+    // 평균 이동시간·도보권 장소는 실데이터(직선거리/실측 경로) 기반.
+    // 대중교통·편의시설·관광지·편의점 접근성은 Phase 2(Nearby Search) 예시 — 안전도(야간)는 실측 불가라 제외.
     statsEl.innerHTML = [
-      buildStatTile(IC_CLOCK, '평균 이동시간', avgMin + '분', '주변 장소 기준'),
-      buildStatTile(IC_WALK, '도보권 장소', walkable + '곳', '도보 15분 이내'),
-      buildStatTile(IC_CHECK, '확정한 장소', confirmedCount + ' / ' + withDistance.length + '곳', '체크한 장소 기준'),
-      buildStatTile(IC_PIN, '가장 먼 장소', farthest ? farthest.km.toFixed(1) + 'km' : '-', farthest ? escapeHtml(farthest.place.name) : '주변 장소 없음'),
-      buildStatTile(IC_GRID, '무드 구성', (counts['가고싶어'] ?? 0) + '·' + (counts['먹고싶어'] ?? 0) + '·' + (counts['하고싶어'] ?? 0), '관광·맛집·액티비티'),
-      buildStatTile(IC_DOTS, '생활 인프라', '준비 중', '대중교통·편의시설 등 (다음 업데이트)', true),
+      buildStatTile(IC_CLOCK, '#0B7CC4', '평균 이동시간', avgMin + '분', '전체 장소 기준'),
+      buildStatTile(IC_WALK, '#1D9E75', '도보권 장소', walkable + '곳', '도보 15분 이내'),
+      buildStatTile(IC_BUS, '#0B7CC4', '대중교통 접근성', '우수', '주요 역·정류장 인접'),
+      buildStatTile(IC_HOUSE, '#F5A623', '편의시설 접근성', '매우 좋음', '편의점·카페·마트 등'),
+      buildStatTile(IC_BUILDING, '#1D9E75', '관광지 접근성', '매우 좋음', '주요 관광지 근접'),
+      buildStatTile(IC_CART, '#0F9E9E', '편의점 접근성', '좋음', '24시 편의점 인근'),
     ].join('');
   }
 }

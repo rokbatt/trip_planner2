@@ -538,6 +538,23 @@
 .sl-step2-summary-label { font-size: 9.5px; color: #94A3B8; font-weight: 600; }
 .sl-step2-summary-value { font-size: 12.5px; color: #0B2A5C; font-weight: 700; }
 .sl-step2-summary-divider { width: 1px; height: 22px; background: rgba(130,150,170,0.24); }
+.sl-step2-summary-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: #F1F6FB;
+  color: #0B7CC4;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 150ms ease;
+}
+.sl-step2-summary-edit svg { width: 12px; height: 12px; flex-shrink: 0; }
+.sl-step2-summary-edit:hover { background: #E1F0FA; }
 
 .sl-step2-summary-budget { position: relative; }
 .sl-budget-select {
@@ -924,8 +941,26 @@
 }
 .sl-confirm-travel svg { width: 14px; height: 14px; flex-shrink: 0; }
 
-/* ══════════════════ STEP 3 — Final Check (redesign) ══════════════════ */
+/* ══════════════════ STEP 3 — Final Check (redesign, Reference 기준) ══════════════════ */
 
+/* ── 공통 카드 시스템 (모든 Step3 카드가 하나의 디자인 규칙 공유) ── */
+.sl-step3-card {
+  background: #FFFFFF;
+  border: 1px solid #E8EDF5;
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(11,42,92,0.03);
+  transition: box-shadow 150ms ease;
+}
+.sl-step3-card:hover { box-shadow: 0 4px 16px rgba(11,42,92,0.06); }
+.sl-step3-card-title { font-size: 16px; font-weight: 700; color: #0B2A5C; letter-spacing: -0.01em; }
+.sl-step3-card-desc { font-size: 12.5px; color: #94A3B8; margin-top: 5px; margin-bottom: 18px; }
+
+.sl-step3-back { margin-bottom: 10px; }
+
+/* ── 레이아웃: 좌 65% / 우 35% ──
+   align-items: stretch — 좌측(지도 포함, 더 긴 편)에 맞춰 우측 컬럼도 늘어나면서
+   우측 맨 아래 CTA(margin-top:auto)가 바닥에 정렬됨 (레퍼런스와 동일한 하단 배치) */
 .sl-step3-layout {
   display: flex;
   align-items: stretch;
@@ -935,21 +970,11 @@
 .sl-step3-left { flex: 65 1 0%; min-width: 0; display: flex; flex-direction: column; gap: 24px; }
 .sl-step3-right { flex: 35 1 0%; min-width: 0; display: flex; flex-direction: column; gap: 24px; }
 
-/* 공통 카드 규칙 — radius/padding/border/shadow 전부 통일 */
-.sl-step3-card {
-  background: rgba(255,255,255,0.9);
-  border: 1px solid rgba(130,150,170,0.18);
-  border-radius: 16px;
-  padding: 28px;
-  box-shadow: 0 2px 10px rgba(11,42,92,0.04);
-}
-.sl-step3-card-title { font-size: 15px; font-weight: 700; color: #0B2A5C; }
-.sl-step3-card-desc { font-size: 12.5px; color: #94A3B8; margin-top: 4px; margin-bottom: 16px; }
-
-/* ── 여행 중심 요약 ── */
-.sl-step3-summary-card { display: flex; gap: 24px; }
+/* ── ① 여행 중심 요약 ── */
+.sl-step3-summary-body-wrap { display: flex; gap: 22px; margin-top: 18px; }
 .sl-step3-summary-photo {
-  width: 200px;
+  width: 190px;
+  height: 150px;
   flex-shrink: 0;
   border-radius: 14px;
   background-size: cover;
@@ -960,89 +985,136 @@
   justify-content: center;
   color: #8FD8F8;
 }
-.sl-step3-summary-photo svg { width: 32px; height: 32px; }
+.sl-step3-summary-photo svg { width: 34px; height: 34px; }
 .sl-step3-summary-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.sl-step3-summary-top {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-}
-.sl-step3-summary-name { font-size: 19px; font-weight: 700; color: #0B2A5C; font-family: 'Instrument Serif', Georgia, serif; }
+.sl-step3-summary-top { display: flex; align-items: baseline; gap: 12px; }
+.sl-step3-summary-name { font-size: 20px; font-weight: 700; color: #0B2A5C; letter-spacing: -0.01em; }
 .sl-step3-summary-stars { font-size: 13px; color: #F5A623; font-weight: 700; white-space: nowrap; }
-.sl-step3-summary-tags { display: flex; gap: 6px; margin-top: 8px; }
-.sl-step3-summary-address { font-size: 12.5px; color: #64748B; margin-top: 10px; line-height: 1.5; }
+.sl-step3-summary-tags { display: flex; gap: 6px; margin-top: 9px; }
+.sl-step3-summary-address { font-size: 12.5px; color: #64748B; margin-top: 11px; line-height: 1.5; }
 .sl-step3-summary-grid {
   display: grid;
-  grid-template-columns: 1fr 1.5fr 1fr;
-  gap: 16px;
+  grid-template-columns: 1fr 1.4fr 0.9fr auto;
+  align-items: end;
+  gap: 18px;
   margin-top: auto;
   padding-top: 20px;
 }
-.sl-step3-summary-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.sl-step3-summary-field-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; color: #94A3B8; }
+.sl-step3-summary-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.sl-step3-summary-field-label { font-size: 11px; font-weight: 600; color: #94A3B8; }
 .sl-step3-summary-field-value {
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 700;
   color: #0B2A5C;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.sl-step3-summary-edit { align-self: end; }
 
-/* ── 주변 편의 인프라 (핵심 카드) ── */
-.sl-step3-infra-card { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.sl-step3-infra-body {
+/* ── ② 주변 편의 인프라 (지도 70% + 시설 리스트 30%) ── */
+.sl-step3-infra-body { display: flex; gap: 20px; }
+.sl-step3-map-wrap { flex: 68 1 0%; min-width: 0; height: 340px; }
+.sl-step3-infra-side { flex: 32 1 0%; min-width: 0; display: flex; flex-direction: column; }
+.sl-step3-infra-list { display: flex; flex-direction: column; }
+.sl-infra-row {
   display: flex;
-  gap: 20px;
-  flex: 1;
-  min-height: 380px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 2px;
+  border-bottom: 1px dashed rgba(130,150,170,0.16);
 }
-.sl-step3-map-wrap { flex: 58 1 0%; min-width: 0; }
-.sl-step3-infra-list {
-  flex: 42 1 0%;
-  min-width: 0;
+.sl-infra-row:last-child { border-bottom: none; }
+.sl-infra-icon {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--infra-color);
+  background: color-mix(in srgb, var(--infra-color) 12%, white);
+}
+.sl-infra-icon svg { width: 15px; height: 15px; }
+.sl-infra-name { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; color: #1E293B; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sl-infra-dist { font-size: 11.5px; font-weight: 600; color: #64748B; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sl-step3-infra-scale {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  overflow-y: auto;
-  padding-right: 2px;
+  gap: 5px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(130,150,170,0.14);
 }
-.sl-step3-infra-list .sl-confirm-item { padding: 10px 12px; }
+.sl-step3-infra-scale span { display: flex; align-items: center; gap: 7px; font-size: 10.5px; color: #94A3B8; font-weight: 600; }
+.sl-infra-scale-line { width: 16px; height: 0; border-top: 2px dotted var(--sc); flex-shrink: 0; }
 
-/* ── 이 숙소를 선택하면 (2x3 통계 그리드) ── */
-.sl-step3-stat-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
+.sl-step3-sample-note { font-size: 10.5px; color: #B0BAC5; margin-top: 14px; }
+.sl-step3-eff-samplenote { margin-top: -14px; padding-left: 4px; }
+
+/* ── ③ 여행 효율 점수 ── */
+.sl-step3-eff-card { display: flex; align-items: center; gap: 28px; }
+.sl-step3-eff-score { flex-shrink: 0; text-align: center; padding-right: 28px; border-right: 1px solid #E8EDF5; }
+.sl-step3-eff-num { font-size: 46px; font-weight: 800; color: #0B2A5C; line-height: 1; letter-spacing: -0.02em; }
+.sl-step3-eff-max { font-size: 17px; font-weight: 700; color: #B0BAC5; }
+.sl-step3-eff-grade {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: #E1F5EE;
+  color: #0F6E56;
+  font-size: 12px;
+  font-weight: 700;
 }
+.sl-step3-eff-note { font-size: 11.5px; color: #94A3B8; margin-top: 8px; }
+.sl-step3-eff-ratings { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; }
+.sl-eff-rating { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sl-eff-rating-label { font-size: 12.5px; font-weight: 600; color: #475569; }
+.sl-eff-rating-stars { display: inline-flex; gap: 1px; color: #F5A623; white-space: nowrap; }
+.sl-eff-rating-stars svg { width: 13px; height: 13px; }
+.sl-eff-star-empty { color: #E2E8F0; display: inline-flex; }
+
+/* ── ④ 이 숙소를 선택하면 (2x3 컬러 타일) ── */
+.sl-step3-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .sl-step3-stat-tile {
-  border: 1px solid rgba(130,150,170,0.18);
-  border-radius: 12px;
-  padding: 14px 16px;
-  background: #F8FBFE;
-  box-shadow: 0 1px 3px rgba(11,42,92,0.03);
+  border: 1px solid #E8EDF5;
+  border-radius: 14px;
+  padding: 15px 16px;
+  background: #FFFFFF;
 }
-.sl-step3-stat-icon { width: 20px; height: 20px; color: #0B7CC4; margin-bottom: 8px; }
-.sl-step3-stat-icon svg { width: 100%; height: 100%; }
-.sl-step3-stat-title { font-size: 11px; font-weight: 700; color: #64748B; }
-.sl-step3-stat-value { font-size: 17px; font-weight: 700; color: #0B2A5C; margin-top: 3px; font-variant-numeric: tabular-nums; }
+.sl-step3-stat-icon {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  color: var(--stat-color);
+  background: color-mix(in srgb, var(--stat-color) 13%, white);
+  margin-bottom: 10px;
+}
+.sl-step3-stat-icon svg { width: 17px; height: 17px; }
+.sl-step3-stat-title { font-size: 11.5px; font-weight: 600; color: #64748B; }
+.sl-step3-stat-value { font-size: 18px; font-weight: 700; color: #0B2A5C; margin-top: 3px; font-variant-numeric: tabular-nums; }
 .sl-step3-stat-desc { font-size: 10.5px; color: #94A3B8; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sl-step3-stat-tile--soon {
-  background: transparent;
-  border-style: dashed;
-  border-color: rgba(130,150,170,0.32);
-}
-.sl-step3-stat-tile--soon .sl-step3-stat-icon,
-.sl-step3-stat-tile--soon .sl-step3-stat-value { color: #B0BAC5; }
 
-/* ── 놓친 장소 체크 ── */
-.sl-step3-missed-list { display: flex; flex-direction: column; gap: 8px; max-height: 240px; overflow-y: auto; }
-.sl-missed-item { padding: 8px 10px; cursor: default; }
+/* ── ⑤ 놓친 장소 체크 ── */
+.sl-step3-missed-list { display: flex; flex-direction: column; gap: 10px; }
+.sl-missed-item { padding: 10px; cursor: default; }
 .sl-missed-item:hover { border-color: #8FD8F8; box-shadow: 0 3px 10px rgba(11,42,92,0.06); transform: translateY(-1px); }
-.sl-missed-item .sl-basecamp-thumb { width: 44px; height: 44px; }
-.sl-missed-item .sl-basecamp-name { font-size: 12.5px; }
-.sl-missed-tag { font-size: 11px; color: #94A3B8; margin-top: 2px; }
+.sl-missed-item .sl-basecamp-thumb { width: 46px; height: 46px; border-radius: 10px; }
+.sl-missed-item .sl-basecamp-name { font-size: 13px; }
+.sl-missed-tag { display: flex; align-items: center; gap: 7px; font-size: 11px; color: #94A3B8; margin-top: 4px; }
+.sl-missed-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--badge-color);
+  background: color-mix(in srgb, var(--badge-color) 12%, white);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
 .sl-missed-add-btn {
   display: flex;
   align-items: center;
@@ -1053,8 +1125,8 @@
   color: #0B2A5C;
   font-size: 11.5px;
   font-weight: 700;
-  padding: 6px 10px;
-  border-radius: 8px;
+  padding: 7px 12px;
+  border-radius: 9px;
   cursor: pointer;
   transition: background 150ms ease, border-color 150ms ease;
 }
@@ -1062,12 +1134,35 @@
 .sl-missed-add-btn:hover { background: #F1F6FB; border-color: #8FD8F8; }
 .sl-step3-missed-empty { text-align: center; padding: 20px; font-size: 12.5px; color: #94A3B8; }
 
-/* ── 예상 교통비 ── */
+/* ── ⑥ 예상 교통비 ── */
 .sl-step3-transport-row { display: flex; align-items: center; gap: 8px; }
-.sl-step3-transport-input { flex: 1; }
+.sl-step3-transport-input { flex: 1; padding: 11px 12px; }
+.sl-step3-expense-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid rgba(130,150,170,0.24);
+  border-radius: 10px;
+  background: #F8FBFE;
+  color: #0B7CC4;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+.sl-step3-expense-btn svg { width: 13px; height: 13px; }
+.sl-step3-expense-btn:hover { background: #EAF6FD; border-color: #8FD8F8; }
 
-/* ── 하단 CTA — Step2와 완전히 동일한 스타일(.sl-step2-cta) 재사용 ── */
-.sl-step3-cta-wrap { margin-top: 32px; }
+/* ── 하단 CTA (우측 컬럼 맨 아래, Step2 .sl-step2-cta 기반 + 서브텍스트) ── */
+.sl-step3-cta-wrap { margin-top: auto; }
+.sl-step3-cta { flex-direction: column; gap: 4px; padding: 18px; height: auto; }
+.sl-step3-cta-main { display: flex; align-items: center; gap: 6px; font-size: 14.5px; }
+.sl-step3-cta-main svg { width: 15px; height: 15px; }
+.sl-step3-cta-sub { font-size: 11.5px; font-weight: 500; opacity: 0.75; }
 
 @media (max-width: 900px) {
   .sl-shell { height: auto; min-height: 0; overflow: visible; }
@@ -1083,10 +1178,14 @@
 
   .sl-step3-layout { flex-direction: column; }
   .sl-step3-left, .sl-step3-right { flex: none; width: 100%; }
-  .sl-step3-summary-card { flex-direction: column; }
+  .sl-step3-summary-body-wrap { flex-direction: column; }
   .sl-step3-summary-photo { width: 100%; height: 180px; }
-  .sl-step3-infra-body { flex-direction: column; min-height: 0; }
+  .sl-step3-summary-grid { grid-template-columns: 1fr 1fr; }
+  .sl-step3-summary-edit { grid-column: 1 / -1; justify-self: start; }
+  .sl-step3-infra-body { flex-direction: column; }
   .sl-step3-map-wrap { height: 260px; }
+  .sl-step3-eff-card { flex-direction: column; align-items: stretch; gap: 20px; }
+  .sl-step3-eff-score { border-right: none; border-bottom: 1px solid #E8EDF5; padding-right: 0; padding-bottom: 18px; }
   .sl-step3-stat-grid { grid-template-columns: 1fr 1fr; }
 }
 
