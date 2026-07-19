@@ -622,6 +622,8 @@ function renderSelectBar(body: HTMLElement): void {
     selectedBasecamp = null;
     confirmedIds = new Set();
     step = 2;
+    // 지역 선택 시점에 바로 저장 — 여기서 새로고침해도 Step2부터 복원됨 (진행상황 유실 방지)
+    void saveShortlistState();
     const container = body.closest('.sl-shell')!.parentElement as HTMLElement;
     renderStep(container);
   });
@@ -1159,7 +1161,7 @@ async function renderStep2(body: HTMLElement): Promise<void> {
 
     '      <section class="sl-hotel-sites-section">',
     '        <div class="sl-section-title">숙소 검색 사이트</div>',
-    '        <div class="sl-section-desc">선택한 지역 기준으로 바로 검색해보세요.</div>',
+    '        <div class="sl-section-desc">선택한 지역 기준으로 바로 검색해보세요. <span class="sl-rating-caveat">★ 점수는 예약 편의를 종합한 Claude 편집 평가로, 각 사이트의 실제 이용자 평점이 아니에요.</span></div>',
     '        <div class="sl-hotel-sites-grid" id="sl-hotel-sites"></div>',
     '      </section>',
 
@@ -1436,7 +1438,7 @@ function renderHotelSiteCards(body: HTMLElement, destination: string, zoneName: 
     '<a class="sl-hotel-site-card" href="' + site.buildUrl(destination, zoneName, stayFilters) + '" target="_blank" rel="noopener noreferrer">',
     '  <img class="sl-hotel-site-logo" src="https://www.google.com/s2/favicons?domain=' + site.domain + '&sz=128" alt="" />',
     '  <div class="sl-hotel-site-name">' + escapeHtml(site.name) + '</div>',
-    '  <div class="sl-hotel-site-rating">★ ' + site.editorialRating.toFixed(1) + '</div>',
+    '  <div class="sl-hotel-site-rating" title="Claude 편집 평가 (실제 이용자 평점 아님)"><span class="sl-hotel-site-rating-tag">편집</span>★ ' + site.editorialRating.toFixed(1) + '</div>',
     '  <div class="sl-hotel-site-zone">' + escapeHtml(zoneName) + ' 지역</div>',
     '  <div class="sl-hotel-site-filter">' + (site.filterSupport === 'unsupported' ? '지역만 검색' : escapeHtml(filterNote) + (site.filterSupport === 'best_effort' ? ' · 참고용' : '')) + '</div>',
     '  <div class="sl-hotel-site-cta">바로 검색 ' + IC_EXTLINK + '</div>',
@@ -1465,8 +1467,9 @@ function renderBasecampList(body: HTMLElement, candidates: Place[]): void {
   if (candidates.length === 0) {
     listEl.innerHTML = [
       '<div class="sl-no-candidates">',
-      '  <div>이 지역엔 STAY로 분류된 숙소가 없어요.</div>',
-      '  <div class="sl-sub">Brainstorm(IDEAS) 게이트에서 숙소 후보를 STAY로 분류해주세요.</div>',
+      '  <div>이 지역엔 아직 담아둔 숙소 후보가 없어요.</div>',
+      '  <div class="sl-sub">위의 <b>숙소 검색 사이트</b>에서 찾아보거나, <b>직접 숙소 선택하기</b>에 숙소 이름을 붙여넣어 바로 추가할 수 있어요.</div>',
+      '  <div class="sl-sub">Brainstorm(IDEAS) 게이트에서 숙소를 STAY로 분류해두면 여기 자동으로 모여요.</div>',
       '</div>',
     ].join('\n');
     return;
@@ -1516,6 +1519,8 @@ function renderSelectedHotelPreview(body: HTMLElement, candidates: Place[]): voi
     selectedBasecamp = hotel;
     confirmedIds = new Set();
     step = 3;
+    // 숙소 선택 시점에 바로 저장 — 여기서 새로고침해도 Step3부터 복원됨 (진행상황 유실 방지)
+    void saveShortlistState();
     const container = body.closest('.sl-shell')!.parentElement as HTMLElement;
     renderStep(container);
   };
