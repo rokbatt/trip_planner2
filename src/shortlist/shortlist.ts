@@ -2102,7 +2102,7 @@ async function loadNearbyInfra(body: HTMLElement, basecamp: Place): Promise<void
       .join('');
   }
   const noteEl = body.querySelector('#sl-infra-note') as HTMLElement;
-  if (noteEl) noteEl.textContent = '* 숙소 기준 직선거리·도보 추정 시간이에요.';
+  if (noteEl) noteEl.textContent = '* 숙소 기준 실제 도보 경로 거리·시간이에요.';
 
   step3Facilities = facilities;
   drawInfraLines(basecamp, facilities); // 지도가 아직이면 no-op → 지도 준비 후 initMapStep3에서 다시 그림
