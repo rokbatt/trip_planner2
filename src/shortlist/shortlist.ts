@@ -109,6 +109,9 @@ export function teardownShortlist(): void {
   mapInstance = null;
   step2MapInstance = null;
   step2Markers = new Map();
+  step3MapInstance = null;
+  step3InfraLines = [];
+  step3Facilities = [];
   mapMarkers = [];
   highlightedZoneId = null;
   pendingSelectedZoneId = null;
@@ -1751,25 +1754,35 @@ interface Step3Item {
 }
 
 /**
- * 주변 편의 인프라 — 전세계 공통 시설 타입만 사용 (특정 국가 노선/브랜드 배제).
- * ⚠️ 아래 거리/시간은 레이아웃 확인용 예시(샘플)이며, Phase 2에서 Google Places
- *    Nearby Search 실데이터로 교체됨. 데이터가 붙기 전까지는 화면에도 "예시"로 명시.
+ * 주변 편의 인프라 — 전세계 공통 시설 타입만 (특정 국가 노선/브랜드 배제).
+ * key는 /api/nearby-infra 서버 응답의 key와 1:1 매칭됨.
  */
-const INFRA_SAMPLE: { icon: string; color: string; name: string; dist: string; min: string }[] = [
-  { icon: IC_BUS, color: '#0B7CC4', name: '대중교통 (역/정류장)', dist: '210m', min: '3분' },
-  { icon: IC_STORE, color: '#1D9E75', name: '편의점', dist: '350m', min: '5분' },
-  { icon: IC_COFFEE, color: '#B45309', name: '카페', dist: '280m', min: '4분' },
-  { icon: IC_PHARM, color: '#E24B4A', name: '약국', dist: '430m', min: '6분' },
-  { icon: IC_HOSPITAL, color: '#D4537E', name: '병원/클리닉', dist: '450m', min: '6분' },
-  { icon: IC_ATM, color: '#F5A623', name: 'ATM', dist: '500m', min: '7분' },
-  { icon: IC_TAXI, color: '#D9931B', name: '택시 승차장', dist: '600m', min: '8분' },
-  { icon: IC_CART, color: '#7F77DD', name: '슈퍼마켓', dist: '520m', min: '7분' },
+const INFRA_META: Record<string, { icon: string; color: string; name: string }> = {
+  transit: { icon: IC_BUS, color: '#0B7CC4', name: '대중교통 (역/정류장)' },
+  convenience: { icon: IC_STORE, color: '#1D9E75', name: '편의점' },
+  cafe: { icon: IC_COFFEE, color: '#B45309', name: '카페' },
+  pharmacy: { icon: IC_PHARM, color: '#E24B4A', name: '약국' },
+  hospital: { icon: IC_HOSPITAL, color: '#D4537E', name: '병원/클리닉' },
+  atm: { icon: IC_ATM, color: '#F5A623', name: 'ATM' },
+  taxi: { icon: IC_TAXI, color: '#D9931B', name: '택시 승차장' },
+  supermarket: { icon: IC_CART, color: '#7F77DD', name: '슈퍼마켓' },
+};
+
+interface InfraFacility { key: string; name: string; meters: number; walkMin: number; lat: number; lng: number }
+
+/** 실데이터 도착 전 초기/폴백 표시용 예시 (API 실패 시 그대로 유지) */
+const INFRA_SAMPLE: { key: string; dist: string; min: string }[] = [
+  { key: 'transit', dist: '210m', min: '3분' },
+  { key: 'convenience', dist: '350m', min: '5분' },
+  { key: 'cafe', dist: '280m', min: '4분' },
+  { key: 'pharmacy', dist: '430m', min: '6분' },
+  { key: 'hospital', dist: '450m', min: '6분' },
+  { key: 'atm', dist: '500m', min: '7분' },
+  { key: 'taxi', dist: '600m', min: '8분' },
+  { key: 'supermarket', dist: '520m', min: '7분' },
 ];
 
-/**
- * 여행 효율 점수 — Phase 2에서 Gemini가 정형화된 채점표로 산출할 예정.
- * ⚠️ 아래 값은 UI 자리를 잡기 위한 예시(샘플). 안전도(야간)는 실측 소스가 없어 별점 항목에서 제외.
- */
+/** 여행 효율 점수 — 실데이터(Gemini) 도착 전 초기/폴백 표시용 예시 */
 const EFFICIENCY_SAMPLE = {
   score: 88,
   grade: 'Excellent',
@@ -1782,6 +1795,15 @@ const EFFICIENCY_SAMPLE = {
     { label: '가성비', stars: 4 },
   ],
 };
+
+/** score 응답의 한글 키(공백 없음) → 화면 라벨(공백 있음) */
+const SCORE_LABELS: { key: string; label: string }[] = [
+  { key: '이동편의성', label: '이동 편의성' },
+  { key: '관광접근성', label: '관광 접근성' },
+  { key: '편의시설', label: '편의시설' },
+  { key: '위치만족도', label: '위치 만족도' },
+  { key: '가성비', label: '가성비' },
+];
 
 /** 평균 이동시간 등 집계용 분 단위 환산 — estimateTravel과 동일한 속도 가정(도보/대중교통/차량)을 모든 구간에 적용 */
 function estimateMinutes(km: number): number {
@@ -1850,27 +1872,13 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   const categoryLabel = basecamp.category || (basecamp.mood ? MOOD_LABEL[basecamp.mood] : '') || '숙소';
 
   const eff = EFFICIENCY_SAMPLE;
-  const effRatings = eff.items
-    .map((it) => {
-      const filled = IC_STAR.repeat(it.stars);
-      const empty = '<span class="sl-eff-star-empty">' + IC_STAR + '</span>'.repeat(5 - it.stars);
-      return [
-        '<div class="sl-eff-rating">',
-        '  <span class="sl-eff-rating-label">' + escapeHtml(it.label) + '</span>',
-        '  <span class="sl-eff-rating-stars">' + filled + empty + '</span>',
-        '</div>',
-      ].join('');
-    })
-    .join('');
+  const effRatings = eff.items.map((it) => buildEffRatingRow(it.label, it.stars)).join('');
 
   const infraRows = INFRA_SAMPLE
-    .map((f) => [
-      '<div class="sl-infra-row">',
-      '  <span class="sl-infra-icon" style="--infra-color:' + f.color + '">' + f.icon + '</span>',
-      '  <span class="sl-infra-name">' + escapeHtml(f.name) + '</span>',
-      '  <span class="sl-infra-dist">' + escapeHtml(f.min) + ' · ' + escapeHtml(f.dist) + '</span>',
-      '</div>',
-    ].join(''))
+    .map((f) => {
+      const meta = INFRA_META[f.key];
+      return buildInfraRow(meta, f.min + ' · ' + f.dist);
+    })
     .join('');
 
   body.innerHTML = [
@@ -1927,7 +1935,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '            </div>',
     '          </div>',
     '          <div class="sl-step3-infra-side">',
-    '            <div class="sl-step3-infra-list">' + infraRows + '</div>',
+    '            <div class="sl-step3-infra-list" id="sl-infra-list">' + infraRows + '</div>',
     '            <div class="sl-step3-infra-scale">',
     '              <span><span class="sl-infra-scale-line" style="--sc:#1D9E75"></span>도보 5분 (400m)</span>',
     '              <span><span class="sl-infra-scale-line" style="--sc:#0B7CC4"></span>도보 10분 (800m)</span>',
@@ -1935,19 +1943,19 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '            </div>',
     '          </div>',
     '        </div>',
-    '        <div class="sl-step3-sample-note">* 시설별 거리는 레이아웃 예시예요. 실제 데이터는 곧 연동됩니다.</div>',
+    '        <div class="sl-step3-sample-note" id="sl-infra-note">* 시설별 거리는 레이아웃 예시예요. 실제 데이터는 곧 연동됩니다.</div>',
     '      </div>',
 
-    // ③ 여행 효율 점수 (Gemini 예정, 예시)
+    // ③ 여행 효율 점수 (Gemini 정형 채점 — 도착 전엔 예시)
     '      <div class="sl-step3-card sl-step3-eff-card">',
     '        <div class="sl-step3-eff-score">',
-    '          <div class="sl-step3-eff-num">' + eff.score + '<span class="sl-step3-eff-max">/100</span></div>',
-    '          <div class="sl-step3-eff-grade">' + escapeHtml(eff.grade) + '</div>',
+    '          <div class="sl-step3-eff-num" id="sl-eff-num">' + eff.score + '<span class="sl-step3-eff-max">/100</span></div>',
+    '          <div class="sl-step3-eff-grade" id="sl-eff-grade">' + escapeHtml(eff.grade) + '</div>',
     '          <div class="sl-step3-eff-note">' + escapeHtml(eff.note) + '</div>',
     '        </div>',
-    '        <div class="sl-step3-eff-ratings">' + effRatings + '</div>',
+    '        <div class="sl-step3-eff-ratings" id="sl-eff-ratings">' + effRatings + '</div>',
     '      </div>',
-    '      <div class="sl-step3-sample-note sl-step3-eff-samplenote">* AI가 분석할 예정이에요 (현재 예시 점수)</div>',
+    '      <div class="sl-step3-sample-note sl-step3-eff-samplenote" id="sl-eff-note">* AI가 분석할 예정이에요 (현재 예시 점수)</div>',
 
     '    </div>',
 
@@ -2024,6 +2032,113 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     });
     renderStep3Lists(body, withDistance);
   });
+
+  // Phase 2 실데이터 — 도착하면 예시를 실데이터로 교체, 실패하면 예시+안내를 그대로 유지
+  const walkable = withDistance.filter((item) => item.km <= 1.5).length;
+  const avgMin = withDistance.length
+    ? Math.round(withDistance.reduce((s, item) => s + item.minutes, 0) / withDistance.length)
+    : 0;
+  loadNearbyInfra(body, basecamp);
+  loadHotelScore(body, {
+    placeId: basecamp.google_place_id ?? undefined,
+    hotelName: basecamp.name,
+    address: basecamp.address ?? '',
+    zoneName: zone.name,
+    destination: getTripDestination(),
+    googleRating: basecamp.google_rating,
+    budgetLabel,
+    nearby: { walkableCount: walkable, avgWalkMin: avgMin },
+  });
+}
+
+function buildInfraRow(meta: { icon: string; color: string; name: string } | undefined, distText: string): string {
+  if (!meta) return '';
+  return [
+    '<div class="sl-infra-row">',
+    '  <span class="sl-infra-icon" style="--infra-color:' + meta.color + '">' + meta.icon + '</span>',
+    '  <span class="sl-infra-name">' + escapeHtml(meta.name) + '</span>',
+    '  <span class="sl-infra-dist">' + escapeHtml(distText) + '</span>',
+    '</div>',
+  ].join('');
+}
+
+function buildEffRatingRow(label: string, stars: number): string {
+  const filled = IC_STAR.repeat(stars);
+  const empty = '<span class="sl-eff-star-empty">' + IC_STAR + '</span>'.repeat(Math.max(0, 5 - stars));
+  return [
+    '<div class="sl-eff-rating">',
+    '  <span class="sl-eff-rating-label">' + escapeHtml(label) + '</span>',
+    '  <span class="sl-eff-rating-stars">' + filled + empty + '</span>',
+    '</div>',
+  ].join('');
+}
+
+/** 주변 편의 인프라 실데이터 (/api/nearby-infra) — 성공 시 리스트+지도 점선 교체 */
+async function loadNearbyInfra(body: HTMLElement, basecamp: Place): Promise<void> {
+  if (basecamp.lat == null || basecamp.lng == null) return;
+  let facilities: InfraFacility[] = [];
+  try {
+    const res = await fetch('/api/nearby-infra', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ placeId: basecamp.google_place_id ?? undefined, lat: basecamp.lat, lng: basecamp.lng }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    facilities = Array.isArray(data.facilities) ? data.facilities : [];
+  } catch {
+    return;
+  }
+  if (step !== 3 || facilities.length === 0) return;
+
+  const listEl = body.querySelector('#sl-infra-list') as HTMLElement;
+  if (listEl) {
+    listEl.innerHTML = facilities
+      .map((f) => {
+        const meta = INFRA_META[f.key];
+        const km = f.meters >= 1000 ? (f.meters / 1000).toFixed(1) + 'km' : f.meters + 'm';
+        return buildInfraRow(meta, f.walkMin + '분 · ' + km);
+      })
+      .join('');
+  }
+  const noteEl = body.querySelector('#sl-infra-note') as HTMLElement;
+  if (noteEl) noteEl.textContent = '* 숙소 기준 직선거리·도보 추정 시간이에요.';
+
+  step3Facilities = facilities;
+  drawInfraLines(basecamp, facilities); // 지도가 아직이면 no-op → 지도 준비 후 initMapStep3에서 다시 그림
+}
+
+/** 여행 효율 점수 실데이터 (/api/hotel-score) — 성공 시 점수/등급/별점 교체 */
+async function loadHotelScore(
+  body: HTMLElement,
+  payload: { placeId?: string; hotelName: string; address: string; zoneName: string; destination: string; googleRating: number | null; budgetLabel: string; nearby: { walkableCount: number; avgWalkMin: number } }
+): Promise<void> {
+  let result: { score: number; grade: string; ratings: Record<string, number> } | null = null;
+  try {
+    const res = await fetch('/api/hotel-score', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) return;
+    result = await res.json();
+  } catch {
+    return;
+  }
+  if (step !== 3 || !result || typeof result.score !== 'number') return;
+
+  const numEl = body.querySelector('#sl-eff-num') as HTMLElement;
+  if (numEl) numEl.innerHTML = result.score + '<span class="sl-step3-eff-max">/100</span>';
+  const gradeEl = body.querySelector('#sl-eff-grade') as HTMLElement;
+  if (gradeEl) gradeEl.textContent = result.grade;
+  const ratingsEl = body.querySelector('#sl-eff-ratings') as HTMLElement;
+  if (ratingsEl) {
+    ratingsEl.innerHTML = SCORE_LABELS
+      .map((r) => buildEffRatingRow(r.label, result!.ratings[r.key] ?? 3))
+      .join('');
+  }
+  const noteEl = body.querySelector('#sl-eff-note') as HTMLElement;
+  if (noteEl) noteEl.textContent = '* AI가 위치·주변 정보를 종합해 평가한 점수예요 (이용자 리뷰 점수 아님).';
 }
 
 interface RealTravelResult {
@@ -2170,8 +2285,63 @@ function renderStep3Lists(body: HTMLElement, withDistance: Step3Item[]): void {
   }
 }
 
-/** 숙소 + 주변 장소를 지도에 표시 (Step1/Step2와 동일한 Google Maps 컴포넌트 재사용, 신규 API 호출 없음) */
+let step3MapInstance: any = null;
+let step3InfraLines: any[] = [];
+let step3Facilities: InfraFacility[] = []; // 지도 준비/인프라 도착 순서와 무관하게 다시 그리기 위해 보관
+
+/** 숙소 → 각 편의시설로 컬러 점선 연결 (Nearby Search 실데이터 도착 시 호출) */
+function drawInfraLines(basecamp: Place, facilities: InfraFacility[]): void {
+  const g = (window as any).google;
+  if (!g?.maps || !step3MapInstance || basecamp.lat == null || basecamp.lng == null) return;
+
+  step3InfraLines.forEach((l) => l.setMap(null));
+  step3InfraLines = [];
+
+  facilities.forEach((f) => {
+    const meta = INFRA_META[f.key];
+    if (!meta) return;
+    const line = new g.maps.Polyline({
+      path: [
+        { lat: basecamp.lat!, lng: basecamp.lng! },
+        { lat: f.lat, lng: f.lng },
+      ],
+      map: step3MapInstance,
+      strokeOpacity: 0,
+      icons: [
+        {
+          icon: { path: 'M 0,-1 0,1', strokeOpacity: 0.7, strokeWeight: 2, scale: 2, strokeColor: meta.color },
+          offset: '0',
+          repeat: '9px',
+        },
+      ],
+      zIndex: 5,
+    });
+    step3InfraLines.push(line);
+
+    step3InfraLines.push(
+      new g.maps.Marker({
+        position: { lat: f.lat, lng: f.lng },
+        map: step3MapInstance,
+        title: meta.name + ' · ' + f.name,
+        icon: {
+          path: g.maps.SymbolPath.CIRCLE,
+          scale: 4,
+          fillColor: meta.color,
+          fillOpacity: 1,
+          strokeColor: '#fff',
+          strokeWeight: 1.5,
+        },
+        zIndex: 6,
+      })
+    );
+  });
+}
+
+/** 숙소 + 주변 장소를 지도에 표시 (Step1/Step2와 동일한 Google Maps 컴포넌트 재사용) */
 async function initMapStep3(body: HTMLElement, withDistance: Step3Item[]): Promise<void> {
+  step3MapInstance = null;
+  step3InfraLines = [];
+  step3Facilities = [];
   if (!selectedBasecamp) return;
 
   try {
@@ -2196,6 +2366,7 @@ async function initMapStep3(body: HTMLElement, withDistance: Step3Item[]): Promi
     gestureHandling: 'greedy',
     styles: MAP_STYLE_LIGHT,
   });
+  step3MapInstance = map;
   fixMapVisibilityOnResize(g, map, mapEl, { lat: selectedBasecamp.lat, lng: selectedBasecamp.lng });
   addCustomZoomControl(map, mapEl);
 
@@ -2220,4 +2391,7 @@ async function initMapStep3(body: HTMLElement, withDistance: Step3Item[]): Promi
       showPlaceInfoWindow(g, map, marker, item.place);
     });
   });
+
+  // 인프라 데이터가 지도보다 먼저 도착했으면 이제 그림
+  if (step3Facilities.length && selectedBasecamp) drawInfraLines(selectedBasecamp, step3Facilities);
 }
