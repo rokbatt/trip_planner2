@@ -419,7 +419,9 @@ function lockStep2MapHeight(body: HTMLElement): void {
     const headerMarginBottom = parseFloat(getComputedStyle(headerEl).marginBottom || '0');
     const available = step2El.clientHeight - headerEl.offsetHeight - headerMarginBottom;
     // 지도 아래 남는 여백을 채우도록 기본 계산값보다 17% 키움
-    leftEl.style.height = Math.max(380, available * 1.17) + 'px';
+    // 단, 지도 하단이 페이지 끝과 완전히 붙지 않도록 약 1cm(38px)는 항상 남겨둠
+    const bottomGap = 38;
+    leftEl.style.height = Math.max(380, available * 1.17 - bottomGap) + 'px';
   };
 
   applyHeight();
