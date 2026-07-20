@@ -4,37 +4,21 @@
    ============================================================ */
 
 /*
- * Workspace(보드 전체) — Trello/Jira/Linear식 고정폭 컬럼 + 가로 스크롤 구조.
- * 컬럼(bd-inbox/bd-security/bd-gate)은 절대 찌그러지거나 늘어나지 않고,
- * 화면에 다 들어가지 않으면 이 컨테이너 자체가 좌우로 스크롤된다.
- * (부모 .ws-content-body는 overflow-x:hidden이라 가로 스크롤은 반드시 이 레벨에서 소유해야 함)
+ * Workspace(보드 전체) — 유동형(fluid) 레이아웃. 가로 스크롤 없이 화면 너비 100%에
+ * 모든 컬럼이 맞춰 들어가고, 화면이 커지거나 작아지면 컬럼 폭이 그에 비례해 늘고 준다.
+ * 초대형 모니터에서는 max-width로 상한을 두고 중앙 정렬해 컬럼이 무한정 벌어지지 않게 한다.
  */
 .bd-layout {
   display: flex;
   align-items: stretch;
-  gap: 0;
+  gap: clamp(8px, 1vw, 24px);
   padding: 24px 28px 32px;
   height: 100%;
+  width: 100%;
+  max-width: 1800px;
+  margin: 0 auto;
   box-sizing: border-box;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-behavior: smooth;
-  /* 얇은 커스텀 스크롤바 (디자인 시스템 톤) */
-  scrollbar-width: thin;
-  scrollbar-color: rgba(130,150,170,0.25) transparent;
-}
-.bd-layout::-webkit-scrollbar {
-  height: 8px;
-}
-.bd-layout::-webkit-scrollbar-track {
-  background: transparent;
-}
-.bd-layout::-webkit-scrollbar-thumb {
-  background: rgba(130,150,170,0.25);
-  border-radius: 999px;
-}
-.bd-layout::-webkit-scrollbar-thumb:hover {
-  background: rgba(130,150,170,0.45);
+  overflow: hidden;
 }
 
 .bd-loading {
@@ -73,12 +57,10 @@
    좌측: Inbox — 체크인 카운터
    ============================================================ */
 
+/* 아이디어 체크인 칸 — 게이트 4칸(총 4fr) 대비 1.2fr 비율로 화면 폭에 비례해 유동 */
 .bd-inbox {
-  flex: 0 0 340px;
-  width: 340px;
-  min-width: 340px;
-  max-width: 340px;
-  flex-shrink: 0;
+  flex: 1.2 1 0;
+  min-width: 0;
   overflow-x: hidden;
   display: flex;
   flex-direction: column;
@@ -87,9 +69,8 @@
   -webkit-backdrop-filter: saturate(140%) blur(8px);
   border: 1px solid rgba(130,150,170,0.16);
   border-radius: 18px;
-  padding: 16px;
+  padding: clamp(12px, 1.1vw, 20px);
   height: 100%;
-  margin-right: 4px;
 }
 
 .bd-inbox-header { margin-bottom: 14px; }
@@ -321,7 +302,10 @@
 .bd-ticket-rating svg { width: 10px; height: 10px; color: #F5A623; }
 .bd-ticket-text {
   flex: 1;
-  word-break: break-word;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   line-height: 1.4;
 }
 .bd-ticket:hover { border-color: #8FD8F8; box-shadow: 0 3px 10px rgba(11,124,196,0.10); }
@@ -435,25 +419,23 @@
    우측: 4개 게이트
    ============================================================ */
 
+/* 게이트 4칸을 CSS Grid로 화면 너비를 정확히 4등분 — .bd-inbox 대비 4fr 비율로 유동 */
 .bd-gates {
-  flex: 0 0 auto;
-  flex-shrink: 0;
-  display: flex;
-  align-items: stretch;
-  gap: 16px;
+  flex: 4 1 0;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(8px, 1vw, 24px);
   height: 100%;
 }
 
 /*
- * 게이트 컬럼(VISIT/FOOD/ACTIVITY/STAY) — 고정폭, 절대 찌그러지거나 늘어나지 않음.
- * flex-grow를 쓰지 않으므로 남는 공간은 Workspace(.bd-layout)의 우측 여백으로 남는다.
+ * 게이트 컬럼(VISIT/FOOD/ACTIVITY/STAY) — 고정폭 없음. Grid 트랙(1fr)이 폭을 결정하므로
+ * 화면이 커지면 같이 넓어지고 작아지면 같이 좁아진다. min-width:0은 내부 텍스트가
+ * ellipsis로 잘리려면 그리드 아이템이 콘텐츠 고유폭 아래로도 줄어들 수 있어야 하기 때문에 필요.
  */
 .bd-gate {
-  flex: 0 0 300px;
-  width: 300px;
-  min-width: 300px;
-  max-width: 320px;
-  flex-shrink: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   background: rgba(255,255,255,0.6);
@@ -461,7 +443,7 @@
   -webkit-backdrop-filter: saturate(140%) blur(8px);
   border: 1px solid rgba(130,150,170,0.16);
   border-radius: 16px;
-  padding: 16px;
+  padding: clamp(12px, 1.1vw, 20px);
   min-height: 0;
   overflow: hidden;
 }
@@ -714,10 +696,10 @@
 .bd-card-photo {
   position: relative;
   width: 100%;
-  height: 140px;
-  flex-shrink: 0;
-  /* 카드 폭이 고정이라 background-size:cover가 <img>의 object-fit:cover와 동일하게
-     항상 잘라내기만 하고 절대 늘어나지(stretch) 않음 */
+  /* 카드 폭이 유동적이므로 고정 높이 대신 비율을 고정 — 카드가 좁아지면 이미지도
+     같은 비율로 따라 작아진다. background-size:cover라 <img>의 object-fit:cover와
+     동일하게 항상 잘라내기만 하고 절대 늘어나지(stretch) 않음 */
+  aspect-ratio: 16 / 10;
   background-size: cover;
   background-position: center;
   background-color: #EAF6FD;
@@ -789,10 +771,10 @@
 .bd-kmenu-item.danger { color: #C0392B; }
 .bd-kmenu-divider { height: 1px; background: rgba(130,150,170,0.16); margin: 4px 2px; }
 
-.bd-card-body { padding: 10px 12px 12px; }
+.bd-card-body { padding: clamp(8px, 0.9vw, 12px) clamp(10px, 1vw, 14px) clamp(10px, 1vw, 14px); }
 .bd-card-title-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
   flex-wrap: nowrap;
@@ -804,13 +786,10 @@
   font-weight: 700;
   color: #1E293B;
   line-height: 1.4;
-  /* 제목 최대 2줄, 넘치면 ellipsis — 카드 높이가 텍스트 길이에 따라 들쭉날쭉해지지 않도록 고정 */
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  /* 카드가 좁아져도 줄바꿈 대신 한 줄 + ellipsis로 고정 */
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  word-break: break-word;
 }
 .bd-card-address {
   font-size: 10.5px;
