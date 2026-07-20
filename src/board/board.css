@@ -7,18 +7,23 @@
  * Workspace(보드 전체) — 유동형(fluid) 레이아웃. 가로 스크롤 없이 화면 너비 100%에
  * 모든 컬럼이 맞춰 들어가고, 화면이 커지거나 작아지면 컬럼 폭이 그에 비례해 늘고 준다.
  * 초대형 모니터에서는 max-width로 상한을 두고 중앙 정렬해 컬럼이 무한정 벌어지지 않게 한다.
+ *
+ * 세로 방향은 컬럼별 개별 스크롤이 아니라 화면 전체(부모 .ws-content-body)가
+ * 하나의 스크롤을 담당한다. 그래서 height:100%(고정)가 아니라 min-height:100%를 쓰고
+ * overflow-y도 막지 않는다 — 카드가 많아 콘텐츠가 뷰포트보다 길어지면 이 박스가
+ * 그만큼 자라고, 그 스크롤은 .ws-content-body(overflow-y:auto)가 떠맡는다.
  */
 .bd-layout {
   display: flex;
   align-items: stretch;
   gap: clamp(8px, 1vw, 24px);
   padding: 24px 28px 32px;
-  height: 100%;
+  min-height: 100%;
   width: 100%;
   max-width: 1800px;
   margin: 0 auto;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow-x: hidden;
 }
 
 .bd-loading {
@@ -70,7 +75,6 @@
   border: 1px solid rgba(130,150,170,0.16);
   border-radius: 18px;
   padding: clamp(12px, 1.1vw, 20px);
-  height: 100%;
 }
 
 .bd-inbox-header { margin-bottom: 14px; }
@@ -193,11 +197,9 @@
 }
 
 .bd-inbox-list {
-  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 7px;
-  overflow-y: auto;
   border-radius: 10px;
   transition: background 180ms ease, border-color 180ms ease;
   border: 1px solid transparent;
@@ -419,23 +421,25 @@
    우측: 4개 게이트
    ============================================================ */
 
-/* 게이트 4칸을 CSS Grid로 화면 너비를 정확히 4등분 — .bd-inbox 대비 4fr 비율로 유동 */
+/*
+ * 게이트 4칸을 CSS Grid로 화면 너비를 정확히 4등분 — .bd-inbox 대비 4fr 비율로 유동.
+ * 세로는 컬럼별 개별 스크롤을 두지 않는다 — grid-auto-rows가 기본값(auto)이라 4칸 중
+ * 가장 긴 컬럼의 콘텐츠 높이만큼 이 행이 자라고, align-items:stretch(그리드 기본값)로
+ * 나머지 컬럼도 같은 높이로 맞춰진다. 전체 페이지 스크롤은 .ws-content-body가 담당.
+ */
 .bd-gates {
   flex: 4 1 0;
   min-width: 0;
-  min-height: 0;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-template-rows: minmax(0, 1fr);
   gap: clamp(8px, 1vw, 24px);
-  height: 100%;
-  overflow: hidden;
 }
 
 /*
  * 게이트 컬럼(VISIT/FOOD/ACTIVITY/STAY) — 고정폭 없음. Grid 트랙(1fr)이 폭을 결정하므로
  * 화면이 커지면 같이 넓어지고 작아지면 같이 좁아진다. min-width:0은 내부 텍스트가
  * ellipsis로 잘리려면 그리드 아이템이 콘텐츠 고유폭 아래로도 줄어들 수 있어야 하기 때문에 필요.
+ * overflow:hidden을 두지 않아 카드가 많아지면 컬럼 자체가 자연스럽게 길어진다(개별 스크롤 없음).
  */
 .bd-gate {
   min-width: 0;
@@ -447,8 +451,6 @@
   border: 1px solid rgba(130,150,170,0.16);
   border-radius: 16px;
   padding: clamp(12px, 1.1vw, 20px);
-  min-height: 0;
-  overflow: hidden;
 }
 
 .bd-gate-header { margin-bottom: 10px; }
@@ -487,9 +489,6 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  overflow-y: auto;
-  min-height: 0;
-  flex: 1;
   padding: 10px 8px 2px 2px;
   margin: 8px -2px;
   border-radius: 10px;
