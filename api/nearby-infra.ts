@@ -3,7 +3,9 @@
  *
  * POST /api/nearby-infra
  * body: { placeId?: string, lat: number, lng: number }
- * response: { facilities: [{ key, name, meters, walkMin, lat, lng }], cached: boolean }
+ * response: { facilities: [{ key, name, meters, walkMin, lat, lng, placeId?, rating?, address? }], cached: boolean }
+ *    (placeId/rating/address는 지도 아이콘 클릭 시 "기본정보" 표시용 — 클릭할 때 추가 API 호출을 하지 않도록
+ *    이 1회 Nearby Search 호출에서 함께 받아 캐싱함)
  *
  * 흐름 (DB-first, CLAUDE.md 3-2 캐싱 원칙 — 무료 한도 절약이 목적):
  * 1. hotel_infra_cache(placeId 기준)에서 먼저 조회 — 있으면 Google 호출 0회
@@ -44,6 +46,9 @@ interface Facility {
   walkMin: number;
   lat: number;
   lng: number;
+  placeId?: string;
+  rating?: number;
+  address?: string;
 }
 
 /** 전세계 어디서나 존재하는 범용 시설 타입만 (Google Places Table A 기준) */
@@ -76,7 +81,7 @@ async function findNearest(
   lat: number,
   lng: number,
   entry: { key: string; type: string }
-): Promise<{ key: string; name: string; lat: number; lng: number } | null> {
+): Promise<{ key: string; name: string; lat: number; lng: number; placeId?: string; rating?: number; address?: string } | null> {
   let res: Response;
   try {
     res = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
@@ -84,8 +89,8 @@ async function findNearest(
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': serverKey,
-        // location/displayName만 요청해 SKU 등급·비용 최소화
-        'X-Goog-FieldMask': 'places.location,places.displayName',
+        // 지도 아이콘 클릭 시 별도 API 호출 없이 기본정보를 보여줄 수 있도록 이 1회 호출에 필요한 필드만 더 요청
+        'X-Goog-FieldMask': 'places.location,places.displayName,places.id,places.rating,places.formattedAddress',
       },
       body: JSON.stringify({
         includedTypes: [entry.type],
@@ -105,7 +110,15 @@ async function findNearest(
   const top = data?.places?.[0];
   const loc = top?.location;
   if (!loc || typeof loc.latitude !== 'number' || typeof loc.longitude !== 'number') return null;
-  return { key: entry.key, name: top.displayName?.text ?? entry.key, lat: loc.latitude, lng: loc.longitude };
+  return {
+    key: entry.key,
+    name: top.displayName?.text ?? entry.key,
+    lat: loc.latitude,
+    lng: loc.longitude,
+    placeId: typeof top.id === 'string' ? top.id : undefined,
+    rating: typeof top.rating === 'number' ? top.rating : undefined,
+    address: typeof top.formattedAddress === 'string' ? top.formattedAddress : undefined,
+  };
 }
 
 /**
@@ -209,7 +222,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // 2a. 시설 타입별 최근접 지점(위치) 조회
   const found = (await Promise.all(FACILITY_TYPES.map((e) => findNearest(serverKey, lat, lng, e)))).filter(
-    (f): f is { key: string; name: string; lat: number; lng: number } => f !== null
+    (f): f is { key: string; name: string; lat: number; lng: number; placeId?: string; rating?: number; address?: string } => f !== null
   );
 
   if (found.length === 0) {
@@ -223,12 +236,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     : new Map<number, { meters: number; seconds: number }>();
 
   const facilities: Facility[] = found.map((f, i) => {
+    const base = { key: f.key, name: f.name, lat: f.lat, lng: f.lng, placeId: f.placeId, rating: f.rating, address: f.address };
     const route = matrix.get(i);
     if (route) {
-      return { key: f.key, name: f.name, meters: Math.round(route.meters), walkMin: Math.max(1, Math.round(route.seconds / 60)), lat: f.lat, lng: f.lng };
+      return { ...base, meters: Math.round(route.meters), walkMin: Math.max(1, Math.round(route.seconds / 60)) };
     }
     const meters = Math.round(haversineMeters(lat, lng, f.lat, f.lng));
-    return { key: f.key, name: f.name, meters, walkMin: Math.max(1, Math.round(meters / 80)), lat: f.lat, lng: f.lng };
+    return { ...base, meters, walkMin: Math.max(1, Math.round(meters / 80)) };
   });
 
   // 3. 캐싱 — 이후 조회는 전부 캐시 히트

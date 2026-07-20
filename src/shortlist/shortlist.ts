@@ -1770,7 +1770,17 @@ const INFRA_META: Record<string, { icon: string; color: string; name: string }> 
   supermarket: { icon: IC_CART, color: '#7F77DD', name: '슈퍼마켓' },
 };
 
-interface InfraFacility { key: string; name: string; meters: number; walkMin: number; lat: number; lng: number }
+interface InfraFacility {
+  key: string;
+  name: string;
+  meters: number;
+  walkMin: number;
+  lat: number;
+  lng: number;
+  placeId?: string;
+  rating?: number;
+  address?: string;
+}
 
 /** 실데이터 도착 전 초기/폴백 표시용 예시 (API 실패 시 그대로 유지) */
 const INFRA_SAMPLE: { key: string; dist: string; min: string }[] = [
@@ -1931,9 +1941,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '            <div id="sl-map3" class="sl-map"></div>',
     '            <div class="sl-map-legend">',
     '              <span><span class="sl-legend-dot" style="--dot:#185FA5"></span>숙소</span>',
-    '              <span><span class="sl-legend-dot" style="--dot:#E24B4A"></span>관광(VISIT)</span>',
-    '              <span><span class="sl-legend-dot" style="--dot:#1D9E75"></span>맛집(FOOD)</span>',
-    '              <span><span class="sl-legend-dot" style="--dot:#7F77DD"></span>액티비티(ACTIVITY)</span>',
+    '              <span class="sl-map-legend-note">아이콘 클릭 시 상세정보</span>',
     '            </div>',
     '          </div>',
     '          <div class="sl-step3-infra-side">',
@@ -2019,7 +2027,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   });
 
   renderStep3Lists(body, withDistance);
-  initMapStep3(body, withDistance);
+  initMapStep3(body);
 
   // 실제 길찾기(Distance Matrix API) — 직선거리 추정치를 실제 이동시간으로 백그라운드에서 교체
   loadRealTravelTimes(basecamp, withDistance).then((realTimes) => {
@@ -2291,7 +2299,69 @@ let step3MapInstance: any = null;
 let step3InfraLines: any[] = [];
 let step3Facilities: InfraFacility[] = []; // 지도 준비/인프라 도착 순서와 무관하게 다시 그리기 위해 보관
 
-/** 숙소 → 각 편의시설로 컬러 점선 연결 (Nearby Search 실데이터 도착 시 호출) */
+/** 편의시설 카테고리 아이콘을 배경 없이 지도 마커로 사용 (흰 아웃라인 필터로 대비만 확보) */
+function buildInfraMarkerIcon(g: any, meta: { icon: string; color: string }): any {
+  const colored = meta.icon.replace(/currentColor/g, meta.color);
+  const withOutline = colored.replace(
+    /(<svg[^>]*>)([\s\S]*)(<\/svg>)/,
+    (_m: string, open: string, inner: string, close: string) =>
+      open +
+      '<defs><filter id="infraOutline" x="-60%" y="-60%" width="220%" height="220%">' +
+      '<feMorphology in="SourceAlpha" operator="dilate" radius="1.2" result="thick"/>' +
+      '<feFlood flood-color="#ffffff" flood-opacity="0.95" result="white"/>' +
+      '<feComposite in="white" in2="thick" operator="in" result="outline"/>' +
+      '<feMerge><feMergeNode in="outline"/><feMergeNode in="SourceGraphic"/></feMerge>' +
+      '</filter></defs>' +
+      '<g filter="url(#infraOutline)">' + inner + '</g>' +
+      close
+  );
+  const size = 22;
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(withOutline),
+    scaledSize: new g.maps.Size(size, size),
+    anchor: new g.maps.Point(size / 2, size / 2),
+  };
+}
+
+/**
+ * 편의시설 아이콘 클릭 시 기본정보 + 길찾기 버튼 표시.
+ * 추가 API 호출 없음 — nearby-infra 조회 시 이미 캐싱된 데이터만 사용.
+ * 길찾기는 Google 지도 딥링크(좌표 기반)라 별도 API 호출이 필요 없음.
+ */
+function showInfraInfoWindow(
+  g: any,
+  map: any,
+  marker: any,
+  meta: { icon: string; color: string; name: string },
+  facility: InfraFacility,
+  basecamp: Place
+): void {
+  if (!placeInfoWindow) placeInfoWindow = new g.maps.InfoWindow();
+
+  const km = facility.meters >= 1000 ? (facility.meters / 1000).toFixed(1) + 'km' : facility.meters + 'm';
+  const stars = typeof facility.rating === 'number' ? '★ ' + facility.rating.toFixed(1) : '';
+  const dirUrl =
+    'https://www.google.com/maps/dir/?api=1&origin=' + basecamp.lat + ',' + basecamp.lng +
+    '&destination=' + facility.lat + ',' + facility.lng +
+    (facility.placeId ? '&destination_place_id=' + encodeURIComponent(facility.placeId) : '') +
+    '&travelmode=walking';
+
+  const content = [
+    '<div style="font-family:inherit;min-width:180px;max-width:220px;">',
+    '<span style="display:inline-block;font-size:10px;font-weight:700;color:' + meta.color + ';background:' + meta.color + '1A;padding:2px 7px;border-radius:999px;margin-bottom:4px;">' + escapeHtml(meta.name) + '</span>',
+    '<div style="font-size:13.5px;font-weight:700;color:#0B2A5C;margin:2px 0;">' + escapeHtml(facility.name) + '</div>',
+    stars ? '<div style="font-size:11.5px;color:#F5A623;font-weight:700;">' + stars + '</div>' : '',
+    facility.address ? '<div style="font-size:11px;color:#64748B;margin-top:4px;line-height:1.4;">' + escapeHtml(facility.address) + '</div>' : '',
+    '<div style="font-size:11.5px;color:#334155;margin-top:6px;">숙소에서 도보 ' + facility.walkMin + '분 · ' + km + '</div>',
+    '<a href="' + dirUrl + '" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-top:8px;font-size:11.5px;font-weight:700;color:#185FA5;text-decoration:none;">길찾기 (숙소 → 이곳) →</a>',
+    '</div>',
+  ].join('');
+
+  placeInfoWindow.setContent(content);
+  placeInfoWindow.open({ map, anchor: marker });
+}
+
+/** 숙소 → 각 편의시설로 컬러 점선 연결 + 카테고리 아이콘 마커 (Nearby Search 실데이터 도착 시 호출) */
 function drawInfraLines(basecamp: Place, facilities: InfraFacility[]): void {
   const g = (window as any).google;
   if (!g?.maps || !step3MapInstance || basecamp.lat == null || basecamp.lng == null) return;
@@ -2320,27 +2390,30 @@ function drawInfraLines(basecamp: Place, facilities: InfraFacility[]): void {
     });
     step3InfraLines.push(line);
 
-    step3InfraLines.push(
-      new g.maps.Marker({
-        position: { lat: f.lat, lng: f.lng },
-        map: step3MapInstance,
-        title: meta.name + ' · ' + f.name,
-        icon: {
-          path: g.maps.SymbolPath.CIRCLE,
-          scale: 4,
-          fillColor: meta.color,
-          fillOpacity: 1,
-          strokeColor: '#fff',
-          strokeWeight: 1.5,
-        },
-        zIndex: 6,
-      })
-    );
+    const marker = new g.maps.Marker({
+      position: { lat: f.lat, lng: f.lng },
+      map: step3MapInstance,
+      title: meta.name + ' · ' + f.name,
+      icon: buildInfraMarkerIcon(g, meta),
+      zIndex: 6,
+    });
+    marker.addListener('click', () => {
+      showInfraInfoWindow(g, step3MapInstance, marker, meta, f, basecamp);
+    });
+    step3InfraLines.push(marker);
   });
+
+  // 숙소를 중심으로 가장 먼 시설이 화면 끝에서 약 1cm(38px) 안쪽에 들어오도록 확대
+  if (facilities.length > 0) {
+    const bounds = new g.maps.LatLngBounds();
+    bounds.extend({ lat: basecamp.lat, lng: basecamp.lng });
+    facilities.forEach((f) => bounds.extend({ lat: f.lat, lng: f.lng }));
+    step3MapInstance.fitBounds(bounds, 38);
+  }
 }
 
-/** 숙소 + 주변 장소를 지도에 표시 (Step1/Step2와 동일한 Google Maps 컴포넌트 재사용) */
-async function initMapStep3(body: HTMLElement, withDistance: Step3Item[]): Promise<void> {
+/** 숙소 + 주변 편의 인프라를 지도에 표시 (브레인스토밍 장소는 이 지도에 넣지 않음 — Step1/Step2 지도에서 이미 확인 가능) */
+async function initMapStep3(body: HTMLElement): Promise<void> {
   step3MapInstance = null;
   step3InfraLines = [];
   step3Facilities = [];
@@ -2380,20 +2453,6 @@ async function initMapStep3(body: HTMLElement, withDistance: Step3Item[]): Promi
     zIndex: 30,
   });
 
-  withDistance.forEach((item) => {
-    if (item.place.lat == null || item.place.lng == null) return;
-    const marker = new g.maps.Marker({
-      position: { lat: item.place.lat, lng: item.place.lng },
-      map,
-      title: item.place.name,
-      icon: buildCategoryIcon(g, item.place.mood, 'compact'),
-      zIndex: confirmedIds.has(item.place.id) ? 10 : 1,
-    });
-    marker.addListener('click', () => {
-      showPlaceInfoWindow(g, map, marker, item.place);
-    });
-  });
-
-  // 인프라 데이터가 지도보다 먼저 도착했으면 이제 그림
+  // 인프라 데이터가 지도보다 먼저 도착했으면 이제 그림 (basecamp 마커 외엔 이 지도에 다른 장소를 넣지 않음)
   if (step3Facilities.length && selectedBasecamp) drawInfraLines(selectedBasecamp, step3Facilities);
 }
