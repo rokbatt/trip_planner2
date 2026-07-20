@@ -386,11 +386,32 @@ let step2MapResizeHandler: (() => void) | null = null;
  * JS로 직접 측정해서 고정함. 여러 단계의 flex 상속 체인에 의존하는 CSS 방식은
  * 브라우저/줌 레벨에 따라 어긋나기 쉬워서, 훨씬 확실한 이 방식으로 대체.
  */
+/**
+ * CSS 컨테이너 쿼리(@container slshell)가 세로 스택 모드로 전환됐는지를 JS가 그대로 읽음.
+ * .sl-body에 노출된 --sl-mobile 값(0/1)을 신뢰의 원천으로 삼아, JS와 CSS가 항상 같은
+ * 기준(뷰포트가 아닌 셸의 실제 가용 폭)으로 판단하도록 보장한다. 임계값을 JS에 중복 하드코딩하지 않음.
+ */
+function isShortlistStacked(ref: HTMLElement | null): boolean {
+  if (!ref) return false;
+  const bodyEl = ref.classList.contains('sl-body')
+    ? ref
+    : (ref.querySelector('.sl-body') as HTMLElement | null);
+  if (!bodyEl) return false;
+  return getComputedStyle(bodyEl).getPropertyValue('--sl-mobile').trim() === '1';
+}
+
 function lockShellHeight(container: HTMLElement): void {
   const shellEl = container.querySelector('.sl-shell') as HTMLElement;
   if (!shellEl) return;
 
   const applyHeight = () => {
+    // 세로 스택(작은 폭)에서는 셸을 뷰포트 높이에 가두지 않고 콘텐츠만큼 자라게 둔다
+    // (전체 스크롤은 바깥 .ws-content-body가 담당). 인라인 px 높이는 반드시 걷어내야
+    // 아래 지도가 CSS aspect-ratio 비율대로 렌더된다 — 이게 작은 화면 지도 왜곡의 원인이었음.
+    if (isShortlistStacked(container)) {
+      shellEl.style.height = 'auto';
+      return;
+    }
     const top = shellEl.getBoundingClientRect().top;
     const available = window.innerHeight - top - 16; // 하단 여백 16px
     shellEl.style.height = Math.max(400, available) + 'px';
@@ -416,6 +437,13 @@ function lockStep2MapHeight(body: HTMLElement): void {
   if (!leftEl || !step2El || !headerEl) return;
 
   const applyHeight = () => {
+    // 세로 스택(작은 폭)에서는 인라인 높이를 걷어내 CSS(@container)의 aspect-ratio 지도 비율에 맡긴다.
+    // 인라인 px 높이를 남기면 .sl-step2-left가 지도(aspect-ratio)보다 훨씬 커져 빈 공간이 생기고
+    // 지도 비율도 어긋나므로, stacked 모드에선 반드시 비워야 한다.
+    if (isShortlistStacked(body)) {
+      leftEl.style.height = '';
+      return;
+    }
     const headerMarginBottom = parseFloat(getComputedStyle(headerEl).marginBottom || '0');
     const available = step2El.clientHeight - headerEl.offsetHeight - headerMarginBottom;
     // 지도 아래 남는 여백을 채우도록 기본 계산값보다 17% 키움

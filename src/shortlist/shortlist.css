@@ -36,6 +36,11 @@
   margin: 0 auto;
   padding: clamp(14px, 1.4vw, 22px) clamp(20px, 2.8vw, 40px);
   box-sizing: border-box;
+  /* 반응형 기준을 뷰포트가 아니라 이 셸의 "실제 가용 폭"으로 삼음 →
+     사이드바를 펴거나 우측 채팅 패널을 열어 폭이 좁아지면 그만큼 일찍 세로 스택으로 전환됨.
+     (container-type: inline-size는 세로(height) 억제를 하지 않아 JS 높이 고정/스티키와 무관) */
+  container-type: inline-size;
+  container-name: slshell;
 }
 
 /* 이 셋에 CSS가 없으면 .sl-shell이 아무리 정확한 높이를 가져도
@@ -45,6 +50,10 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  /* JS(lockShellHeight/lockStep2MapHeight)가 CSS와 100% 동일한 기준으로 mobile 여부를
+     판단하도록, 컨테이너 쿼리 결과를 이 커스텀 속성으로 노출한다(아래 @container에서 1로 전환).
+     JS는 이 값을 읽어 stacked 모드에서 인라인 픽셀 높이를 걷어내고 CSS 비율에 맡긴다. */
+  --sl-mobile: 0;
 }
 .sl-step1,
 .sl-step2 {
@@ -1175,12 +1184,19 @@
 .sl-step3-cta-main svg { width: 15px; height: 15px; }
 .sl-step3-cta-sub { font-size: 11.5px; font-weight: 500; opacity: 0.75; }
 
-@media (max-width: 900px) {
-  .sl-shell { height: auto; min-height: 0; overflow: visible; }
+/*
+ * 세로 스택 전환 — 뷰포트가 아니라 .sl-shell의 "실제 가용 폭"(container) 기준.
+ * 720px는 지도+리스트를 나란히 두기에 편안한 최소 폭(지도 55%≈380px 확보 지점)이며,
+ * 그보다 좁아지면(작은 창 또는 채팅 패널을 열어 폭이 준 경우) 세로로 쌓는다.
+ * .sl-shell 자체 높이는 여기서 손대지 않고 JS(lockShellHeight)가 auto로 전환한다
+ * (컨테이너는 자기 자신을 @container로 겨냥할 수 없기 때문).
+ */
+@container slshell (max-width: 720px) {
+  .sl-body { --sl-mobile: 1; }
   .sl-step1-layout, .sl-step2-layout { flex-direction: column; height: auto; max-width: 100%; flex: none; min-height: 0; overflow-y: visible; }
   .sl-step1-layout > .sl-map-wrap, .sl-step1-layout > .sl-zone-panel,
   .sl-step2-layout > .sl-step2-left, .sl-step2-layout > .sl-step2-right { flex: none; width: 100%; }
-  .sl-map-wrap, .sl-step2-left .sl-map-wrap { height: auto; flex: none; aspect-ratio: 16 / 11; max-height: 320px; }
+  .sl-map-wrap, .sl-step2-left .sl-map-wrap { height: auto; flex: none; aspect-ratio: 16 / 11; max-height: 340px; }
   .sl-map { min-height: 280px; }
   .sl-zone-panel, .sl-step2-right { height: auto; max-height: none; overflow-y: visible; }
   .sl-step2-left { position: static; height: auto; }
@@ -1194,10 +1210,22 @@
   .sl-step3-summary-grid { grid-template-columns: 1fr 1fr; }
   .sl-step3-summary-edit { grid-column: 1 / -1; justify-self: start; }
   .sl-step3-infra-body { flex-direction: column; }
-  .sl-step3-map-wrap { height: 260px; }
+  .sl-step3-map-wrap { flex: none; width: 100%; aspect-ratio: 16 / 10; height: auto; max-height: 320px; }
   .sl-step3-eff-card { flex-direction: column; align-items: stretch; gap: 20px; }
   .sl-step3-eff-score { border-right: none; border-bottom: 1px solid #E8EDF5; padding-right: 0; padding-bottom: 18px; }
   .sl-step3-stat-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/*
+ * 매우 좁은 폭(작은 창 + 패널을 동시에 연 경우 등) — 4열 그리드/2열 지표가 뭉개지지 않게
+ * 한 단계 더 접는다. 카드/타일이 최소 가독 폭을 유지하도록.
+ */
+@container slshell (max-width: 480px) {
+  .sl-hotel-sites-grid { grid-template-columns: repeat(2, 1fr); }
+  .sl-step3-summary-grid { grid-template-columns: 1fr; }
+  .sl-step3-summary-edit { grid-column: auto; }
+  .sl-step3-eff-ratings { grid-template-columns: 1fr; }
+  .sl-step3-stat-grid { grid-template-columns: 1fr; }
 }
 
 /* ── 커스텀 줌 컨트롤 (0.5 단위) ── */
