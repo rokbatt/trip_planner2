@@ -2,9 +2,18 @@
    몽실이 Trip Workspace — Airport Terminal Shell
    ============================================================ */
 
+/*
+ * height(고정)를 써야 함 — min-height만 쓰면 내부 콘텐츠(예: 카드가 많은 게이트 컬럼)가
+ * 원래 크기보다 커지려 할 때 이 박스의 height:auto 계산에 그 콘텐츠 높이가 그대로 반영돼
+ * 버려서, 100dvh보다 커지고 그 아래 모든 height:100%/stretch 체인(.ws-main → ... →
+ * .ws-panel까지)이 통째로 늘어나 버린다. 그 결과 페이지 전체가 스크롤돼야 하고,
+ * .ws-content-body(overflow-y:auto)가 스크롤을 전담하도록 만든 설계가 무력화된다.
+ * height:100dvh로 고정해야 .ws-main이 정확히 뷰포트 높이로 stretch되고, 아래 체인의
+ * overflow-y:auto가 실제로 내부 스크롤을 전담한다.
+ */
 .ws-page {
   display: flex;
-  min-height: 100dvh;
+  height: 100dvh;
   background: #F8FBFE;
 }
 

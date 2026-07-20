@@ -423,10 +423,13 @@
 .bd-gates {
   flex: 4 1 0;
   min-width: 0;
+  min-height: 0;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
   gap: clamp(8px, 1vw, 24px);
   height: 100%;
+  overflow: hidden;
 }
 
 /*
@@ -728,11 +731,16 @@
 .bd-card-kebab:hover { background: rgba(11,42,92,0.75); }
 .bd-card-kebab svg { width: 13px; height: 13px; }
 
+/*
+ * 컬럼 폭이 유동적이라 카드 폭도 화면 크기에 따라 좁아질 수 있음.
+ * width를 고정 148px로 두면 카드보다 메뉴가 넓어져 컬럼(overflow:hidden) 밖으로
+ * 잘려 보이므로, 카드 폭(100% - 좌우 6px)을 넘지 않는 선에서만 148px까지 커지게 함.
+ */
 .bd-card-kebab-menu {
   position: absolute;
   top: 32px;
   right: 6px;
-  width: 148px;
+  width: min(148px, calc(100% - 12px));
   background: #FFFFFF;
   border: 1px solid rgba(130,150,170,0.18);
   border-radius: 10px;
