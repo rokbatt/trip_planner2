@@ -1095,8 +1095,10 @@ function addCustomZoomControl(map: any, mapEl: HTMLElement): void {
   map.controls[g.maps.ControlPosition.RIGHT_BOTTOM].push(wrap);
 }
 
-/** Step2용 절충 스타일 — 도로·건물·대중교통 등 실제 디테일은 그대로 두되,
- *  기본 구글 업체 POI 아이콘(작은 색색 마커들)만 줄여서 우리 핀이 묻히지 않도록 함 */
+/** Step2/Step3 공용 "디테일한 지도" 절충 스타일 — 도로·건물·대중교통 등 실제 디테일은 그대로 두되,
+ *  기본 구글 업체 POI 아이콘(작은 색색 마커들)만 줄여서 우리 핀이 묻히지 않도록 함.
+ *  Step1/Step3 이전 버전이 쓰던 MAP_STYLE_LIGHT(도로/POI를 다 지운 추상 지도)보다
+ *  주변 편의 인프라처럼 "실제 동네 맥락"이 중요한 화면에 더 적합함 */
 const MAP_STYLE_STEP2 = [
   { featureType: 'poi.business', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   { featureType: 'poi.business', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
@@ -2333,7 +2335,10 @@ function buildInfraMarkerIcon(g: any, meta: { icon: string; color: string }): an
   const withOutline = colored.replace(
     /(<svg[^>]*>)([\s\S]*)(<\/svg>)/,
     (_m: string, open: string, inner: string, close: string) =>
-      open +
+      // IC_* 아이콘 상수는 innerHTML로 인라인 삽입될 때만 쓰도록 만들어져 xmlns가 없음.
+      // data:image/svg+xml <img>는 독립 SVG 문서로 파싱되므로 xmlns가 없으면 파싱에 실패해
+      // 아이콘이 아예 안 보임(깨진 이미지) — 여기서만 보강해서 넣어준다.
+      open.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ') +
       '<defs><filter id="infraOutline" x="-60%" y="-60%" width="220%" height="220%">' +
       '<feMorphology in="SourceAlpha" operator="dilate" radius="1.2" result="thick"/>' +
       '<feFlood flood-color="#ffffff" flood-opacity="0.95" result="white"/>' +
@@ -2467,7 +2472,7 @@ async function initMapStep3(body: HTMLElement): Promise<void> {
     keyboardShortcuts: false,
     isFractionalZoomEnabled: true,
     gestureHandling: 'greedy',
-    styles: MAP_STYLE_LIGHT,
+    styles: MAP_STYLE_STEP2,
   });
   step3MapInstance = map;
   fixMapVisibilityOnResize(g, map, mapEl, { lat: selectedBasecamp.lat, lng: selectedBasecamp.lng });
