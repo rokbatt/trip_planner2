@@ -523,9 +523,14 @@ async function renderStep(container: HTMLElement): Promise<void> {
  * 상단 여행지 바 — 보드와 동일 컨셉. 여행지를 카드/탭으로 늘어놓지 않고 "여행지 변경"
  * 드롭다운만 둔다(워크스페이스 헤더가 활성 여행지·날짜를 실시간으로 보여주므로 중복 방지).
  * 합성(마이그레이션 전) 단일 여행지면 렌더 안 함(기존과 동일). 추가·편집은 보드에서.
+ *
+ * 확정(3단계)에서는 상단 첫 줄(#sl-dest-bar-wrap)을 압축 구간 pill이 대신 차지하므로,
+ * "여행지 변경"은 그 대신 스테퍼 줄 우측(#sl-stepper-extra, 래퍼 없이)으로 옮겨 표시한다.
+ * 1·2단계는 기존과 동일(#sl-dest-bar-wrap, 래퍼 있음).
  */
 function renderShortlistDestBar(container: HTMLElement): void {
-  const wrap = container.querySelector('#sl-dest-bar-wrap') as HTMLElement | null;
+  const compact = step === 3;
+  const wrap = container.querySelector(compact ? '#sl-stepper-extra' : '#sl-dest-bar-wrap') as HTMLElement | null;
   if (!wrap) return;
   // shortlist 바는 여행지가 2곳 이상일 때만(전환 목적) 노출.
   if (!slActiveDest || isSyntheticDestination(slActiveDest.id) || slDestinations.length < 2) {
@@ -533,11 +538,8 @@ function renderShortlistDestBar(container: HTMLElement): void {
     return;
   }
 
-  wrap.innerHTML = [
-    '<div class="sl-dest-bar">',
-    '  <button type="button" class="sl-dest-switch" id="sl-dest-switch">' + IC_SWAP + ' 여행지 변경</button>',
-    '</div>',
-  ].join('');
+  const btnHtml = '<button type="button" class="sl-dest-switch" id="sl-dest-switch">' + IC_SWAP + ' 여행지 변경</button>';
+  wrap.innerHTML = compact ? btnHtml : '<div class="sl-dest-bar">' + btnHtml + '</div>';
 
   wrap.querySelector('#sl-dest-switch')?.addEventListener('click', (e) => {
     openShortlistDestSwitcher(e.currentTarget as HTMLElement);
@@ -767,8 +769,74 @@ async function removeSegment(segId: string): Promise<void> {
   renderStep(slContainer);
 }
 
-/** 활성 여행지에 숙소 구간이 2개 이상일 때만 노출되는 구간 전환 바 */
+/** N박 표기 없이 날짜 범위만("10.26–10.29") — 상단 헤더처럼 최대한 압축해서 보여줄 곳에 사용 */
+function dateRangeOnly(start: string | null, end: string | null): string {
+  if (!start || !end) return '';
+  const s = new Date(start);
+  const e = new Date(end);
+  const fmt = (d: Date) => d.getMonth() + 1 + '.' + d.getDate();
+  return fmt(s) + '–' + fmt(e);
+}
+
+function bindSegmentPillHandlers(wrap: HTMLElement): void {
+  wrap.querySelectorAll('.sl-seg-pill').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('[data-del-seg]')) return;
+      switchSegment((btn as HTMLElement).dataset.segId!);
+    });
+  });
+  wrap.querySelectorAll('[data-del-seg]').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = (el as HTMLElement).dataset.delSeg!;
+      if (confirm('이 숙소 구간을 삭제할까요? 이 구간에서 고른 지역·숙소·장소 선택이 사라져요.')) {
+        removeSegment(id);
+      }
+    });
+  });
+}
+
+/**
+ * 확정(3단계) 화면: 헤더 바로 아래 줄에 최대한 압축된 구간 pill만 보여줌
+ * (라벨·숙소 나누기 버튼 없음, N박 표기 없이 기간만). "숙소 나누기"는 본문의
+ * 전용 카드(이 여행지에서 숙소를 나눠 묵나요?)에서만 시작하도록 상단에서는 제거.
+ */
+function renderCompactSegmentBar(container: HTMLElement): void {
+  const wrap = container.querySelector('#sl-dest-bar-wrap') as HTMLElement | null;
+  if (!wrap) return;
+  if (!slActiveDest || isSyntheticDestination(slActiveDest.id) || slSegments.length < 2) {
+    wrap.innerHTML = '';
+    return;
+  }
+
+  const pills = slSegments
+    .map((seg, i) => {
+      const active = seg.id === slActiveSegment?.id;
+      const meta = dateRangeOnly(seg.start_date, seg.end_date);
+      return [
+        '<button type="button" class="sl-seg-pill sl-seg-pill-compact' + (active ? ' active' : '') + '" data-seg-id="' + seg.id + '">',
+        '  <span class="sl-seg-pill-idx">' + (i + 1) + '</span>',
+        '  <span class="sl-seg-pill-text">',
+        '    <span class="sl-seg-pill-name">' + escapeHtml(segmentLabel(seg, i)) + '</span>',
+        meta ? '    <span class="sl-seg-pill-meta">' + escapeHtml(meta) + '</span>' : '',
+        '  </span>',
+        active && slSegments.length > 1 ? '  <span class="sl-seg-pill-del" data-del-seg="' + seg.id + '" title="이 숙소 구간 삭제">' + IC_XCLOSE + '</span>' : '',
+        '</button>',
+      ].join('');
+    })
+    .join('');
+
+  wrap.innerHTML = '<div class="sl-seg-bar sl-seg-bar-compact"><div class="sl-seg-pills">' + pills + '</div></div>';
+  bindSegmentPillHandlers(wrap);
+}
+
+/** 1·2단계(기존 방식 유지): 라벨 + pill + 숙소 나누기 버튼이 있는 전체 바 */
 function renderSegmentBar(container: HTMLElement): void {
+  if (step === 3) {
+    renderCompactSegmentBar(container);
+    return;
+  }
+
   const wrap = container.querySelector('#sl-seg-bar-wrap') as HTMLElement | null;
   if (!wrap) return;
   // 실제 여행지 + 구간 2개 이상일 때만 (단일 숙소면 깔끔하게 숨김)
@@ -802,21 +870,7 @@ function renderSegmentBar(container: HTMLElement): void {
     '</div>',
   ].join('');
 
-  wrap.querySelectorAll('.sl-seg-pill').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('[data-del-seg]')) return;
-      switchSegment((btn as HTMLElement).dataset.segId!);
-    });
-  });
-  wrap.querySelectorAll('[data-del-seg]').forEach((el) => {
-    el.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const id = (el as HTMLElement).dataset.delSeg!;
-      if (confirm('이 숙소 구간을 삭제할까요? 이 구간에서 고른 지역·숙소·장소 선택이 사라져요.')) {
-        removeSegment(id);
-      }
-    });
-  });
+  bindSegmentPillHandlers(wrap);
   wrap.querySelector('#sl-seg-add')?.addEventListener('click', (e) => {
     openSegmentDatePopover(e.currentTarget as HTMLElement);
   });
@@ -2421,30 +2475,10 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   const budgetLabel = stayFilters.budget ? (BUDGET_PRESETS[stayFilters.budget]?.label ?? '직접설정') : '전체';
 
   void closeCount;
-
-  // 스테퍼 줄 우측: Step2와 동일한 요약 카드 + '수정'(숙소 다시 선택)으로 흐름을 통일
-  const shellEl = body.closest('.sl-shell') as HTMLElement;
-  const stepperExtraEl = shellEl?.querySelector('#sl-stepper-extra') as HTMLElement;
-  const goBackToStep2 = () => {
-    step = 2;
-    const container = body.closest('.sl-shell')!.parentElement as HTMLElement;
-    renderStep(container);
-  };
-  if (stepperExtraEl) {
-    stepperExtraEl.innerHTML = [
-      '<div class="sl-step2-topbar">',
-      '  <div class="sl-step2-summary-card">',
-      '    <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">선택 지역</span><span class="sl-step2-summary-value">' + escapeHtml(zone.name) + '</span></div>',
-      '    <div class="sl-step2-summary-divider"></div>',
-      '    <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">숙박 기간</span><span class="sl-step2-summary-value">' + escapeHtml(dateRange) + '</span></div>',
-      '    <div class="sl-step2-summary-divider"></div>',
-      '    <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">예산 (1박 1인)</span><span class="sl-step2-summary-value">' + escapeHtml(budgetLabel) + '</span></div>',
-      '    <button class="sl-step2-summary-edit" id="sl-back-2b">' + IC_EXTLINK + ' 수정</button>',
-      '  </div>',
-      '</div>',
-    ].join('\n');
-    stepperExtraEl.querySelector('#sl-back-2b')?.addEventListener('click', openStayDateEditor);
-  }
+  // 스테퍼 줄 우측(#sl-stepper-extra)은 이제 renderShortlistDestBar가 "여행지 변경"을
+  // 대신 채우므로(상단 정보 압축), Step3 전용 요약 박스는 더 이상 그리지 않음 —
+  // 같은 정보(선택 지역/숙박 기간/예산)는 아래 "여행 중심 요약" 카드에 이미 있고,
+  // 그 카드의 "수정" 버튼이 openStayDateEditor로 계속 연결돼 있어 기능은 그대로 유지됨.
 
   const stars = typeof basecamp.google_rating === 'number' ? buildStars(basecamp.google_rating) : '';
   const categoryLabel = basecamp.category || (basecamp.mood ? MOOD_LABEL[basecamp.mood] : '') || '숙소';
@@ -2462,7 +2496,6 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   body.innerHTML = [
     '<div class="sl-step3">',
 
-    '  <button class="sl-back-link sl-step3-back" id="sl-back-2">' + IC_BACK + ' 숙소 다시 선택</button>',
     '  <div class="sl-step2-header-row">',
     '    <div class="sl-step1-header sl-step2-header-text">',
     '      <div class="sl-eyebrow">FINAL CHECK</div>',
@@ -2583,7 +2616,6 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '</div>',
   ].join('\n');
 
-  body.querySelector('#sl-back-2')?.addEventListener('click', goBackToStep2);
   body.querySelector('#sl-back-2c')?.addEventListener('click', openStayDateEditor);
   body.querySelector('#sl-expense-link')?.addEventListener('click', () => {
     window.dispatchEvent(
