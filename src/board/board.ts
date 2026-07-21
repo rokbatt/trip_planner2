@@ -1333,7 +1333,8 @@ function bindAiPicksToggle(inbox: HTMLElement, tripId: string): void {
 }
 
 function getTripDestination(): string {
-  return syntheticDestinationName(store.get('currentTrip'));
+  // 활성 여행지가 있으면 그 도시명 (AI Monthly Picks·검색 사이트가 해당 여행지 기준이 되도록)
+  return boardActiveDest?.name || syntheticDestinationName(store.get('currentTrip'));
 }
 
 function buildAiPicksContent(picks: Record<string, string[]>, _tripId: string): string {

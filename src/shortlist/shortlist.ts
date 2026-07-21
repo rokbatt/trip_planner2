@@ -1,8 +1,17 @@
 import { supabase } from '../supabase';
 import { store } from '../store';
-import { syntheticDestinationName } from '../trips/destinations';
+import {
+  syntheticDestinationName,
+  loadDestinations,
+  resolveActiveDestination,
+  setActiveDestinationId,
+  placeBelongsToDestination,
+  isSyntheticDestination,
+  loadStaySegments,
+  saveStaySegment,
+} from '../trips/destinations';
 import { loadGoogleMapsScript, getCategoryLabel } from '../utils/googleMaps';
-import type { Database } from '../types/database';
+import type { Database, TripDestination, StaySegment } from '../types/database';
 import './shortlist.css';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -74,6 +83,10 @@ let markersByZone = new Map<string, any[]>();
 /* ── 모듈 상태 ── */
 let currentTripId = '';
 let currentTrip: Trip | null = null;
+let slContainer: HTMLElement | null = null;
+let slDestinations: TripDestination[] = [];
+let slActiveDest: TripDestination | null = null;
+let slActiveSegment: StaySegment | null = null;
 let allPlaces: Place[] = [];
 let zones: Zone[] = [];
 let step: 1 | 2 | 3 = 1;
@@ -98,6 +111,9 @@ export function teardownShortlist(): void {
   }
   allPlaces = [];
   zones = [];
+  slDestinations = [];
+  slActiveDest = null;
+  slActiveSegment = null;
   step = 1;
   selectedZone = null;
   zoneDataSource = 'curated';
@@ -303,69 +319,84 @@ async function loadTrip(tripId: string): Promise<Trip | null> {
 }
 
 async function saveShortlistState(): Promise<void> {
-  if (!currentTripId) return;
-  await supabase
-    .from('trips')
-    .update({
-      shortlist_zone_name: selectedZone?.name ?? null,
-      shortlist_zone_place_ids: selectedZone ? selectedZone.places.map((p) => p.id) : null,
-      shortlist_basecamp_place_id: selectedBasecamp?.id ?? null,
-      shortlist_confirmed_place_ids: [...confirmedIds],
-    })
-    .eq('id', currentTripId);
+  if (!currentTrip || !slActiveDest || !slActiveSegment) return;
+  const state = {
+    zone_name: selectedZone?.name ?? null,
+    zone_place_ids: selectedZone ? selectedZone.places.map((p) => p.id) : null,
+    basecamp_place_id: selectedBasecamp?.id ?? null,
+    confirmed_place_ids: [...confirmedIds],
+  };
+  // 활성 여행지의 숙소 구간에 저장 (합성 여행지면 내부적으로 기존 trips.shortlist_* 컬럼으로 폴백).
+  // insert된 실제 행의 id를 이어받아 다음 저장이 update가 되도록 slActiveSegment 갱신.
+  slActiveSegment = await saveStaySegment(currentTrip, slActiveDest, slActiveSegment, state);
 }
 
 /* ── 메인 렌더 ── */
 export async function renderShortlistContent(container: HTMLElement, tripId: string): Promise<void> {
   teardownShortlist();
   currentTripId = tripId;
+  slContainer = container;
 
   container.innerHTML = '<div class="sl-loading">Shortlist 준비 중...</div>';
 
   const [trip, places] = await Promise.all([loadTrip(tripId), loadPlaces(tripId)]);
   currentTrip = trip;
-  allPlaces = places;
+
+  // 여행지 결정 + 활성 여행지의 장소만 사용
+  slDestinations = trip ? await loadDestinations(trip) : [];
+  slActiveDest = slDestinations.length ? resolveActiveDestination(tripId, slDestinations) : null;
+  allPlaces = slActiveDest ? places.filter((p) => placeBelongsToDestination(p, slActiveDest!)) : places;
+
+  const emptyShell = (inner: string): string =>
+    '<div id="sl-dest-bar-wrap"></div><div class="sl-empty-wrap">' + inner + '</div>';
 
   if (allPlaces.length === 0) {
-    container.innerHTML = [
+    container.innerHTML = emptyShell([
       '<div class="sl-empty">',
       '  <div class="sl-empty-title">아직 분류된 장소가 없어요</div>',
-      '  <div class="sl-empty-hint">Brainstorm(IDEAS) 게이트에서 장소를 VISIT · FOOD · ACTIVITY · STAY로 분류하면 여기 표시돼요.</div>',
+      '  <div class="sl-empty-hint">Brainstorm(IDEAS) 게이트에서 이 여행지의 장소를 VISIT · FOOD · ACTIVITY · STAY로 분류하면 여기 표시돼요.</div>',
       '</div>',
-    ].join('\n');
+    ].join('\n'));
+    renderShortlistDestBar(container);
     return;
   }
 
-  const destination = getTripDestination();
+  const destination = slActiveDest?.name || getTripDestination();
   const { seeds, source } = await fetchDestinationZones(destination);
 
   if (seeds.length === 0) {
-    container.innerHTML = [
+    container.innerHTML = emptyShell([
       '<div class="sl-empty">',
       '  <div class="sl-empty-title">' + escapeHtml(destination) + '의 숙박 생활권 정보가 아직 없어요</div>',
       '  <div class="sl-empty-hint">이 여행지는 아직 검수된 지역 데이터가 준비되지 않았어요. 조만간 추가될 예정이에요.</div>',
       '</div>',
-    ].join('\n');
+    ].join('\n'));
+    renderShortlistDestBar(container);
     return;
   }
 
   zoneDataSource = source;
   zones = assignPlacesToZones(seeds, allPlaces);
 
-  // 이미 저장된 선택 상태가 있으면 복원
-  if (trip?.shortlist_zone_name && trip.shortlist_zone_place_ids) {
-    const restoredZone = zones.find(
-      (z) => z.places.some((p) => trip.shortlist_zone_place_ids!.includes(p.id))
-    );
-    if (restoredZone) {
-      selectedZone = restoredZone;
-      step = 2;
-      if (trip.shortlist_basecamp_place_id) {
-        const bc = restoredZone.places.find((p) => p.id === trip.shortlist_basecamp_place_id);
-        if (bc) {
-          selectedBasecamp = bc;
-          step = 3;
-          confirmedIds = new Set(trip.shortlist_confirmed_place_ids ?? []);
+  // 활성 여행지의 숙소 구간에서 이미 저장된 선택 상태를 복원
+  if (trip && slActiveDest) {
+    const segs = await loadStaySegments(trip, slActiveDest);
+    slActiveSegment = segs[0] ?? null;
+    const seg = slActiveSegment;
+    if (seg?.zone_name && seg.zone_place_ids) {
+      const restoredZone = zones.find(
+        (z) => z.places.some((p) => seg.zone_place_ids!.includes(p.id))
+      );
+      if (restoredZone) {
+        selectedZone = restoredZone;
+        step = 2;
+        if (seg.basecamp_place_id) {
+          const bc = restoredZone.places.find((p) => p.id === seg.basecamp_place_id);
+          if (bc) {
+            selectedBasecamp = bc;
+            step = 3;
+            confirmedIds = new Set(seg.confirmed_place_ids ?? []);
+          }
         }
       }
     }
@@ -375,7 +406,8 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
 }
 
 function getTripDestination(): string {
-  return syntheticDestinationName(currentTrip);
+  // 활성 여행지가 있으면 그 도시명(지역 데이터·AI 채점·숙소 검색 등 모두 여기에 맞춤)
+  return slActiveDest?.name || syntheticDestinationName(currentTrip);
 }
 
 let shellResizeHandler: (() => void) | null = null;
@@ -461,6 +493,7 @@ function lockStep2MapHeight(body: HTMLElement): void {
 
 async function renderStep(container: HTMLElement): Promise<void> {
   container.innerHTML = [
+    '<div id="sl-dest-bar-wrap"></div>',
     '<div class="sl-shell">',
     '  <div class="sl-stepper-row">',
     '    <div class="sl-stepper" id="sl-stepper"></div>',
@@ -470,6 +503,7 @@ async function renderStep(container: HTMLElement): Promise<void> {
     '</div>',
   ].join('\n');
 
+  renderShortlistDestBar(container);
   renderStepper(container);
   lockShellHeight(container);
 
@@ -482,6 +516,59 @@ async function renderStep(container: HTMLElement): Promise<void> {
   if (step === 1) await renderStep1(body);
   else if (step === 2) await renderStep2(body);
   else await renderStep3(body);
+}
+
+/** 상단 여행지 바 — 보드와 동일 컨셉. 합성(마이그레이션 전) 단일 여행지면 렌더 안 함(기존과 동일). */
+function renderShortlistDestBar(container: HTMLElement): void {
+  const wrap = container.querySelector('#sl-dest-bar-wrap') as HTMLElement | null;
+  if (!wrap) return;
+  // 여행지 추가·편집은 보드에서 하므로, shortlist 바는 여행지가 2곳 이상일 때만(전환 목적) 노출.
+  if (!slActiveDest || isSyntheticDestination(slActiveDest.id) || slDestinations.length < 2) {
+    wrap.innerHTML = '';
+    return;
+  }
+
+  const tabs = slDestinations
+    .map((d) => {
+      const active = d.id === slActiveDest!.id;
+      const meta = shortlistDestMeta(d);
+      return [
+        '<button type="button" class="sl-dest-tab' + (active ? ' active' : '') + '" data-dest-id="' + d.id + '">',
+        '  <span class="sl-dest-tab-plane">' + IC_PLANE + '</span>',
+        '  <span class="sl-dest-tab-text">',
+        '    <span class="sl-dest-tab-name">' + escapeHtml(d.name) + '</span>',
+        meta ? '    <span class="sl-dest-tab-meta">' + escapeHtml(meta) + '</span>' : '',
+        '  </span>',
+        '</button>',
+      ].join('');
+    })
+    .join('');
+
+  wrap.innerHTML = [
+    '<div class="sl-dest-bar">',
+    '  <span class="sl-dest-bar-label">' + IC_PIN + ' 여행지</span>',
+    '  <div class="sl-dest-tabs">' + tabs + '</div>',
+    '  <span class="sl-dest-bar-hint">여행지 추가·편집은 Brainstorm에서</span>',
+    '</div>',
+  ].join('');
+
+  wrap.querySelectorAll('.sl-dest-tab').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = (btn as HTMLElement).dataset.destId;
+      if (!id || id === slActiveDest?.id || !slContainer) return;
+      setActiveDestinationId(currentTripId, id);
+      renderShortlistContent(slContainer, currentTripId);
+    });
+  });
+}
+
+function shortlistDestMeta(d: TripDestination): string {
+  if (!d.start_date || !d.end_date) return '';
+  const s = new Date(d.start_date);
+  const e = new Date(d.end_date);
+  const nights = Math.max(0, Math.round((e.getTime() - s.getTime()) / 86400000));
+  const fmt = (dt: Date) => dt.getMonth() + 1 + '.' + dt.getDate();
+  return (nights > 0 ? nights + '박 · ' : '') + fmt(s) + '–' + fmt(e);
 }
 
 function renderStepper(container: HTMLElement): void {

@@ -84,9 +84,28 @@ function syntheticSegmentFromTrip(trip: Trip, destination: TripDestination): Sta
   };
 }
 
+/** 실제 여행지인데 아직 구간 행이 없을 때의 빈 구간 (새로 추가된 여행지 등) */
+function emptySegment(trip: Trip, destination: TripDestination): StaySegment {
+  return {
+    id: SYNTHETIC_SEG_PREFIX + destination.id,
+    trip_id: trip.id,
+    destination_id: destination.id,
+    sort_order: 0,
+    start_date: destination.start_date,
+    end_date: destination.end_date,
+    zone_name: null,
+    zone_place_ids: null,
+    basecamp_place_id: null,
+    confirmed_place_ids: null,
+    created_at: trip.created_at,
+  };
+}
+
 /**
- * 한 여행지의 숙소 구간 목록. stay_segments 테이블에 행이 있으면 그걸,
- * 없거나(마이그레이션 전) 비어있으면 기존 shortlist_* 컬럼으로 합성한 단일 구간 1개.
+ * 한 여행지의 숙소 구간 목록.
+ *  - 실제 여행지 + 구간 행 있음 → 그 행들
+ *  - 실제 여행지 + 구간 행 없음 → 빈 구간 1개 (새 여행지는 아직 아무것도 안 정함)
+ *  - 합성 여행지(마이그레이션 전) 또는 테이블 자체 없음 → 기존 shortlist_* 컬럼으로 합성 1개
  * → 숙소를 안 나눈 여행지는 항상 구간 1개로 보이므로 기존 흐름과 동일.
  */
 export async function loadStaySegments(trip: Trip, destination: TripDestination): Promise<StaySegment[]> {
@@ -98,11 +117,73 @@ export async function loadStaySegments(trip: Trip, destination: TripDestination)
         .eq('destination_id', destination.id)
         .order('sort_order', { ascending: true });
       if (!error && data && data.length > 0) return data as StaySegment[];
+      if (!error) return [emptySegment(trip, destination)]; // 테이블은 있고 이 여행지 구간만 없음
     } catch {
-      /* 테이블 없음 등 → 폴백 */
+      /* 테이블 없음 → 아래 컬럼 폴백 */
     }
   }
   return [syntheticSegmentFromTrip(trip, destination)];
+}
+
+/** stay_segment 저장 상태(Step1~3 결과) */
+export interface SegmentState {
+  zone_name: string | null;
+  zone_place_ids: string[] | null;
+  basecamp_place_id: string | null;
+  confirmed_place_ids: string[] | null;
+}
+
+/**
+ * 숙소 구간 상태 저장. 저장 위치는 상황에 따라 자동 결정:
+ *  - 합성 여행지(마이그레이션 전) → 기존 trips.shortlist_* 컬럼 (기존 동작 유지)
+ *  - 실제 여행지 + 실제 구간 행 → 그 행 update
+ *  - 실제 여행지 + 아직 행 없음(빈/합성 구간) → 새 stay_segments 행 insert
+ * 반환: 갱신된 StaySegment (insert된 실제 행 포함) — 호출부가 이후 update용 id를 이어받도록.
+ */
+export async function saveStaySegment(
+  trip: Trip,
+  destination: TripDestination,
+  segment: StaySegment,
+  state: SegmentState
+): Promise<StaySegment> {
+  if (isSyntheticDestination(destination.id)) {
+    await supabase
+      .from('trips')
+      .update({
+        shortlist_zone_name: state.zone_name,
+        shortlist_zone_place_ids: state.zone_place_ids,
+        shortlist_basecamp_place_id: state.basecamp_place_id,
+        shortlist_confirmed_place_ids: state.confirmed_place_ids,
+      })
+      .eq('id', trip.id);
+    return { ...segment, ...state };
+  }
+
+  if (!isSyntheticSegment(segment.id)) {
+    const { data, error } = await supabase
+      .from('stay_segments')
+      .update(state)
+      .eq('id', segment.id)
+      .select()
+      .single();
+    if (error) console.error('[stay_segments] 구간 저장 실패:', error.message);
+    return (data as StaySegment) ?? { ...segment, ...state };
+  }
+
+  const { data, error } = await supabase
+    .from('stay_segments')
+    .insert({
+      trip_id: trip.id,
+      destination_id: destination.id,
+      sort_order: segment.sort_order ?? 0,
+      start_date: segment.start_date,
+      end_date: segment.end_date,
+      ...state,
+    })
+    .select()
+    .single();
+  if (error) console.error('[stay_segments] 구간 생성 실패:', error.message);
+  return (data as StaySegment) ?? { ...segment, ...state };
 }
 
 /* ────────────────────────────────────────────────────────────

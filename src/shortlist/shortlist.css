@@ -23,6 +23,73 @@
 }
 .sl-empty-title { font-size: 16px; font-weight: 700; color: #0B2A5C; }
 .sl-empty-hint { font-size: 13px; color: #94A3B8; max-width: 360px; }
+.sl-empty-wrap { min-height: 320px; }
+
+/* ── 다중 여행지 바 (Phase 2) — 보드와 동일 컨셉 ── */
+#sl-dest-bar-wrap:empty { display: none; }
+.sl-dest-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 1512px;
+  margin: 0 auto;
+  padding: clamp(10px, 1.2vw, 16px) clamp(20px, 2.8vw, 40px) 0;
+  box-sizing: border-box;
+}
+.sl-dest-bar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #94A3B8;
+  flex-shrink: 0;
+}
+.sl-dest-bar-label svg { width: 13px; height: 13px; }
+.sl-dest-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+.sl-dest-tabs::-webkit-scrollbar { display: none; }
+.sl-dest-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(130,150,170,0.2);
+  background: rgba(255,255,255,0.65);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+.sl-dest-tab:hover { border-color: #8FD8F8; background: #fff; }
+.sl-dest-tab.active {
+  border-color: #0B2A5C;
+  background: #0B2A5C;
+  box-shadow: 0 4px 14px rgba(11,42,92,0.18);
+}
+.sl-dest-tab-plane { display: inline-flex; width: 15px; height: 15px; color: #0B7CC4; flex-shrink: 0; }
+.sl-dest-tab.active .sl-dest-tab-plane { color: #8FD8F8; }
+.sl-dest-tab-plane svg { width: 100%; height: 100%; }
+.sl-dest-tab-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; text-align: left; }
+.sl-dest-tab-name {
+  font-size: 13px; font-weight: 700; color: #0B2A5C; letter-spacing: -0.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px;
+}
+.sl-dest-tab.active .sl-dest-tab-name { color: #fff; }
+.sl-dest-tab-meta { font-size: 10px; font-weight: 600; color: #94A3B8; white-space: nowrap; }
+.sl-dest-tab.active .sl-dest-tab-meta { color: rgba(255,255,255,0.7); }
+.sl-dest-bar-hint { font-size: 10.5px; color: #B0BAC5; flex-shrink: 0; white-space: nowrap; }
+@media (max-width: 720px) { .sl-dest-bar-hint { display: none; } }
 
 .sl-shell {
   display: flex;
