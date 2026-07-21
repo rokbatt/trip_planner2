@@ -1,7 +1,17 @@
 import { supabase } from '../supabase';
 import { store } from '../store';
-import { syntheticDestinationName } from '../trips/destinations';
-import type { Database } from '../types/database';
+import {
+  syntheticDestinationName,
+  loadDestinations,
+  resolveActiveDestination,
+  setActiveDestinationId,
+  placeBelongsToDestination,
+  isSyntheticDestination,
+  createDestination,
+  updateDestination,
+  deleteDestination,
+} from '../trips/destinations';
+import type { Database, TripDestination } from '../types/database';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { loadGoogleMapsScript, extractPlaceResult, suggestGateFromCategory, getPlacePredictions, getPlaceDetails, getCategoryLabel, resetGoogleServices } from '../utils/googleMaps';
 import type { GooglePlaceResult, PlacePrediction } from '../utils/googleMaps';
@@ -203,6 +213,11 @@ let securityEl: HTMLElement | null = null;
 let placesCache = new Map<string, Place>(); // id → 최신 place 데이터 (rebuild 용)
 let boardGeneration = 0; // 렌더링마다 증가 — 오래된 렌더의 비동기 콜백을 걸러내는 용도
 
+/* ── 다중 여행지 상태 (Phase 2) ── */
+let boardContainer: HTMLElement | null = null; // 여행지 전환 시 재렌더용
+let boardDestinations: TripDestination[] = [];
+let boardActiveDest: TripDestination | null = null;
+
 /* ── 커스텀 자동완성 드롭다운 상태 ── */
 let acDropdownEl: HTMLElement | null = null;
 let acDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -245,6 +260,7 @@ export function teardownBoard(): void {
   placesCache = new Map();
   aiPicksCache = null;
   aiPicksExpanded = false;
+  closeDestPopover();
   cleanupAutocomplete();
 }
 
@@ -285,6 +301,12 @@ async function loadPlaces(tripId: string): Promise<Place[]> {
   return data ?? [];
 }
 
+/** 새 장소를 담을 여행지 id — 실제 여행지가 활성일 때만(마이그레이션 전이면 태깅 안 함) */
+function activeDestIdForInsert(): string | undefined {
+  if (boardActiveDest && !isSyntheticDestination(boardActiveDest.id)) return boardActiveDest.id;
+  return undefined;
+}
+
 /** 일반 텍스트 아이디어 추가 (Google 데이터 없음) */
 async function addIdea(tripId: string, mood: string | null, text: string): Promise<Place | null> {
   const user = store.get('user');
@@ -298,6 +320,7 @@ async function addIdea(tripId: string, mood: string | null, text: string): Promi
       is_idea: true,
       added_by: user?.id ?? null,
       sort_order: Math.floor(Date.now() / 1000),
+      destination_id: activeDestIdForInsert(),
     })
     .select()
     .single();
@@ -337,6 +360,7 @@ async function addRichIdea(tripId: string, mood: string | null, g: GooglePlaceRe
       is_idea: false,
       added_by: user?.id ?? null,
       sort_order: Math.floor(Date.now() / 1000),
+      destination_id: activeDestIdForInsert(),
       address: g.address,
       lat: g.lat,
       lng: g.lng,
@@ -495,18 +519,31 @@ function runSecurityScan(): Promise<void> {
 export async function renderBoardContent(container: HTMLElement, tripId: string): Promise<void> {
   teardownBoard();
   const myGeneration = ++boardGeneration;
+  boardContainer = container;
 
   container.innerHTML = [
+    '<div class="bd-dest-bar-wrap" id="bd-dest-bar-wrap"></div>',
     '<div class="bd-layout" id="bd-layout">',
     '  <div class="bd-loading">보드를 불러오는 중...</div>',
     '</div>',
     '<div class="bd-toast-container" id="bd-toast-container"></div>',
   ].join('');
 
-  const places = await loadPlaces(tripId);
+  const trip = store.get('currentTrip');
+  boardDestinations = trip ? await loadDestinations(trip) : [];
+  if (myGeneration !== boardGeneration) return;
+  boardActiveDest = boardDestinations.length ? resolveActiveDestination(tripId, boardDestinations) : null;
+  renderDestBar(container, tripId);
+
+  const allTripPlaces = await loadPlaces(tripId);
   if (myGeneration !== boardGeneration) return; // 그 사이 다른 렌더가 시작됨
 
-  places.forEach((p) => placesCache.set(p.id, p));
+  allTripPlaces.forEach((p) => placesCache.set(p.id, p));
+
+  // 활성 여행지의 장소만 이 보드에 표시 (마이그레이션 전 합성 여행지면 전부)
+  const places = boardActiveDest
+    ? allTripPlaces.filter((p) => placeBelongsToDestination(p, boardActiveDest!))
+    : allTripPlaces;
 
   console.log('[Verify][1단계 사진 확인] 보드에 있는 카드들의 photo_url 상태:');
   places.forEach((p) => {
@@ -546,6 +583,178 @@ export async function renderBoardContent(container: HTMLElement, tripId: string)
     .catch((err) => console.error('[GoogleMaps] 로드 실패, 텍스트 입력만 사용:', err.message));
 }
 
+/* ══════════════════ 다중 여행지 바 (Phase 2) ══════════════════ */
+
+/** 여행지 메타 문구: "3박 · 3.20–3.22" 형태 (날짜 없으면 생략) */
+function destMeta(d: TripDestination): string {
+  if (!d.start_date || !d.end_date) return '';
+  const s = new Date(d.start_date);
+  const e = new Date(d.end_date);
+  const nights = Math.max(0, Math.round((e.getTime() - s.getTime()) / 86400000));
+  const fmt = (dt: Date) => dt.getMonth() + 1 + '.' + dt.getDate();
+  return (nights > 0 ? nights + '박 · ' : '') + fmt(s) + '–' + fmt(e);
+}
+
+/**
+ * 상단 여행지 바. 마이그레이션 전(합성 여행지)에는 렌더하지 않아 기존 화면과 동일.
+ * 실제 여행지가 있으면 탭(전환) + 추가 버튼을 보여준다. 1곳이어도 추가 진입점을 위해 표시.
+ */
+function renderDestBar(container: HTMLElement, tripId: string): void {
+  const wrap = container.querySelector('#bd-dest-bar-wrap') as HTMLElement | null;
+  if (!wrap) return;
+
+  // 마이그레이션 전(합성 단일 여행지) → 바 없음(기존과 동일)
+  if (!boardActiveDest || isSyntheticDestination(boardActiveDest.id)) {
+    wrap.innerHTML = '';
+    return;
+  }
+
+  const tabs = boardDestinations
+    .map((d) => {
+      const active = d.id === boardActiveDest!.id;
+      const meta = destMeta(d);
+      return [
+        '<button type="button" class="bd-dest-tab' + (active ? ' active' : '') + '" data-dest-id="' + d.id + '">',
+        '  <span class="bd-dest-tab-plane">' + ICON_PLANE + '</span>',
+        '  <span class="bd-dest-tab-text">',
+        '    <span class="bd-dest-tab-name">' + escapeHtml(d.name) + '</span>',
+        meta ? '    <span class="bd-dest-tab-meta">' + escapeHtml(meta) + '</span>' : '',
+        '  </span>',
+        active ? '  <span class="bd-dest-tab-edit" data-edit-dest="' + d.id + '" title="여행지 편집">' + ICON_EDIT + '</span>' : '',
+        '</button>',
+      ].join('');
+    })
+    .join('');
+
+  wrap.innerHTML = [
+    '<div class="bd-dest-bar" id="bd-dest-bar">',
+    '  <span class="bd-dest-bar-label">' + ICON_PIN + ' 여행지</span>',
+    '  <div class="bd-dest-tabs">' + tabs + '</div>',
+    '  <button type="button" class="bd-dest-add" id="bd-dest-add">' + ICON_PLUS + ' 여행지 추가</button>',
+    '</div>',
+  ].join('');
+
+  // 탭 전환
+  wrap.querySelectorAll('.bd-dest-tab').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('[data-edit-dest]')) return; // 편집 아이콘 클릭은 제외
+      const id = (btn as HTMLElement).dataset.destId;
+      if (!id || id === boardActiveDest?.id) return;
+      setActiveDestinationId(tripId, id);
+      renderBoardContent(container, tripId);
+    });
+  });
+
+  // 여행지 편집(이름/기간/삭제)
+  wrap.querySelectorAll('[data-edit-dest]').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = (el as HTMLElement).dataset.editDest!;
+      const dest = boardDestinations.find((d) => d.id === id);
+      if (dest) openDestPopover(container, tripId, el as HTMLElement, dest);
+    });
+  });
+
+  // 여행지 추가
+  wrap.querySelector('#bd-dest-add')?.addEventListener('click', (e) => {
+    openDestPopover(container, tripId, e.currentTarget as HTMLElement, null);
+  });
+}
+
+let destPopoverEl: HTMLElement | null = null;
+let destPopoverDismiss: ((e: MouseEvent) => void) | null = null;
+
+function closeDestPopover(): void {
+  if (destPopoverEl) { destPopoverEl.remove(); destPopoverEl = null; }
+  if (destPopoverDismiss) { document.removeEventListener('mousedown', destPopoverDismiss); destPopoverDismiss = null; }
+}
+
+/** 여행지 추가/편집 팝오버. dest=null이면 추가, 아니면 편집(삭제 포함). */
+function openDestPopover(container: HTMLElement, tripId: string, anchor: HTMLElement, dest: TripDestination | null): void {
+  closeDestPopover();
+  const editing = !!dest;
+  const canDelete = editing && boardDestinations.length > 1;
+
+  const pop = document.createElement('div');
+  pop.className = 'bd-dest-popover';
+  pop.innerHTML = [
+    '<div class="bd-dest-pop-title">' + (editing ? '여행지 편집' : '여행지 추가') + '</div>',
+    '<label class="bd-dest-pop-label">도시</label>',
+    '<input class="bd-dest-pop-input" id="dp-name" type="text" placeholder="예: 치앙마이" value="' + (dest ? escapeHtml(dest.name) : '') + '" />',
+    '<label class="bd-dest-pop-label">기간 <span class="bd-dest-pop-opt">(선택)</span></label>',
+    '<div class="bd-dest-pop-dates">',
+    '  <input class="bd-dest-pop-input" id="dp-start" type="date" value="' + (dest?.start_date ?? '') + '" />',
+    '  <span class="bd-dest-pop-tilde">~</span>',
+    '  <input class="bd-dest-pop-input" id="dp-end" type="date" value="' + (dest?.end_date ?? '') + '" />',
+    '</div>',
+    '<div class="bd-dest-pop-actions">',
+    canDelete ? '  <button type="button" class="bd-dest-pop-del" id="dp-del">' + ICON_TRASH + ' 삭제</button>' : '<span></span>',
+    '  <div class="bd-dest-pop-right">',
+    '    <button type="button" class="bd-dest-pop-cancel" id="dp-cancel">취소</button>',
+    '    <button type="button" class="bd-dest-pop-save" id="dp-save">' + (editing ? '저장' : '추가') + '</button>',
+    '  </div>',
+    '</div>',
+  ].join('');
+  document.body.appendChild(pop);
+  destPopoverEl = pop;
+
+  // 앵커 기준 위치 (뷰포트 경계 보정)
+  const r = anchor.getBoundingClientRect();
+  const top = r.bottom + 8;
+  let left = r.left;
+  const popW = 260;
+  if (left + popW > window.innerWidth - 12) left = window.innerWidth - popW - 12;
+  pop.style.top = top + 'px';
+  pop.style.left = Math.max(12, left) + 'px';
+
+  const nameInput = pop.querySelector('#dp-name') as HTMLInputElement;
+  nameInput.focus();
+
+  pop.querySelector('#dp-cancel')?.addEventListener('click', closeDestPopover);
+
+  pop.querySelector('#dp-save')?.addEventListener('click', async () => {
+    const name = nameInput.value.trim();
+    if (!name) { nameInput.focus(); return; }
+    const start = (pop.querySelector('#dp-start') as HTMLInputElement).value || null;
+    const end = (pop.querySelector('#dp-end') as HTMLInputElement).value || null;
+    const saveBtn = pop.querySelector('#dp-save') as HTMLButtonElement;
+    saveBtn.disabled = true;
+
+    if (editing && dest) {
+      await updateDestination(dest.id, { name, start_date: start, end_date: end });
+    } else {
+      const created = await createDestination(tripId, name, {
+        startDate: start,
+        endDate: end,
+        sortOrder: boardDestinations.length,
+      });
+      if (created) setActiveDestinationId(tripId, created.id);
+    }
+    closeDestPopover();
+    renderBoardContent(container, tripId);
+  });
+
+  pop.querySelector('#dp-del')?.addEventListener('click', async () => {
+    if (!dest) return;
+    const others = boardDestinations.filter((d) => d.id !== dest.id);
+    const reassignTo = others[0]?.id ?? null;
+    const delBtn = pop.querySelector('#dp-del') as HTMLButtonElement;
+    delBtn.disabled = true;
+    const ok = await deleteDestination(dest.id, reassignTo);
+    if (ok && reassignTo) setActiveDestinationId(tripId, reassignTo);
+    closeDestPopover();
+    renderBoardContent(container, tripId);
+  });
+
+  // 바깥 클릭으로 닫기
+  destPopoverDismiss = (e: MouseEvent) => {
+    if (destPopoverEl && !destPopoverEl.contains(e.target as Node) && !anchor.contains(e.target as Node)) {
+      closeDestPopover();
+    }
+  };
+  setTimeout(() => document.addEventListener('mousedown', destPopoverDismiss!), 0);
+}
+
 /* ── 실시간 동기화 ── */
 function subscribeRealtime(tripId: string): void {
   realtimeChannel = supabase
@@ -559,6 +768,8 @@ function subscribeRealtime(tripId: string): void {
         if (document.querySelector('[data-place-id="' + row.id + '"]')) return;
 
         placesCache.set(row.id, row);
+        // 다른 여행지에 추가된 장소는 이 보드(활성 여행지)에 표시하지 않음
+        if (boardActiveDest && !placeBelongsToDestination(row, boardActiveDest)) return;
         const listEl = document.getElementById(zoneListId(row.mood));
         if (!listEl) return;
         removeEmptyState(listEl);

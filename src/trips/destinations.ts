@@ -104,3 +104,91 @@ export async function loadStaySegments(trip: Trip, destination: TripDestination)
   }
   return [syntheticSegmentFromTrip(trip, destination)];
 }
+
+/* ────────────────────────────────────────────────────────────
+ * 활성 여행지 — 세션 내 공유 상태
+ * 보드에서 고른 여행지를 shortlist에서도 이어받도록 트립별로 기억(in-memory).
+ * ──────────────────────────────────────────────────────────── */
+const activeByTrip = new Map<string, string>();
+
+export function setActiveDestinationId(tripId: string, destId: string): void {
+  activeByTrip.set(tripId, destId);
+}
+
+/** 목록에서 활성 여행지를 고름 — 저장된 활성값이 유효하면 그걸, 아니면 첫 번째 */
+export function resolveActiveDestination(tripId: string, dests: TripDestination[]): TripDestination {
+  const savedId = activeByTrip.get(tripId);
+  const found = savedId ? dests.find((d) => d.id === savedId) : null;
+  const active = found ?? dests[0];
+  if (active) activeByTrip.set(tripId, active.id);
+  return active;
+}
+
+/**
+ * 장소가 이 여행지에 속하는지. 마이그레이션 전(합성 여행지)에는 모든 장소를 보여주고,
+ * 실제 여행지에서는 destination_id가 일치하는 장소만.
+ * (마이그레이션 5b가 기존 장소를 전부 태깅하므로 실제 환경에선 정확히 나뉨)
+ */
+export function placeBelongsToDestination(
+  place: { destination_id: string | null },
+  destination: TripDestination
+): boolean {
+  if (isSyntheticDestination(destination.id)) return true; // 마이그레이션 전 = 단일 여행지 = 전부
+  return place.destination_id === destination.id;
+}
+
+/* ── 쓰기 ── */
+
+export async function createDestination(
+  tripId: string,
+  name: string,
+  opts: { lat?: number | null; lng?: number | null; startDate?: string | null; endDate?: string | null; sortOrder?: number } = {}
+): Promise<TripDestination | null> {
+  const { data, error } = await supabase
+    .from('trip_destinations')
+    .insert({
+      trip_id: tripId,
+      name,
+      lat: opts.lat ?? null,
+      lng: opts.lng ?? null,
+      start_date: opts.startDate ?? null,
+      end_date: opts.endDate ?? null,
+      sort_order: opts.sortOrder ?? 0,
+    })
+    .select()
+    .single();
+  if (error) {
+    console.error('[destinations] 여행지 추가 실패:', error.message);
+    return null;
+  }
+  return data as TripDestination;
+}
+
+export async function updateDestination(
+  id: string,
+  patch: Partial<Pick<TripDestination, 'name' | 'lat' | 'lng' | 'start_date' | 'end_date' | 'sort_order'>>
+): Promise<boolean> {
+  const { error } = await supabase.from('trip_destinations').update(patch).eq('id', id);
+  if (error) console.error('[destinations] 여행지 수정 실패:', error.message);
+  return !error;
+}
+
+/**
+ * 여행지 삭제. 그 전에 이 여행지의 장소들을 다른 여행지로 옮겨(reassignToId)
+ * 장소가 미아(destination_id=null)가 되지 않게 한다.
+ */
+export async function deleteDestination(id: string, reassignToId: string | null): Promise<boolean> {
+  if (reassignToId) {
+    const { error: moveErr } = await supabase
+      .from('places')
+      .update({ destination_id: reassignToId })
+      .eq('destination_id', id);
+    if (moveErr) {
+      console.error('[destinations] 장소 재배정 실패:', moveErr.message);
+      return false;
+    }
+  }
+  const { error } = await supabase.from('trip_destinations').delete().eq('id', id);
+  if (error) console.error('[destinations] 여행지 삭제 실패:', error.message);
+  return !error;
+}
