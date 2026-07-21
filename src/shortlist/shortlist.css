@@ -139,13 +139,6 @@
 }
 .sl-seg-pill-del:hover { color: #C0392B; background: #FDEEEC; }
 .sl-seg-pill-del svg { width: 100%; height: 100%; }
-/* 확정(3단계) 헤더 압축용 — 라벨·추가 버튼 없이 pill만 우측 정렬, 최대한 작게 */
-.sl-seg-bar-compact { justify-content: flex-end; padding-top: 4px; }
-.sl-seg-bar-compact .sl-seg-pills { flex: none; }
-.sl-seg-pill-compact { padding: 4px 9px 4px 5px; }
-.sl-seg-pill-compact .sl-seg-pill-idx { width: 15px; height: 15px; font-size: 9.5px; }
-.sl-seg-pill-compact .sl-seg-pill-name { font-size: 11px; max-width: 100px; }
-.sl-seg-pill-compact .sl-seg-pill-meta { font-size: 9px; }
 
 .sl-seg-add {
   display: inline-flex; align-items: center; gap: 4px;
@@ -227,28 +220,74 @@
 .sl-seg-pop-save:disabled { opacity: 0.6; cursor: default; }
 .sl-seg-pop-save svg { width: 12px; height: 12px; }
 
-/* Step3 숙소 나누기 진입 카드 */
-.sl-step3-split-card {
-  display: flex; align-items: center; gap: 12px;
-  padding: 14px 16px; border-radius: 14px;
-  border: 1px dashed rgba(11,124,196,0.32); background: #F8FBFE;
-  margin-top: 4px;
+/*
+ * Step3 숙소 후보 Segment Control — STEP 인디케이터와 FINAL CHECK 사이.
+ * 기존 디자인 시스템(카드 톤 border/shadow, navy primary, 얇은 border) 그대로 사용.
+ */
+.sl-hotel-segctrl {
+  background: #FFFFFF;
+  border: 1px solid #E8EDF5;
+  border-radius: 18px;
+  box-shadow: 0 1px 3px rgba(11,42,92,0.03);
+  padding: 14px 22px;
+  margin-bottom: 18px;
+  box-sizing: border-box;
 }
-.sl-step3-split-text { flex: 1; min-width: 0; }
-.sl-step3-split-title {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 13px; font-weight: 700; color: #0B2A5C; margin-bottom: 3px;
+.sl-hotel-segctrl-label {
+  font-size: 12px; font-weight: 700; color: #64748B; margin-bottom: 10px;
 }
-.sl-step3-split-title svg { width: 15px; height: 15px; color: #0B7CC4; }
-.sl-step3-split-desc { font-size: 11.5px; color: #94A3B8; line-height: 1.5; }
-.sl-step3-split-btn {
+.sl-hotel-segctrl-track {
+  display: flex; align-items: stretch; gap: 8px;
+  overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none;
+  padding-bottom: 2px; box-sizing: border-box;
+}
+.sl-hotel-segctrl-track::-webkit-scrollbar { display: none; }
+.sl-hotel-seg {
+  display: flex; align-items: center; gap: 9px; flex-shrink: 0;
+  min-height: 52px; max-height: 60px; box-sizing: border-box;
+  padding: 8px 14px 8px 10px; border-radius: 14px;
+  border: 1px solid rgba(130,150,170,0.28); background: #fff;
+  cursor: pointer; text-align: left;
+  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+.sl-hotel-seg:hover { border-color: #0B7CC4; }
+.sl-hotel-seg.active {
+  background: #0B2A5C; border-color: #0B2A5C;
+  box-shadow: 0 4px 12px rgba(11,42,92,0.22);
+}
+.sl-hotel-seg-idx {
+  width: 22px; height: 22px; flex-shrink: 0; border-radius: 50%;
+  background: #E2E8F0; color: #64748B;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11.5px; font-weight: 700;
+}
+.sl-hotel-seg.active .sl-hotel-seg-idx { background: #fff; color: #0B2A5C; }
+.sl-hotel-seg-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.sl-hotel-seg-name {
+  font-size: 13px; font-weight: 700; color: #0B2A5C;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px;
+}
+.sl-hotel-seg.active .sl-hotel-seg-name { color: #fff; }
+.sl-hotel-seg-dates { font-size: 10.5px; font-weight: 600; color: #94A3B8; white-space: nowrap; }
+.sl-hotel-seg.active .sl-hotel-seg-dates { color: rgba(255,255,255,0.72); }
+.sl-hotel-seg-del {
+  display: inline-flex; width: 14px; height: 14px; flex-shrink: 0; margin-left: 2px;
+  color: #B0BAC5; border-radius: 4px; transition: color 150ms ease, background 150ms ease;
+}
+.sl-hotel-seg-del:hover { color: #C0392B; background: #FDEEEC; }
+.sl-hotel-seg.active .sl-hotel-seg-del { color: rgba(255,255,255,0.6); }
+.sl-hotel-seg.active .sl-hotel-seg-del:hover { color: #fff; background: rgba(255,255,255,0.16); }
+.sl-hotel-seg-del svg { width: 100%; height: 100%; }
+.sl-hotel-seg-add {
   display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
-  padding: 9px 14px; border-radius: 10px; border: none;
-  background: #0B2A5C; color: #fff; font-size: 12.5px; font-weight: 700; cursor: pointer;
-  transition: background 150ms ease;
+  min-height: 52px; max-height: 60px; box-sizing: border-box;
+  padding: 8px 16px; border-radius: 14px;
+  border: 1px dashed rgba(11,124,196,0.4); background: none;
+  color: #0B7CC4; font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap;
+  transition: border-color 150ms ease, background 150ms ease;
 }
-.sl-step3-split-btn:hover { background: #0E3676; }
-.sl-step3-split-btn svg { width: 13px; height: 13px; }
+.sl-hotel-seg-add:hover { border-color: #0B7CC4; background: #EAF6FD; }
+.sl-hotel-seg-add svg { width: 13px; height: 13px; }
 
 .sl-shell {
   display: flex;
