@@ -2380,8 +2380,11 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   });
 
   body.querySelector('#sl-split-add')?.addEventListener('click', async (e) => {
+    // e.currentTarget은 이벤트 디스패치가 끝나는 즉시(= await 지점에서) null이 되므로
+    // await 이전에 반드시 동기적으로 값을 꺼내둬야 함(안 그러면 getBoundingClientRect에서 TypeError)
+    const anchor = e.currentTarget as HTMLElement;
     await saveShortlistState(); // 지금 구간(현재 숙소 선택)을 먼저 저장하고 새 구간 추가
-    openSegmentDatePopover(e.currentTarget as HTMLElement);
+    openSegmentDatePopover(anchor);
   });
 
   renderStep3Lists(body, withDistance);
@@ -2515,12 +2518,20 @@ interface RealTravelResult {
   durationMin: number;
 }
 
+function formatDurationMin(min: number): string {
+  if (min < 60) return min + '분';
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? h + '시간' : h + '시간 ' + m + '분';
+}
+
 /**
- * 숙소 기준 실제 길찾기 (Google Distance Matrix API).
+ * 숙소 기준 실제 길찾기 (서버 /api/route-matrix, Google Routes API 기반).
  * 가까운 곳(≤2km)은 도보, 먼 곳은 차량 모드로 배치 조회.
  * 실패해도 화면은 이미 직선거리 추정치로 채워져 있어서 조용히 무시됨.
  *
- * 필요: Google Cloud Console에서 "Distance Matrix API" 활성화 필요 (월 10,000건까지 무료 — Essentials 등급).
+ * Google Distance Matrix(Legacy)는 지원 종료 예정이자 레거시 API 미활성화 프로젝트에서
+ * REQUEST_DENIED를 반환하므로, api/nearby-infra.ts와 동일하게 서버에서 Routes API로 조회한다.
  */
 async function loadRealTravelTimes(
   basecamp: Place,
@@ -2528,47 +2539,35 @@ async function loadRealTravelTimes(
 ): Promise<Map<string, RealTravelResult> | null> {
   if (basecamp.lat == null || basecamp.lng == null) return null;
 
-  try {
-    await loadGoogleMapsScript();
-  } catch (e) {
-    return null;
-  }
-  const g = (window as any).google;
-  if (!g?.maps?.DistanceMatrixService) return null;
-
-  const service = new g.maps.DistanceMatrixService();
   const results = new Map<string, RealTravelResult>();
 
   const closeItems = items.filter((i) => i.km <= 2 && i.place.lat != null && i.place.lng != null);
   const farItems = items.filter((i) => i.km > 2 && i.place.lat != null && i.place.lng != null);
 
-  function runBatch(batchItems: { place: Place; km: number }[], mode: 'WALKING' | 'DRIVING'): Promise<void> {
-    if (batchItems.length === 0) return Promise.resolve();
-    return new Promise((resolve) => {
-      service.getDistanceMatrix(
-        {
-          origins: [{ lat: basecamp.lat!, lng: basecamp.lng! }],
-          destinations: batchItems.map((i) => ({ lat: i.place.lat!, lng: i.place.lng! })),
-          travelMode: g.maps.TravelMode[mode],
-        },
-        (response: any, status: string) => {
-          if (status === 'OK' && response?.rows?.[0]) {
-            response.rows[0].elements.forEach((el: any, idx: number) => {
-              if (el.status === 'OK') {
-                results.set(batchItems[idx].place.id, {
-                  mode,
-                  durationText: el.duration.text,
-                  durationMin: Math.round(el.duration.value / 60),
-                });
-              }
-            });
-          } else {
-            console.error('[Shortlist] Distance Matrix 조회 실패(' + mode + '):', status);
-          }
-          resolve();
-        }
-      );
-    });
+  async function runBatch(batchItems: { place: Place; km: number }[], mode: 'WALKING' | 'DRIVING'): Promise<void> {
+    if (batchItems.length === 0) return;
+    try {
+      const resp = await fetch('/api/route-matrix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          origin: { lat: basecamp.lat, lng: basecamp.lng },
+          destinations: batchItems.map((i) => ({ id: i.place.id, lat: i.place.lat, lng: i.place.lng })),
+          mode: mode === 'WALKING' ? 'WALK' : 'DRIVE',
+        }),
+      });
+      if (!resp.ok) {
+        console.error('[Shortlist] Route Matrix 조회 실패(' + mode + '):', resp.status);
+        return;
+      }
+      const data = await resp.json();
+      (data?.results ?? []).forEach((r: { id: string; meters: number; seconds: number }) => {
+        const durationMin = Math.max(1, Math.round(r.seconds / 60));
+        results.set(r.id, { mode, durationText: formatDurationMin(durationMin), durationMin });
+      });
+    } catch (e) {
+      console.error('[Shortlist] Route Matrix 조회 실패(' + mode + '):', e);
+    }
   }
 
   await Promise.all([runBatch(closeItems, 'WALKING'), runBatch(farItems, 'DRIVING')]);
