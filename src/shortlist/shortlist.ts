@@ -1839,9 +1839,8 @@ function formatTripDateRange(): string {
   if (!start || !end) return '기간 미정';
   const s = new Date(start);
   const e = new Date(end);
-  const nights = Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
   const fmt = (d: Date) => (d.getMonth() + 1) + '.' + String(d.getDate()).padStart(2, '0');
-  return fmt(s) + ' – ' + fmt(e) + ' / ' + nights + '박 ' + (nights + 1) + '일';
+  return fmt(s) + ' – ' + fmt(e);
 }
 
 /* 예산 단계(1박 1인 기준, 원화) → USD 환산 (사이트 기본 통화가 USD인 경우가 많아 근사 환산에 사용) */
@@ -2506,10 +2505,6 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '        <div class="sl-step3-infra-body">',
     '          <div class="sl-map-wrap sl-step3-map-wrap">',
     '            <div id="sl-map3" class="sl-map"></div>',
-    '            <div class="sl-map-legend">',
-    '              <span><span class="sl-legend-dot" style="--dot:#185FA5"></span>숙소</span>',
-    '              <span class="sl-map-legend-note">아이콘 클릭 시 상세정보</span>',
-    '            </div>',
     '          </div>',
     '          <div class="sl-step3-infra-side">',
     '            <div class="sl-step3-infra-list" id="sl-infra-list">' + infraRows + '</div>',
@@ -2871,9 +2866,9 @@ function renderStep3Lists(body: HTMLElement, withDistance: Step3Item[]): void {
     statsEl.innerHTML = [
       buildStatTile(IC_CLOCK, '#0B7CC4', '평균 이동시간', avgMin + '분', '전체 장소 기준'),
       buildStatTile(IC_WALK, '#1D9E75', '도보권 장소', walkable + '곳', '도보 15분 이내'),
-      buildStatTile(IC_BUS, '#0B7CC4', '대중교통 접근성', '우수', '주요 역·정류장 인접'),
-      buildStatTile(IC_HOUSE, '#F5A623', '편의시설 접근성', '매우 좋음', '편의점·카페·마트 등'),
-      buildStatTile(IC_BUILDING, '#1D9E75', '관광지 접근성', '매우 좋음', '주요 관광지 근접'),
+      buildStatTile(IC_BUS, '#0B7CC4', '대중교통 접근성', '좋음', '주요 역·정류장 인접'),
+      buildStatTile(IC_HOUSE, '#F5A623', '편의시설 접근성', '좋음', '편의점·카페·마트 등'),
+      buildStatTile(IC_BUILDING, '#1D9E75', '관광지 접근성', '좋음', '주요 관광지 근접'),
       buildStatTile(IC_CART, '#0F9E9E', '편의점 접근성', '좋음', '24시 편의점 인근'),
     ].join('');
   }
