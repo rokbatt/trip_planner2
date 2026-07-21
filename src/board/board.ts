@@ -612,7 +612,6 @@ function renderDestBar(container: HTMLElement, tripId: string): void {
 
   wrap.innerHTML = [
     '<div class="bd-dest-bar" id="bd-dest-bar">',
-    '  <span class="bd-dest-bar-label">' + ICON_PIN + ' 여행지</span>',
     '  <button type="button" class="bd-dest-switch" id="bd-dest-switch">' + ICON_SWAP + ' 여행지 변경</button>',
     '</div>',
   ].join('');

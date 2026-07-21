@@ -533,7 +533,6 @@ function renderShortlistDestBar(container: HTMLElement): void {
 
   wrap.innerHTML = [
     '<div class="sl-dest-bar">',
-    '  <span class="sl-dest-bar-label">' + IC_PIN + ' 여행지</span>',
     '  <button type="button" class="sl-dest-switch" id="sl-dest-switch">' + IC_SWAP + ' 여행지 변경</button>',
     '</div>',
   ].join('');

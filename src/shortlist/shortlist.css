@@ -30,24 +30,12 @@
 .sl-dest-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: flex-end;
   max-width: 1512px;
   margin: 0 auto;
   padding: clamp(10px, 1.2vw, 16px) clamp(20px, 2.8vw, 40px) 0;
   box-sizing: border-box;
 }
-.sl-dest-bar-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: #94A3B8;
-  flex-shrink: 0;
-}
-.sl-dest-bar-label svg { width: 13px; height: 13px; }
 
 /* "여행지 변경" 버튼 — 탭/카드로 나열하지 않음(워크스페이스 헤더가 활성 여행지를 실시간 표시) */
 .sl-dest-switch {
