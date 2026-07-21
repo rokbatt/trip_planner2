@@ -745,53 +745,119 @@ function renderSegmentBar(container: HTMLElement): void {
 }
 
 let segPopoverEl: HTMLElement | null = null;
-let segPopoverDismiss: ((e: MouseEvent) => void) | null = null;
 function closeSegPopover(): void {
   if (segPopoverEl) { segPopoverEl.remove(); segPopoverEl = null; }
-  if (segPopoverDismiss) { document.removeEventListener('mousedown', segPopoverDismiss); segPopoverDismiss = null; }
 }
 
-/** 새 숙소 구간의 기간을 고르는 팝오버 (선택) */
-function openSegmentDatePopover(anchor: HTMLElement): void {
+function isoDate(d: Date): string {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+/** start~end(포함) 사이의 모든 날짜를 YYYY-MM-DD로 나열 */
+function enumerateDays(startIso: string, endIso: string): string[] {
+  const days: string[] = [];
+  const cur = new Date(startIso);
+  const end = new Date(endIso);
+  while (cur <= end) {
+    days.push(isoDate(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return days;
+}
+
+const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'];
+
+/**
+ * 새 숙소 구간의 기간을 고르는 모달 (선택).
+ * 여행지의 전체 체류 기간(이미 알고 있는 값)을 가로로 나열해, 두 번 클릭(시작→끝)으로 구간을 고른다.
+ * 화면 하단에 팝오버로 띄우면 화면 밖으로 잘리는 문제가 있어 화면 중앙 모달로 띄운다.
+ */
+function openSegmentDatePopover(_anchor: HTMLElement): void {
   closeSegPopover();
-  const pop = document.createElement('div');
-  pop.className = 'sl-seg-popover';
-  pop.innerHTML = [
-    '<div class="sl-seg-pop-title">새 숙소 구간</div>',
-    '<div class="sl-seg-pop-desc">이 숙소에 묵는 기간을 정해요 <span class="sl-seg-pop-opt">(선택)</span></div>',
-    '<div class="sl-seg-pop-dates">',
-    '  <input class="sl-seg-pop-input" id="sp-start" type="date" />',
-    '  <span class="sl-seg-pop-tilde">~</span>',
-    '  <input class="sl-seg-pop-input" id="sp-end" type="date" />',
-    '</div>',
-    '<div class="sl-seg-pop-actions">',
-    '  <button type="button" class="sl-seg-pop-cancel" id="sp-cancel">취소</button>',
-    '  <button type="button" class="sl-seg-pop-save" id="sp-save">' + IC_PLUS + ' 추가</button>',
+
+  const rangeStart = slActiveDest?.start_date || currentTrip?.start_date || null;
+  const rangeEnd = slActiveDest?.end_date || currentTrip?.end_date || null;
+  const days = rangeStart && rangeEnd ? enumerateDays(rangeStart, rangeEnd) : [];
+
+  let pickedStart: string | null = null;
+  let pickedEnd: string | null = null;
+
+  const dayPillHtml = (iso: string): string => {
+    const d = new Date(iso);
+    return [
+      '<button type="button" class="sl-seg-day" data-date="' + iso + '">',
+      '  <span class="sl-seg-day-dow">' + DOW_KO[d.getDay()] + '</span>',
+      '  <span class="sl-seg-day-num">' + d.getDate() + '</span>',
+      '</button>',
+    ].join('');
+  };
+
+  const overlay = document.createElement('div');
+  overlay.className = 'sl-seg-modal-overlay';
+  overlay.innerHTML = [
+    '<div class="sl-seg-modal">',
+    '  <div class="sl-seg-pop-title">새 숙소 구간</div>',
+    '  <div class="sl-seg-pop-desc">이 숙소에 묵는 기간을 정해요 <span class="sl-seg-pop-opt">(선택, 시작일→종료일 순으로 클릭)</span></div>',
+    days.length
+      ? '  <div class="sl-seg-daystrip" id="sp-daystrip">' + days.map(dayPillHtml).join('') + '</div>'
+      : [
+          '  <div class="sl-seg-pop-dates">',
+          '    <input class="sl-seg-pop-input" id="sp-start" type="date" />',
+          '    <span class="sl-seg-pop-tilde">~</span>',
+          '    <input class="sl-seg-pop-input" id="sp-end" type="date" />',
+          '  </div>',
+        ].join(''),
+    '  <div class="sl-seg-pop-actions">',
+    '    <button type="button" class="sl-seg-pop-cancel" id="sp-cancel">취소</button>',
+    '    <button type="button" class="sl-seg-pop-save" id="sp-save">' + IC_PLUS + ' 추가</button>',
+    '  </div>',
     '</div>',
   ].join('');
-  document.body.appendChild(pop);
-  segPopoverEl = pop;
+  document.body.appendChild(overlay);
+  segPopoverEl = overlay;
 
-  const r = anchor.getBoundingClientRect();
-  const popW = 240;
-  let left = r.right - popW;
-  if (left < 12) left = 12;
-  pop.style.top = r.bottom + 8 + 'px';
-  pop.style.left = left + 'px';
+  function refreshDayStates(): void {
+    overlay.querySelectorAll<HTMLElement>('.sl-seg-day').forEach((el) => {
+      const iso = el.dataset.date!;
+      el.classList.remove('is-start', 'is-end', 'is-in-range');
+      if (pickedStart && iso === pickedStart) el.classList.add('is-start');
+      if (pickedEnd && iso === pickedEnd) el.classList.add('is-end');
+      if (pickedStart && pickedEnd && iso > pickedStart && iso < pickedEnd) el.classList.add('is-in-range');
+    });
+  }
 
-  pop.querySelector('#sp-cancel')?.addEventListener('click', closeSegPopover);
-  pop.querySelector('#sp-save')?.addEventListener('click', async () => {
-    const start = (pop.querySelector('#sp-start') as HTMLInputElement).value || null;
-    const end = (pop.querySelector('#sp-end') as HTMLInputElement).value || null;
-    (pop.querySelector('#sp-save') as HTMLButtonElement).disabled = true;
+  overlay.querySelectorAll<HTMLElement>('.sl-seg-day').forEach((el) => {
+    el.addEventListener('click', () => {
+      const iso = el.dataset.date!;
+      if (!pickedStart || pickedEnd || iso < pickedStart) {
+        pickedStart = iso;
+        pickedEnd = null;
+      } else {
+        pickedEnd = iso;
+      }
+      refreshDayStates();
+    });
+  });
+
+  overlay.querySelector('#sp-cancel')?.addEventListener('click', closeSegPopover);
+  overlay.querySelector('#sp-save')?.addEventListener('click', async () => {
+    let start: string | null;
+    let end: string | null;
+    if (days.length) {
+      start = pickedStart;
+      end = pickedEnd || pickedStart;
+    } else {
+      start = (overlay.querySelector('#sp-start') as HTMLInputElement).value || null;
+      end = (overlay.querySelector('#sp-end') as HTMLInputElement).value || null;
+    }
+    (overlay.querySelector('#sp-save') as HTMLButtonElement).disabled = true;
     closeSegPopover();
     await addSegment(start, end);
   });
 
-  segPopoverDismiss = (e: MouseEvent) => {
-    if (segPopoverEl && !segPopoverEl.contains(e.target as Node) && !anchor.contains(e.target as Node)) closeSegPopover();
-  };
-  setTimeout(() => document.addEventListener('mousedown', segPopoverDismiss!), 0);
+  overlay.addEventListener('mousedown', (e) => {
+    if (e.target === overlay) closeSegPopover();
+  });
 }
 
 function renderStepper(container: HTMLElement): void {
@@ -1607,11 +1673,13 @@ async function renderStep2(body: HTMLElement): Promise<void> {
   await initMapStep2(body, candidates);
 }
 
+/** 활성 여행지 자체의 기간이 있으면 그걸(멀티 여행지), 없으면 트립 전체 기간을 표시 */
 function formatTripDateRange(): string {
-  const trip = currentTrip;
-  if (!trip?.start_date || !trip?.end_date) return '기간 미정';
-  const s = new Date(trip.start_date);
-  const e = new Date(trip.end_date);
+  const start = slActiveDest?.start_date || currentTrip?.start_date;
+  const end = slActiveDest?.end_date || currentTrip?.end_date;
+  if (!start || !end) return '기간 미정';
+  const s = new Date(start);
+  const e = new Date(end);
   const nights = Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
   const fmt = (d: Date) => (d.getMonth() + 1) + '.' + String(d.getDate()).padStart(2, '0');
   return fmt(s) + ' – ' + fmt(e) + ' / ' + nights + '박 ' + (nights + 1) + '일';
