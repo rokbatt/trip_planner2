@@ -35,6 +35,7 @@ const IC_BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const IC_SEARCH2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
 const IC_EXTLINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>';
 const IC_XCLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+const IC_SWAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3L3 7l4 4M3 7h13a4 4 0 0 1 4 4v1M17 21l4-4-4-4M21 17H8a4 4 0 0 1-4-4v-1"/></svg>';
 const IC_ROUTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>';
 const IC_CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>';
 const IC_PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-7.58 7-12A7 7 0 0 0 5 10c0 4.42 7 12 7 12z"/><circle cx="12" cy="10" r="2.4"/></svg>';
@@ -116,6 +117,7 @@ export function teardownShortlist(): void {
     placeInfoWindow = null;
   }
   closeSegPopover();
+  closeShortlistDestSwitcher();
   allPlaces = [];
   zones = [];
   slDestinations = [];
@@ -515,48 +517,90 @@ async function renderStep(container: HTMLElement): Promise<void> {
   else await renderStep3(body);
 }
 
-/** 상단 여행지 바 — 보드와 동일 컨셉. 합성(마이그레이션 전) 단일 여행지면 렌더 안 함(기존과 동일). */
+/**
+ * 상단 여행지 바 — 보드와 동일 컨셉. 여행지를 카드/탭으로 늘어놓지 않고 "여행지 변경"
+ * 드롭다운만 둔다(워크스페이스 헤더가 활성 여행지·날짜를 실시간으로 보여주므로 중복 방지).
+ * 합성(마이그레이션 전) 단일 여행지면 렌더 안 함(기존과 동일). 추가·편집은 보드에서.
+ */
 function renderShortlistDestBar(container: HTMLElement): void {
   const wrap = container.querySelector('#sl-dest-bar-wrap') as HTMLElement | null;
   if (!wrap) return;
-  // 여행지 추가·편집은 보드에서 하므로, shortlist 바는 여행지가 2곳 이상일 때만(전환 목적) 노출.
+  // shortlist 바는 여행지가 2곳 이상일 때만(전환 목적) 노출.
   if (!slActiveDest || isSyntheticDestination(slActiveDest.id) || slDestinations.length < 2) {
     wrap.innerHTML = '';
     return;
   }
 
-  const tabs = slDestinations
+  wrap.innerHTML = [
+    '<div class="sl-dest-bar">',
+    '  <span class="sl-dest-bar-label">' + IC_PIN + ' 여행지</span>',
+    '  <button type="button" class="sl-dest-switch" id="sl-dest-switch">' + IC_SWAP + ' 여행지 변경</button>',
+    '</div>',
+  ].join('');
+
+  wrap.querySelector('#sl-dest-switch')?.addEventListener('click', (e) => {
+    openShortlistDestSwitcher(e.currentTarget as HTMLElement);
+  });
+}
+
+let slDestSwitcherEl: HTMLElement | null = null;
+let slDestSwitcherDismiss: ((e: MouseEvent) => void) | null = null;
+
+function closeShortlistDestSwitcher(): void {
+  if (slDestSwitcherEl) { slDestSwitcherEl.remove(); slDestSwitcherEl = null; }
+  if (slDestSwitcherDismiss) { document.removeEventListener('mousedown', slDestSwitcherDismiss); slDestSwitcherDismiss = null; }
+}
+
+/** "여행지 변경" 드롭다운 — 이미 정해진 여행지 중에서 고르기만 함(추가/편집/삭제 없음) */
+function openShortlistDestSwitcher(anchor: HTMLElement): void {
+  closeShortlistDestSwitcher();
+
+  const items = slDestinations
     .map((d) => {
-      const active = d.id === slActiveDest!.id;
+      const active = d.id === slActiveDest?.id;
       const meta = shortlistDestMeta(d);
       return [
-        '<button type="button" class="sl-dest-tab' + (active ? ' active' : '') + '" data-dest-id="' + d.id + '">',
-        '  <span class="sl-dest-tab-plane">' + IC_PLANE + '</span>',
-        '  <span class="sl-dest-tab-text">',
-        '    <span class="sl-dest-tab-name">' + escapeHtml(d.name) + '</span>',
-        meta ? '    <span class="sl-dest-tab-meta">' + escapeHtml(meta) + '</span>' : '',
+        '<button type="button" class="sl-dest-switch-item' + (active ? ' active' : '') + '" data-dest-id="' + d.id + '">',
+        '  <span class="sl-dest-switch-plane">' + IC_PLANE + '</span>',
+        '  <span class="sl-dest-switch-text">',
+        '    <span class="sl-dest-switch-name">' + escapeHtml(d.name) + '</span>',
+        meta ? '    <span class="sl-dest-switch-meta">' + escapeHtml(meta) + '</span>' : '',
         '  </span>',
+        active ? '  <span class="sl-dest-switch-check">' + IC_CHECK + '</span>' : '',
         '</button>',
       ].join('');
     })
     .join('');
 
-  wrap.innerHTML = [
-    '<div class="sl-dest-bar">',
-    '  <span class="sl-dest-bar-label">' + IC_PIN + ' 여행지</span>',
-    '  <div class="sl-dest-tabs">' + tabs + '</div>',
-    '  <span class="sl-dest-bar-hint">여행지 추가·편집은 Brainstorm에서</span>',
-    '</div>',
-  ].join('');
+  const pop = document.createElement('div');
+  pop.className = 'sl-dest-switcher';
+  pop.innerHTML = '<div class="sl-dest-switch-title">여행지 변경</div><div class="sl-dest-switch-list">' + items + '</div>';
+  document.body.appendChild(pop);
+  slDestSwitcherEl = pop;
 
-  wrap.querySelectorAll('.sl-dest-tab').forEach((btn) => {
+  const r = anchor.getBoundingClientRect();
+  const popW = 220;
+  let left = r.right - popW;
+  if (left < 12) left = 12;
+  pop.style.top = r.bottom + 8 + 'px';
+  pop.style.left = left + 'px';
+
+  pop.querySelectorAll('.sl-dest-switch-item').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = (btn as HTMLElement).dataset.destId;
+      closeShortlistDestSwitcher();
       if (!id || id === slActiveDest?.id || !slContainer) return;
       setActiveDestinationId(currentTripId, id);
       renderShortlistContent(slContainer, currentTripId);
     });
   });
+
+  slDestSwitcherDismiss = (e: MouseEvent) => {
+    if (slDestSwitcherEl && !slDestSwitcherEl.contains(e.target as Node) && !anchor.contains(e.target as Node)) {
+      closeShortlistDestSwitcher();
+    }
+  };
+  setTimeout(() => document.addEventListener('mousedown', slDestSwitcherDismiss!), 0);
 }
 
 function shortlistDestMeta(d: TripDestination): string {

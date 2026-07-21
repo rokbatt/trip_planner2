@@ -192,8 +192,16 @@ export async function saveStaySegment(
  * ──────────────────────────────────────────────────────────── */
 const activeByTrip = new Map<string, string>();
 
+/**
+ * 활성 여행지가 바뀌었을 때 발생하는 이벤트. 워크스페이스 헤더(방콕 · 10.26–11.01 같은
+ * 여행지·날짜 표시)가 게이트 재렌더 없이도 즉시 갱신되도록, 이 이벤트를 듣고 자기 갱신한다
+ * (헤더는 워크스페이스 셸에 속해 보드/shortlist 재렌더와는 별개 타이밍에 그려지기 때문).
+ */
+export const ACTIVE_DESTINATION_CHANGED_EVENT = 'mongsil:activeDestinationChanged';
+
 export function setActiveDestinationId(tripId: string, destId: string): void {
   activeByTrip.set(tripId, destId);
+  window.dispatchEvent(new CustomEvent(ACTIVE_DESTINATION_CHANGED_EVENT, { detail: { tripId, destId } }));
 }
 
 /** 목록에서 활성 여행지를 고름 — 저장된 활성값이 유효하면 그걸, 아니면 첫 번째 */

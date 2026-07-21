@@ -3,7 +3,8 @@ import { store } from '../store';
 import { navigate } from '../router';
 import { initChat, teardownChat, setBadgeListener, countUnreadSince, markAsRead, renderChatPanelUI } from '../chat/chat';
 import { initComments, teardownComments, renderCommentsUI } from '../comments/comments';
-import type { Database } from '../types/database';
+import { loadDestinations, resolveActiveDestination, ACTIVE_DESTINATION_CHANGED_EVENT } from '../trips/destinations';
+import type { Database, TripDestination } from '../types/database';
 import type { ChatMessage } from '../types/database';
 import './workspace.css';
 
@@ -157,13 +158,33 @@ export async function renderWorkspace(tripId: string, subPath?: string): Promise
   const sidebar = page.querySelector('#ws-sidebar') as HTMLElement;
   sidebar.innerHTML = buildSidebar(trip, activeGate);
 
+  const dests = await loadDestinations(trip);
+  const activeDest = resolveActiveDestination(tripId, dests);
+
   const header = page.querySelector('#ws-header') as HTMLElement;
-  header.innerHTML = buildContentHeader(trip, activeGate);
+  header.innerHTML = buildContentHeader(trip, activeGate, headerDestInfo(trip, activeDest));
 
   getTripMembers(tripId).then((members) => {
     const avatarsEl = header.querySelector('#ws-member-avatars');
     if (avatarsEl) avatarsEl.outerHTML = buildMemberAvatars(members);
   });
+
+  // 보드/shortlist에서 "여행지 변경"으로 활성 여행지를 바꾸면(게이트 재렌더 없이도)
+  // 헤더의 여행지·날짜 표시가 즉시 따라가도록 구독. renderWorkspace는 게이트를 옮길 때마다
+  // 새로 호출되므로, 이전 리스너를 반드시 먼저 정리해야 중복 등록되지 않는다.
+  if (activeDestChangeHandler) window.removeEventListener(ACTIVE_DESTINATION_CHANGED_EVENT, activeDestChangeHandler);
+  activeDestChangeHandler = (async (e: Event) => {
+    const detail = (e as CustomEvent<{ tripId: string; destId: string }>).detail;
+    if (detail?.tripId !== tripId) return;
+    const freshDests = await loadDestinations(trip);
+    const freshActive = resolveActiveDestination(tripId, freshDests);
+    const info = headerDestInfo(trip, freshActive);
+    const routeEl = header.querySelector('.ws-header-route');
+    const metaEl = header.querySelector('.ws-header-meta');
+    if (routeEl) routeEl.innerHTML = '<span>ICN</span>' + IC.routeArrow + '<span>' + escapeHtml(info.code) + '</span>';
+    if (metaEl) metaEl.textContent = info.metaText;
+  }) as (e: Event) => void;
+  window.addEventListener(ACTIVE_DESTINATION_CHANGED_EVENT, activeDestChangeHandler);
 
   const body = page.querySelector('#ws-body') as HTMLElement;
   await renderGate(body, tripId, activeGate);
@@ -221,12 +242,20 @@ function buildSidebar(trip: Trip, activeGate: string): string {
   ].join('\n');
 }
 
-function buildContentHeader(trip: Trip, activeGate: string): string {
-  const destCity = trip.destinations && trip.destinations[0] ? trip.destinations[0] : trip.name;
-  const destCode = toAirportCode(destCity);
-  const dateRange = trip.start_date && trip.end_date
-    ? formatDateShort(trip.start_date) + ' – ' + formatDateShort(trip.end_date)
-    : 'DATE TBD';
+/**
+ * 헤더에 표시할 여행지·날짜 정보 — 활성 여행지가 있으면 그걸(다중 여행지 전환 시
+ * 실시간으로 이 정보가 바뀌어야 함), 없으면 기존 trip 레벨 필드로 폴백.
+ */
+function headerDestInfo(trip: Trip, activeDest: TripDestination | null): { name: string; code: string; metaText: string } {
+  const name = activeDest?.name || (trip.destinations && trip.destinations[0] ? trip.destinations[0] : trip.name);
+  const code = toAirportCode(name);
+  const start = activeDest?.start_date ?? trip.start_date;
+  const end = activeDest?.end_date ?? trip.end_date;
+  const dateRange = start && end ? formatDateShort(start) + ' – ' + formatDateShort(end) : 'DATE TBD';
+  return { name, code, metaText: name + ' · ' + dateRange };
+}
+
+function buildContentHeader(trip: Trip, activeGate: string, destInfo: { name: string; code: string; metaText: string }): string {
   const gateLabel = GATE_TITLES[activeGate] || activeGate.toUpperCase();
 
   return [
@@ -234,9 +263,9 @@ function buildContentHeader(trip: Trip, activeGate: string): string {
     '<div class="ws-header-info">',
     '  <div class="ws-header-eyebrow">' + gateLabel + '</div>',
     '  <div class="ws-header-route">',
-    '    <span>ICN</span>' + IC.routeArrow + '<span>' + escapeHtml(destCode) + '</span>',
+    '    <span>ICN</span>' + IC.routeArrow + '<span>' + escapeHtml(destInfo.code) + '</span>',
     '  </div>',
-    '  <div class="ws-header-meta">' + escapeHtml(destCity) + ' &middot; ' + escapeHtml(dateRange) + '</div>',
+    '  <div class="ws-header-meta">' + escapeHtml(destInfo.metaText) + '</div>',
     '</div>',
     '<div class="ws-header-right">',
     '  <div class="ws-member-avatars" id="ws-member-avatars"></div>',
@@ -318,6 +347,7 @@ function buildAiDemoContent(): string {
 let boardModuleRef: { teardownBoard: () => void } | null = null;
 let shortlistModuleRef: { teardownShortlist: () => void } | null = null;
 let navigateGateHandlerRef: EventListener | null = null;
+let activeDestChangeHandler: ((e: Event) => void) | null = null;
 
 async function renderGate(body: HTMLElement, tripId: string, gate: string): Promise<void> {
   if (gate !== 'ideas' && boardModuleRef) {

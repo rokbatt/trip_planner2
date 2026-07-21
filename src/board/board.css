@@ -25,52 +25,11 @@
   flex-shrink: 0;
 }
 .bd-dest-bar-label svg { width: 13px; height: 13px; }
-.bd-dest-tabs {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-  padding-bottom: 2px;
-}
-.bd-dest-tabs::-webkit-scrollbar { display: none; }
-.bd-dest-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(130,150,170,0.2);
-  background: rgba(255,255,255,0.65);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
-}
-.bd-dest-tab:hover { border-color: #8FD8F8; background: #fff; }
-.bd-dest-tab.active {
-  border-color: #0B2A5C;
-  background: #0B2A5C;
-  box-shadow: 0 4px 14px rgba(11,42,92,0.18);
-}
-.bd-dest-tab-plane {
-  display: inline-flex;
-  width: 15px; height: 15px;
-  color: #0B7CC4;
-  flex-shrink: 0;
-}
-.bd-dest-tab.active .bd-dest-tab-plane { color: #8FD8F8; }
-.bd-dest-tab-plane svg { width: 100%; height: 100%; }
-.bd-dest-tab-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; text-align: left; }
-.bd-dest-tab-name {
-  font-size: 13px; font-weight: 700; color: #0B2A5C; letter-spacing: -0.01em;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px;
-}
-.bd-dest-tab.active .bd-dest-tab-name { color: #fff; }
-.bd-dest-tab-meta { font-size: 10px; font-weight: 600; color: #94A3B8; white-space: nowrap; }
-.bd-dest-tab.active .bd-dest-tab-meta { color: rgba(255,255,255,0.7); }
-/* "여행지 변경" 버튼 — 추가/편집/삭제는 이제 여기 없음(내 여행 카드 편집 모달로 이동) */
+/*
+ * "여행지 변경" 버튼 — 여행지를 카드/탭으로 늘어놓지 않는다(워크스페이스 헤더가 활성
+ * 여행지·날짜를 실시간으로 보여주므로 여기서 또 나열하면 중복). 추가/편집/삭제는
+ * 이제 여기 없음(내 여행 카드 편집 모달로 이동), 이 버튼은 순수 전환만 담당.
+ */
 .bd-dest-switch {
   display: inline-flex;
   align-items: center;

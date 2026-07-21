@@ -595,10 +595,10 @@ function destMeta(d: TripDestination): string {
 
 /**
  * 상단 여행지 바. 마이그레이션 전(합성 여행지)에는 렌더하지 않아 기존 화면과 동일.
- * 실제 여행지가 여러 곳이면 탭(전환) + "여행지 변경" 드롭다운을 보여준다.
- * 여행지 추가·이름/기간 편집·삭제는 이제 이 보드가 아니라 "내 여행" 카드의 편집 모달에서
- * 이뤄진다 — 보드는 이미 정해진 여행지 중에서 "전환"만 담당(제품 결정: 다중 여행지는
- * 여행 전체를 관장하는 곳에서 설정하고, 보드는 그 결과를 소비만 함).
+ * 실제 여행지가 여러 곳이면 "여행지 변경" 드롭다운만 보여준다 — 여행지 목록을 카드/탭으로
+ * 늘어놓지 않는다(워크스페이스 헤더의 여행지·날짜 표시가 활성 여행지를 실시간으로 따라가므로
+ * 여기서 또 보여주면 중복). 여행지 추가·이름/기간 편집·삭제는 이제 이 보드가 아니라
+ * "내 여행" 카드의 편집 모달에서 이뤄진다 — 보드는 "전환"만 담당.
  */
 function renderDestBar(container: HTMLElement, tripId: string): void {
   const wrap = container.querySelector('#bd-dest-bar-wrap') as HTMLElement | null;
@@ -610,41 +610,13 @@ function renderDestBar(container: HTMLElement, tripId: string): void {
     return;
   }
 
-  const tabs = boardDestinations
-    .map((d) => {
-      const active = d.id === boardActiveDest!.id;
-      const meta = destMeta(d);
-      return [
-        '<button type="button" class="bd-dest-tab' + (active ? ' active' : '') + '" data-dest-id="' + d.id + '">',
-        '  <span class="bd-dest-tab-plane">' + ICON_PLANE + '</span>',
-        '  <span class="bd-dest-tab-text">',
-        '    <span class="bd-dest-tab-name">' + escapeHtml(d.name) + '</span>',
-        meta ? '    <span class="bd-dest-tab-meta">' + escapeHtml(meta) + '</span>' : '',
-        '  </span>',
-        '</button>',
-      ].join('');
-    })
-    .join('');
-
   wrap.innerHTML = [
     '<div class="bd-dest-bar" id="bd-dest-bar">',
     '  <span class="bd-dest-bar-label">' + ICON_PIN + ' 여행지</span>',
-    '  <div class="bd-dest-tabs">' + tabs + '</div>',
     '  <button type="button" class="bd-dest-switch" id="bd-dest-switch">' + ICON_SWAP + ' 여행지 변경</button>',
     '</div>',
   ].join('');
 
-  // 탭 클릭으로 전환
-  wrap.querySelectorAll('.bd-dest-tab').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const id = (btn as HTMLElement).dataset.destId;
-      if (!id || id === boardActiveDest?.id) return;
-      setActiveDestinationId(tripId, id);
-      renderBoardContent(container, tripId);
-    });
-  });
-
-  // "여행지 변경" 드롭다운으로도 동일하게 전환 가능
   wrap.querySelector('#bd-dest-switch')?.addEventListener('click', (e) => {
     openDestSwitcher(container, tripId, e.currentTarget as HTMLElement);
   });

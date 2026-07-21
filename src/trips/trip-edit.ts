@@ -207,7 +207,10 @@ export function openEditTripModal(trip: Trip, onSaved: () => void): void {
   }
 
   overlay.querySelector('#te-dest-add')!.addEventListener('click', () => {
-    working.push({ realId: null, name: '', start: '', end: '' });
+    // 센스있는 기본값: 새 여행지의 시작일을 직전 여행지의 종료일로 자동 세팅
+    // (예: 방콕 7.21~7.25 다음에 추가하면 새 여행지가 7.25부터 시작하도록 이어붙임)
+    const prevEnd = working[working.length - 1]?.end || '';
+    working.push({ realId: null, name: '', start: prevEnd, end: '' });
     renderDestRows();
     const inputs = listEl.querySelectorAll('.te-dest-name');
     (inputs[inputs.length - 1] as HTMLInputElement)?.focus();
