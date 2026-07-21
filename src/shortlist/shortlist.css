@@ -161,6 +161,7 @@
   background: #fff; border-radius: 16px;
   box-shadow: 0 24px 60px rgba(11,42,92,0.28); padding: 20px; box-sizing: border-box;
 }
+.sl-seg-modal-wide { max-width: 460px; }
 .sl-seg-pop-title { font-size: 14px; font-weight: 700; color: #0B2A5C; margin-bottom: 3px; }
 .sl-seg-pop-desc { font-size: 11.5px; color: #94A3B8; margin-bottom: 14px; line-height: 1.4; }
 .sl-seg-pop-opt { color: #B0BAC5; }
@@ -176,6 +177,19 @@
   display: flex; gap: 6px; overflow-x: auto; padding: 2px 2px 12px;
   margin-bottom: 6px;
 }
+/* 체류 기간이 2주를 넘으면(3~4주) 한 줄 스크롤 대신 요일 정렬된 그리드로 접어서 표시 */
+.sl-seg-dow-header {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;
+  margin-bottom: 6px;
+}
+.sl-seg-dow-header span { text-align: center; font-size: 10px; font-weight: 700; color: #94A3B8; }
+.sl-seg-daystrip.grid {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;
+  overflow-x: hidden; overflow-y: auto; max-height: 260px;
+  padding: 2px 2px 4px;
+}
+.sl-seg-daystrip.grid .sl-seg-day { min-width: 0; width: 100%; }
+.sl-seg-day-empty { visibility: hidden; }
 .sl-seg-day {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
   flex-shrink: 0; min-width: 42px; padding: 9px 6px;

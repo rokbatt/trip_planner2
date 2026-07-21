@@ -766,10 +766,14 @@ function enumerateDays(startIso: string, endIso: string): string[] {
 }
 
 const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'];
+/** 이 일수를 넘어가면(대략 2주+) 한 줄 스크롤 대신 요일 정렬된 달력 그리드로 전환 */
+const SEG_DAYSTRIP_GRID_THRESHOLD = 14;
 
 /**
  * 새 숙소 구간의 기간을 고르는 모달 (선택).
- * 여행지의 전체 체류 기간(이미 알고 있는 값)을 가로로 나열해, 두 번 클릭(시작→끝)으로 구간을 고른다.
+ * 여행지의 전체 체류 기간(이미 알고 있는 값)을 나열해, 두 번 클릭(시작→끝)으로 구간을 고른다.
+ * 체류 기간이 짧으면 가로 한 줄 스트립, 2주가 넘어가면(예: 3~4주) 한 줄에 계속 스크롤하기보다
+ * 요일이 맞춰진 달력 그리드로 접어서 한눈에 훑어볼 수 있게 한다.
  * 화면 하단에 팝오버로 띄우면 화면 밖으로 잘리는 문제가 있어 화면 중앙 모달로 띄운다.
  */
 function openSegmentDatePopover(_anchor: HTMLElement): void {
@@ -778,6 +782,7 @@ function openSegmentDatePopover(_anchor: HTMLElement): void {
   const rangeStart = slActiveDest?.start_date || currentTrip?.start_date || null;
   const rangeEnd = slActiveDest?.end_date || currentTrip?.end_date || null;
   const days = rangeStart && rangeEnd ? enumerateDays(rangeStart, rangeEnd) : [];
+  const useGrid = days.length > SEG_DAYSTRIP_GRID_THRESHOLD;
 
   let pickedStart: string | null = null;
   let pickedEnd: string | null = null;
@@ -792,14 +797,33 @@ function openSegmentDatePopover(_anchor: HTMLElement): void {
     ].join('');
   };
 
+  /** 짧으면 가로 스트립, 길면(2주 초과) 요일 헤더 + 첫 날 요일만큼 앞을 비운 달력 그리드 */
+  const buildDayStripHtml = (): string => {
+    if (!useGrid) {
+      return '<div class="sl-seg-daystrip" id="sp-daystrip">' + days.map(dayPillHtml).join('') + '</div>';
+    }
+    const header = '<div class="sl-seg-dow-header">' + DOW_KO.map((d) => '<span>' + d + '</span>').join('') + '</div>';
+    const leadingCount = new Date(days[0]).getDay();
+    const cells = days.map(dayPillHtml);
+    const trailingCount = (7 - ((leadingCount + cells.length) % 7)) % 7;
+    const blank = '<span class="sl-seg-day-empty"></span>';
+    const grid =
+      '<div class="sl-seg-daystrip grid" id="sp-daystrip">' +
+      blank.repeat(leadingCount) +
+      cells.join('') +
+      blank.repeat(trailingCount) +
+      '</div>';
+    return header + grid;
+  };
+
   const overlay = document.createElement('div');
   overlay.className = 'sl-seg-modal-overlay';
   overlay.innerHTML = [
-    '<div class="sl-seg-modal">',
+    '<div class="sl-seg-modal' + (useGrid ? ' sl-seg-modal-wide' : '') + '">',
     '  <div class="sl-seg-pop-title">새 숙소 구간</div>',
     '  <div class="sl-seg-pop-desc">이 숙소에 묵는 기간을 정해요 <span class="sl-seg-pop-opt">(선택, 시작일→종료일 순으로 클릭)</span></div>',
     days.length
-      ? '  <div class="sl-seg-daystrip" id="sp-daystrip">' + days.map(dayPillHtml).join('') + '</div>'
+      ? buildDayStripHtml()
       : [
           '  <div class="sl-seg-pop-dates">',
           '    <input class="sl-seg-pop-input" id="sp-start" type="date" />',
