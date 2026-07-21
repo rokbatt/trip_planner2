@@ -1401,7 +1401,8 @@
 
 /* ── 하단 CTA (우측 컬럼 맨 아래, Step2 .sl-step2-cta 기반 + 서브텍스트) ── */
 .sl-step3-cta-wrap { margin-top: auto; }
-.sl-step3-cta { flex-direction: column; gap: 4px; padding: 18px; height: auto; }
+/* .sl-step2-cta의 margin-top(16px)은 카드 사이 gap과 중복이라 여기서 제거, 패딩도 살짝 좁힘 */
+.sl-step3-cta { flex-direction: column; gap: 4px; padding: 14px; height: auto; margin-top: 0; }
 .sl-step3-cta-main { display: flex; align-items: center; gap: 6px; font-size: 14.5px; }
 .sl-step3-cta-main svg { width: 15px; height: 15px; }
 .sl-step3-cta-sub { font-size: 11.5px; font-weight: 500; opacity: 0.75; }
