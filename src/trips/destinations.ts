@@ -303,7 +303,17 @@ export async function deleteDestination(id: string, reassignToId: string | null)
 export async function createStaySegment(
   trip: Trip,
   destination: TripDestination,
-  opts: { startDate?: string | null; endDate?: string | null; sortOrder?: number } = {}
+  opts: {
+    startDate?: string | null;
+    endDate?: string | null;
+    sortOrder?: number;
+    // 기존 구간을 나눌 때(가운데를 잘라내는 경우) 남는 뒤쪽 조각이 원래 구간과 같은
+    // 숙소/지역 선택 상태를 그대로 이어받도록 복제해 넣을 때 사용
+    zoneName?: string | null;
+    zonePlaceIds?: string[] | null;
+    basecampPlaceId?: string | null;
+    confirmedPlaceIds?: string[] | null;
+  } = {}
 ): Promise<StaySegment | null> {
   const { data, error } = await supabase
     .from('stay_segments')
@@ -313,6 +323,10 @@ export async function createStaySegment(
       sort_order: opts.sortOrder ?? 0,
       start_date: opts.startDate ?? null,
       end_date: opts.endDate ?? null,
+      zone_name: opts.zoneName ?? null,
+      zone_place_ids: opts.zonePlaceIds ?? null,
+      basecamp_place_id: opts.basecampPlaceId ?? null,
+      confirmed_place_ids: opts.confirmedPlaceIds ?? null,
     })
     .select()
     .single();
@@ -336,4 +350,30 @@ export async function deleteStaySegment(id: string): Promise<boolean> {
   const { error } = await supabase.from('stay_segments').delete().eq('id', id);
   if (error) console.error('[stay_segments] 숙소 구간 삭제 실패:', error.message);
   return !error;
+}
+
+/**
+ * 숙소 구간의 "날짜만" 수정 (숙소/지역 선택은 그대로 유지).
+ * saveStaySegment와 동일한 우아한 폴백 원칙:
+ *  - 합성 여행지(마이그레이션 전) → trips.start_date/end_date를 대신 수정
+ *  - 실제 여행지 + 아직 실제 구간 행 없음(빈/합성 구간, 숙소를 안 나눈 상태) → trip_destinations 날짜를 대신 수정
+ *  - 실제 구간 행 있음 → 그 행의 날짜만 update
+ */
+export async function updateSegmentDates(
+  trip: Trip,
+  destination: TripDestination,
+  segment: StaySegment,
+  startDate: string | null,
+  endDate: string | null
+): Promise<StaySegment> {
+  if (isSyntheticDestination(destination.id)) {
+    await supabase.from('trips').update({ start_date: startDate, end_date: endDate }).eq('id', trip.id);
+    return { ...segment, start_date: startDate, end_date: endDate };
+  }
+  if (isSyntheticSegment(segment.id)) {
+    await updateDestination(destination.id, { start_date: startDate, end_date: endDate });
+    return { ...segment, start_date: startDate, end_date: endDate };
+  }
+  await updateStaySegment(segment.id, { start_date: startDate, end_date: endDate });
+  return { ...segment, start_date: startDate, end_date: endDate };
 }

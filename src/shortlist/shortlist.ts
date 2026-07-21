@@ -14,6 +14,8 @@ import {
   createStaySegment,
   deleteStaySegment,
   isSyntheticSegment,
+  updateStaySegment,
+  updateSegmentDates,
 } from '../trips/destinations';
 import { loadGoogleMapsScript, getCategoryLabel } from '../utils/googleMaps';
 import type { Database, TripDestination, StaySegment } from '../types/database';
@@ -394,7 +396,7 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
 
   // 활성 여행지의 숙소 구간들을 로드하고, 활성 구간의 저장 상태를 복원
   if (trip && slActiveDest) {
-    slSegments = await loadStaySegments(trip, slActiveDest);
+    slSegments = sortSegmentsByDate(await loadStaySegments(trip, slActiveDest));
     slActiveSegment = resolveActiveSegment(slActiveDest.id, slSegments);
     restoreStateFromSegment(slActiveSegment);
   }
@@ -661,9 +663,84 @@ function segmentLabel(seg: StaySegment, index: number): string {
   return '숙소 ' + (index + 1);
 }
 
-/** "숙소 나누기" — 새 빈 구간을 만들고 그 구간으로 전환 (선택한 기간과 함께) */
+/** 구간 목록을 체류 시작일 순으로 정렬 (날짜 미정은 맨 뒤) */
+function sortSegmentsByDate(segs: StaySegment[]): StaySegment[] {
+  return [...segs].sort((a, b) => {
+    if (!a.start_date && !b.start_date) return 0;
+    if (!a.start_date) return 1;
+    if (!b.start_date) return -1;
+    return a.start_date < b.start_date ? -1 : a.start_date > b.start_date ? 1 : 0;
+  });
+}
+
+/**
+ * 날짜순으로 재정렬하고, 정렬 결과가 기존 sort_order와 달라진 실제 구간만 DB에도 반영.
+ * → 나중 날짜를 먼저 만들었더라도(예: 뒷부분을 먼저 나눔) 항상 일정 순서대로 표시되게.
+ */
+async function resortSegments(): Promise<void> {
+  const sorted = sortSegmentsByDate(slSegments);
+  const updates: Promise<unknown>[] = [];
+  sorted.forEach((seg, i) => {
+    if (seg.sort_order === i) return;
+    seg.sort_order = i;
+    if (!isSyntheticSegment(seg.id)) updates.push(updateStaySegment(seg.id, { sort_order: i }));
+  });
+  await Promise.all(updates);
+  slSegments = sorted;
+}
+
+/**
+ * 새로 나눌 구간의 날짜([newStart,newEnd])를 품고 있던 기존 구간을 찾아 자동으로 정리한다.
+ *  - 기존 구간의 한쪽 끝에 맞닿아 있으면 → 기존 구간은 남는 쪽만 남기고 축소(구간 1개 그대로 update)
+ *  - 기존 구간 중간을 잘라내면 → 기존 구간은 앞쪽만 남기고, 뒤쪽 남는 기간은 기존 구간과
+ *    동일한 지역/숙소 선택 상태를 그대로 이어받은 새 구간으로 하나 더 만듦
+ * → 사용자가 남는 기간을 또 손으로 지정할 필요 없이 항상 날짜가 이가 맞게 자동 세팅됨.
+ */
+async function splitCoveringSegment(newStart: string, newEnd: string): Promise<void> {
+  if (!currentTrip || !slActiveDest) return;
+  const covering = slSegments.find((s) => {
+    if (!s.start_date || !s.end_date) return false;
+    if (s.start_date === newStart && s.end_date === newEnd) return false;
+    return s.start_date <= newStart && s.end_date >= newEnd;
+  });
+  if (!covering) return;
+
+  const covStart = covering.start_date!;
+  const covEnd = covering.end_date!;
+  const touchesStart = covStart === newStart;
+  const touchesEnd = covEnd === newEnd;
+
+  if (touchesStart && !touchesEnd) {
+    // 앞쪽을 잘라냄 → 기존 구간은 뒤쪽 남는 기간만 유지
+    const updated = await updateSegmentDates(currentTrip, slActiveDest, covering, newEnd, covEnd);
+    slSegments = slSegments.map((s) => (s.id === covering.id ? updated : s));
+  } else if (touchesEnd && !touchesStart) {
+    // 뒤쪽을 잘라냄 → 기존 구간은 앞쪽 남는 기간만 유지
+    const updated = await updateSegmentDates(currentTrip, slActiveDest, covering, covStart, newStart);
+    slSegments = slSegments.map((s) => (s.id === covering.id ? updated : s));
+  } else if (!touchesStart && !touchesEnd) {
+    // 중간을 잘라냄 → 기존 구간은 앞쪽만 남기고, 뒤쪽 남는 기간은 같은 숙소 상태로 구간 하나 더 생성
+    const updatedFront = await updateSegmentDates(currentTrip, slActiveDest, covering, covStart, newStart);
+    slSegments = slSegments.map((s) => (s.id === covering.id ? updatedFront : s));
+    const back = await createStaySegment(currentTrip, slActiveDest, {
+      startDate: newEnd,
+      endDate: covEnd,
+      sortOrder: slSegments.length,
+      zoneName: covering.zone_name,
+      zonePlaceIds: covering.zone_place_ids,
+      basecampPlaceId: covering.basecamp_place_id,
+      confirmedPlaceIds: covering.confirmed_place_ids,
+    });
+    if (back) slSegments = [...slSegments, back];
+  }
+}
+
+/** "숙소 나누기" — 새 빈 구간을 만들고 그 구간으로 전환 (선택한 기간과 함께). 겹치는 기존 구간은 자동으로 정리. */
 async function addSegment(startDate: string | null, endDate: string | null): Promise<void> {
   if (!currentTrip || !slActiveDest || !slContainer) return;
+  if (startDate && endDate) {
+    await splitCoveringSegment(startDate, endDate);
+  }
   const created = await createStaySegment(currentTrip, slActiveDest, {
     startDate,
     endDate,
@@ -671,6 +748,7 @@ async function addSegment(startDate: string | null, endDate: string | null): Pro
   });
   if (!created) return;
   slSegments = [...slSegments, created];
+  await resortSegments();
   slActiveSegment = created;
   setActiveSegmentId(slActiveDest.id, created.id);
   restoreStateFromSegment(created); // 새 구간은 빈 상태 → Step1부터
@@ -769,23 +847,32 @@ const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'];
 /** 이 일수를 넘어가면(대략 2주+) 한 줄 스크롤 대신 요일 정렬된 달력 그리드로 전환 */
 const SEG_DAYSTRIP_GRID_THRESHOLD = 14;
 
+interface DateRangeModalOptions {
+  title: string;
+  desc: string;
+  rangeStart: string | null;
+  rangeEnd: string | null;
+  initialStart?: string | null;
+  initialEnd?: string | null;
+  saveLabel: string;
+  onSave: (start: string | null, end: string | null) => void | Promise<void>;
+}
+
 /**
- * 새 숙소 구간의 기간을 고르는 모달 (선택).
- * 여행지의 전체 체류 기간(이미 알고 있는 값)을 나열해, 두 번 클릭(시작→끝)으로 구간을 고른다.
- * 체류 기간이 짧으면 가로 한 줄 스트립, 2주가 넘어가면(예: 3~4주) 한 줄에 계속 스크롤하기보다
- * 요일이 맞춰진 달력 그리드로 접어서 한눈에 훑어볼 수 있게 한다.
+ * 날짜 범위를 고르는 모달 (공용). 전체 기간(이미 알고 있는 값)을 나열해, 두 번 클릭(시작→끝)으로
+ * 구간을 고른다. 기간이 짧으면 가로 한 줄 스트립, 2주가 넘어가면(예: 3~4주) 한 줄에 계속
+ * 스크롤하기보다 요일이 맞춰진 달력 그리드로 접어서 한눈에 훑어볼 수 있게 한다.
  * 화면 하단에 팝오버로 띄우면 화면 밖으로 잘리는 문제가 있어 화면 중앙 모달로 띄운다.
+ * "새 숙소 구간 추가"와 "숙박 기간 수정" 양쪽에서 재사용.
  */
-function openSegmentDatePopover(_anchor: HTMLElement): void {
+function openDateRangeModal(opts: DateRangeModalOptions): void {
   closeSegPopover();
 
-  const rangeStart = slActiveDest?.start_date || currentTrip?.start_date || null;
-  const rangeEnd = slActiveDest?.end_date || currentTrip?.end_date || null;
-  const days = rangeStart && rangeEnd ? enumerateDays(rangeStart, rangeEnd) : [];
+  const days = opts.rangeStart && opts.rangeEnd ? enumerateDays(opts.rangeStart, opts.rangeEnd) : [];
   const useGrid = days.length > SEG_DAYSTRIP_GRID_THRESHOLD;
 
-  let pickedStart: string | null = null;
-  let pickedEnd: string | null = null;
+  let pickedStart: string | null = opts.initialStart ?? null;
+  let pickedEnd: string | null = opts.initialEnd ?? null;
 
   const dayPillHtml = (iso: string): string => {
     const d = new Date(iso);
@@ -820,20 +907,20 @@ function openSegmentDatePopover(_anchor: HTMLElement): void {
   overlay.className = 'sl-seg-modal-overlay';
   overlay.innerHTML = [
     '<div class="sl-seg-modal' + (useGrid ? ' sl-seg-modal-wide' : '') + '">',
-    '  <div class="sl-seg-pop-title">새 숙소 구간</div>',
-    '  <div class="sl-seg-pop-desc">이 숙소에 묵는 기간을 정해요 <span class="sl-seg-pop-opt">(선택, 시작일→종료일 순으로 클릭)</span></div>',
+    '  <div class="sl-seg-pop-title">' + escapeHtml(opts.title) + '</div>',
+    '  <div class="sl-seg-pop-desc">' + opts.desc + '</div>',
     days.length
       ? buildDayStripHtml()
       : [
           '  <div class="sl-seg-pop-dates">',
-          '    <input class="sl-seg-pop-input" id="sp-start" type="date" />',
+          '    <input class="sl-seg-pop-input" id="sp-start" type="date" value="' + (pickedStart ?? '') + '" />',
           '    <span class="sl-seg-pop-tilde">~</span>',
-          '    <input class="sl-seg-pop-input" id="sp-end" type="date" />',
+          '    <input class="sl-seg-pop-input" id="sp-end" type="date" value="' + (pickedEnd ?? '') + '" />',
           '  </div>',
         ].join(''),
     '  <div class="sl-seg-pop-actions">',
     '    <button type="button" class="sl-seg-pop-cancel" id="sp-cancel">취소</button>',
-    '    <button type="button" class="sl-seg-pop-save" id="sp-save">' + IC_PLUS + ' 추가</button>',
+    '    <button type="button" class="sl-seg-pop-save" id="sp-save">' + IC_PLUS + ' ' + escapeHtml(opts.saveLabel) + '</button>',
     '  </div>',
     '</div>',
   ].join('');
@@ -849,6 +936,7 @@ function openSegmentDatePopover(_anchor: HTMLElement): void {
       if (pickedStart && pickedEnd && iso > pickedStart && iso < pickedEnd) el.classList.add('is-in-range');
     });
   }
+  if (days.length) refreshDayStates();
 
   overlay.querySelectorAll<HTMLElement>('.sl-seg-day').forEach((el) => {
     el.addEventListener('click', () => {
@@ -876,11 +964,58 @@ function openSegmentDatePopover(_anchor: HTMLElement): void {
     }
     (overlay.querySelector('#sp-save') as HTMLButtonElement).disabled = true;
     closeSegPopover();
-    await addSegment(start, end);
+    await opts.onSave(start, end);
   });
 
   overlay.addEventListener('mousedown', (e) => {
     if (e.target === overlay) closeSegPopover();
+  });
+}
+
+/** "숙소 나누기" — 새 숙소 구간의 기간을 고르는 모달 (선택) */
+function openSegmentDatePopover(_anchor: HTMLElement): void {
+  const rangeStart = slActiveDest?.start_date || currentTrip?.start_date || null;
+  const rangeEnd = slActiveDest?.end_date || currentTrip?.end_date || null;
+  openDateRangeModal({
+    title: '새 숙소 구간',
+    desc: '이 숙소에 묵는 기간을 정해요 <span class="sl-seg-pop-opt">(선택, 시작일→종료일 순으로 클릭)</span>',
+    rangeStart,
+    rangeEnd,
+    saveLabel: '추가',
+    onSave: async (start, end) => {
+      await addSegment(start, end);
+    },
+  });
+}
+
+/** "수정" — 현재 활성 숙소 구간의 숙박 기간을 다시 고르는 모달 */
+function openStayDateEditor(): void {
+  if (!currentTrip || !slActiveDest || !slActiveSegment || !slContainer) return;
+  const rangeStart = slActiveDest.start_date || currentTrip.start_date || null;
+  const rangeEnd = slActiveDest.end_date || currentTrip.end_date || null;
+  openDateRangeModal({
+    title: '숙박 기간 수정',
+    desc: '이 숙소에 묵는 기간을 다시 정해요 <span class="sl-seg-pop-opt">(시작일→종료일 순으로 클릭)</span>',
+    rangeStart,
+    rangeEnd,
+    initialStart: slActiveSegment.start_date,
+    initialEnd: slActiveSegment.end_date,
+    saveLabel: '저장',
+    onSave: async (start, end) => {
+      const trip = currentTrip!;
+      const dest = slActiveDest!;
+      const seg = slActiveSegment!;
+      const updated = await updateSegmentDates(trip, dest, seg, start, end);
+      slSegments = slSegments.map((s) => (s.id === seg.id ? updated : s));
+      slActiveSegment = updated;
+      if (isSyntheticDestination(dest.id)) {
+        currentTrip = { ...trip, start_date: start, end_date: end };
+      } else if (isSyntheticSegment(updated.id)) {
+        slActiveDest = { ...dest, start_date: start, end_date: end };
+      }
+      await resortSegments();
+      renderStep(slContainer!);
+    },
   });
 }
 
@@ -1544,7 +1679,7 @@ async function renderStep2(body: HTMLElement): Promise<void> {
       '  <div class="sl-step2-summary-card">',
       '    <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">선택 지역</span><span class="sl-step2-summary-value">' + escapeHtml(selectedZone.name) + '</span></div>',
       '    <div class="sl-step2-summary-divider"></div>',
-      '    <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">여행 기간</span><span class="sl-step2-summary-value">' + escapeHtml(dateRange) + '</span></div>',
+      '    <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">숙박 기간</span><span class="sl-step2-summary-value">' + escapeHtml(dateRange) + '</span></div>',
       '    <div class="sl-step2-summary-divider"></div>',
       '    <div class="sl-step2-summary-item sl-step2-summary-budget">',
       '      <span class="sl-step2-summary-label">예산 (1박 1인)</span>',
@@ -1697,10 +1832,10 @@ async function renderStep2(body: HTMLElement): Promise<void> {
   await initMapStep2(body, candidates);
 }
 
-/** 활성 여행지 자체의 기간이 있으면 그걸(멀티 여행지), 없으면 트립 전체 기간을 표시 */
+/** 활성 숙소 구간 자체의 기간이 있으면 그걸(숙소를 나눈 경우), 없으면 여행지 기간, 그것도 없으면 트립 전체 기간 */
 function formatTripDateRange(): string {
-  const start = slActiveDest?.start_date || currentTrip?.start_date;
-  const end = slActiveDest?.end_date || currentTrip?.end_date;
+  const start = slActiveSegment?.start_date || slActiveDest?.start_date || currentTrip?.start_date;
+  const end = slActiveSegment?.end_date || slActiveDest?.end_date || currentTrip?.end_date;
   if (!start || !end) return '기간 미정';
   const s = new Date(start);
   const e = new Date(end);
@@ -2302,14 +2437,14 @@ async function renderStep3(body: HTMLElement): Promise<void> {
       '  <div class="sl-step2-summary-card">',
       '    <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">선택 지역</span><span class="sl-step2-summary-value">' + escapeHtml(zone.name) + '</span></div>',
       '    <div class="sl-step2-summary-divider"></div>',
-      '    <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">여행 기간</span><span class="sl-step2-summary-value">' + escapeHtml(dateRange) + '</span></div>',
+      '    <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">숙박 기간</span><span class="sl-step2-summary-value">' + escapeHtml(dateRange) + '</span></div>',
       '    <div class="sl-step2-summary-divider"></div>',
       '    <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">예산 (1박 1인)</span><span class="sl-step2-summary-value">' + escapeHtml(budgetLabel) + '</span></div>',
       '    <button class="sl-step2-summary-edit" id="sl-back-2b">' + IC_EXTLINK + ' 수정</button>',
       '  </div>',
       '</div>',
     ].join('\n');
-    stepperExtraEl.querySelector('#sl-back-2b')?.addEventListener('click', goBackToStep2);
+    stepperExtraEl.querySelector('#sl-back-2b')?.addEventListener('click', openStayDateEditor);
   }
 
   const stars = typeof basecamp.google_rating === 'number' ? buildStars(basecamp.google_rating) : '';
@@ -2356,7 +2491,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     basecamp.address ? '            <div class="sl-step3-summary-address">' + escapeHtml(basecamp.address) + '</div>' : '',
     '            <div class="sl-step3-summary-grid">',
     '              <div class="sl-step3-summary-field"><span class="sl-step3-summary-field-label">선택 지역</span><span class="sl-step3-summary-field-value">' + escapeHtml(zone.name) + '</span></div>',
-    '              <div class="sl-step3-summary-field"><span class="sl-step3-summary-field-label">여행 기간</span><span class="sl-step3-summary-field-value">' + escapeHtml(dateRange) + '</span></div>',
+    '              <div class="sl-step3-summary-field"><span class="sl-step3-summary-field-label">숙박 기간</span><span class="sl-step3-summary-field-value">' + escapeHtml(dateRange) + '</span></div>',
     '              <div class="sl-step3-summary-field"><span class="sl-step3-summary-field-label">예산 (1박 1인)</span><span class="sl-step3-summary-field-value">' + escapeHtml(budgetLabel) + '</span></div>',
     '              <button class="sl-step2-summary-edit sl-step3-summary-edit" id="sl-back-2c">' + IC_EXTLINK + ' 수정</button>',
     '            </div>',
@@ -2454,7 +2589,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   ].join('\n');
 
   body.querySelector('#sl-back-2')?.addEventListener('click', goBackToStep2);
-  body.querySelector('#sl-back-2c')?.addEventListener('click', goBackToStep2);
+  body.querySelector('#sl-back-2c')?.addEventListener('click', openStayDateEditor);
   body.querySelector('#sl-expense-link')?.addEventListener('click', () => {
     window.dispatchEvent(
       new CustomEvent('mongsil:navigateGate', { detail: { tripId: currentTripId, gate: 'expense' } })
