@@ -1,5 +1,6 @@
 import { supabase } from '../supabase';
 import { store } from '../store';
+import { syntheticDestinationName } from '../trips/destinations';
 import { loadGoogleMapsScript, getCategoryLabel } from '../utils/googleMaps';
 import type { Database } from '../types/database';
 import './shortlist.css';
@@ -374,8 +375,7 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
 }
 
 function getTripDestination(): string {
-  if (!currentTrip) return '';
-  return currentTrip.destinations?.[0] ?? currentTrip.name ?? '';
+  return syntheticDestinationName(currentTrip);
 }
 
 let shellResizeHandler: (() => void) | null = null;

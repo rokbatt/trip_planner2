@@ -1,5 +1,6 @@
 import { supabase } from '../supabase';
 import { store } from '../store';
+import { syntheticDestinationName } from '../trips/destinations';
 import type { Database } from '../types/database';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { loadGoogleMapsScript, extractPlaceResult, suggestGateFromCategory, getPlacePredictions, getPlaceDetails, getCategoryLabel, resetGoogleServices } from '../utils/googleMaps';
@@ -1121,9 +1122,7 @@ function bindAiPicksToggle(inbox: HTMLElement, tripId: string): void {
 }
 
 function getTripDestination(): string {
-  const trip = store.get('currentTrip');
-  if (!trip) return '';
-  return trip.destinations?.[0] ?? trip.name ?? '';
+  return syntheticDestinationName(store.get('currentTrip'));
 }
 
 function buildAiPicksContent(picks: Record<string, string[]>, _tripId: string): string {

@@ -105,6 +105,7 @@ export interface Database {
           status: string;
           is_idea: boolean;
           sort_order: number;
+          destination_id: string | null;
         };
         Insert: {
           id?: string;
@@ -127,9 +128,91 @@ export interface Database {
           status?: string;
           is_idea?: boolean;
           sort_order?: number;
+          destination_id?: string | null;
         };
         Update: Partial<Database['public']['Tables']['places']['Insert']>;
         Relationships: [];
+      };
+
+      trip_destinations: {
+        Row: {
+          id: string;
+          trip_id: string;
+          name: string;
+          lat: number | null;
+          lng: number | null;
+          start_date: string | null;
+          end_date: string | null;
+          sort_order: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          trip_id: string;
+          name: string;
+          lat?: number | null;
+          lng?: number | null;
+          start_date?: string | null;
+          end_date?: string | null;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['trip_destinations']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'trip_destinations_trip_id_fkey';
+            columns: ['trip_id'];
+            isOneToOne: false;
+            referencedRelation: 'trips';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+
+      stay_segments: {
+        Row: {
+          id: string;
+          trip_id: string;
+          destination_id: string | null;
+          sort_order: number;
+          start_date: string | null;
+          end_date: string | null;
+          zone_name: string | null;
+          zone_place_ids: string[] | null;
+          basecamp_place_id: string | null;
+          confirmed_place_ids: string[] | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          trip_id: string;
+          destination_id?: string | null;
+          sort_order?: number;
+          start_date?: string | null;
+          end_date?: string | null;
+          zone_name?: string | null;
+          zone_place_ids?: string[] | null;
+          basecamp_place_id?: string | null;
+          confirmed_place_ids?: string[] | null;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['stay_segments']['Insert']>;
+        Relationships: [
+          {
+            foreignKeyName: 'stay_segments_trip_id_fkey';
+            columns: ['trip_id'];
+            isOneToOne: false;
+            referencedRelation: 'trips';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'stay_segments_destination_id_fkey';
+            columns: ['destination_id'];
+            isOneToOne: false;
+            referencedRelation: 'trip_destinations';
+            referencedColumns: ['id'];
+          },
+        ];
       };
 
       city_images: {
@@ -285,3 +368,5 @@ export type Place = Database['public']['Tables']['places']['Row'];
 export type CityImage = Database['public']['Tables']['city_images']['Row'];
 export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'];
 export type PlaceComment = Database['public']['Tables']['place_comments']['Row'];
+export type TripDestination = Database['public']['Tables']['trip_destinations']['Row'];
+export type StaySegment = Database['public']['Tables']['stay_segments']['Row'];
