@@ -348,46 +348,6 @@ let boardModuleRef: { teardownBoard: () => void } | null = null;
 let shortlistModuleRef: { teardownShortlist: () => void } | null = null;
 let navigateGateHandlerRef: EventListener | null = null;
 let activeDestChangeHandler: ((e: Event) => void) | null = null;
-let panelHeightResizeHandler: (() => void) | null = null;
-
-/**
- * .ws-panel-inner의 높이를 CSS flex-stretch 체인 대신 JS로 직접 측정해서 고정.
- * shortlist.ts의 lockShellHeight와 동일한 패턴(이 프로젝트에서 이미 검증된 방식).
- *
- * 왜 필요한가: .ws-panel은 자기 height를 명시하지 않고 .ws-content-row의 stretch에만
- * 의존하는데, 상세정보 패널처럼 콘텐츠가 길어지는 화면에서 특정 브라우저/줌/모니터
- * 조합에 따라 그 stretch 체인이 조용히 깨지면 패널 박스 자체가 콘텐츠 높이만큼 늘어나
- * 버리고, 그 초과분은 스크롤 없이 그냥 잘려서 안 보이게 됨(신고된 버그와 일치하는 패턴 —
- * 이 프로젝트에서 .ws-page에도 같은 종류의 문제가 있었고 height 고정으로 해결한 적 있음).
- *
- * ⚠️ 롤백 필요 시: lockPanelHeight/unlockPanelHeight 호출 두 줄만 지우면 원래
- * CSS(height:100%) 동작으로 바로 되돌아감 — 이 함수/CSS는 그대로 둬도 무해함.
- */
-function lockPanelHeight(panelEl: HTMLElement): void {
-  const inner = panelEl.querySelector('.ws-panel-inner') as HTMLElement | null;
-  if (!inner) return;
-
-  const applyHeight = () => {
-    const top = panelEl.getBoundingClientRect().top;
-    const available = window.innerHeight - top;
-    inner.style.height = Math.max(300, available) + 'px';
-  };
-
-  applyHeight();
-
-  if (panelHeightResizeHandler) window.removeEventListener('resize', panelHeightResizeHandler);
-  panelHeightResizeHandler = applyHeight;
-  window.addEventListener('resize', panelHeightResizeHandler);
-}
-
-function unlockPanelHeight(panelEl: HTMLElement): void {
-  const inner = panelEl.querySelector('.ws-panel-inner') as HTMLElement | null;
-  if (inner) inner.style.height = '';
-  if (panelHeightResizeHandler) {
-    window.removeEventListener('resize', panelHeightResizeHandler);
-    panelHeightResizeHandler = null;
-  }
-}
 
 async function renderGate(body: HTMLElement, tripId: string, gate: string): Promise<void> {
   if (gate !== 'ideas' && boardModuleRef) {
@@ -509,7 +469,6 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
   function closeDrawer(): void {
     panelOpen = false;
     layout.classList.remove('panel-open');
-    unlockPanelHeight(panelEl);
     panelEl.innerHTML = '';
     fab.classList.remove('hidden');
     if (chatUnsub) {
@@ -552,7 +511,6 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
     layout.classList.add('panel-open');
     fab.classList.add('hidden');
     panelEl.innerHTML = buildPanelShell();
-    lockPanelHeight(panelEl);
 
     panelEl.querySelectorAll('.ws-segment').forEach((btn) => {
       btn.classList.toggle('active', (btn as HTMLElement).dataset.tab === tab);
@@ -584,7 +542,6 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
     teardownComments(); // 이전에 열려있던 다른 장소의 댓글 구독 정리
 
     panelEl.innerHTML = buildDetailPanelShell(place);
-    lockPanelHeight(panelEl);
 
     panelEl.querySelector('#detail-back')?.addEventListener('click', () => {
       if (wasOpen) {
