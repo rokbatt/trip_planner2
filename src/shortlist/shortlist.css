@@ -1294,6 +1294,10 @@
 
 .sl-step3-sample-note { font-size: 10.5px; color: #B0BAC5; margin-top: 14px; }
 .sl-step3-eff-samplenote { margin-top: -14px; padding-left: 4px; }
+/* 우측(카드+CTA 버튼)이 좌측보다 콘텐츠가 더 길 때(예: 놓친 장소가 여러 개일 때)도
+   좌측 마지막 줄이 컨테이너 하단까지 따라 내려가도록 — 우측 CTA 버튼과 동일한 원리.
+   콘텐츠가 짧을 때(남는 공간 없음)는 auto가 0으로 계산돼 위 -14px만 적용됨. */
+.sl-step3-left > .sl-step3-eff-samplenote { margin-top: auto; }
 
 /* ── ③ 여행 효율 점수 ── */
 .sl-step3-eff-card { display: flex; align-items: center; gap: 28px; }
@@ -1399,13 +1403,12 @@
 .sl-step3-expense-btn svg { width: 13px; height: 13px; }
 .sl-step3-expense-btn:hover { background: #EAF6FD; border-color: #8FD8F8; }
 
-/* ── 하단 CTA (우측 컬럼 맨 아래, Step2 .sl-step2-cta 기반 + 서브텍스트) ── */
+/* ── 하단 CTA (우측 컬럼 맨 아래, Step2 .sl-step2-cta 기반) ── */
 .sl-step3-cta-wrap { margin-top: auto; }
 /* .sl-step2-cta의 margin-top(16px)은 카드 사이 gap과 중복이라 여기서 제거, 패딩도 살짝 좁힘 */
-.sl-step3-cta { flex-direction: column; gap: 4px; padding: 14px; height: auto; margin-top: 0; }
+.sl-step3-cta { padding: 14px; height: auto; margin-top: 0; }
 .sl-step3-cta-main { display: flex; align-items: center; gap: 6px; font-size: 14.5px; }
 .sl-step3-cta-main svg { width: 15px; height: 15px; }
-.sl-step3-cta-sub { font-size: 11.5px; font-weight: 500; opacity: 0.75; }
 
 /*
  * 세로 스택 전환 — 뷰포트가 아니라 .sl-shell의 "실제 가용 폭"(container) 기준.

@@ -2574,7 +2574,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
 
     // ⑤ 하단 CTA (우측 컬럼 맨 아래 — 레퍼런스와 동일)
     '      <div class="sl-step3-cta-wrap">',
-    '        <button class="sl-step2-cta sl-step3-cta" id="sl-proceed"><span class="sl-step3-cta-main">' + IC_CHECK + ' 이 숙소를 여행 중심으로 확정하기</span><span class="sl-step3-cta-sub">다음 단계에서 최적의 동선(Route)을 자동으로 생성해요</span></button>',
+    '        <button class="sl-step2-cta sl-step3-cta" id="sl-proceed"><span class="sl-step3-cta-main">' + IC_CHECK + ' 이 숙소를 여행 중심으로 확정하기</span></button>',
     '      </div>',
 
     '    </div>',
