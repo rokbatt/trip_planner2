@@ -634,6 +634,12 @@ function buildDetailPanelShell(place: any): string {
   }).join('');
 
   return [
+    // buildPanelShell()(채팅/AI)과 동일하게 .ws-panel-inner로 감싸야 함 — 이 래퍼가 없으면
+    // .ws-panel(display:flex 없음)의 자식으로 header+body가 그냥 block 흐름이 되어버려서
+    // .ws-detail-body의 flex:1이 무의미해지고, 콘텐츠 높이만큼 그냥 늘어나 버림(내부에
+    // overflow는 절대 생기지 않음 → 스크롤 자체가 안 걸림). 결국 .ws-panel의
+    // overflow:hidden에 초과분이 조용히 잘려서 "휠을 굴려도 반응 없음" 버그가 됐던 것.
+    '<div class="ws-panel-inner">',
     '<div class="ws-panel-header">',
     '  <button class="ws-detail-back" id="detail-back">' + IC.back + '</button>',
     '  <span class="ws-detail-header-title">장소 상세</span>',
@@ -669,6 +675,7 @@ function buildDetailPanelShell(place: any): string {
     '      <div class="ws-detail-placeholder">AI 요약은 다음 단계에서 연결돼요</div>',
     '    </div>',
     '  </div>',
+    '</div>',
     '</div>',
   ].join('\n');
 }
