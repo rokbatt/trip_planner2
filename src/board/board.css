@@ -70,84 +70,62 @@
 .bd-dest-tab.active .bd-dest-tab-name { color: #fff; }
 .bd-dest-tab-meta { font-size: 10px; font-weight: 600; color: #94A3B8; white-space: nowrap; }
 .bd-dest-tab.active .bd-dest-tab-meta { color: rgba(255,255,255,0.7); }
-.bd-dest-tab-edit {
-  display: inline-flex; width: 15px; height: 15px; color: rgba(255,255,255,0.6);
-  flex-shrink: 0; border-radius: 5px; padding: 1px; margin-left: 2px;
-  transition: color 150ms ease, background 150ms ease;
-}
-.bd-dest-tab-edit:hover { color: #fff; background: rgba(255,255,255,0.16); }
-.bd-dest-tab-edit svg { width: 100%; height: 100%; }
-.bd-dest-add {
+/* "여행지 변경" 버튼 — 추가/편집/삭제는 이제 여기 없음(내 여행 카드 편집 모달로 이동) */
+.bd-dest-switch {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   padding: 8px 12px;
   border-radius: 12px;
-  border: 1px dashed rgba(130,150,170,0.4);
-  background: none;
-  color: #0B7CC4;
+  border: 1px solid rgba(130,150,170,0.24);
+  background: rgba(255,255,255,0.65);
+  color: #0B2A5C;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
   flex-shrink: 0;
   transition: border-color 150ms ease, background 150ms ease;
 }
-.bd-dest-add:hover { border-color: #8FD8F8; background: #EAF6FD; }
-.bd-dest-add svg { width: 13px; height: 13px; }
+.bd-dest-switch:hover { border-color: #8FD8F8; background: #fff; }
+.bd-dest-switch svg { width: 13px; height: 13px; color: #0B7CC4; }
 
 /* 바가 있을 때만 레이아웃 상단 여백을 줄여 이중 여백을 피함 */
 .bd-dest-bar-wrap:not(:empty) + .bd-layout { padding-top: 12px; min-height: calc(100% - 60px); }
 
-/* 여행지 추가/편집 팝오버 */
-.bd-dest-popover {
+/* "여행지 변경" 드롭다운 — 순수 선택 목록(읽기 전용, 추가/편집 없음) */
+.bd-dest-switcher {
   position: fixed;
   z-index: 400;
-  width: 260px;
+  width: 220px;
   background: #fff;
   border: 1px solid rgba(130,150,170,0.2);
   border-radius: 14px;
   box-shadow: 0 16px 40px rgba(11,42,92,0.2);
-  padding: 16px;
+  padding: 8px;
   box-sizing: border-box;
 }
-.bd-dest-pop-title { font-size: 13px; font-weight: 700; color: #0B2A5C; margin-bottom: 12px; }
-.bd-dest-pop-label { display: block; font-size: 11px; font-weight: 600; color: #94A3B8; margin-bottom: 5px; }
-.bd-dest-pop-opt { font-weight: 500; color: #B0BAC5; }
-.bd-dest-pop-input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 8px 10px;
-  border: 1px solid rgba(130,150,170,0.24);
-  border-radius: 9px;
-  font-size: 13px;
-  font-family: inherit;
-  color: #0B2A5C;
-  background: #fff;
-  margin-bottom: 12px;
+.bd-dest-switch-title {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: #94A3B8; padding: 6px 8px 8px;
 }
-.bd-dest-pop-input:focus { outline: none; border-color: #8FD8F8; }
-.bd-dest-pop-dates { display: flex; align-items: center; gap: 6px; }
-.bd-dest-pop-dates .bd-dest-pop-input { margin-bottom: 12px; }
-.bd-dest-pop-tilde { color: #94A3B8; margin-bottom: 12px; }
-.bd-dest-pop-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; }
-.bd-dest-pop-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.bd-dest-pop-del {
-  display: inline-flex; align-items: center; gap: 4px;
-  border: none; background: none; color: #C0392B; font-size: 11.5px; font-weight: 700;
-  cursor: pointer; padding: 6px 4px; border-radius: 7px;
+.bd-dest-switch-list { display: flex; flex-direction: column; gap: 2px; }
+.bd-dest-switch-item {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%; padding: 8px; border: none; background: none; border-radius: 9px;
+  cursor: pointer; text-align: left; transition: background 120ms ease;
 }
-.bd-dest-pop-del:hover { background: #FDEEEC; }
-.bd-dest-pop-del svg { width: 13px; height: 13px; }
-.bd-dest-pop-cancel {
-  border: none; background: none; color: #64748B; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 7px 10px; border-radius: 8px;
+.bd-dest-switch-item:hover { background: #F1F6FB; }
+.bd-dest-switch-item.active { background: #EAF6FD; }
+.bd-dest-switch-plane { display: inline-flex; width: 15px; height: 15px; color: #0B7CC4; flex-shrink: 0; }
+.bd-dest-switch-plane svg { width: 100%; height: 100%; }
+.bd-dest-switch-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.bd-dest-switch-name {
+  font-size: 12.5px; font-weight: 700; color: #0B2A5C;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.bd-dest-pop-cancel:hover { background: #F1F6FB; }
-.bd-dest-pop-save {
-  border: none; background: #0B2A5C; color: #fff; font-size: 12.5px; font-weight: 700;
-  cursor: pointer; padding: 8px 14px; border-radius: 9px;
-}
-.bd-dest-pop-save:hover { background: #0E3676; }
-.bd-dest-pop-save:disabled { opacity: 0.6; cursor: default; }
+.bd-dest-switch-meta { font-size: 10px; font-weight: 600; color: #94A3B8; }
+.bd-dest-switch-check { display: inline-flex; width: 14px; height: 14px; color: #0B7CC4; flex-shrink: 0; }
+.bd-dest-switch-check svg { width: 100%; height: 100%; }
 
 /*
  * Workspace(보드 전체) — 유동형(fluid) 레이아웃. 가로 스크롤 없이 화면 너비 100%에

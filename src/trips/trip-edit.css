@@ -1,0 +1,95 @@
+/* ============================================================
+   몽실이 — 여행 편집 모달 (제목 · 여행지 추가/변경/삭제 · 여행 삭제)
+   .tc-* (trip-create.css)의 모달/필드 스타일을 그대로 이어받고,
+   여기서는 여행지 목록 편집과 위험 구역만 추가로 정의한다.
+   ============================================================ */
+
+.te-modal { max-width: 520px; }
+
+.te-dest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.te-dest-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.te-dest-input {
+  box-sizing: border-box;
+  padding: 9px 11px;
+  border: 1.5px solid rgba(130,150,170,0.24);
+  border-radius: 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #0B2A5C;
+  background: #fff;
+  transition: border-color 180ms cubic-bezier(0.2,0.8,0.2,1);
+}
+.te-dest-input:focus { outline: none; border-color: #8FD8F8; }
+
+.te-dest-name { flex: 1.3; min-width: 0; }
+.te-dest-date { flex: 1; min-width: 0; }
+.te-dest-tilde { color: #94A3B8; flex-shrink: 0; }
+
+.te-dest-remove {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: none;
+  background: none;
+  color: #B0BAC5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+.te-dest-remove svg { width: 14px; height: 14px; }
+.te-dest-remove:hover { background: #FDEEEC; color: #C0392B; }
+.te-dest-remove-spacer { width: 30px; flex-shrink: 0; }
+
+.te-dest-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 9px 13px;
+  border-radius: 10px;
+  border: 1px dashed rgba(130,150,170,0.4);
+  background: none;
+  color: #0B7CC4;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.te-dest-add:hover { border-color: #8FD8F8; background: #EAF6FD; }
+.te-dest-add svg { width: 13px; height: 13px; }
+
+/* ── 위험 구역 ── */
+.te-danger-row {
+  padding-top: 14px;
+  margin-top: 4px;
+  border-top: 1px dashed rgba(130,150,170,0.22);
+}
+.te-delete-trip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  color: #C0392B;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 6px 4px;
+  border-radius: 8px;
+  transition: background 150ms ease;
+}
+.te-delete-trip:hover { background: #FDEEEC; }
+.te-delete-trip svg { width: 14px; height: 14px; }

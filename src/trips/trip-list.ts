@@ -3,6 +3,7 @@ import { store } from '../store';
 import { navigate } from '../router';
 import { signOut } from '../auth/auth';
 import { openCreateTripModal } from './trip-create';
+import { openEditTripModal } from './trip-edit';
 import type { Database } from '../types/database';
 import './trip-list.css';
 
@@ -11,8 +12,7 @@ type Trip = Database['public']['Tables']['trips']['Row'];
 /* ── SVG ── */
 const ICON_SUITCASE = `<svg class="trip-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="7" width="18" height="14"/><path d="M8 7V4H16V7"/></svg>`;
 const ICON_ROUTE_ARROW = `<svg class="route-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12H19M13 6L19 12L13 18"/></svg>`;
-const ICON_TRASH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z"/></svg>`;
-const ICON_WARNING = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/></svg>`;
+const ICON_EDIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>`;
 const DI = {
   trip: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="5" width="18" height="16"/><path d="M3 10H21M8 3V7M16 3V7"/></svg>`,
   setting: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="4" y="4" width="16" height="16"/><path d="M9 4V20M4 9H20"/></svg>`,
@@ -109,77 +109,8 @@ async function loadTrips(): Promise<Trip[]> {
     });
 }
 
-/* ── 여행 삭제 ── */
-async function deleteTrip(tripId: string): Promise<{ success: boolean; error?: string }> {
-  // trip_members 먼저 정리 (FK 제약 대비)
-  const { error: memberError } = await supabase.from('trip_members').delete().eq('trip_id', tripId);
-  if (memberError) return { success: false, error: memberError.message };
-
-  const { error: tripError } = await supabase.from('trips').delete().eq('id', tripId);
-  if (tripError) return { success: false, error: tripError.message };
-
-  return { success: true };
-}
-
-/* ── 삭제 확인 모달 ── */
-function openDeleteConfirm(trip: Trip, onDeleted: () => void): void {
-  const overlay = document.createElement('div');
-  overlay.className = 'tdel-overlay';
-
-  overlay.innerHTML = [
-    '<div class="tdel-modal">',
-    `  <div class="tdel-icon">${ICON_WARNING}</div>`,
-    '  <div class="tdel-title">여행을 삭제할까요?</div>',
-    `  <div class="tdel-desc"><strong>${escapeHtml(trip.name)}</strong> 여행을 삭제하시겠습니까?<br>이 작업은 되돌릴 수 없어요.</div>`,
-    '  <div class="tdel-actions">',
-    '    <button class="tdel-btn-cancel" id="tdel-cancel">취소</button>',
-    '    <button class="tdel-btn-confirm" id="tdel-confirm">삭제하기</button>',
-    '  </div>',
-    '</div>',
-  ].join('\n');
-
-  document.body.appendChild(overlay);
-  requestAnimationFrame(() => overlay.classList.add('open'));
-
-  const close = () => {
-    overlay.classList.remove('open');
-    setTimeout(() => overlay.remove(), 200);
-  };
-
-  overlay.querySelector('#tdel-cancel')!.addEventListener('click', close);
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) close();
-  });
-
-  const escHandler = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      close();
-      document.removeEventListener('keydown', escHandler);
-    }
-  };
-  document.addEventListener('keydown', escHandler);
-
-  const confirmBtn = overlay.querySelector('#tdel-confirm') as HTMLButtonElement;
-  confirmBtn.addEventListener('click', async () => {
-    confirmBtn.disabled = true;
-    confirmBtn.textContent = '삭제 중...';
-
-    const result = await deleteTrip(trip.id);
-
-    if (result.success) {
-      close();
-      onDeleted();
-    } else {
-      console.error('여행 삭제 실패:', result.error);
-      confirmBtn.disabled = false;
-      confirmBtn.textContent = '삭제하기';
-      alert('삭제하지 못했어요. 잠시 후 다시 시도해주세요.');
-    }
-  });
-}
-
 /* ── 여행 카드 (보딩 패스) ── */
-function createTripCard(trip: Trip, index: number, onDeleted: () => void): HTMLElement {
+function createTripCard(trip: Trip, index: number, onChanged: () => void): HTMLElement {
   const card = document.createElement('div');
   card.className = 'trip-card';
   card.style.animationDelay = `${index * 0.1}s`;
@@ -189,7 +120,7 @@ function createTripCard(trip: Trip, index: number, onDeleted: () => void): HTMLE
   const dday = formatDDay(trip.start_date);
 
   card.innerHTML = `
-    <button class="trip-card-delete" id="del-${trip.id}" title="삭제">${ICON_TRASH}</button>
+    <button class="trip-card-edit" id="edit-${trip.id}" title="편집">${ICON_EDIT}</button>
     <div class="trip-card-clip">
       <div class="trip-card-info">
         <span class="trip-pass-label">TRAVEL PASS</span>
@@ -229,11 +160,12 @@ function createTripCard(trip: Trip, index: number, onDeleted: () => void): HTMLE
     navigate(`board/${trip.id}`);
   });
 
-  // 삭제 버튼 클릭 → 카드 클릭 이벤트로 전파 안 되게 막고 확인 모달 오픈
-  const deleteBtn = card.querySelector(`#del-${trip.id}`) as HTMLButtonElement;
-  deleteBtn.addEventListener('click', (e) => {
+  // 편집 버튼 클릭 → 카드 클릭 이벤트로 전파 안 되게 막고 편집 모달 오픈
+  // (제목·여행지 추가/변경/삭제·여행 삭제를 모두 여기서 처리)
+  const editBtn = card.querySelector(`#edit-${trip.id}`) as HTMLButtonElement;
+  editBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    openDeleteConfirm(trip, onDeleted);
+    openEditTripModal(trip, onChanged);
   });
 
   if (trip.destinations?.[0]) {

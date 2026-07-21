@@ -7,9 +7,6 @@ import {
   setActiveDestinationId,
   placeBelongsToDestination,
   isSyntheticDestination,
-  createDestination,
-  updateDestination,
-  deleteDestination,
 } from '../trips/destinations';
 import type { Database, TripDestination } from '../types/database';
 import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -57,6 +54,7 @@ const ICON_EDIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const ICON_MOVE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>';
 const ICON_BACK_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
 const ICON_COMMENT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
+const ICON_SWAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3L3 7l4 4M3 7h13a4 4 0 0 1 4 4v1M17 21l4-4-4-4M21 17H8a4 4 0 0 1-4-4v-1"/></svg>';
 
 const GATES: GateConfig[] = [
   { key: '가고싶어', step: 'GATE 01', label: 'VISIT',    icon: ICON_PIN },
@@ -260,7 +258,7 @@ export function teardownBoard(): void {
   placesCache = new Map();
   aiPicksCache = null;
   aiPicksExpanded = false;
-  closeDestPopover();
+  closeDestSwitcher();
   cleanupAutocomplete();
 }
 
@@ -597,7 +595,10 @@ function destMeta(d: TripDestination): string {
 
 /**
  * 상단 여행지 바. 마이그레이션 전(합성 여행지)에는 렌더하지 않아 기존 화면과 동일.
- * 실제 여행지가 있으면 탭(전환) + 추가 버튼을 보여준다. 1곳이어도 추가 진입점을 위해 표시.
+ * 실제 여행지가 여러 곳이면 탭(전환) + "여행지 변경" 드롭다운을 보여준다.
+ * 여행지 추가·이름/기간 편집·삭제는 이제 이 보드가 아니라 "내 여행" 카드의 편집 모달에서
+ * 이뤄진다 — 보드는 이미 정해진 여행지 중에서 "전환"만 담당(제품 결정: 다중 여행지는
+ * 여행 전체를 관장하는 곳에서 설정하고, 보드는 그 결과를 소비만 함).
  */
 function renderDestBar(container: HTMLElement, tripId: string): void {
   const wrap = container.querySelector('#bd-dest-bar-wrap') as HTMLElement | null;
@@ -620,7 +621,6 @@ function renderDestBar(container: HTMLElement, tripId: string): void {
         '    <span class="bd-dest-tab-name">' + escapeHtml(d.name) + '</span>',
         meta ? '    <span class="bd-dest-tab-meta">' + escapeHtml(meta) + '</span>' : '',
         '  </span>',
-        active ? '  <span class="bd-dest-tab-edit" data-edit-dest="' + d.id + '" title="여행지 편집">' + ICON_EDIT + '</span>' : '',
         '</button>',
       ].join('');
     })
@@ -630,14 +630,13 @@ function renderDestBar(container: HTMLElement, tripId: string): void {
     '<div class="bd-dest-bar" id="bd-dest-bar">',
     '  <span class="bd-dest-bar-label">' + ICON_PIN + ' 여행지</span>',
     '  <div class="bd-dest-tabs">' + tabs + '</div>',
-    '  <button type="button" class="bd-dest-add" id="bd-dest-add">' + ICON_PLUS + ' 여행지 추가</button>',
+    '  <button type="button" class="bd-dest-switch" id="bd-dest-switch">' + ICON_SWAP + ' 여행지 변경</button>',
     '</div>',
   ].join('');
 
-  // 탭 전환
+  // 탭 클릭으로 전환
   wrap.querySelectorAll('.bd-dest-tab').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('[data-edit-dest]')) return; // 편집 아이콘 클릭은 제외
+    btn.addEventListener('click', () => {
       const id = (btn as HTMLElement).dataset.destId;
       if (!id || id === boardActiveDest?.id) return;
       setActiveDestinationId(tripId, id);
@@ -645,114 +644,70 @@ function renderDestBar(container: HTMLElement, tripId: string): void {
     });
   });
 
-  // 여행지 편집(이름/기간/삭제)
-  wrap.querySelectorAll('[data-edit-dest]').forEach((el) => {
-    el.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const id = (el as HTMLElement).dataset.editDest!;
-      const dest = boardDestinations.find((d) => d.id === id);
-      if (dest) openDestPopover(container, tripId, el as HTMLElement, dest);
+  // "여행지 변경" 드롭다운으로도 동일하게 전환 가능
+  wrap.querySelector('#bd-dest-switch')?.addEventListener('click', (e) => {
+    openDestSwitcher(container, tripId, e.currentTarget as HTMLElement);
+  });
+}
+
+let destSwitcherEl: HTMLElement | null = null;
+let destSwitcherDismiss: ((e: MouseEvent) => void) | null = null;
+
+function closeDestSwitcher(): void {
+  if (destSwitcherEl) { destSwitcherEl.remove(); destSwitcherEl = null; }
+  if (destSwitcherDismiss) { document.removeEventListener('mousedown', destSwitcherDismiss); destSwitcherDismiss = null; }
+}
+
+/** "여행지 변경" 드롭다운 — 이미 정해진 여행지 중에서 고르기만 함(추가/편집/삭제 없음) */
+function openDestSwitcher(container: HTMLElement, tripId: string, anchor: HTMLElement): void {
+  closeDestSwitcher();
+
+  const items = boardDestinations
+    .map((d) => {
+      const active = d.id === boardActiveDest?.id;
+      const meta = destMeta(d);
+      return [
+        '<button type="button" class="bd-dest-switch-item' + (active ? ' active' : '') + '" data-dest-id="' + d.id + '">',
+        '  <span class="bd-dest-switch-plane">' + ICON_PLANE + '</span>',
+        '  <span class="bd-dest-switch-text">',
+        '    <span class="bd-dest-switch-name">' + escapeHtml(d.name) + '</span>',
+        meta ? '    <span class="bd-dest-switch-meta">' + escapeHtml(meta) + '</span>' : '',
+        '  </span>',
+        active ? '  <span class="bd-dest-switch-check">' + ICON_CHECK + '</span>' : '',
+        '</button>',
+      ].join('');
+    })
+    .join('');
+
+  const pop = document.createElement('div');
+  pop.className = 'bd-dest-switcher';
+  pop.innerHTML = '<div class="bd-dest-switch-title">여행지 변경</div><div class="bd-dest-switch-list">' + items + '</div>';
+  document.body.appendChild(pop);
+  destSwitcherEl = pop;
+
+  const r = anchor.getBoundingClientRect();
+  const popW = 220;
+  let left = r.right - popW;
+  if (left < 12) left = 12;
+  pop.style.top = r.bottom + 8 + 'px';
+  pop.style.left = left + 'px';
+
+  pop.querySelectorAll('.bd-dest-switch-item').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = (btn as HTMLElement).dataset.destId;
+      closeDestSwitcher();
+      if (!id || id === boardActiveDest?.id) return;
+      setActiveDestinationId(tripId, id);
+      renderBoardContent(container, tripId);
     });
   });
 
-  // 여행지 추가
-  wrap.querySelector('#bd-dest-add')?.addEventListener('click', (e) => {
-    openDestPopover(container, tripId, e.currentTarget as HTMLElement, null);
-  });
-}
-
-let destPopoverEl: HTMLElement | null = null;
-let destPopoverDismiss: ((e: MouseEvent) => void) | null = null;
-
-function closeDestPopover(): void {
-  if (destPopoverEl) { destPopoverEl.remove(); destPopoverEl = null; }
-  if (destPopoverDismiss) { document.removeEventListener('mousedown', destPopoverDismiss); destPopoverDismiss = null; }
-}
-
-/** 여행지 추가/편집 팝오버. dest=null이면 추가, 아니면 편집(삭제 포함). */
-function openDestPopover(container: HTMLElement, tripId: string, anchor: HTMLElement, dest: TripDestination | null): void {
-  closeDestPopover();
-  const editing = !!dest;
-  const canDelete = editing && boardDestinations.length > 1;
-
-  const pop = document.createElement('div');
-  pop.className = 'bd-dest-popover';
-  pop.innerHTML = [
-    '<div class="bd-dest-pop-title">' + (editing ? '여행지 편집' : '여행지 추가') + '</div>',
-    '<label class="bd-dest-pop-label">도시</label>',
-    '<input class="bd-dest-pop-input" id="dp-name" type="text" placeholder="예: 치앙마이" value="' + (dest ? escapeHtml(dest.name) : '') + '" />',
-    '<label class="bd-dest-pop-label">기간 <span class="bd-dest-pop-opt">(선택)</span></label>',
-    '<div class="bd-dest-pop-dates">',
-    '  <input class="bd-dest-pop-input" id="dp-start" type="date" value="' + (dest?.start_date ?? '') + '" />',
-    '  <span class="bd-dest-pop-tilde">~</span>',
-    '  <input class="bd-dest-pop-input" id="dp-end" type="date" value="' + (dest?.end_date ?? '') + '" />',
-    '</div>',
-    '<div class="bd-dest-pop-actions">',
-    canDelete ? '  <button type="button" class="bd-dest-pop-del" id="dp-del">' + ICON_TRASH + ' 삭제</button>' : '<span></span>',
-    '  <div class="bd-dest-pop-right">',
-    '    <button type="button" class="bd-dest-pop-cancel" id="dp-cancel">취소</button>',
-    '    <button type="button" class="bd-dest-pop-save" id="dp-save">' + (editing ? '저장' : '추가') + '</button>',
-    '  </div>',
-    '</div>',
-  ].join('');
-  document.body.appendChild(pop);
-  destPopoverEl = pop;
-
-  // 앵커 기준 위치 (뷰포트 경계 보정)
-  const r = anchor.getBoundingClientRect();
-  const top = r.bottom + 8;
-  let left = r.left;
-  const popW = 260;
-  if (left + popW > window.innerWidth - 12) left = window.innerWidth - popW - 12;
-  pop.style.top = top + 'px';
-  pop.style.left = Math.max(12, left) + 'px';
-
-  const nameInput = pop.querySelector('#dp-name') as HTMLInputElement;
-  nameInput.focus();
-
-  pop.querySelector('#dp-cancel')?.addEventListener('click', closeDestPopover);
-
-  pop.querySelector('#dp-save')?.addEventListener('click', async () => {
-    const name = nameInput.value.trim();
-    if (!name) { nameInput.focus(); return; }
-    const start = (pop.querySelector('#dp-start') as HTMLInputElement).value || null;
-    const end = (pop.querySelector('#dp-end') as HTMLInputElement).value || null;
-    const saveBtn = pop.querySelector('#dp-save') as HTMLButtonElement;
-    saveBtn.disabled = true;
-
-    if (editing && dest) {
-      await updateDestination(dest.id, { name, start_date: start, end_date: end });
-    } else {
-      const created = await createDestination(tripId, name, {
-        startDate: start,
-        endDate: end,
-        sortOrder: boardDestinations.length,
-      });
-      if (created) setActiveDestinationId(tripId, created.id);
-    }
-    closeDestPopover();
-    renderBoardContent(container, tripId);
-  });
-
-  pop.querySelector('#dp-del')?.addEventListener('click', async () => {
-    if (!dest) return;
-    const others = boardDestinations.filter((d) => d.id !== dest.id);
-    const reassignTo = others[0]?.id ?? null;
-    const delBtn = pop.querySelector('#dp-del') as HTMLButtonElement;
-    delBtn.disabled = true;
-    const ok = await deleteDestination(dest.id, reassignTo);
-    if (ok && reassignTo) setActiveDestinationId(tripId, reassignTo);
-    closeDestPopover();
-    renderBoardContent(container, tripId);
-  });
-
-  // 바깥 클릭으로 닫기
-  destPopoverDismiss = (e: MouseEvent) => {
-    if (destPopoverEl && !destPopoverEl.contains(e.target as Node) && !anchor.contains(e.target as Node)) {
-      closeDestPopover();
+  destSwitcherDismiss = (e: MouseEvent) => {
+    if (destSwitcherEl && !destSwitcherEl.contains(e.target as Node) && !anchor.contains(e.target as Node)) {
+      closeDestSwitcher();
     }
   };
-  setTimeout(() => document.addEventListener('mousedown', destPopoverDismiss!), 0);
+  setTimeout(() => document.addEventListener('mousedown', destSwitcherDismiss!), 0);
 }
 
 /* ── 실시간 동기화 ── */
