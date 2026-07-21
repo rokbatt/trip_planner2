@@ -205,6 +205,22 @@ export function resolveActiveDestination(tripId: string, dests: TripDestination[
   return active;
 }
 
+/* ── 활성 숙소 구간(세션 공유, 여행지별) ── */
+const activeSegByDest = new Map<string, string>();
+
+export function setActiveSegmentId(destId: string, segId: string): void {
+  activeSegByDest.set(destId, segId);
+}
+
+/** 여행지의 구간 목록에서 활성 구간을 고름 — 저장값이 유효하면 그걸, 아니면 첫 번째 */
+export function resolveActiveSegment(destId: string, segs: StaySegment[]): StaySegment | null {
+  const savedId = activeSegByDest.get(destId);
+  const found = savedId ? segs.find((s) => s.id === savedId) : null;
+  const active = found ?? segs[0] ?? null;
+  if (active) activeSegByDest.set(destId, active.id);
+  return active;
+}
+
 /**
  * 장소가 이 여행지에 속하는지. 마이그레이션 전(합성 여행지)에는 모든 장소를 보여주고,
  * 실제 여행지에서는 destination_id가 일치하는 장소만.
@@ -271,5 +287,45 @@ export async function deleteDestination(id: string, reassignToId: string | null)
   }
   const { error } = await supabase.from('trip_destinations').delete().eq('id', id);
   if (error) console.error('[destinations] 여행지 삭제 실패:', error.message);
+  return !error;
+}
+
+/* ── 숙소 구간 CRUD (Phase 3 — 한 여행지 안에서 숙소 나누기) ── */
+
+export async function createStaySegment(
+  trip: Trip,
+  destination: TripDestination,
+  opts: { startDate?: string | null; endDate?: string | null; sortOrder?: number } = {}
+): Promise<StaySegment | null> {
+  const { data, error } = await supabase
+    .from('stay_segments')
+    .insert({
+      trip_id: trip.id,
+      destination_id: destination.id,
+      sort_order: opts.sortOrder ?? 0,
+      start_date: opts.startDate ?? null,
+      end_date: opts.endDate ?? null,
+    })
+    .select()
+    .single();
+  if (error) {
+    console.error('[stay_segments] 숙소 구간 추가 실패:', error.message);
+    return null;
+  }
+  return data as StaySegment;
+}
+
+export async function updateStaySegment(
+  id: string,
+  patch: Partial<Pick<StaySegment, 'start_date' | 'end_date' | 'sort_order'>>
+): Promise<boolean> {
+  const { error } = await supabase.from('stay_segments').update(patch).eq('id', id);
+  if (error) console.error('[stay_segments] 숙소 구간 수정 실패:', error.message);
+  return !error;
+}
+
+export async function deleteStaySegment(id: string): Promise<boolean> {
+  const { error } = await supabase.from('stay_segments').delete().eq('id', id);
+  if (error) console.error('[stay_segments] 숙소 구간 삭제 실패:', error.message);
   return !error;
 }

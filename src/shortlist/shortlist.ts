@@ -9,6 +9,11 @@ import {
   isSyntheticDestination,
   loadStaySegments,
   saveStaySegment,
+  resolveActiveSegment,
+  setActiveSegmentId,
+  createStaySegment,
+  deleteStaySegment,
+  isSyntheticSegment,
 } from '../trips/destinations';
 import { loadGoogleMapsScript, getCategoryLabel } from '../utils/googleMaps';
 import type { Database, TripDestination, StaySegment } from '../types/database';
@@ -86,6 +91,7 @@ let currentTrip: Trip | null = null;
 let slContainer: HTMLElement | null = null;
 let slDestinations: TripDestination[] = [];
 let slActiveDest: TripDestination | null = null;
+let slSegments: StaySegment[] = [];
 let slActiveSegment: StaySegment | null = null;
 let allPlaces: Place[] = [];
 let zones: Zone[] = [];
@@ -109,10 +115,12 @@ export function teardownShortlist(): void {
     placeInfoWindow.close();
     placeInfoWindow = null;
   }
+  closeSegPopover();
   allPlaces = [];
   zones = [];
   slDestinations = [];
   slActiveDest = null;
+  slSegments = [];
   slActiveSegment = null;
   step = 1;
   selectedZone = null;
@@ -320,6 +328,7 @@ async function loadTrip(tripId: string): Promise<Trip | null> {
 
 async function saveShortlistState(): Promise<void> {
   if (!currentTrip || !slActiveDest || !slActiveSegment) return;
+  const prevId = slActiveSegment.id;
   const state = {
     zone_name: selectedZone?.name ?? null,
     zone_place_ids: selectedZone ? selectedZone.places.map((p) => p.id) : null,
@@ -328,7 +337,10 @@ async function saveShortlistState(): Promise<void> {
   };
   // 활성 여행지의 숙소 구간에 저장 (합성 여행지면 내부적으로 기존 trips.shortlist_* 컬럼으로 폴백).
   // insert된 실제 행의 id를 이어받아 다음 저장이 update가 되도록 slActiveSegment 갱신.
-  slActiveSegment = await saveStaySegment(currentTrip, slActiveDest, slActiveSegment, state);
+  const saved = await saveStaySegment(currentTrip, slActiveDest, slActiveSegment, state);
+  // 구간 목록도 동기화 (합성 구간이 insert되며 id가 바뀌는 경우 포함)
+  slSegments = slSegments.map((s) => (s.id === prevId ? saved : s));
+  slActiveSegment = saved;
 }
 
 /* ── 메인 렌더 ── */
@@ -378,28 +390,11 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
   zoneDataSource = source;
   zones = assignPlacesToZones(seeds, allPlaces);
 
-  // 활성 여행지의 숙소 구간에서 이미 저장된 선택 상태를 복원
+  // 활성 여행지의 숙소 구간들을 로드하고, 활성 구간의 저장 상태를 복원
   if (trip && slActiveDest) {
-    const segs = await loadStaySegments(trip, slActiveDest);
-    slActiveSegment = segs[0] ?? null;
-    const seg = slActiveSegment;
-    if (seg?.zone_name && seg.zone_place_ids) {
-      const restoredZone = zones.find(
-        (z) => z.places.some((p) => seg.zone_place_ids!.includes(p.id))
-      );
-      if (restoredZone) {
-        selectedZone = restoredZone;
-        step = 2;
-        if (seg.basecamp_place_id) {
-          const bc = restoredZone.places.find((p) => p.id === seg.basecamp_place_id);
-          if (bc) {
-            selectedBasecamp = bc;
-            step = 3;
-            confirmedIds = new Set(seg.confirmed_place_ids ?? []);
-          }
-        }
-      }
-    }
+    slSegments = await loadStaySegments(trip, slActiveDest);
+    slActiveSegment = resolveActiveSegment(slActiveDest.id, slSegments);
+    restoreStateFromSegment(slActiveSegment);
   }
 
   await renderStep(container);
@@ -494,6 +489,7 @@ function lockStep2MapHeight(body: HTMLElement): void {
 async function renderStep(container: HTMLElement): Promise<void> {
   container.innerHTML = [
     '<div id="sl-dest-bar-wrap"></div>',
+    '<div id="sl-seg-bar-wrap"></div>',
     '<div class="sl-shell">',
     '  <div class="sl-stepper-row">',
     '    <div class="sl-stepper" id="sl-stepper"></div>',
@@ -504,6 +500,7 @@ async function renderStep(container: HTMLElement): Promise<void> {
   ].join('\n');
 
   renderShortlistDestBar(container);
+  renderSegmentBar(container);
   renderStepper(container);
   lockShellHeight(container);
 
@@ -563,12 +560,195 @@ function renderShortlistDestBar(container: HTMLElement): void {
 }
 
 function shortlistDestMeta(d: TripDestination): string {
-  if (!d.start_date || !d.end_date) return '';
-  const s = new Date(d.start_date);
-  const e = new Date(d.end_date);
+  return dateRangeMeta(d.start_date, d.end_date);
+}
+
+function dateRangeMeta(start: string | null, end: string | null): string {
+  if (!start || !end) return '';
+  const s = new Date(start);
+  const e = new Date(end);
   const nights = Math.max(0, Math.round((e.getTime() - s.getTime()) / 86400000));
   const fmt = (dt: Date) => dt.getMonth() + 1 + '.' + dt.getDate();
   return (nights > 0 ? nights + '박 · ' : '') + fmt(s) + '–' + fmt(e);
+}
+
+/** 저장된 구간 상태(zone→hotel→confirm)를 모듈 상태로 복원. 없으면 Step1부터. */
+function restoreStateFromSegment(seg: StaySegment | null): void {
+  step = 1;
+  selectedZone = null;
+  selectedBasecamp = null;
+  confirmedIds = new Set();
+  if (seg?.zone_name && seg.zone_place_ids) {
+    const zpids = seg.zone_place_ids;
+    const restoredZone = zones.find((z) => z.places.some((p) => zpids.includes(p.id)));
+    if (restoredZone) {
+      selectedZone = restoredZone;
+      step = 2;
+      if (seg.basecamp_place_id) {
+        const bc = restoredZone.places.find((p) => p.id === seg.basecamp_place_id);
+        if (bc) {
+          selectedBasecamp = bc;
+          step = 3;
+          confirmedIds = new Set(seg.confirmed_place_ids ?? []);
+        }
+      }
+    }
+  }
+}
+
+/* ══════════════ 숙소 구간(Phase 3 — 한 여행지 안에서 숙소 나누기) ══════════════ */
+
+/** 구간 전환 — 활성 구간을 바꾸고 그 구간의 상태를 복원해 다시 렌더 (zones/places는 그대로) */
+function switchSegment(segId: string): void {
+  if (!slActiveDest || !slContainer) return;
+  const seg = slSegments.find((s) => s.id === segId);
+  if (!seg || seg.id === slActiveSegment?.id) return;
+  slActiveSegment = seg;
+  setActiveSegmentId(slActiveDest.id, seg.id);
+  restoreStateFromSegment(seg);
+  renderStep(slContainer);
+}
+
+/** 구간 표시 이름: 확정된 숙소가 있으면 그 이름, 없으면 "숙소 N" */
+function segmentLabel(seg: StaySegment, index: number): string {
+  if (seg.basecamp_place_id) {
+    const bc = allPlaces.find((p) => p.id === seg.basecamp_place_id);
+    if (bc) return bc.name;
+  }
+  return '숙소 ' + (index + 1);
+}
+
+/** "숙소 나누기" — 새 빈 구간을 만들고 그 구간으로 전환 (선택한 기간과 함께) */
+async function addSegment(startDate: string | null, endDate: string | null): Promise<void> {
+  if (!currentTrip || !slActiveDest || !slContainer) return;
+  const created = await createStaySegment(currentTrip, slActiveDest, {
+    startDate,
+    endDate,
+    sortOrder: slSegments.length,
+  });
+  if (!created) return;
+  slSegments = [...slSegments, created];
+  slActiveSegment = created;
+  setActiveSegmentId(slActiveDest.id, created.id);
+  restoreStateFromSegment(created); // 새 구간은 빈 상태 → Step1부터
+  renderStep(slContainer);
+}
+
+async function removeSegment(segId: string): Promise<void> {
+  if (!slActiveDest || !slContainer || slSegments.length <= 1) return;
+  if (!isSyntheticSegment(segId)) await deleteStaySegment(segId);
+  slSegments = slSegments.filter((s) => s.id !== segId);
+  if (slActiveSegment?.id === segId) {
+    slActiveSegment = slSegments[0] ?? null;
+    if (slActiveSegment) setActiveSegmentId(slActiveDest.id, slActiveSegment.id);
+    restoreStateFromSegment(slActiveSegment);
+  }
+  renderStep(slContainer);
+}
+
+/** 활성 여행지에 숙소 구간이 2개 이상일 때만 노출되는 구간 전환 바 */
+function renderSegmentBar(container: HTMLElement): void {
+  const wrap = container.querySelector('#sl-seg-bar-wrap') as HTMLElement | null;
+  if (!wrap) return;
+  // 실제 여행지 + 구간 2개 이상일 때만 (단일 숙소면 깔끔하게 숨김)
+  if (!slActiveDest || isSyntheticDestination(slActiveDest.id) || slSegments.length < 2) {
+    wrap.innerHTML = '';
+    return;
+  }
+
+  const pills = slSegments
+    .map((seg, i) => {
+      const active = seg.id === slActiveSegment?.id;
+      const meta = dateRangeMeta(seg.start_date, seg.end_date);
+      return [
+        '<button type="button" class="sl-seg-pill' + (active ? ' active' : '') + '" data-seg-id="' + seg.id + '">',
+        '  <span class="sl-seg-pill-idx">' + (i + 1) + '</span>',
+        '  <span class="sl-seg-pill-text">',
+        '    <span class="sl-seg-pill-name">' + escapeHtml(segmentLabel(seg, i)) + '</span>',
+        meta ? '    <span class="sl-seg-pill-meta">' + escapeHtml(meta) + '</span>' : '',
+        '  </span>',
+        active && slSegments.length > 1 ? '  <span class="sl-seg-pill-del" data-del-seg="' + seg.id + '" title="이 숙소 구간 삭제">' + IC_XCLOSE + '</span>' : '',
+        '</button>',
+      ].join('');
+    })
+    .join('');
+
+  wrap.innerHTML = [
+    '<div class="sl-seg-bar">',
+    '  <span class="sl-seg-bar-label">' + IC_BED + ' 숙소 구간</span>',
+    '  <div class="sl-seg-pills">' + pills + '</div>',
+    '  <button type="button" class="sl-seg-add" id="sl-seg-add">' + IC_PLUS + ' 숙소 나누기</button>',
+    '</div>',
+  ].join('');
+
+  wrap.querySelectorAll('.sl-seg-pill').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('[data-del-seg]')) return;
+      switchSegment((btn as HTMLElement).dataset.segId!);
+    });
+  });
+  wrap.querySelectorAll('[data-del-seg]').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = (el as HTMLElement).dataset.delSeg!;
+      if (confirm('이 숙소 구간을 삭제할까요? 이 구간에서 고른 지역·숙소·장소 선택이 사라져요.')) {
+        removeSegment(id);
+      }
+    });
+  });
+  wrap.querySelector('#sl-seg-add')?.addEventListener('click', (e) => {
+    openSegmentDatePopover(e.currentTarget as HTMLElement);
+  });
+}
+
+let segPopoverEl: HTMLElement | null = null;
+let segPopoverDismiss: ((e: MouseEvent) => void) | null = null;
+function closeSegPopover(): void {
+  if (segPopoverEl) { segPopoverEl.remove(); segPopoverEl = null; }
+  if (segPopoverDismiss) { document.removeEventListener('mousedown', segPopoverDismiss); segPopoverDismiss = null; }
+}
+
+/** 새 숙소 구간의 기간을 고르는 팝오버 (선택) */
+function openSegmentDatePopover(anchor: HTMLElement): void {
+  closeSegPopover();
+  const pop = document.createElement('div');
+  pop.className = 'sl-seg-popover';
+  pop.innerHTML = [
+    '<div class="sl-seg-pop-title">새 숙소 구간</div>',
+    '<div class="sl-seg-pop-desc">이 숙소에 묵는 기간을 정해요 <span class="sl-seg-pop-opt">(선택)</span></div>',
+    '<div class="sl-seg-pop-dates">',
+    '  <input class="sl-seg-pop-input" id="sp-start" type="date" />',
+    '  <span class="sl-seg-pop-tilde">~</span>',
+    '  <input class="sl-seg-pop-input" id="sp-end" type="date" />',
+    '</div>',
+    '<div class="sl-seg-pop-actions">',
+    '  <button type="button" class="sl-seg-pop-cancel" id="sp-cancel">취소</button>',
+    '  <button type="button" class="sl-seg-pop-save" id="sp-save">' + IC_PLUS + ' 추가</button>',
+    '</div>',
+  ].join('');
+  document.body.appendChild(pop);
+  segPopoverEl = pop;
+
+  const r = anchor.getBoundingClientRect();
+  const popW = 240;
+  let left = r.right - popW;
+  if (left < 12) left = 12;
+  pop.style.top = r.bottom + 8 + 'px';
+  pop.style.left = left + 'px';
+
+  pop.querySelector('#sp-cancel')?.addEventListener('click', closeSegPopover);
+  pop.querySelector('#sp-save')?.addEventListener('click', async () => {
+    const start = (pop.querySelector('#sp-start') as HTMLInputElement).value || null;
+    const end = (pop.querySelector('#sp-end') as HTMLInputElement).value || null;
+    (pop.querySelector('#sp-save') as HTMLButtonElement).disabled = true;
+    closeSegPopover();
+    await addSegment(start, end);
+  });
+
+  segPopoverDismiss = (e: MouseEvent) => {
+    if (segPopoverEl && !segPopoverEl.contains(e.target as Node) && !anchor.contains(e.target as Node)) closeSegPopover();
+  };
+  setTimeout(() => document.addEventListener('mousedown', segPopoverDismiss!), 0);
 }
 
 function renderStepper(container: HTMLElement): void {
@@ -2114,7 +2294,20 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '        <button class="sl-step3-expense-btn" id="sl-expense-link">Expense 탭에서 관리하기 ' + IC_EXTLINK + '</button>',
     '      </div>',
 
-    // ④ 하단 CTA (우측 컬럼 맨 아래 — 레퍼런스와 동일)
+    // ④ 숙소 나누기 진입 (실제 여행지 + 아직 단일 구간일 때만 — 구간이 2개 이상이면 상단 바로 대체됨)
+    (slActiveDest && !isSyntheticDestination(slActiveDest.id) && slSegments.length < 2)
+      ? [
+          '      <div class="sl-step3-split-card">',
+          '        <div class="sl-step3-split-text">',
+          '          <div class="sl-step3-split-title">' + IC_BED + ' 이 여행지에서 숙소를 나눠 묵나요?</div>',
+          '          <div class="sl-step3-split-desc">앞·뒤 며칠씩 다른 숙소에 묵는다면 구간을 나눠 각각 지역·숙소를 정할 수 있어요.</div>',
+          '        </div>',
+          '        <button type="button" class="sl-step3-split-btn" id="sl-split-add">' + IC_PLUS + ' 숙소 나누기</button>',
+          '      </div>',
+        ].join('\n')
+      : '',
+
+    // ⑤ 하단 CTA (우측 컬럼 맨 아래 — 레퍼런스와 동일)
     '      <div class="sl-step3-cta-wrap">',
     '        <button class="sl-step2-cta sl-step3-cta" id="sl-proceed"><span class="sl-step3-cta-main">' + IC_CHECK + ' 이 숙소를 여행 중심으로 확정하기</span><span class="sl-step3-cta-sub">다음 단계에서 최적의 동선(Route)을 자동으로 생성해요</span></button>',
     '      </div>',
@@ -2141,6 +2334,11 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     window.dispatchEvent(
       new CustomEvent('mongsil:navigateGate', { detail: { tripId: currentTripId, gate: 'route' } })
     );
+  });
+
+  body.querySelector('#sl-split-add')?.addEventListener('click', async (e) => {
+    await saveShortlistState(); // 지금 구간(현재 숙소 선택)을 먼저 저장하고 새 구간 추가
+    openSegmentDatePopover(e.currentTarget as HTMLElement);
   });
 
   renderStep3Lists(body, withDistance);
