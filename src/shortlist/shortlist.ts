@@ -820,7 +820,7 @@ function renderCompactSegmentBar(container: HTMLElement): void {
         '    <span class="sl-seg-pill-name">' + escapeHtml(segmentLabel(seg, i)) + '</span>',
         meta ? '    <span class="sl-seg-pill-meta">' + escapeHtml(meta) + '</span>' : '',
         '  </span>',
-        active && slSegments.length > 1 ? '  <span class="sl-seg-pill-del" data-del-seg="' + seg.id + '" title="이 숙소 구간 삭제">' + IC_XCLOSE + '</span>' : '',
+        slSegments.length > 1 ? '  <span class="sl-seg-pill-del" data-del-seg="' + seg.id + '" title="이 숙소 구간 삭제">' + IC_XCLOSE + '</span>' : '',
         '</button>',
       ].join('');
     })

@@ -135,12 +135,17 @@
 .sl-seg-pill-meta { font-size: 9.5px; font-weight: 600; color: #94A3B8; white-space: nowrap; }
 .sl-seg-pill-del {
   display: inline-flex; width: 14px; height: 14px; color: #B0BAC5; flex-shrink: 0;
-  border-radius: 4px; transition: color 150ms ease, background 150ms ease;
+  border-radius: 4px;
+  /* 평소엔 완전히 접어둠(폭 0 + 음수 margin으로 부모 gap까지 상쇄) — 활성 pill이
+     X 때문에 항상 더 길어 보이던 문제 방지. 마우스를 올렸을 때만 살짝 벌어지며 나타남 */
+  max-width: 0; margin-left: -8px; opacity: 0; overflow: hidden;
+  transition: color 150ms ease, background 150ms ease, max-width 150ms ease, margin-left 150ms ease, opacity 150ms ease;
 }
+.sl-seg-pill:hover .sl-seg-pill-del { max-width: 14px; margin-left: 0; opacity: 1; }
 .sl-seg-pill-del:hover { color: #C0392B; background: #FDEEEC; }
 .sl-seg-pill-del svg { width: 100%; height: 100%; }
-/* 확정(3단계) 헤더 압축용 — 라벨·추가 버튼 없이 pill만 우측 정렬, 최대한 작게 */
-.sl-seg-bar-compact { justify-content: flex-end; padding-top: 4px; }
+/* 확정(3단계) 헤더 압축용 — 라벨·추가 버튼 없이 pill만 좌측 정렬(좌측 컬럼 라인에 맞춤), 최대한 작게 */
+.sl-seg-bar-compact { justify-content: flex-start; padding-top: 4px; }
 .sl-seg-bar-compact .sl-seg-pills { flex: none; }
 .sl-seg-pill-compact { padding: 4px 9px 4px 5px; }
 .sl-seg-pill-compact .sl-seg-pill-idx { width: 15px; height: 15px; font-size: 9.5px; }
