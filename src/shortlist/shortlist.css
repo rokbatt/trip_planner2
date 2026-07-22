@@ -90,8 +90,7 @@
 .sl-dest-switch-check { display: inline-flex; width: 14px; height: 14px; color: #0B7CC4; flex-shrink: 0; }
 .sl-dest-switch-check svg { width: 100%; height: 100%; }
 
-/* ── 숙소 구간 바 (Phase 3) — 여행지 바보다 한 단계 아래 위계 ── */
-#sl-seg-bar-wrap:empty { display: none; }
+/* ── 숙소 구간 바 (Phase 3) — 헤더 바로 아래, 항상 압축(.sl-seg-bar-compact) 스타일로만 사용 ── */
 .sl-seg-bar {
   display: flex;
   align-items: center;
@@ -101,12 +100,6 @@
   padding: 8px clamp(20px, 2.8vw, 40px) 0;
   box-sizing: border-box;
 }
-.sl-seg-bar-label {
-  display: inline-flex; align-items: center; gap: 5px;
-  font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
-  color: #B0BAC5; flex-shrink: 0;
-}
-.sl-seg-bar-label svg { width: 13px; height: 13px; }
 .sl-seg-pills { display: flex; gap: 6px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
 .sl-seg-pills::-webkit-scrollbar { display: none; }
 .sl-seg-pill {
@@ -158,16 +151,6 @@
 .sl-seg-pill-compact .sl-seg-pill-idx { width: 15px; height: 15px; font-size: 9.5px; }
 .sl-seg-pill-compact .sl-seg-pill-name { font-size: 11px; max-width: 100px; }
 .sl-seg-pill-compact .sl-seg-pill-meta { font-size: 9px; }
-
-.sl-seg-add {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 6px 11px; border-radius: 999px;
-  border: 1px dashed rgba(130,150,170,0.4); background: none;
-  color: #0B7CC4; font-size: 11.5px; font-weight: 700; cursor: pointer; flex-shrink: 0;
-  transition: border-color 150ms ease, background 150ms ease;
-}
-.sl-seg-add:hover { border-color: #8FD8F8; background: #EAF6FD; }
-.sl-seg-add svg { width: 12px; height: 12px; }
 
 /* 숙소 구간 기간 모달 (화면 중앙, anchor 기반 팝오버는 하단에서 잘려서 중앙 모달로 변경) */
 .sl-seg-modal-overlay {
@@ -363,21 +346,6 @@
 }
 .sl-sub { font-size: 12px; color: #64748B; }
 
-.sl-back-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: none;
-  background: none;
-  color: #64748B;
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
-  margin-bottom: 16px;
-  padding: 0;
-}
-.sl-back-link:hover { color: #0B2A5C; }
-.sl-back-link svg { width: 14px; height: 14px; }
 
 /* ── 레이아웃: 지도 + 리스트 ── */
 .sl-step1-layout {
@@ -771,8 +739,6 @@
   gap: 6px;
   flex-shrink: 0;
 }
-.sl-step2-topbar .sl-back-link { margin-bottom: 0; }
-
 .sl-step2-summary-card {
   display: flex;
   align-items: center;
@@ -1213,8 +1179,6 @@
 .sl-step3-card:hover { box-shadow: 0 4px 16px rgba(11,42,92,0.06); }
 .sl-step3-card-title { font-size: 16px; font-weight: 700; color: #0B2A5C; letter-spacing: -0.01em; }
 .sl-step3-card-desc { font-size: 12.5px; color: #94A3B8; margin-top: 5px; margin-bottom: 18px; }
-
-.sl-step3-back { margin-bottom: 10px; }
 
 /* ── 레이아웃: 좌 65% / 우 35% ──
    align-items: stretch — 좌측(지도 포함, 더 긴 편)에 맞춰 우측 컬럼도 늘어나면서

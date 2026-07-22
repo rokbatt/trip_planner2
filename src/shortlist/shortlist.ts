@@ -33,7 +33,6 @@ const IC_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const IC_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
 const IC_SPARK = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.8 5.6L19.4 9.4 13.8 11.2 12 17l-1.8-5.8L4.6 9.4l5.6-1.8L12 2z"/></svg>';
 const IC_PLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 19.5l19-7.5-19-7.5 4 7.5-4 7.5z"/></svg>';
-const IC_BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>';
 const IC_SEARCH2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
 const IC_EXTLINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>';
 const IC_XCLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
@@ -493,7 +492,6 @@ function lockStep2MapHeight(body: HTMLElement): void {
 async function renderStep(container: HTMLElement): Promise<void> {
   container.innerHTML = [
     '<div id="sl-dest-bar-wrap"></div>',
-    '<div id="sl-seg-bar-wrap"></div>',
     '<div class="sl-shell">',
     '  <div class="sl-stepper-row">',
     '    <div class="sl-stepper" id="sl-stepper"></div>',
@@ -519,31 +517,37 @@ async function renderStep(container: HTMLElement): Promise<void> {
   else await renderStep3(body);
 }
 
-/**
- * 상단 여행지 바 — 보드와 동일 컨셉. 여행지를 카드/탭으로 늘어놓지 않고 "여행지 변경"
- * 드롭다운만 둔다(워크스페이스 헤더가 활성 여행지·날짜를 실시간으로 보여주므로 중복 방지).
- * 합성(마이그레이션 전) 단일 여행지면 렌더 안 함(기존과 동일). 추가·편집은 보드에서.
- *
- * 확정(3단계)에서는 상단 첫 줄(#sl-dest-bar-wrap)을 압축 구간 pill이 대신 차지하므로,
- * "여행지 변경"은 그 대신 스테퍼 줄 우측(#sl-stepper-extra, 래퍼 없이)으로 옮겨 표시한다.
- * 1·2단계는 기존과 동일(#sl-dest-bar-wrap, 래퍼 있음).
- */
-function renderShortlistDestBar(container: HTMLElement): void {
-  const compact = step === 3;
-  const wrap = container.querySelector(compact ? '#sl-stepper-extra' : '#sl-dest-bar-wrap') as HTMLElement | null;
-  if (!wrap) return;
-  // shortlist 바는 여행지가 2곳 이상일 때만(전환 목적) 노출.
-  if (!slActiveDest || isSyntheticDestination(slActiveDest.id) || slDestinations.length < 2) {
-    wrap.innerHTML = '';
-    return;
-  }
+/** "여행지 변경" 버튼 HTML — 실제 멀티 여행지일 때만, 아니면 빈 문자열(래퍼 없는 순수 버튼) */
+function destSwitchButtonHtml(): string {
+  if (!slActiveDest || isSyntheticDestination(slActiveDest.id) || slDestinations.length < 2) return '';
+  return '<button type="button" class="sl-dest-switch" id="sl-dest-switch">' + IC_SWAP + ' 여행지 변경</button>';
+}
 
-  const btnHtml = '<button type="button" class="sl-dest-switch" id="sl-dest-switch">' + IC_SWAP + ' 여행지 변경</button>';
-  wrap.innerHTML = compact ? btnHtml : '<div class="sl-dest-bar">' + btnHtml + '</div>';
-
-  wrap.querySelector('#sl-dest-switch')?.addEventListener('click', (e) => {
+function bindDestSwitchButton(root: HTMLElement): void {
+  root.querySelector('#sl-dest-switch')?.addEventListener('click', (e) => {
     openShortlistDestSwitcher(e.currentTarget as HTMLElement);
   });
+}
+
+/**
+ * 스테퍼 줄 우측(#sl-stepper-extra)에 "여행지 변경"을 기본으로 채움 — 1·3단계는 이 기본값을
+ * 그대로 쓰고, 2단계는 renderStep2가 자신의 요약(선택 지역/숙박 기간/예산 필터) 박스 안에
+ * 같은 버튼을 다시 포함시켜 덮어쓴다(2단계 전용 콘텐츠와 한 슬롯을 같이 써야 해서).
+ */
+function renderShortlistDestBar(container: HTMLElement): void {
+  const stepperSlot = container.querySelector('#sl-stepper-extra') as HTMLElement | null;
+  if (stepperSlot) {
+    stepperSlot.innerHTML = destSwitchButtonHtml();
+    bindDestSwitchButton(stepperSlot);
+    return;
+  }
+  // 빈 상태(아직 분류된 장소가 없음 등) 화면엔 스테퍼 자체가 없으므로, 기존처럼
+  // 헤더 바로 아래 줄(#sl-dest-bar-wrap)에 래핑해서 우측 정렬로 폴백 표시.
+  const wrap = container.querySelector('#sl-dest-bar-wrap') as HTMLElement | null;
+  if (!wrap) return;
+  const btn = destSwitchButtonHtml();
+  wrap.innerHTML = btn ? '<div class="sl-dest-bar">' + btn + '</div>' : '';
+  bindDestSwitchButton(wrap);
 }
 
 let slDestSwitcherEl: HTMLElement | null = null;
@@ -797,11 +801,11 @@ function bindSegmentPillHandlers(wrap: HTMLElement): void {
 }
 
 /**
- * 확정(3단계) 화면: 헤더 바로 아래 줄에 최대한 압축된 구간 pill만 보여줌
- * (라벨·숙소 나누기 버튼 없음, N박 표기 없이 기간만). "숙소 나누기"는 본문의
+ * 헤더 바로 아래 줄에 최대한 압축된 구간 pill만 보여줌(라벨·숙소 나누기 버튼 없음,
+ * N박 표기 없이 기간만) — 1·2·3단계 공통. "숙소 나누기"는 확정(3단계) 본문의
  * 전용 카드(이 여행지에서 숙소를 나눠 묵나요?)에서만 시작하도록 상단에서는 제거.
  */
-function renderCompactSegmentBar(container: HTMLElement): void {
+function renderSegmentBar(container: HTMLElement): void {
   const wrap = container.querySelector('#sl-dest-bar-wrap') as HTMLElement | null;
   if (!wrap) return;
   if (!slActiveDest || isSyntheticDestination(slActiveDest.id) || slSegments.length < 2) {
@@ -828,52 +832,6 @@ function renderCompactSegmentBar(container: HTMLElement): void {
 
   wrap.innerHTML = '<div class="sl-seg-bar sl-seg-bar-compact"><div class="sl-seg-pills">' + pills + '</div></div>';
   bindSegmentPillHandlers(wrap);
-}
-
-/** 1·2단계(기존 방식 유지): 라벨 + pill + 숙소 나누기 버튼이 있는 전체 바 */
-function renderSegmentBar(container: HTMLElement): void {
-  if (step === 3) {
-    renderCompactSegmentBar(container);
-    return;
-  }
-
-  const wrap = container.querySelector('#sl-seg-bar-wrap') as HTMLElement | null;
-  if (!wrap) return;
-  // 실제 여행지 + 구간 2개 이상일 때만 (단일 숙소면 깔끔하게 숨김)
-  if (!slActiveDest || isSyntheticDestination(slActiveDest.id) || slSegments.length < 2) {
-    wrap.innerHTML = '';
-    return;
-  }
-
-  const pills = slSegments
-    .map((seg, i) => {
-      const active = seg.id === slActiveSegment?.id;
-      const meta = dateRangeMeta(seg.start_date, seg.end_date);
-      return [
-        '<button type="button" class="sl-seg-pill' + (active ? ' active' : '') + '" data-seg-id="' + seg.id + '">',
-        '  <span class="sl-seg-pill-idx">' + (i + 1) + '</span>',
-        '  <span class="sl-seg-pill-text">',
-        '    <span class="sl-seg-pill-name">' + escapeHtml(segmentLabel(seg, i)) + '</span>',
-        meta ? '    <span class="sl-seg-pill-meta">' + escapeHtml(meta) + '</span>' : '',
-        '  </span>',
-        active && slSegments.length > 1 ? '  <span class="sl-seg-pill-del" data-del-seg="' + seg.id + '" title="이 숙소 구간 삭제">' + IC_XCLOSE + '</span>' : '',
-        '</button>',
-      ].join('');
-    })
-    .join('');
-
-  wrap.innerHTML = [
-    '<div class="sl-seg-bar">',
-    '  <span class="sl-seg-bar-label">' + IC_BED + ' 숙소 구간</span>',
-    '  <div class="sl-seg-pills">' + pills + '</div>',
-    '  <button type="button" class="sl-seg-add" id="sl-seg-add">' + IC_PLUS + ' 숙소 나누기</button>',
-    '</div>',
-  ].join('');
-
-  bindSegmentPillHandlers(wrap);
-  wrap.querySelector('#sl-seg-add')?.addEventListener('click', (e) => {
-    openSegmentDatePopover(e.currentTarget as HTMLElement);
-  });
 }
 
 let segPopoverEl: HTMLElement | null = null;
@@ -1755,9 +1713,12 @@ async function renderStep2(body: HTMLElement): Promise<void> {
       '      </div>',
       '    </div>',
       '  </div>',
-      '  <button class="sl-back-link" id="sl-back-1">' + IC_BACK + ' 지역 다시 선택</button>',
+      // "지역 다시 선택" 텍스트 링크는 스테퍼의 이전 단계 클릭 이동 기능과 중복이라 제거하고
+      // (Step3와 동일한 정리 방향), 그 자리에 "여행지 변경"을 대신 넣어 자리를 재활용.
+      destSwitchButtonHtml(),
       '</div>',
     ].join('\n');
+    bindDestSwitchButton(stepperExtraEl);
   }
 
   body.innerHTML = [
@@ -1832,13 +1793,6 @@ async function renderStep2(body: HTMLElement): Promise<void> {
     '  </div>',
     '</div>',
   ].join('\n');
-
-  const goBackToStep1 = () => {
-    step = 1;
-    const container = body.closest('.sl-shell')!.parentElement as HTMLElement;
-    renderStep(container);
-  };
-  stepperExtraEl?.querySelector('#sl-back-1')?.addEventListener('click', goBackToStep1);
 
   body.querySelector('#sl-sort-select')?.addEventListener('change', (e) => {
     step2SortMode = (e.target as HTMLSelectElement).value as 'rating' | 'distance';
