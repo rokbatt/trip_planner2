@@ -145,9 +145,14 @@
 .sl-seg-pill-del:hover { color: #C0392B; background: #FDEEEC; }
 .sl-seg-pill-del svg { width: 100%; height: 100%; }
 /* 확정(3단계) 헤더 압축용 — 라벨·추가 버튼 없이 pill만 좌측 정렬(좌측 컬럼 라인에 맞춤), 최대한 작게.
-   위쪽 padding을 .sl-shell의 padding-top과 동일한 값으로 맞춰서, 헤더-pill 간 여백과
-   pill-스테퍼 간 여백(= .sl-shell의 padding-top)이 위아래로 고르게 보이도록 함. */
-.sl-seg-bar-compact { justify-content: flex-start; padding-top: clamp(14px, 1.4vw, 22px); }
+   위쪽 padding은 .sl-shell의 padding-top(clamp 14~22px)의 70%로, 아래쪽 여백(=.sl-shell의
+   padding-top이 그대로 적용됨)도 음수 margin-bottom으로 70%가 되도록 상쇄 — 위아래 모두
+   기존 대비 70% 수준으로 고르게 좁힘. .sl-shell 자체의 padding은 다른 단계에도 쓰이므로 안 건드림. */
+.sl-seg-bar-compact {
+  justify-content: flex-start;
+  padding-top: calc(clamp(14px, 1.4vw, 22px) * 0.7);
+  margin-bottom: calc(clamp(14px, 1.4vw, 22px) * -0.3);
+}
 .sl-seg-bar-compact .sl-seg-pills { flex: none; }
 .sl-seg-pill-compact { padding: 4px 9px 4px 5px; }
 .sl-seg-pill-compact .sl-seg-pill-idx { width: 15px; height: 15px; font-size: 9.5px; }
