@@ -797,14 +797,43 @@ function bindSegmentPillHandlers(wrap: HTMLElement): void {
 }
 
 /**
- * 1·2단계(기존 방식 유지): 라벨 + pill + 숙소 나누기 버튼이 있는 전체 바.
- * 확정(3단계)의 숙소 선택 UI는 더 이상 상단 바가 아니라 본문의 Segment Control
- * (buildHotelSegmentControlHtml/bindHotelSegmentControl)로 표시되므로 여기선 비워둠.
+ * 확정(3단계) 화면: 헤더 바로 아래 줄에 최대한 압축된 구간 pill만 보여줌
+ * (라벨·숙소 나누기 버튼 없음, N박 표기 없이 기간만). "숙소 나누기"는 본문의
+ * 전용 카드(이 여행지에서 숙소를 나눠 묵나요?)에서만 시작하도록 상단에서는 제거.
  */
+function renderCompactSegmentBar(container: HTMLElement): void {
+  const wrap = container.querySelector('#sl-dest-bar-wrap') as HTMLElement | null;
+  if (!wrap) return;
+  if (!slActiveDest || isSyntheticDestination(slActiveDest.id) || slSegments.length < 2) {
+    wrap.innerHTML = '';
+    return;
+  }
+
+  const pills = slSegments
+    .map((seg, i) => {
+      const active = seg.id === slActiveSegment?.id;
+      const meta = dateRangeOnly(seg.start_date, seg.end_date);
+      return [
+        '<button type="button" class="sl-seg-pill sl-seg-pill-compact' + (active ? ' active' : '') + '" data-seg-id="' + seg.id + '">',
+        '  <span class="sl-seg-pill-idx">' + (i + 1) + '</span>',
+        '  <span class="sl-seg-pill-text">',
+        '    <span class="sl-seg-pill-name">' + escapeHtml(segmentLabel(seg, i)) + '</span>',
+        meta ? '    <span class="sl-seg-pill-meta">' + escapeHtml(meta) + '</span>' : '',
+        '  </span>',
+        active && slSegments.length > 1 ? '  <span class="sl-seg-pill-del" data-del-seg="' + seg.id + '" title="이 숙소 구간 삭제">' + IC_XCLOSE + '</span>' : '',
+        '</button>',
+      ].join('');
+    })
+    .join('');
+
+  wrap.innerHTML = '<div class="sl-seg-bar sl-seg-bar-compact"><div class="sl-seg-pills">' + pills + '</div></div>';
+  bindSegmentPillHandlers(wrap);
+}
+
+/** 1·2단계(기존 방식 유지): 라벨 + pill + 숙소 나누기 버튼이 있는 전체 바 */
 function renderSegmentBar(container: HTMLElement): void {
   if (step === 3) {
-    const wrap = container.querySelector('#sl-dest-bar-wrap') as HTMLElement | null;
-    if (wrap) wrap.innerHTML = '';
+    renderCompactSegmentBar(container);
     return;
   }
 
@@ -844,70 +873,6 @@ function renderSegmentBar(container: HTMLElement): void {
   bindSegmentPillHandlers(wrap);
   wrap.querySelector('#sl-seg-add')?.addEventListener('click', (e) => {
     openSegmentDatePopover(e.currentTarget as HTMLElement);
-  });
-}
-
-/**
- * 확정(3단계) 전용 — 숙소 후보를 하나의 Segment Control로 보여줌
- * (STEP 인디케이터 아래, FINAL CHECK 타이틀 바로 위). 합성(마이그레이션 전) 여행지는
- * 실제 구간 행을 만들 수 없어 렌더하지 않음(기존과 동일한 제약).
- */
-function buildHotelSegmentControlHtml(): string {
-  if (!slActiveDest || isSyntheticDestination(slActiveDest.id)) return '';
-
-  const tiles = slSegments
-    .map((seg, i) => {
-      const active = seg.id === slActiveSegment?.id;
-      const dates = dateRangeOnly(seg.start_date, seg.end_date);
-      return [
-        '<button type="button" class="sl-hotel-seg' + (active ? ' active' : '') + '" data-seg-id="' + seg.id + '">',
-        '  <span class="sl-hotel-seg-idx">' + (i + 1) + '</span>',
-        '  <span class="sl-hotel-seg-body">',
-        '    <span class="sl-hotel-seg-name">' + escapeHtml(segmentLabel(seg, i)) + '</span>',
-        dates ? '    <span class="sl-hotel-seg-dates">' + escapeHtml(dates) + '</span>' : '',
-        '  </span>',
-        slSegments.length > 1 ? '  <span class="sl-hotel-seg-del" data-del-seg="' + seg.id + '" title="이 숙소 구간 삭제">' + IC_XCLOSE + '</span>' : '',
-        '</button>',
-      ].join('');
-    })
-    .join('\n');
-
-  return [
-    '<div class="sl-hotel-segctrl">',
-    '  <div class="sl-hotel-segctrl-label">숙소 후보 (' + slSegments.length + ')</div>',
-    '  <div class="sl-hotel-segctrl-track">',
-    tiles,
-    '    <button type="button" class="sl-hotel-seg-add" id="sl-hotel-seg-add">' + IC_PLUS + ' 숙소 추가</button>',
-    '  </div>',
-    '</div>',
-  ].join('\n');
-}
-
-function bindHotelSegmentControl(body: HTMLElement): void {
-  const ctrl = body.querySelector('.sl-hotel-segctrl') as HTMLElement | null;
-  if (!ctrl) return;
-
-  ctrl.querySelectorAll('.sl-hotel-seg').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('[data-del-seg]')) return;
-      switchSegment((btn as HTMLElement).dataset.segId!);
-    });
-  });
-  ctrl.querySelectorAll('[data-del-seg]').forEach((el) => {
-    el.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const id = (el as HTMLElement).dataset.delSeg!;
-      if (confirm('이 숙소 구간을 삭제할까요? 이 구간에서 고른 지역·숙소·장소 선택이 사라져요.')) {
-        removeSegment(id);
-      }
-    });
-  });
-  ctrl.querySelector('#sl-hotel-seg-add')?.addEventListener('click', async (e) => {
-    // e.currentTarget은 이벤트 디스패치가 끝나는 즉시(= await 지점에서) null이 되므로
-    // await 이전에 반드시 동기적으로 값을 꺼내둬야 함
-    const anchor = e.currentTarget as HTMLElement;
-    await saveShortlistState(); // 지금 구간(현재 숙소 선택)을 먼저 저장하고 새 구간 추가
-    openSegmentDatePopover(anchor);
   });
 }
 
@@ -2531,8 +2496,6 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   body.innerHTML = [
     '<div class="sl-step3">',
 
-    buildHotelSegmentControlHtml(),
-
     '  <div class="sl-step2-header-row">',
     '    <div class="sl-step1-header sl-step2-header-text">',
     '      <div class="sl-eyebrow">FINAL CHECK</div>',
@@ -2629,7 +2592,20 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '        <button class="sl-step3-expense-btn" id="sl-expense-link">Expense 탭에서 관리하기 ' + IC_EXTLINK + '</button>',
     '      </div>',
 
-    // ④ 하단 CTA (우측 컬럼 맨 아래 — 레퍼런스와 동일)
+    // ④ 숙소 나누기 진입 (실제 여행지 + 아직 단일 구간일 때만 — 구간이 2개 이상이면 상단 바로 대체됨)
+    (slActiveDest && !isSyntheticDestination(slActiveDest.id) && slSegments.length < 2)
+      ? [
+          '      <div class="sl-step3-split-card">',
+          '        <div class="sl-step3-split-text">',
+          '          <div class="sl-step3-split-title">' + IC_BED + ' 이 여행지에서 숙소를 나눠 묵나요?</div>',
+          '          <div class="sl-step3-split-desc">앞·뒤 며칠씩 다른 숙소에 묵는다면 구간을 나눠 각각 지역·숙소를 정할 수 있어요.</div>',
+          '        </div>',
+          '        <button type="button" class="sl-step3-split-btn" id="sl-split-add">' + IC_PLUS + ' 숙소 나누기</button>',
+          '      </div>',
+        ].join('\n')
+      : '',
+
+    // ⑤ 하단 CTA (우측 컬럼 맨 아래 — 레퍼런스와 동일)
     '      <div class="sl-step3-cta-wrap">',
     '        <button class="sl-step2-cta sl-step3-cta" id="sl-proceed"><span class="sl-step3-cta-main">' + IC_CHECK + ' 이 숙소를 여행 중심으로 확정하기</span></button>',
     '      </div>',
@@ -2657,7 +2633,13 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     );
   });
 
-  bindHotelSegmentControl(body);
+  body.querySelector('#sl-split-add')?.addEventListener('click', async (e) => {
+    // e.currentTarget은 이벤트 디스패치가 끝나는 즉시(= await 지점에서) null이 되므로
+    // await 이전에 반드시 동기적으로 값을 꺼내둬야 함(안 그러면 getBoundingClientRect에서 TypeError)
+    const anchor = e.currentTarget as HTMLElement;
+    await saveShortlistState(); // 지금 구간(현재 숙소 선택)을 먼저 저장하고 새 구간 추가
+    openSegmentDatePopover(anchor);
+  });
 
   renderStep3Lists(body, withDistance);
   initMapStep3(body);
