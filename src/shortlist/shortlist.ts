@@ -1098,7 +1098,10 @@ function renderStepper(container: HTMLElement): void {
   stepperEl.querySelectorAll('.sl-step.clickable').forEach((el) => {
     el.addEventListener('click', () => {
       step = Number((el as HTMLElement).dataset.step) as 1 | 2 | 3;
-      renderStep(container.closest('.sl-shell')!.parentElement as HTMLElement);
+      // container는 renderStep()이 넘겨준 바로 그 바깥 컨테이너(.sl-shell의 부모)라 이미 정답.
+      // body(.sl-shell 안쪽)에서 쓰는 body.closest('.sl-shell')!.parentElement 패턴을 여기 그대로
+      // 베껴 쓰면 container 자신은 .sl-shell의 조상이 아니라 부모라 closest가 null을 반환해 터짐.
+      renderStep(container);
     });
   });
 }
