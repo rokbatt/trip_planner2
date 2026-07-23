@@ -1071,7 +1071,6 @@ async function renderStep1(body: HTMLElement): Promise<void> {
     '  <div class="sl-step1-header">',
     '    <div class="sl-eyebrow">DEPARTURE HALL</div>',
     '    <div class="sl-title">어느 지역을 중심으로 여행할까요?</div>',
-    '    <div class="sl-sub">AI가 Brainstorm에서 모은 장소를 분석해 권역을 추천했어요.</div>',
     '  </div>',
     '  <div class="sl-step1-layout">',
     '    <div class="sl-map-wrap">',
@@ -1695,7 +1694,6 @@ async function renderStep2(body: HTMLElement): Promise<void> {
     '    <div class="sl-step1-header sl-step2-header-text">',
     '      <div class="sl-eyebrow">IMMIGRATION COUNTER</div>',
     '      <div class="sl-title">숙소를 선택하면 여행의 중심이 결정됩니다</div>',
-    '      <div class="sl-sub">숙소를 기준으로 모든 장소의 이동시간이 계산돼요.</div>',
     '    </div>',
     '    <div class="sl-step2-summary-card">',
     '      <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">선택 지역</span><span class="sl-step2-summary-value">' + escapeHtml(selectedZone.name) + '</span></div>',
@@ -2447,7 +2445,6 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '    <div class="sl-step1-header sl-step2-header-text">',
     '      <div class="sl-eyebrow">FINAL CHECK</div>',
     '      <div class="sl-title">이 숙소를 여행의 중심으로 확정할까요?</div>',
-    '      <div class="sl-sub">선택한 숙소를 기준으로 여행 동선과 정보를 최종 점검합니다.</div>',
     '    </div>',
     '  </div>',
 
