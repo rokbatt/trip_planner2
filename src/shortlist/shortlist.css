@@ -725,20 +725,16 @@
 /* ── STEP 2: 숙소 후보 ── */
 /* ══════════════════ STEP 2 — Immigration Counter (redesign) ══════════════════ */
 
+/* IMMIGRATION COUNTER 타이틀과 지역/기간/예산 필터 박스를 한 줄에 나란히 배치
+   (여행지 변경은 스테퍼 줄 우측에 따로 있음 — Step1·3와 동일한 자리) */
 .sl-step2-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
   margin-bottom: 12px;
 }
-.sl-step2-header-text { margin-bottom: 0; }
-
-/* 필터(요약) 카드+뒤로가기 — 스테퍼 줄 우측(#sl-stepper-extra)에 배치되어
-   IMMIGRATION COUNTER 헤더보다 한 줄 위, 스테퍼와 같은 높이에 정렬됨 */
-.sl-step2-topbar {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-  flex-shrink: 0;
-}
+.sl-step2-header-text { margin-bottom: 0; flex: 1; min-width: 0; }
 .sl-step2-summary-card {
   display: flex;
   align-items: center;
@@ -747,6 +743,7 @@
   border-radius: 10px;
   border: 1px solid rgba(130,150,170,0.18);
   background: rgba(255,255,255,0.82);
+  flex-shrink: 0;
 }
 .sl-step2-summary-item { display: flex; flex-direction: column; gap: 1px; }
 .sl-step2-summary-label { font-size: 9.5px; color: #94A3B8; font-weight: 600; }
@@ -1411,7 +1408,7 @@
   .sl-zone-panel, .sl-step2-right { height: auto; max-height: none; overflow-y: visible; }
   .sl-step2-left { position: static; height: auto; }
   .sl-stepper-row { flex-direction: column; align-items: stretch; }
-  .sl-step2-topbar { align-items: stretch; }
+  .sl-step2-header-row { flex-direction: column; align-items: stretch; }
 
   .sl-step3-layout { flex-direction: column; }
   .sl-step3-left, .sl-step3-right { flex: none; width: 100%; }

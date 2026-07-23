@@ -1686,40 +1686,8 @@ async function renderStep2(body: HTMLElement): Promise<void> {
   const destination = getTripDestination();
   const dateRange = formatTripDateRange();
 
-  const shellEl = body.closest('.sl-shell') as HTMLElement;
-  const stepperExtraEl = shellEl?.querySelector('#sl-stepper-extra') as HTMLElement;
-  if (stepperExtraEl) {
-    stepperExtraEl.innerHTML = [
-      '<div class="sl-step2-topbar">',
-      '  <div class="sl-step2-summary-card">',
-      '    <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">선택 지역</span><span class="sl-step2-summary-value">' + escapeHtml(selectedZone.name) + '</span></div>',
-      '    <div class="sl-step2-summary-divider"></div>',
-      '    <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">숙박 기간</span><span class="sl-step2-summary-value">' + escapeHtml(dateRange) + '</span></div>',
-      '    <div class="sl-step2-summary-divider"></div>',
-      '    <div class="sl-step2-summary-item sl-step2-summary-budget">',
-      '      <span class="sl-step2-summary-label">예산 (1박 1인)</span>',
-      '      <select id="sl-budget-select" class="sl-budget-select">',
-      '        <option value=""' + (stayFilters.budget === '' ? ' selected' : '') + '>전체</option>',
-      '        <option value="under5"' + (stayFilters.budget === 'under5' ? ' selected' : '') + '>5만원 이하</option>',
-      '        <option value="under10"' + (stayFilters.budget === 'under10' ? ' selected' : '') + '>10만원 이하</option>',
-      '        <option value="over20"' + (stayFilters.budget === 'over20' ? ' selected' : '') + '>20만원 이상</option>',
-      '        <option value="custom"' + (stayFilters.budget === 'custom' ? ' selected' : '') + '>직접설정</option>',
-      '      </select>',
-      '      <div class="sl-budget-custom-row" id="sl-budget-custom-row" style="display:' + (stayFilters.budget === 'custom' ? 'flex' : 'none') + '">',
-      '        <input type="number" id="sl-budget-min" class="sl-budget-custom-input" placeholder="최소" value="' + (stayFilters.customMinKRW ?? '') + '" />',
-      '        <span>~</span>',
-      '        <input type="number" id="sl-budget-max" class="sl-budget-custom-input" placeholder="최대" value="' + (stayFilters.customMaxKRW ?? '') + '" />',
-      '        <span class="sl-budget-custom-unit">원</span>',
-      '      </div>',
-      '    </div>',
-      '  </div>',
-      // "지역 다시 선택" 텍스트 링크는 스테퍼의 이전 단계 클릭 이동 기능과 중복이라 제거하고
-      // (Step3와 동일한 정리 방향), 그 자리에 "여행지 변경"을 대신 넣어 자리를 재활용.
-      destSwitchButtonHtml(),
-      '</div>',
-    ].join('\n');
-    bindDestSwitchButton(stepperExtraEl);
-  }
+  // 스테퍼 줄 우측(#sl-stepper-extra)은 1·3단계와 동일하게 "여행지 변경"만 두고(이미
+  // renderShortlistDestBar가 채워둠), 지역/기간/예산 필터 박스는 타이틀과 같은 줄로 내림.
 
   body.innerHTML = [
     '<div class="sl-step2">',
@@ -1728,6 +1696,28 @@ async function renderStep2(body: HTMLElement): Promise<void> {
     '      <div class="sl-eyebrow">IMMIGRATION COUNTER</div>',
     '      <div class="sl-title">숙소를 선택하면 여행의 중심이 결정됩니다</div>',
     '      <div class="sl-sub">숙소를 기준으로 모든 장소의 이동시간이 계산돼요.</div>',
+    '    </div>',
+    '    <div class="sl-step2-summary-card">',
+    '      <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">선택 지역</span><span class="sl-step2-summary-value">' + escapeHtml(selectedZone.name) + '</span></div>',
+    '      <div class="sl-step2-summary-divider"></div>',
+    '      <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">숙박 기간</span><span class="sl-step2-summary-value">' + escapeHtml(dateRange) + '</span></div>',
+    '      <div class="sl-step2-summary-divider"></div>',
+    '      <div class="sl-step2-summary-item sl-step2-summary-budget">',
+    '        <span class="sl-step2-summary-label">예산 (1박 1인)</span>',
+    '        <select id="sl-budget-select" class="sl-budget-select">',
+    '          <option value=""' + (stayFilters.budget === '' ? ' selected' : '') + '>전체</option>',
+    '          <option value="under5"' + (stayFilters.budget === 'under5' ? ' selected' : '') + '>5만원 이하</option>',
+    '          <option value="under10"' + (stayFilters.budget === 'under10' ? ' selected' : '') + '>10만원 이하</option>',
+    '          <option value="over20"' + (stayFilters.budget === 'over20' ? ' selected' : '') + '>20만원 이상</option>',
+    '          <option value="custom"' + (stayFilters.budget === 'custom' ? ' selected' : '') + '>직접설정</option>',
+    '        </select>',
+    '        <div class="sl-budget-custom-row" id="sl-budget-custom-row" style="display:' + (stayFilters.budget === 'custom' ? 'flex' : 'none') + '">',
+    '          <input type="number" id="sl-budget-min" class="sl-budget-custom-input" placeholder="최소" value="' + (stayFilters.customMinKRW ?? '') + '" />',
+    '          <span>~</span>',
+    '          <input type="number" id="sl-budget-max" class="sl-budget-custom-input" placeholder="최대" value="' + (stayFilters.customMaxKRW ?? '') + '" />',
+    '          <span class="sl-budget-custom-unit">원</span>',
+    '        </div>',
+    '      </div>',
     '    </div>',
     '  </div>',
 
@@ -1799,22 +1789,22 @@ async function renderStep2(body: HTMLElement): Promise<void> {
     renderBasecampList(body, candidates);
   });
 
-  stepperExtraEl?.querySelector('#sl-budget-select')?.addEventListener('change', (e) => {
+  body.querySelector('#sl-budget-select')?.addEventListener('change', (e) => {
     stayFilters.budget = (e.target as HTMLSelectElement).value;
-    const customRow = stepperExtraEl.querySelector('#sl-budget-custom-row') as HTMLElement;
+    const customRow = body.querySelector('#sl-budget-custom-row') as HTMLElement;
     if (customRow) customRow.style.display = stayFilters.budget === 'custom' ? 'flex' : 'none';
     renderHotelSiteCards(body, destination, selectedZone!.name);
   });
 
   const applyCustomBudget = () => {
-    const minInput = stepperExtraEl?.querySelector('#sl-budget-min') as HTMLInputElement;
-    const maxInput = stepperExtraEl?.querySelector('#sl-budget-max') as HTMLInputElement;
+    const minInput = body.querySelector('#sl-budget-min') as HTMLInputElement;
+    const maxInput = body.querySelector('#sl-budget-max') as HTMLInputElement;
     stayFilters.customMinKRW = minInput?.value ? Number(minInput.value) : null;
     stayFilters.customMaxKRW = maxInput?.value ? Number(maxInput.value) : null;
     renderHotelSiteCards(body, destination, selectedZone!.name);
   };
-  stepperExtraEl?.querySelector('#sl-budget-min')?.addEventListener('input', applyCustomBudget);
-  stepperExtraEl?.querySelector('#sl-budget-max')?.addEventListener('input', applyCustomBudget);
+  body.querySelector('#sl-budget-min')?.addEventListener('input', applyCustomBudget);
+  body.querySelector('#sl-budget-max')?.addEventListener('input', applyCustomBudget);
 
   body.querySelector('#sl-hotel-filter')?.addEventListener('input', (e) => {
     step2FilterText = (e.target as HTMLInputElement).value;
