@@ -2210,11 +2210,16 @@ interface StayFilters {
 
 let stayFilters: StayFilters = { budget: '', customMinKRW: null, customMaxKRW: null };
 
-/** 트립의 실제 여행 날짜를 YYYY-MM-DD로 반환 (사이트 검색 URL의 checkin/checkout에 사용) */
+/**
+ * 숙소 검색 URL의 checkin/checkout에 쓸 날짜(YYYY-MM-DD).
+ * formatTripDateRange()와 같은 우선순위: 활성 숙소 구간(나뉜 경우) → 여행지 기간 → 트립 전체 기간.
+ * "수정" 버튼으로 숙박 기간을 바꾸면 이 값도 즉시 갱신돼야 검색 필터가 실제로 반영됨.
+ */
 function getTripDatesISO(): { checkin: string; checkout: string } | null {
-  const trip = currentTrip;
-  if (!trip?.start_date || !trip?.end_date) return null;
-  return { checkin: trip.start_date.slice(0, 10), checkout: trip.end_date.slice(0, 10) };
+  const start = slActiveSegment?.start_date || slActiveDest?.start_date || currentTrip?.start_date;
+  const end = slActiveSegment?.end_date || slActiveDest?.end_date || currentTrip?.end_date;
+  if (!start || !end) return null;
+  return { checkin: start.slice(0, 10), checkout: end.slice(0, 10) };
 }
 
 interface HotelSite {
@@ -2241,6 +2246,9 @@ const HOTEL_SITES: HotelSite[] = [
         url.searchParams.set('checkin', dates.checkin);
         url.searchParams.set('checkout', dates.checkout);
       }
+      url.searchParams.set('group_adults', String(getTripHeadcount()));
+      url.searchParams.set('no_rooms', '1');
+      url.searchParams.set('group_children', '0');
       const range = resolveBudgetRangeKRW(f);
       if (range) {
         url.searchParams.set('nflt', 'price=USD-' + krwToUsd(range.minKRW) + '-' + krwToUsd(range.maxKRW) + '-1');
@@ -2272,6 +2280,7 @@ const HOTEL_SITES: HotelSite[] = [
         url.searchParams.set('checkin', dates.checkin);
         url.searchParams.set('checkout', dates.checkout);
       }
+      url.searchParams.set('adults', String(getTripHeadcount()));
       const range = resolveBudgetRangeKRW(f);
       if (range) {
         url.searchParams.set('price_min', String(krwToUsd(range.minKRW)));
