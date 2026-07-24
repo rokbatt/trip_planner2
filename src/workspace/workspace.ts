@@ -71,7 +71,7 @@ const SUB_NAV: NavItem[] = [
 const GATE_TITLES: Record<string, string> = {
   ideas: 'BRAINSTORM BOARD',
   shortlist: 'CANDIDATE POOL',
-  route: 'ROUTE & MAP',
+  route: 'ROUTE PLANNER',
   timeline: 'TIMELINE',
   checklist: 'CHECKLIST',
   expense: 'EXPENSE',

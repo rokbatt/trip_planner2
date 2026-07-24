@@ -1,13 +1,13 @@
 /**
- * ROUTE 게이트 — 확정한 숙소·장소를 하루 동선으로 배치하는 화면.
+ * ROUTE 게이트 — 여러 명이 지도 위에서 함께 하루 동선을 직접 만드는 협업 워크스페이스.
  *
  * shortlist(SHORTLIST)에서 확정한 결과를 이어받아:
- *   - 숙소(basecamp) = 하루의 출발점
- *   - 확정 장소들      = 지도에 후보 마커로 표시, 클릭하면 그날 동선에 순서대로 추가
+ *   - 숙소(basecamp) = 하루의 출발점(항상 순번 1)
+ *   - 확정 장소들      = 지도에 카테고리색 배지 마커로 표시, 클릭하면 그날 동선에 순서대로 추가
  *   - 체류 일수         = DAY 탭 개수 (기본값, "DAY 추가"로 더 늘릴 수 있음)
  *
- * 이동시간/교통비/최적화 제안/동선 점수는 shortlist와 동일하게 직선거리(Haversine)
- * 기반 추정치예요(실제 Directions API 호출 없음) — 화면에도 "추정" 표기.
+ * 이 화면은 텍스트 설명 대신 지도·핀·선·색·아이콘으로 정보를 전달하는 것을 원칙으로 한다.
+ * 이동시간/교통비는 직선거리(Haversine) 기반 추정치예요(실제 Directions API 호출 없음).
  *
  * 동선 상태는 세션 메모리에만 유지(스키마 변경 없음). 새로고침하면 초기화돼요.
  */
@@ -19,7 +19,6 @@ import {
   resolveActiveDestination,
   loadStaySegments,
   resolveActiveSegment,
-  syntheticDestinationName,
 } from '../trips/destinations';
 import { loadGoogleMapsScript } from '../utils/googleMaps';
 import type { Database } from '../types/database';
@@ -31,7 +30,6 @@ type Trip = Database['public']['Tables']['trips']['Row'];
 /* ── 아이콘 ── */
 const IC_WALK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4" r="2"/><path d="M11 8l-3 3 2 7M11 8l3 2 3-1M8 11l-3 2v6M13 10l2 4-2 6"/></svg>';
 const IC_TRANSIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="14" rx="2"/><path d="M4 11h16M8 21l2-4h4l2 4M8 7h.01M16 7h.01"/></svg>';
-const IC_BUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9H4V6z"/><path d="M4 15h16v2a1 1 0 0 1-1 1h-1M4 15v2a1 1 0 0 0 1 1h1M8 18v1M16 18v1M4 10h16"/></svg>';
 const IC_TAXI = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M5 17a2 2 0 1 0 4 0M15 17a2 2 0 1 0 4 0M5 17l1.5-5h11L19 17M8 12V8h8v4"/></svg>';
 const IC_CAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l1.5-5h11L19 13M5 17h14M5 13h14v4H5zM7 17v2M17 17v2"/><circle cx="7.5" cy="15" r="0.6"/><circle cx="16.5" cy="15" r="0.6"/></svg>';
 const IC_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
@@ -39,16 +37,28 @@ const IC_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const IC_CHEVRON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
 const IC_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
 const IC_SPARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18"/></svg>';
-const IC_CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
-const IC_COINS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="9" cy="6" rx="6" ry="3"/><path d="M3 6v6c0 1.66 2.69 3 6 3s6-1.34 6-3V6"/><path d="M15 12c0 1.66 2.69 3 6 3M21 12v6c0 1.66-2.69 3-6 3-1.2 0-2.3-.16-3.2-.44"/></svg>';
-const IC_FOOT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16c0-2 1-3 1-6 0-2 1-4 3-4s2 3 2 5-1 5-3 5-3-1-3 0M18 8c1 0 2 1 2 3s-1 4-3 4"/></svg>';
-const IC_TRAIN_MINI = IC_TRANSIT;
-const IC_PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21C12 21 19 14.5 19 9.5C19 5.9 15.9 3 12 3C8.1 3 5 5.9 5 9.5C5 14.5 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.2"/></svg>';
 const IC_STAR = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.8 5.9 20.4 7.2 13.7 2.2 9l6.8-.8z"/></svg>';
 const IC_BED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6M3 18v2M21 18v2M3 12V8a2 2 0 0 1 2-2h4v6"/></svg>';
+const IC_LANDMARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M4 21V10M20 21V10M2 10l10-6 10 6M6 10v7M10 10v7M14 10v7M18 10v7"/></svg>';
+const IC_FORK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v7a2 2 0 0 0 2 2v11M7 2v7M9 2v7M11 2v7M16 2c-1.5 0-3 1.5-3 4s1.5 4 3 4v10"/></svg>';
+const IC_TARGET = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/></svg>';
+const IC_BAG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l1 12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L6 8Z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>';
+const IC_SEARCH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
+const IC_DOTS = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
+const IC_CURSOR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3l6.5 17 2-7 7-2L5 3Z"/></svg>';
+const IC_PIN_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21C12 21 19 14.5 19 9.5C19 5.9 15.9 3 12 3C8.1 3 5 5.9 5 9.5C5 14.5 12 21 12 21Z"/><path d="M12 6.5v6M9 9.5h6"/></svg>';
+const IC_LINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l6-6"/><path d="M8 13l-2 2a4 4 0 0 0 6 6l2-2M16 11l2-2a4 4 0 0 0-6-6l-2 2"/></svg>';
+const IC_NOTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+const IC_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2m-8 0 1 13a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-13"/></svg>';
+const IC_UNDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-2"/></svg>';
+const IC_REDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h2"/></svg>';
 
-/* 동선 leg 색 팔레트 — 각 구간(leg)을 서로 다른 색 폴리라인으로 (레퍼런스와 동일 컨셉) */
-const LEG_PALETTE = ['#0B7CC4', '#1D9E75', '#F5A623', '#7F77DD', '#E24B4A', '#0F9E9E'];
+type CatKey = 'VISIT' | 'FOOD' | 'ACTIVITY' | 'SHOPPING' | 'STAY';
+const CAT_COLOR: Record<CatKey, string> = {
+  VISIT: '#E24B4A', FOOD: '#1D9E75', ACTIVITY: '#7F77DD', SHOPPING: '#F5A623', STAY: '#0B2A5C',
+};
+const CAT_ICON: Record<CatKey, string> = { VISIT: IC_LANDMARK, FOOD: IC_FORK, ACTIVITY: IC_TARGET, SHOPPING: IC_BAG, STAY: IC_BED };
+const SHOPPING_KEYWORDS = ['쇼핑', '마켓', '시장', '백화점', 'mall', 'market', 'shopping'];
 
 interface RouteDay {
   id: string;
@@ -63,6 +73,20 @@ interface Leg {
   costTHB: number;
 }
 
+interface MemberLite {
+  id: string;
+  display_name: string | null;
+}
+
+interface HistoryState {
+  past: string[][];
+  future: string[][];
+}
+
+type ToolKind = 'select' | 'add' | 'connect' | 'transport' | 'memo' | 'delete';
+
+const MEMBER_PALETTE = ['#2E6BE6', '#F59E0B', '#16A34A', '#9333EA', '#DB2777', '#0891B2'];
+
 /* ── 모듈 상태 ── */
 let currentTripId = '';
 let currentTrip: Trip | null = null;
@@ -72,28 +96,57 @@ let candidatePlaces: Place[] = []; // 확정 장소들(숙소 제외)
 let placeById = new Map<string, Place>();
 let days: RouteDay[] = [];
 let activeDayId = '';
+let dayRangeStartDate: string | null = null;
 let panelCollapsed = false;
+let members: MemberLite[] = [];
+
+let activeTool: ToolKind = 'select';
+let connectFromId: string | null = null;
+let highlightedPlaceId: string | null = null;
+let selectedLegKey: string | null = null;
+let adhocMode = false;
+let adhocSeq = 0;
+let placeSearchQuery = '';
+let historyByDay = new Map<string, HistoryState>();
+const memoStore = new Map<string, string>();
+const timeOverride = new Map<string, string>();
+const legModeOverride = new Map<string, Leg['mode']>();
 
 let mapInstance: any = null;
 let mapMarkers: any[] = [];
 let routePolylines: any[] = [];
+let mapOverlays: any[] = [];
+let hoverCardOverlay: any = null;
 let resizeHandler: (() => void) | null = null;
+let escHandler: ((e: KeyboardEvent) => void) | null = null;
 
 export function teardownRoute(): void {
-  if (resizeHandler) {
-    window.removeEventListener('resize', resizeHandler);
-    resizeHandler = null;
-  }
+  if (resizeHandler) { window.removeEventListener('resize', resizeHandler); resizeHandler = null; }
+  if (escHandler) { document.removeEventListener('keydown', escHandler); escHandler = null; }
   currentTrip = null;
   basecamp = null;
   candidatePlaces = [];
   placeById = new Map();
   days = [];
   activeDayId = '';
+  dayRangeStartDate = null;
   panelCollapsed = false;
+  members = [];
+  activeTool = 'select';
+  connectFromId = null;
+  highlightedPlaceId = null;
+  selectedLegKey = null;
+  adhocMode = false;
+  placeSearchQuery = '';
+  historyByDay = new Map();
+  memoStore.clear();
+  timeOverride.clear();
+  legModeOverride.clear();
   mapInstance = null;
   mapMarkers = [];
   routePolylines = [];
+  mapOverlays = [];
+  hoverCardOverlay = null;
   rtContainer = null;
 }
 
@@ -114,18 +167,17 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/** 두 지점 사이의 추정 이동 leg (거리에 따라 도보/대중교통/택시 자동 선택) */
-function estimateLeg(a: Place, b: Place): Leg {
+function legForMode(km: number, mode: Leg['mode']): Leg {
+  if (mode === 'WALK') return { mode, km, min: Math.max(2, Math.round(km * 13)), costTHB: 0 };
+  if (mode === 'TRANSIT') return { mode, km, min: Math.max(6, Math.round((km / 18) * 60) + 6), costTHB: Math.min(62, 20 + Math.round(km) * 6) };
+  return { mode, km, min: Math.max(8, Math.round((km / 24) * 60)), costTHB: 35 + Math.round(km * 6.5) };
+}
+
+/** 두 지점 사이의 추정 이동 leg (거리에 따라 도보/대중교통/택시 자동 선택, 수동 오버라이드 가능) */
+function estimateLegWithOverride(a: Place, b: Place, override?: Leg['mode']): Leg {
   const km = haversineKm(a.lat!, a.lng!, b.lat!, b.lng!) * 1.25; // 직선→실주행 보정
-  if (km <= 1.0) {
-    return { mode: 'WALK', km, min: Math.max(2, Math.round(km * 13)), costTHB: 0 };
-  }
-  if (km <= 6) {
-    // 대중교통: 표정속도 ~18km/h + 대기, 요금은 거리 비례(방콕 BTS 대략)
-    return { mode: 'TRANSIT', km, min: Math.max(6, Math.round((km / 18) * 60) + 6), costTHB: Math.min(62, 20 + Math.round(km) * 6) };
-  }
-  // 택시: ~24km/h(시내), 기본 35 + 6.5/km
-  return { mode: 'TAXI', km, min: Math.max(8, Math.round((km / 24) * 60)), costTHB: 35 + Math.round(km * 6.5) };
+  const mode: Leg['mode'] = override ?? (km <= 1.0 ? 'WALK' : km <= 6 ? 'TRANSIT' : 'TAXI');
+  return legForMode(km, mode);
 }
 
 function modeIcon(mode: Leg['mode']): string {
@@ -148,6 +200,30 @@ function fmtKm(km: number): string {
   return km >= 1 ? km.toFixed(1) + 'km' : Math.round(km * 1000) + 'm';
 }
 
+function legKey(fromId: string, toId: string): string {
+  return fromId + '>' + toId;
+}
+
+/* ── 카테고리(방문 유형) → 색상·아이콘 ── */
+function categoryMeta(p: Place, isBasecamp: boolean): { key: CatKey; color: string; icon: string } {
+  if (isBasecamp) return { key: 'STAY', color: CAT_COLOR.STAY, icon: CAT_ICON.STAY };
+  const cat = (p.category || '').toLowerCase();
+  if (SHOPPING_KEYWORDS.some((k) => cat.includes(k))) return { key: 'SHOPPING', color: CAT_COLOR.SHOPPING, icon: CAT_ICON.SHOPPING };
+  if (p.mood === '먹고싶어') return { key: 'FOOD', color: CAT_COLOR.FOOD, icon: CAT_ICON.FOOD };
+  if (p.mood === '하고싶어') return { key: 'ACTIVITY', color: CAT_COLOR.ACTIVITY, icon: CAT_ICON.ACTIVITY };
+  return { key: 'VISIT', color: CAT_COLOR.VISIT, icon: CAT_ICON.VISIT };
+}
+
+function dwellMinutes(key: CatKey): number {
+  switch (key) {
+    case 'FOOD': return 75;
+    case 'ACTIVITY': return 120;
+    case 'SHOPPING': return 60;
+    case 'STAY': return 0;
+    default: return 60;
+  }
+}
+
 /* ── 현재 활성 DAY / 순서대로 이어진 정류지(출발 숙소 포함) ── */
 function activeDay(): RouteDay {
   return days.find((d) => d.id === activeDayId) ?? days[0];
@@ -164,14 +240,107 @@ function orderedStops(day: RouteDay): Place[] {
   return stops;
 }
 
-/** 순서대로의 leg들 (stops.length - 1개) */
+/** 순서대로의 leg들 (stops.length - 1개), 수동 이동수단 오버라이드 반영 */
 function dayLegs(day: RouteDay): Leg[] {
   const stops = orderedStops(day).filter((p) => p.lat != null && p.lng != null);
   const legs: Leg[] = [];
   for (let i = 0; i < stops.length - 1; i++) {
-    legs.push(estimateLeg(stops[i], stops[i + 1]));
+    const override = legModeOverride.get(legKey(stops[i].id, stops[i + 1].id));
+    legs.push(estimateLegWithOverride(stops[i], stops[i + 1], override));
   }
   return legs;
+}
+
+function removeStop(placeId: string): void {
+  const day = activeDay();
+  day.stopIds = day.stopIds.filter((id) => id !== placeId);
+}
+
+function toggleStop(placeId: string): void {
+  const day = activeDay();
+  if (day.stopIds.includes(placeId)) {
+    day.stopIds = day.stopIds.filter((id) => id !== placeId);
+  } else {
+    day.stopIds.push(placeId);
+  }
+}
+
+/** placeId를 afterId 바로 뒤로 옮긴다(연결 툴). afterId가 숙소면 맨 앞으로. */
+function moveStopAfter(placeId: string, afterId: string): void {
+  const day = activeDay();
+  day.stopIds = day.stopIds.filter((id) => id !== placeId);
+  if (basecamp && afterId === basecamp.id) {
+    day.stopIds.unshift(placeId);
+    return;
+  }
+  const idx = day.stopIds.indexOf(afterId);
+  if (idx === -1) { day.stopIds.push(placeId); return; }
+  day.stopIds.splice(idx + 1, 0, placeId);
+}
+
+/* ── 실행 취소 / 다시 실행 (DAY별 stopIds 스냅샷) ── */
+function pushHistory(dayId: string = activeDayId): void {
+  const day = days.find((d) => d.id === dayId);
+  if (!day) return;
+  const h = historyByDay.get(dayId) ?? { past: [], future: [] };
+  h.past.push([...day.stopIds]);
+  if (h.past.length > 30) h.past.shift();
+  h.future = [];
+  historyByDay.set(dayId, h);
+}
+
+function doUndo(container: HTMLElement): void {
+  const day = activeDay();
+  const h = historyByDay.get(day.id);
+  if (!h || h.past.length === 0) return;
+  h.future.push([...day.stopIds]);
+  day.stopIds = h.past.pop()!;
+  refreshAll(container, { refit: false });
+}
+
+function doRedo(container: HTMLElement): void {
+  const day = activeDay();
+  const h = historyByDay.get(day.id);
+  if (!h || h.future.length === 0) return;
+  h.past.push([...day.stopIds]);
+  day.stopIds = h.future.pop()!;
+  refreshAll(container, { refit: false });
+}
+
+function updateUndoRedoState(container: HTMLElement): void {
+  const h = historyByDay.get(activeDay().id);
+  const undoBtn = container.querySelector('#rt-undo') as HTMLButtonElement | null;
+  const redoBtn = container.querySelector('#rt-redo') as HTMLButtonElement | null;
+  if (undoBtn) undoBtn.disabled = !h || h.past.length === 0;
+  if (redoBtn) redoBtn.disabled = !h || h.future.length === 0;
+}
+
+/* ── 즉석 추가(지도에 직접 추가) — 세션 메모리에만 유지되는 가상 장소 ── */
+function makeAdhocPlace(name: string, lat: number, lng: number): Place {
+  adhocSeq += 1;
+  return {
+    id: 'adhoc-' + Date.now() + '-' + adhocSeq,
+    trip_id: currentTripId,
+    name,
+    lat,
+    lng,
+    address: null,
+    photo_url: null,
+    category: '직접 추가',
+    notes: null,
+    added_by: null,
+    created_at: new Date().toISOString(),
+    likes_count: 0,
+    google_place_id: null,
+    google_rating: null,
+    photo_ref: null,
+    opening_hours: null,
+    mood: '가고싶어',
+    status: 'idea',
+    is_idea: false,
+    sort_order: 0,
+    destination_id: null,
+  };
 }
 
 /* ══════════════════ 데이터 로딩 ══════════════════ */
@@ -196,6 +365,23 @@ async function loadPlaces(tripId: string): Promise<Place[]> {
   return data ?? [];
 }
 
+async function loadMembers(tripId: string): Promise<MemberLite[]> {
+  const { data, error } = await supabase
+    .from('trip_members')
+    .select('id, display_name')
+    .eq('trip_id', tripId)
+    .order('joined_at', { ascending: true });
+  if (error) {
+    console.error('[Route] members load error:', error.message);
+    return [];
+  }
+  return data ?? [];
+}
+
+function memberColor(i: number): string {
+  return MEMBER_PALETTE[i % MEMBER_PALETTE.length];
+}
+
 /** shortlist 확정 결과(숙소 + 확정 장소들)를 이어받아 초기 상태 구성 */
 async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
   placeById = new Map(places.map((p) => [p.id, p]));
@@ -216,6 +402,7 @@ async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
   // 체류 일수 = 구간 날짜 기준(없으면 트립 기준), 기본 1일
   const start = seg?.start_date ?? activeDest?.start_date ?? trip.start_date;
   const end = seg?.end_date ?? activeDest?.end_date ?? trip.end_date;
+  dayRangeStartDate = start ?? null;
   let nights = 1;
   if (start && end) {
     const d = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000);
@@ -240,6 +427,14 @@ async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
   activeDayId = days[0].id;
 }
 
+function dayDateLabel(dayIndex: number): string {
+  if (!dayRangeStartDate) return '';
+  const d = new Date(dayRangeStartDate);
+  d.setDate(d.getDate() + dayIndex);
+  const week = ['일', '월', '화', '수', '목', '금', '토'][d.getDay()];
+  return (d.getMonth() + 1) + '.' + String(d.getDate()).padStart(2, '0') + ' (' + week + ')';
+}
+
 /* ══════════════════ 메인 렌더 ══════════════════ */
 
 export async function renderRouteContent(container: HTMLElement, tripId: string): Promise<void> {
@@ -249,8 +444,9 @@ export async function renderRouteContent(container: HTMLElement, tripId: string)
 
   container.innerHTML = '<div class="rt-loading">동선 준비 중...</div>';
 
-  const [trip, places] = await Promise.all([loadTrip(tripId), loadPlaces(tripId)]);
+  const [trip, places, mem] = await Promise.all([loadTrip(tripId), loadPlaces(tripId), loadMembers(tripId)]);
   currentTrip = trip;
+  members = mem;
   if (!trip) {
     container.innerHTML = '<div class="rt-loading">여행 정보를 찾을 수 없어요.</div>';
     return;
@@ -301,39 +497,59 @@ function buildPageHtml(): string {
 
     '  <div class="rt-toolbar">',
     '    <div class="rt-daytabs" id="rt-daytabs"></div>',
-    '    <div class="rt-modefilter">',
-    '      <span class="rt-modefilter-label">' + IC_SPARK + ' 이동수단은 거리 기준 자동 추정</span>',
-    '      <span class="rt-modechip walk">' + IC_WALK + '</span>',
-    '      <span class="rt-modechip transit">' + IC_TRANSIT + '</span>',
-    '      <span class="rt-modechip taxi">' + IC_TAXI + '</span>',
+    '    <div class="rt-toolbar-right">',
+    '      <div class="rt-searchbox">' + IC_SEARCH + '<input type="text" id="rt-search-top" placeholder="여행지 검색" /></div>',
+    '      <button type="button" class="rt-optionsbtn" id="rt-options-btn">' + IC_DOTS + '<span>옵션</span>' + IC_CHEVRON + '</button>',
     '    </div>',
     '  </div>',
 
     '  <div class="rt-main" id="rt-main">',
     '    <div class="rt-map-col">',
-    '      <div class="rt-map-wrap"><div id="rt-map" class="rt-map"></div>',
-    '        <div class="rt-map-hint" id="rt-map-hint">숙소 주변 확정 장소를 클릭해 동선에 추가/제외할 수 있어요.</div>',
+    '      <div class="rt-map-wrap">',
+    '        <div id="rt-map" class="rt-map"></div>',
+
+    '        <div class="rt-float-search" id="rt-float-search">',
+    '          <div class="rt-float-search-input">' + IC_SEARCH + '<input type="text" id="rt-float-search-input" placeholder="장소 검색" /></div>',
+    '          <div class="rt-float-list" id="rt-float-list"></div>',
+    '          <button type="button" class="rt-float-adhoc" id="rt-float-adhoc">' + IC_PIN_PLUS + ' 지도에 직접 추가</button>',
+    '        </div>',
+
+    '        <div class="rt-memberlegend" id="rt-memberlegend"></div>',
+
+    '        <div class="rt-toolfloat" id="rt-toolfloat">',
+    '          <button type="button" class="rt-tool active" data-tool="select">' + IC_CURSOR + '<span class="rt-tool-label">선택</span></button>',
+    '          <button type="button" class="rt-tool" data-tool="add">' + IC_PIN_PLUS + '<span class="rt-tool-label">장소 추가</span></button>',
+    '          <button type="button" class="rt-tool" data-tool="connect">' + IC_LINK + '<span class="rt-tool-label">연결</span></button>',
+    '          <button type="button" class="rt-tool" data-tool="transport">' + IC_CAR + '<span class="rt-tool-label">교통수단</span></button>',
+    '          <button type="button" class="rt-tool" data-tool="memo">' + IC_NOTE + '<span class="rt-tool-label">메모</span></button>',
+    '          <button type="button" class="rt-tool danger" data-tool="delete">' + IC_TRASH + '<span class="rt-tool-label">삭제</span></button>',
+    '          <div class="rt-tool-sep"></div>',
+    '          <button type="button" class="rt-tool" id="rt-undo" disabled>' + IC_UNDO + '<span class="rt-tool-label">실행 취소</span></button>',
+    '          <button type="button" class="rt-tool" id="rt-redo" disabled>' + IC_REDO + '<span class="rt-tool-label">다시 실행</span></button>',
+    '        </div>',
     '      </div>',
-    '      <div class="rt-timeline" id="rt-timeline"></div>',
     '    </div>',
+
     '    <button type="button" class="rt-collapse-toggle" id="rt-collapse-toggle" title="정보 패널 접기/펼치기" aria-label="정보 패널 접기/펼치기">' + IC_CHEVRON + '</button>',
     '    <div class="rt-panel-col" id="rt-panel-col">',
     '      <div class="rt-panel-inner" id="rt-panel-inner"></div>',
     '    </div>',
     '  </div>',
 
-    '  <div class="rt-scorebar" id="rt-scorebar"></div>',
     '</div>',
   ].join('\n');
 }
 
 function bindPage(container: HTMLElement): void {
   renderDayTabs(container);
-  renderTimeline(container);
-  renderPanel(container);
-  renderScorebar(container);
+  renderLeftPanel(container);
+  renderRightPanel(container);
+  renderMemberLegend(container);
+  bindSearchInputs(container);
+  bindToolbar(container);
+  bindOptionsMenu(container);
+  bindAdhocButton(container);
 
-  // 접기/펼치기 토글 — 패널이 슬라이드되고, 애니메이션 종료 후 지도를 실제로 resize
   const toggle = container.querySelector('#rt-collapse-toggle') as HTMLElement;
   const mainEl = container.querySelector('#rt-main') as HTMLElement;
   const panelCol = container.querySelector('#rt-panel-col') as HTMLElement;
@@ -342,11 +558,17 @@ function bindPage(container: HTMLElement): void {
     mainEl.classList.toggle('rt-panel-collapsed', panelCollapsed);
     toggle.classList.toggle('is-collapsed', panelCollapsed);
   });
-  // transitionend에서 지도 resize (transform/width 애니메이션이 끝난 뒤 정확한 크기로)
   panelCol?.addEventListener('transitionend', (e) => {
     if ((e as TransitionEvent).propertyName !== 'width' && (e as TransitionEvent).propertyName !== 'transform') return;
     resizeMap();
   });
+
+  if (escHandler) document.removeEventListener('keydown', escHandler);
+  escHandler = () => {};
+  escHandler = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') setActiveTool(container, 'select');
+  };
+  document.addEventListener('keydown', escHandler);
 }
 
 /* ── DAY 탭 ── */
@@ -355,142 +577,335 @@ function renderDayTabs(container: HTMLElement): void {
   if (!el) return;
   el.innerHTML =
     days
-      .map(
-        (d) =>
-          '<button type="button" class="rt-daytab' + (d.id === activeDayId ? ' active' : '') + '" data-day="' + d.id + '">' + escapeHtml(d.label) + '</button>'
-      )
-      .join('') + '<button type="button" class="rt-daytab-add" id="rt-day-add">' + IC_PLUS + ' DAY 추가</button>';
+      .map((d, i) => {
+        const active = d.id === activeDayId;
+        return [
+          '<button type="button" class="rt-daytab' + (active ? ' active' : '') + '" data-day="' + d.id + '">',
+          '  <span class="rt-daytab-label">' + escapeHtml(d.label) + '</span>',
+          '  <span class="rt-daytab-date">' + dayDateLabel(i) + '</span>',
+          '</button>',
+        ].join('');
+      })
+      .join('') +
+    '<button type="button" class="rt-daytab-add" id="rt-day-add">' + IC_PLUS + ' DAY 추가</button>';
 
   el.querySelectorAll('.rt-daytab').forEach((btn) => {
     btn.addEventListener('click', () => {
       activeDayId = (btn as HTMLElement).dataset.day!;
-      refreshAll(container);
+      highlightedPlaceId = null;
+      selectedLegKey = null;
+      refreshAll(container, { refit: true });
     });
   });
   el.querySelector('#rt-day-add')?.addEventListener('click', () => {
     const n = days.length + 1;
     days.push({ id: 'day-' + n, label: 'DAY ' + n, stopIds: [] });
     activeDayId = 'day-' + n;
-    refreshAll(container);
+    refreshAll(container, { refit: true });
   });
 }
 
-/* ── 하단 타임라인 스트립 ── */
-function renderTimeline(container: HTMLElement): void {
-  const el = container.querySelector('#rt-timeline') as HTMLElement;
-  if (!el) return;
-  const day = activeDay();
-  const stops = orderedStops(day);
-  const legs = dayLegs(day);
+/* ── 좌측 플로팅 검색 패널 ── */
+function bindSearchInputs(container: HTMLElement): void {
+  const floatInput = container.querySelector('#rt-float-search-input') as HTMLInputElement | null;
+  const topInput = container.querySelector('#rt-search-top') as HTMLInputElement | null;
+  floatInput?.addEventListener('input', () => {
+    placeSearchQuery = floatInput.value;
+    if (topInput && topInput.value !== placeSearchQuery) topInput.value = placeSearchQuery;
+    renderLeftPanel(container);
+  });
+  topInput?.addEventListener('input', () => {
+    placeSearchQuery = topInput.value;
+    if (floatInput && floatInput.value !== placeSearchQuery) floatInput.value = placeSearchQuery;
+    renderLeftPanel(container);
+  });
+}
 
-  if (!basecamp) {
-    el.innerHTML = '';
+function filteredCandidates(): Place[] {
+  const q = placeSearchQuery.trim().toLowerCase();
+  return q ? candidatePlaces.filter((p) => p.name.toLowerCase().includes(q)) : candidatePlaces;
+}
+
+function renderLeftPanel(container: HTMLElement): void {
+  const listEl = container.querySelector('#rt-float-list') as HTMLElement;
+  if (!listEl) return;
+  const day = activeDay();
+  const items = filteredCandidates();
+
+  if (!items.length) {
+    listEl.innerHTML = '<div class="rt-float-empty">확정된 장소가 없어요</div>';
     return;
   }
 
-  const cells: string[] = [];
-  stops.forEach((p, i) => {
-    const isStart = i === 0;
-    cells.push(buildStopCardHtml(p, i, isStart));
-    if (i < legs.length) cells.push(buildLegHtml(legs[i]));
-  });
-  cells.push(
-    '<button type="button" class="rt-add-stop" id="rt-add-stop">' + IC_PLUS + '<span>장소 추가</span></button>'
-  );
+  listEl.innerHTML = items
+    .map((p) => {
+      const meta = categoryMeta(p, false);
+      const added = day.stopIds.includes(p.id);
+      return [
+        '<div class="rt-float-item">',
+        '  <div class="rt-float-thumb"' + (p.photo_url ? ' style="background-image:url(\'' + p.photo_url + '\')"' : '') + '>' +
+          (p.photo_url ? '' : '<span style="color:' + meta.color + '">' + meta.icon + '</span>') + '</div>',
+        '  <div class="rt-float-text"><div class="rt-float-name">' + escapeHtml(p.name) + '</div><div class="rt-float-cat">' + escapeHtml(p.category || '') + '</div></div>',
+        '  <button type="button" class="rt-float-add' + (added ? ' added' : '') + '" data-place-id="' + p.id + '">' + (added ? IC_CHECK : IC_PLUS) + '</button>',
+        '</div>',
+      ].join('');
+    })
+    .join('');
 
-  el.innerHTML =
-    '<div class="rt-timeline-track">' + cells.join('') + '</div>' +
-    '<div class="rt-timeline-note">지도에서 장소를 눌러 순서대로 추가하세요. 카드의 ✕로 제외할 수 있어요.</div>';
-
-  el.querySelectorAll('.rt-stop-remove').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
+  listEl.querySelectorAll('.rt-float-add').forEach((btn) => {
+    btn.addEventListener('click', () => {
       const id = (btn as HTMLElement).dataset.placeId!;
-      removeStop(id);
-      refreshAll(container);
+      const d = activeDay();
+      if (d.stopIds.includes(id)) return;
+      pushHistory();
+      d.stopIds.push(id);
+      refreshAll(container, { refit: true });
     });
   });
-  el.querySelector('#rt-add-stop')?.addEventListener('click', () => {
-    const hint = container.querySelector('#rt-map-hint') as HTMLElement;
-    if (hint) {
-      hint.classList.add('pulse');
-      setTimeout(() => hint.classList.remove('pulse'), 1200);
-    }
+}
+
+function setAdhocMode(container: HTMLElement, on: boolean): void {
+  adhocMode = on;
+  container.querySelector('#rt-float-adhoc')?.classList.toggle('active', on);
+}
+
+function bindAdhocButton(container: HTMLElement): void {
+  container.querySelector('#rt-float-adhoc')?.addEventListener('click', () => setAdhocMode(container, !adhocMode));
+}
+
+/* ── 협업 멤버 색상 범례 ── */
+function renderMemberLegend(container: HTMLElement): void {
+  const el = container.querySelector('#rt-memberlegend') as HTMLElement;
+  if (!el) return;
+  if (!members.length) {
+    el.innerHTML = '';
+    el.style.display = 'none';
+    return;
+  }
+  el.style.display = '';
+  el.innerHTML = members
+    .map(
+      (m, i) =>
+        '<div class="rt-memberlegend-item"><span class="rt-memberlegend-dot" style="background:' + memberColor(i) + '"></span>' +
+        escapeHtml(m.display_name || '멤버') + '</div>'
+    )
+    .join('');
+}
+
+/* ── 하단 플로팅 툴바 ── */
+function bindToolbar(container: HTMLElement): void {
+  container.querySelectorAll('.rt-tool[data-tool]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tool = (btn as HTMLElement).dataset.tool as ToolKind;
+      setActiveTool(container, activeTool === tool ? 'select' : tool);
+    });
   });
+  container.querySelector('#rt-undo')?.addEventListener('click', () => doUndo(container));
+  container.querySelector('#rt-redo')?.addEventListener('click', () => doRedo(container));
 }
 
-function buildStopCardHtml(p: Place, index: number, isStart: boolean): string {
-  const numHtml = isStart
-    ? '<span class="rt-stop-num start">' + IC_BED + '</span>'
-    : '<span class="rt-stop-num">' + index + '</span>';
-  return [
-    '<div class="rt-stop-card' + (isStart ? ' start' : '') + '">',
-    isStart ? '  <div class="rt-stop-badge">출발</div>' : '',
-    !isStart ? '  <button type="button" class="rt-stop-remove" data-place-id="' + p.id + '" title="이 장소 제외">✕</button>' : '',
-    '  ' + numHtml,
-    '  <div class="rt-stop-name">' + escapeHtml(p.name) + '</div>',
-    p.category ? '  <div class="rt-stop-sub">' + escapeHtml(p.category) + '</div>' : (isStart ? '  <div class="rt-stop-sub">숙소</div>' : ''),
-    '</div>',
-  ].join('');
-}
-
-function buildLegHtml(leg: Leg): string {
-  return [
-    '<div class="rt-leg ' + modeColorClass(leg.mode) + '">',
-    '  <span class="rt-leg-icon">' + modeIcon(leg.mode) + '</span>',
-    '  <span class="rt-leg-min">' + fmtMin(leg.min) + '</span>',
-    '  <span class="rt-leg-dist">' + fmtKm(leg.km) + '</span>',
-    leg.costTHB > 0 ? '  <span class="rt-leg-cost">' + leg.costTHB + ' THB</span>' : '  <span class="rt-leg-cost free">무료</span>',
-    '</div>',
-  ].join('');
-}
-
-function removeStop(placeId: string): void {
-  const day = activeDay();
-  day.stopIds = day.stopIds.filter((id) => id !== placeId);
-}
-
-function toggleStop(placeId: string): void {
-  const day = activeDay();
-  if (day.stopIds.includes(placeId)) {
-    day.stopIds = day.stopIds.filter((id) => id !== placeId);
-  } else {
-    day.stopIds.push(placeId);
+function setActiveTool(container: HTMLElement, tool: ToolKind): void {
+  activeTool = tool;
+  connectFromId = null;
+  container.querySelectorAll('.rt-tool[data-tool]').forEach((btn) => {
+    btn.classList.toggle('active', (btn as HTMLElement).dataset.tool === tool);
+  });
+  if (tool === 'add') {
+    (container.querySelector('#rt-float-search-input') as HTMLElement | null)?.focus();
   }
 }
 
-/* ── 우측 정보 패널 ── */
-function computeDaySummary(day: RouteDay): {
-  totalMin: number;
-  totalCost: number;
-  walkMeters: number;
-  transitCount: number;
-  taxiCount: number;
-  legCount: number;
-  visitCount: number;
-} {
+/* ── 옵션 드롭다운 ── */
+function bindOptionsMenu(container: HTMLElement): void {
+  const btn = container.querySelector('#rt-options-btn') as HTMLElement | null;
+  btn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const existing = document.querySelector('.rt-options-menu');
+    if (existing) { existing.remove(); return; }
+    const menu = document.createElement('div');
+    menu.className = 'rt-options-menu';
+    menu.innerHTML = [
+      '<button type="button" id="rt-opt-satellite">' + IC_SPARK + ' 위성 지도 보기</button>',
+      '<button type="button" class="danger" id="rt-opt-reset">이 여행지 동선 전체 초기화</button>',
+    ].join('');
+    document.body.appendChild(menu);
+    const r = btn.getBoundingClientRect();
+    menu.style.top = r.bottom + 8 + 'px';
+    menu.style.left = Math.max(12, r.right - 210) + 'px';
+
+    menu.querySelector('#rt-opt-satellite')?.addEventListener('click', () => {
+      toggleSatellite();
+      menu.remove();
+    });
+    menu.querySelector('#rt-opt-reset')?.addEventListener('click', () => {
+      if (!confirm('이 여행지의 모든 DAY 동선을 초기화할까요?')) { menu.remove(); return; }
+      days.forEach((d) => pushHistory(d.id));
+      days.forEach((d) => { d.stopIds = []; });
+      menu.remove();
+      refreshAll(container, { refit: true });
+    });
+    const dismiss = (ev: MouseEvent) => {
+      if (!menu.contains(ev.target as Node) && ev.target !== btn) {
+        menu.remove();
+        document.removeEventListener('mousedown', dismiss);
+      }
+    };
+    setTimeout(() => document.addEventListener('mousedown', dismiss), 0);
+  });
+}
+
+function toggleSatellite(): void {
+  if (!mapInstance) return;
+  const g = (window as any).google;
+  const current = mapInstance.getMapTypeId();
+  mapInstance.setMapTypeId(current === g.maps.MapTypeId.HYBRID ? g.maps.MapTypeId.ROADMAP : g.maps.MapTypeId.HYBRID);
+}
+
+/* ── 지도 위 핀 클릭 — 활성 툴에 따라 다르게 동작 ── */
+function handlePinClick(p: Place): void {
+  const isBasecamp = !!basecamp && p.id === basecamp.id;
+  const g = (window as any).google;
+
+  if (activeTool === 'delete') {
+    if (isBasecamp) return;
+    pushHistory();
+    removeStop(p.id);
+    if (highlightedPlaceId === p.id) highlightedPlaceId = null;
+    refreshAll(rtContainer!, { refit: false });
+    return;
+  }
+
+  if (activeTool === 'connect') {
+    const day = activeDay();
+    const needsAdd = !isBasecamp && !day.stopIds.includes(p.id);
+    const needsMove = !!connectFromId && connectFromId !== p.id;
+    if (needsAdd || needsMove) pushHistory();
+    if (needsAdd) day.stopIds.push(p.id);
+    if (needsMove) moveStopAfter(p.id, connectFromId!);
+    connectFromId = p.id;
+    highlightedPlaceId = p.id;
+    if (g?.maps) showRipple(g, p, categoryMeta(p, isBasecamp).color);
+    refreshAll(rtContainer!, { refit: false });
+    return;
+  }
+
+  if (activeTool === 'memo') {
+    const wasIncluded = isBasecamp || activeDay().stopIds.includes(p.id);
+    if (!wasIncluded) { pushHistory(); activeDay().stopIds.push(p.id); }
+    highlightedPlaceId = p.id;
+    refreshAll(rtContainer!, { refit: false });
+    requestAnimationFrame(() => focusMemoInput(p.id));
+    return;
+  }
+
+  if (activeTool === 'transport') return; // 이동수단 변경은 캡슐/커넥터 클릭으로 동작
+
+  // 선택 / 장소추가 툴(기본): 토글 추가/제거
+  if (isBasecamp) {
+    highlightedPlaceId = highlightedPlaceId === p.id ? null : p.id;
+    refreshAll(rtContainer!, { refit: false });
+    return;
+  }
+  pushHistory();
+  toggleStop(p.id);
+  highlightedPlaceId = p.id;
+  if (g?.maps) showRipple(g, p, categoryMeta(p, false).color);
+  refreshAll(rtContainer!, { refit: false });
+}
+
+function focusMemoInput(placeId: string): void {
+  const input = rtContainer?.querySelector('.rt-panel-memo[data-place-id="' + placeId + '"]') as HTMLInputElement | null;
+  input?.focus();
+}
+
+function handleLegClick(fromId: string, toId: string, anchor?: HTMLElement): void {
+  const key = legKey(fromId, toId);
+  if (activeTool === 'transport') {
+    openModeOverridePopover(key, anchor);
+    return;
+  }
+  selectedLegKey = selectedLegKey === key ? null : key;
+  drawRouteOnMap(false);
+  renderRightPanel(rtContainer!);
+}
+
+function openModeOverridePopover(key: string, anchor?: HTMLElement): void {
+  document.querySelectorAll('.rt-mode-popover').forEach((el) => el.remove());
+  const pop = document.createElement('div');
+  pop.className = 'rt-mode-popover';
+  pop.innerHTML = [
+    '<button type="button" data-mode="WALK">' + IC_WALK + ' 도보</button>',
+    '<button type="button" data-mode="TRANSIT">' + IC_TRANSIT + ' 대중교통</button>',
+    '<button type="button" data-mode="TAXI">' + IC_TAXI + ' 자동차</button>',
+    '<button type="button" data-mode="AUTO">' + IC_SPARK + ' 자동 추정</button>',
+  ].join('');
+  document.body.appendChild(pop);
+  const r = anchor?.getBoundingClientRect();
+  if (r) {
+    pop.style.top = Math.max(8, r.top - 8) + 'px';
+    pop.style.left = Math.max(8, r.left) + 'px';
+  } else {
+    pop.style.top = '50%';
+    pop.style.left = '50%';
+  }
+  pop.querySelectorAll('button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = (btn as HTMLElement).dataset.mode!;
+      if (mode === 'AUTO') legModeOverride.delete(key);
+      else legModeOverride.set(key, mode as Leg['mode']);
+      pop.remove();
+      refreshAll(rtContainer!, { refit: false });
+    });
+  });
+  const dismiss = (e: MouseEvent) => {
+    if (!pop.contains(e.target as Node)) {
+      pop.remove();
+      document.removeEventListener('mousedown', dismiss);
+    }
+  };
+  setTimeout(() => document.addEventListener('mousedown', dismiss), 0);
+}
+
+/* ── 시간 계산 (수동 오버라이드가 있으면 그 시각을 기준으로 이어서 계산) ── */
+function timeKey(dayId: string, placeId: string): string {
+  return dayId + '|' + placeId;
+}
+
+function minToHHMM(min: number): string {
+  const m = ((min % 1440) + 1440) % 1440;
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return String(h).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
+}
+
+function computeStopTimes(day: RouteDay, stops: Place[], legs: Leg[]): string[] {
+  const times: string[] = [];
+  let clockMin = 9 * 60; // 09:00 시작
+  stops.forEach((p, i) => {
+    const isBasecamp = !!basecamp && i === 0 && p.id === basecamp.id;
+    const override = timeOverride.get(timeKey(day.id, p.id));
+    if (override) {
+      const [h, m] = override.split(':').map(Number);
+      clockMin = h * 60 + m;
+    }
+    times.push(minToHHMM(clockMin));
+    const meta = categoryMeta(p, isBasecamp);
+    clockMin += dwellMinutes(meta.key);
+    if (i < legs.length) clockMin += legs[i].min;
+  });
+  return times;
+}
+
+/* ── DAY 요약 통계 ── */
+function computeDaySummary(day: RouteDay): { totalMin: number; totalCost: number; legCount: number; visitCount: number } {
   const legs = dayLegs(day);
   let totalMin = 0;
   let totalCost = 0;
-  let walkMeters = 0;
-  let transitCount = 0;
-  let taxiCount = 0;
   legs.forEach((l) => {
     totalMin += l.min;
     totalCost += l.costTHB;
-    if (l.mode === 'WALK') walkMeters += l.km * 1000;
-    else if (l.mode === 'TRANSIT') transitCount++;
-    else taxiCount++;
   });
-  return {
-    totalMin,
-    totalCost,
-    walkMeters: Math.round(walkMeters),
-    transitCount,
-    taxiCount,
-    legCount: legs.length,
-    visitCount: day.stopIds.length,
-  };
+  return { totalMin, totalCost, legCount: legs.length, visitCount: day.stopIds.length };
 }
 
 /** 최근접 이웃 재정렬로 총 이동시간을 얼마나 줄일 수 있는지 계산 */
@@ -517,7 +932,7 @@ function optimizedOrder(day: RouteDay): { order: string[]; totalMin: number } {
       }
     }
     used.add(best);
-    const leg = estimateLeg(cur, rest[best]);
+    const leg = estimateLegWithOverride(cur, rest[best]);
     totalMin += leg.min;
     orderedIds.push(rest[best].id);
     cur = rest[best];
@@ -525,167 +940,234 @@ function optimizedOrder(day: RouteDay): { order: string[]; totalMin: number } {
   return { order: orderedIds, totalMin };
 }
 
-function renderPanel(container: HTMLElement): void {
+/* ── 우측 정보 패널 ── */
+function renderRightPanel(container: HTMLElement): void {
   const el = container.querySelector('#rt-panel-inner') as HTMLElement;
   if (!el) return;
   const day = activeDay();
-  const s = computeDaySummary(day);
-  const stops = orderedStops(day);
+  const stops = orderedStops(day).filter((p) => p.lat != null && p.lng != null);
   const legs = dayLegs(day);
-
+  const times = computeStopTimes(day, stops, legs);
+  const s = computeDaySummary(day);
   const totalKm = legs.reduce((sum, l) => sum + l.km, 0);
-  const walkRatio = totalKm > 0 ? Math.round(((s.walkMeters / 1000) / totalKm) * 100) : 0;
-  const transitRatio = s.legCount > 0 ? Math.round((s.transitCount / s.legCount) * 100) : 0;
-  const taxiRatio = s.legCount > 0 ? Math.round((s.taxiCount / s.legCount) * 100) : 0;
+  const dayIndex = days.findIndex((d) => d.id === day.id);
 
-  const opt = optimizedOrder(day);
-  const saved = Math.max(0, s.totalMin - opt.totalMin);
-  const alreadyOptimal = saved < 2 || s.visitCount < 2;
+  const rows: string[] = [];
+  stops.forEach((p, i) => {
+    const isBasecamp = !!basecamp && i === 0 && p.id === basecamp.id;
+    const meta = categoryMeta(p, isBasecamp);
+    const memo = memoStore.get(p.id) ?? '';
+    const highlighted = p.id === highlightedPlaceId;
 
-  const legRows = legs
-    .map((l, i) => {
-      const from = stops[i];
-      const to = stops[i + 1];
-      return [
-        '<div class="rt-legrow ' + modeColorClass(l.mode) + '">',
-        '  <span class="rt-legrow-icon">' + modeIcon(l.mode) + '</span>',
-        '  <div class="rt-legrow-text">',
-        '    <div class="rt-legrow-path">' + escapeHtml(from.name) + ' <span class="rt-legrow-arrow">→</span> ' + escapeHtml(to.name) + '</div>',
-        '    <div class="rt-legrow-meta">' + modeLabel(l.mode) + ' · ' + fmtMin(l.min) + ' · ' + fmtKm(l.km) + ' · ' + (l.costTHB > 0 ? l.costTHB + ' THB' : '0 THB') + '</div>',
+    rows.push(
+      [
+        '<div class="rt-panel-stop' + (highlighted ? ' rt-highlighted' : '') + '" draggable="' + (isBasecamp ? 'false' : 'true') + '" data-place-id="' + p.id + '">',
+        '  <span class="rt-panel-badge" style="background:' + meta.color + '">' + (i + 1) + '</span>',
+        '  <div class="rt-panel-name-col"><div class="rt-panel-name">' + escapeHtml(p.name) + '</div><div class="rt-panel-sub">' + escapeHtml(p.category || (isBasecamp ? '숙소' : '')) + '</div></div>',
+        '  <input type="time" class="rt-panel-time" value="' + times[i] + '" data-place-id="' + p.id + '" />',
+        !isBasecamp ? '  <button type="button" class="rt-panel-remove" data-place-id="' + p.id + '" title="제외">✕</button>' : '  <span></span>',
+        '  <div class="rt-panel-memo-row">',
+        '    <input type="text" class="rt-panel-memo" placeholder="메모 추가" value="' + escapeHtml(memo) + '" data-place-id="' + p.id + '" />',
+        '    <span class="rt-panel-memo-icon">' + IC_NOTE + '</span>',
         '  </div>',
         '</div>',
-      ].join('');
-    })
-    .join('');
+      ].join('')
+    );
+
+    if (i < legs.length) {
+      const leg = legs[i];
+      const key = legKey(p.id, stops[i + 1].id);
+      const selected = selectedLegKey === key;
+      const extra = leg.costTHB > 0 ? leg.costTHB + ' THB' : (leg.mode === 'WALK' ? fmtKm(leg.km) : '무료');
+      rows.push(
+        [
+          '<div class="rt-panel-connector ' + modeColorClass(leg.mode) + (selected ? ' rt-highlighted' : '') + '" data-leg-key="' + key + '">',
+          '  <span class="rt-panel-connector-icon">' + modeIcon(leg.mode) + '</span>',
+          '  <span class="rt-panel-connector-label">' + modeLabel(leg.mode) + ' ' + fmtMin(leg.min) + ' <b>·</b> ' + extra + '</span>',
+          '</div>',
+        ].join('')
+      );
+    }
+  });
 
   el.innerHTML = [
-    // ① AI 동선 요약
-    '<div class="rt-card">',
-    '  <div class="rt-card-title">AI 동선 요약</div>',
-    '  <div class="rt-stat-grid">',
-    buildStat(IC_CLOCK, '#0B7CC4', '총 이동시간', fmtMin(s.totalMin), s.visitCount + '개 장소 방문'),
-    buildStat(IC_COINS, '#F5A623', '예상 교통비', s.totalCost + ' THB', '약 ' + Math.round(s.totalCost * 39).toLocaleString() + '원'),
-    buildStat(IC_FOOT, '#1D9E75', '도보 비율', walkRatio + '%', (s.walkMeters / 1000).toFixed(1) + 'km'),
-    buildStat(IC_TRANSIT, '#0B7CC4', '대중교통 비율', transitRatio + '%', s.transitCount + '개 구간'),
-    buildStat(IC_TAXI, '#0F9E9E', '택시/차량 비율', taxiRatio + '%', s.taxiCount + '개 구간'),
-    buildStat(IC_PIN, '#7F77DD', '방문 장소', s.visitCount + '곳', '출발 숙소 제외'),
-    '  </div>',
-    '  <div class="rt-card-note">* 이동시간·교통비는 직선거리 기반 추정치예요.</div>',
+    '<div class="rt-panel-header">',
+    '  <span class="rt-panel-dot"></span>',
+    '  <span class="rt-panel-daylabel">' + escapeHtml(day.label) + '</span>',
+    '  <span class="rt-panel-daydate">' + dayDateLabel(dayIndex) + '</span>',
+    '  <div class="rt-panel-header-avatars">' +
+      members
+        .slice(0, 3)
+        .map((m, i) => '<div class="rt-panel-avatar" style="background:' + memberColor(i) + '">' + escapeHtml((m.display_name || '?').charAt(0)) + '</div>')
+        .join('') +
+      '</div>',
+    '  <button type="button" class="rt-panel-more" id="rt-panel-more">' + IC_DOTS + '</button>',
     '</div>',
-
-    // ② AI 최적화 제안
-    '<div class="rt-card">',
-    '  <div class="rt-card-title-row"><span class="rt-card-title">AI 최적화 제안</span><span class="rt-badge-new">' + IC_SPARK + ' 추정</span></div>',
-    alreadyOptimal
-      ? '  <div class="rt-opt-done">' + IC_CHECK + ' 지금 동선이 이미 효율적이에요. 더 줄일 구간이 거의 없어요.'
-      : [
-          '  <div class="rt-opt-desc">현재 동선을 최적화하면<br><b>이동시간이 ' + fmtMin(saved) + ' 단축</b>돼요.</div>',
-          '  <div class="rt-opt-compare">',
-          '    <div class="rt-opt-box"><div class="rt-opt-box-label">현재 동선</div><div class="rt-opt-box-val">' + fmtMin(s.totalMin) + '</div></div>',
-          '    <span class="rt-opt-arrow">' + IC_ARROW + '</span>',
-          '    <div class="rt-opt-box best"><div class="rt-opt-box-label">추천 동선</div><div class="rt-opt-box-val">' + fmtMin(opt.totalMin) + '<span class="rt-opt-box-diff">(-' + fmtMin(saved) + ')</span></div></div>',
-          '  </div>',
-          '  <button type="button" class="rt-opt-apply" id="rt-opt-apply">' + IC_SPARK + ' 추천 순서로 정렬하기</button>',
-        ].join(''),
+    '<div class="rt-panel-list" id="rt-panel-list">',
+    stops.length ? rows.join('') : '<div class="rt-panel-empty">지도에서 핀을 클릭하거나<br>왼쪽 목록에서 장소를 추가해보세요.</div>',
     '</div>',
-
-    // ③ 경로 상세 정보
-    '<div class="rt-card">',
-    '  <div class="rt-card-title">경로 상세 정보</div>',
-    legs.length ? '  <div class="rt-legrows">' + legRows + '</div>' : '  <div class="rt-legrows-empty">동선에 장소를 추가하면 구간별 이동정보가 표시돼요.</div>',
+    '<div class="rt-panel-summary">',
+    '  <div class="rt-panel-summary-item"><div class="rt-panel-summary-label">총 이동시간</div><div class="rt-panel-summary-value">' + fmtMin(s.totalMin) + '</div></div>',
+    '  <div class="rt-panel-summary-item"><div class="rt-panel-summary-label">총 이동거리</div><div class="rt-panel-summary-value">' + totalKm.toFixed(1) + 'km</div></div>',
+    '  <div class="rt-panel-summary-item"><div class="rt-panel-summary-label">예상 교통비</div><div class="rt-panel-summary-value">' + s.totalCost + ' THB</div></div>',
+    '</div>',
+    '<div class="rt-panel-actions">',
+    '  <button type="button" class="rt-panel-action" id="rt-panel-add">' + IC_PLUS + ' 장소 추가</button>',
+    '  <button type="button" class="rt-panel-action primary" id="rt-panel-optimize">' + IC_SPARK + ' 최적화 (수동)</button>',
     '</div>',
   ].join('\n');
 
-  el.querySelector('#rt-opt-apply')?.addEventListener('click', () => {
-    const day2 = activeDay();
-    day2.stopIds = opt.order;
-    refreshAll(container);
+  bindRightPanelEvents(container, el);
+  updateUndoRedoState(container);
+}
+
+function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
+  el.querySelectorAll('.rt-panel-remove').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = (btn as HTMLElement).dataset.placeId!;
+      pushHistory();
+      removeStop(id);
+      if (highlightedPlaceId === id) highlightedPlaceId = null;
+      refreshAll(container, { refit: false });
+    });
+  });
+
+  el.querySelectorAll('.rt-panel-time').forEach((input) => {
+    input.addEventListener('change', (e) => {
+      const id = (input as HTMLElement).dataset.placeId!;
+      const val = (e.target as HTMLInputElement).value;
+      if (val) timeOverride.set(timeKey(activeDay().id, id), val);
+      renderRightPanel(container);
+    });
+    input.addEventListener('click', (e) => e.stopPropagation());
+  });
+
+  el.querySelectorAll('.rt-panel-memo').forEach((input) => {
+    input.addEventListener('input', (e) => {
+      const id = (input as HTMLElement).dataset.placeId!;
+      memoStore.set(id, (e.target as HTMLInputElement).value);
+    });
+    input.addEventListener('click', (e) => e.stopPropagation());
+  });
+
+  el.querySelectorAll('.rt-panel-connector').forEach((row) => {
+    row.addEventListener('click', () => {
+      const key = (row as HTMLElement).dataset.legKey!;
+      const [fromId, toId] = key.split('>');
+      handleLegClick(fromId, toId, row as HTMLElement);
+    });
+  });
+
+  el.querySelectorAll('.rt-panel-stop').forEach((card) => {
+    card.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('input, button')) return;
+      const id = (card as HTMLElement).dataset.placeId!;
+      highlightedPlaceId = highlightedPlaceId === id ? null : id;
+      drawRouteOnMap(false);
+      renderRightPanel(container);
+    });
+  });
+
+  bindDragReorder(container, el);
+
+  el.querySelector('#rt-panel-more')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    togglePanelMenu(container, el.querySelector('.rt-panel-header') as HTMLElement);
+  });
+  el.querySelector('#rt-panel-add')?.addEventListener('click', () => {
+    (container.querySelector('#rt-float-search-input') as HTMLElement | null)?.focus();
+  });
+  el.querySelector('#rt-panel-optimize')?.addEventListener('click', () => {
+    const day = activeDay();
+    const opt = optimizedOrder(day);
+    pushHistory();
+    day.stopIds = opt.order;
+    refreshAll(container, { refit: true });
   });
 }
 
-function buildStat(icon: string, color: string, title: string, value: string, desc: string): string {
-  return [
-    '<div class="rt-stat-tile">',
-    '  <span class="rt-stat-icon" style="--stat-color:' + color + '">' + icon + '</span>',
-    '  <div class="rt-stat-title">' + title + '</div>',
-    '  <div class="rt-stat-value">' + value + '</div>',
-    '  <div class="rt-stat-desc">' + desc + '</div>',
-    '</div>',
-  ].join('');
+function bindDragReorder(container: HTMLElement, el: HTMLElement): void {
+  let dragStopId: string | null = null;
+
+  el.querySelectorAll('.rt-panel-stop[draggable="true"]').forEach((card) => {
+    card.addEventListener('dragstart', (e) => {
+      dragStopId = (card as HTMLElement).dataset.placeId!;
+      (card as HTMLElement).classList.add('dragging');
+      (e as DragEvent).dataTransfer?.setData('text/plain', dragStopId);
+    });
+    card.addEventListener('dragend', () => {
+      (card as HTMLElement).classList.remove('dragging');
+      el.querySelectorAll('.drag-over').forEach((c) => c.classList.remove('drag-over'));
+    });
+  });
+
+  el.querySelectorAll('.rt-panel-stop').forEach((card) => {
+    card.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      card.classList.add('drag-over');
+    });
+    card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+    card.addEventListener('drop', (e) => {
+      e.preventDefault();
+      card.classList.remove('drag-over');
+      const targetId = (card as HTMLElement).dataset.placeId!;
+      if (!dragStopId || dragStopId === targetId) { dragStopId = null; return; }
+      pushHistory();
+      const day = activeDay();
+      const dragged = dragStopId;
+      day.stopIds = day.stopIds.filter((id) => id !== dragged);
+      if (basecamp && targetId === basecamp.id) {
+        day.stopIds.unshift(dragged);
+      } else {
+        const idx = day.stopIds.indexOf(targetId);
+        day.stopIds.splice(idx === -1 ? day.stopIds.length : idx, 0, dragged);
+      }
+      dragStopId = null;
+      refreshAll(container, { refit: false });
+    });
+  });
 }
 
-/* ── 하단 점수 바 ── */
-const SCORE_LABELS = [
-  { key: 'move', label: '이동 효율성' },
-  { key: 'sight', label: '관광 효율성' },
-  { key: 'time', label: '시간 활용도' },
-  { key: 'balance', label: '여행 균형감' },
-  { key: 'value', label: '가성비' },
-];
-
-function computeScore(day: RouteDay): { score: number; grade: string; ratings: Record<string, number> } {
-  const s = computeDaySummary(day);
-  const legs = dayLegs(day);
-  const totalKm = legs.reduce((sum, l) => sum + l.km, 0);
-  const walkRatio = totalKm > 0 ? (s.walkMeters / 1000) / totalKm : 0;
-
-  // 이동 효율: 방문 장소당 평균 이동시간이 짧을수록↑
-  const avgLegMin = s.legCount > 0 ? s.totalMin / s.legCount : 0;
-  const move = clampStar(5 - (avgLegMin - 10) / 8);
-  const sight = clampStar(1 + s.visitCount); // 방문 장소 많을수록↑ (최대 5)
-  const time = clampStar(5 - Math.abs(s.totalMin - 180) / 60); // 하루 총 3시간 이동 근처가 이상적
-  const balance = clampStar(2 + walkRatio * 4); // 도보 비율 적당히 높으면↑
-  const value = clampStar(5 - s.totalCost / 120); // 교통비 낮을수록↑
-  const ratings = { move, sight, time, balance, value };
-  const avg = (move + sight + time + balance + value) / 5;
-  const score = Math.round(avg * 20);
-  const grade = score >= 85 ? 'Excellent' : score >= 70 ? 'Good' : score >= 55 ? 'Fair' : 'Basic';
-  return { score, grade, ratings };
-}
-function clampStar(v: number): number {
-  return Math.max(1, Math.min(5, Math.round(v)));
-}
-
-function renderScorebar(container: HTMLElement): void {
-  const el = container.querySelector('#rt-scorebar') as HTMLElement;
-  if (!el) return;
-  const day = activeDay();
-  const { score, grade, ratings } = computeScore(day);
-
-  const ratingCols = SCORE_LABELS.map((r) => {
-    const stars = ratings[r.key as keyof typeof ratings] ?? 3;
-    const starHtml = Array.from({ length: 5 }, (_, i) => '<span class="rt-rate-star' + (i < stars ? ' on' : '') + '">' + IC_STAR + '</span>').join('');
-    return '<div class="rt-rate-col"><div class="rt-rate-label">' + r.label + '</div><div class="rt-rate-stars">' + starHtml + '</div></div>';
-  }).join('');
-
-  el.innerHTML = [
-    '<div class="rt-score-card">',
-    '  <div class="rt-score-main">',
-    '    <div class="rt-score-num">' + score + '<span class="rt-score-max">/100</span></div>',
-    '    <span class="rt-score-grade">' + grade + '</span>',
-    '    <div class="rt-score-sub">' + activeDay().label + ' 동선 점수예요.</div>',
-    '  </div>',
-    '  <div class="rt-rate-grid">' + ratingCols + '</div>',
-    '</div>',
-    '<button type="button" class="rt-to-timeline-cta" id="rt-to-timeline-cta">',
-    '  <span class="rt-to-timeline-cta-main">' + IC_CHECK + ' 타임라인으로 이동하기</span>',
-    '  <span class="rt-to-timeline-cta-sub">이 동선으로 시간표를 만들어보세요.</span>',
-    '</button>',
-  ].join('\n');
-
-  el.querySelector('#rt-to-timeline-cta')?.addEventListener('click', () => gotoGate('timeline'));
+function togglePanelMenu(container: HTMLElement, headerEl: HTMLElement): void {
+  const existing = headerEl.querySelector('.rt-panel-menu');
+  if (existing) { existing.remove(); return; }
+  const menu = document.createElement('div');
+  menu.className = 'rt-panel-menu';
+  menu.innerHTML = '<button type="button" id="rt-panel-clear">이 DAY 초기화</button>';
+  headerEl.appendChild(menu);
+  menu.querySelector('#rt-panel-clear')?.addEventListener('click', () => {
+    pushHistory();
+    activeDay().stopIds = [];
+    menu.remove();
+    refreshAll(container, { refit: true });
+  });
+  const dismiss = (e: MouseEvent) => {
+    if (!menu.contains(e.target as Node) && !(e.target as HTMLElement).closest('#rt-panel-more')) {
+      menu.remove();
+      document.removeEventListener('mousedown', dismiss);
+    }
+  };
+  setTimeout(() => document.addEventListener('mousedown', dismiss), 0);
 }
 
 /* ── 전체 갱신 (지도 제외 UI + 지도 오버레이 재드로우) ── */
-function refreshAll(container: HTMLElement): void {
+function refreshAll(container: HTMLElement, opts: { refit: boolean } = { refit: true }): void {
   renderDayTabs(container);
-  renderTimeline(container);
-  renderPanel(container);
-  renderScorebar(container);
-  drawRouteOnMap();
+  renderLeftPanel(container);
+  renderRightPanel(container);
+  renderMemberLegend(container);
+  drawRouteOnMap(opts.refit);
 }
 
 /* ══════════════════ 지도 ══════════════════ */
+
+const MODE_STYLE: Record<Leg['mode'], { color: string; weight: number; dashed: boolean }> = {
+  WALK: { color: '#1D9E75', weight: 2, dashed: true },
+  TRANSIT: { color: '#0B7CC4', weight: 3, dashed: false },
+  TAXI: { color: '#475569', weight: 3, dashed: false },
+};
+
 async function initMap(container: HTMLElement): Promise<void> {
   const mapEl = container.querySelector('#rt-map') as HTMLElement;
   if (!mapEl) return;
@@ -702,13 +1184,33 @@ async function initMap(container: HTMLElement): Promise<void> {
   mapInstance = new g.maps.Map(mapEl, {
     center,
     zoom: 13,
-    disableDefaultUI: true,
     gestureHandling: 'greedy',
     isFractionalZoomEnabled: true,
     styles: MAP_STYLE_LIGHT,
+    clickableIcons: false,
+    zoomControl: true,
+    zoomControlOptions: { position: g.maps.ControlPosition.LEFT_BOTTOM },
+    mapTypeControl: true,
+    mapTypeControlOptions: { style: g.maps.MapTypeControlStyle.DEFAULT, position: g.maps.ControlPosition.RIGHT_BOTTOM },
+    streetViewControl: false,
+    fullscreenControl: false,
+    rotateControl: false,
   });
 
-  drawRouteOnMap();
+  mapInstance.addListener('click', (e: any) => {
+    if (!adhocMode || !e.latLng || !rtContainer) return;
+    const name = window.prompt('이 위치에 추가할 장소 이름을 입력하세요');
+    setAdhocMode(rtContainer, false);
+    if (!name || !name.trim()) return;
+    const p = makeAdhocPlace(name.trim(), e.latLng.lat(), e.latLng.lng());
+    placeById.set(p.id, p);
+    candidatePlaces.push(p);
+    pushHistory();
+    activeDay().stopIds.push(p.id);
+    refreshAll(rtContainer, { refit: true });
+  });
+
+  drawRouteOnMap(true);
 
   resizeHandler = () => resizeMap();
   window.addEventListener('resize', resizeHandler);
@@ -726,52 +1228,67 @@ function clearMapOverlays(): void {
   mapMarkers = [];
   routePolylines.forEach((l) => l.setMap(null));
   routePolylines = [];
+  mapOverlays.forEach((o) => o.setMap(null));
+  mapOverlays = [];
 }
 
-/** 마커(숙소+후보) + 순서 폴리라인(색상 leg별)을 다시 그림 */
-function drawRouteOnMap(): void {
+/** 마커(숙소+후보) + 순서 폴리라인(모드별 스타일) + 이동 캡슐을 다시 그림 */
+function drawRouteOnMap(refit: boolean): void {
   const g = (window as any).google;
   if (!g?.maps || !mapInstance) return;
   clearMapOverlays();
 
   const day = activeDay();
-  const inRoute = new Set(day.stopIds);
+  const stops = orderedStops(day).filter((p) => p.lat != null && p.lng != null);
+  const legs = dayLegs(day);
 
-  // 숙소 마커
-  if (basecamp && basecamp.lat != null) {
-    mapMarkers.push(buildMarker(g, basecamp, { kind: 'basecamp' }));
-  }
-
-  // 후보 장소 마커 — 동선에 포함된 건 번호, 아닌 건 흐린 점
+  // 아직 오늘 동선에 없는 확정 장소 — 카테고리 아이콘 배지(작게)
   candidatePlaces.forEach((p) => {
     if (p.lat == null || p.lng == null) return;
-    const idx = day.stopIds.indexOf(p.id);
-    const marker = buildMarker(g, p, idx >= 0 ? { kind: 'stop', num: idx + 1 } : { kind: 'candidate' });
-    marker.addListener('click', () => {
-      toggleStop(p.id);
-      refreshAll(rtContainer!);
-    });
+    if (day.stopIds.includes(p.id)) return;
+    const marker = buildMarkerV2(g, p, { isBasecamp: false, included: false, highlighted: p.id === highlightedPlaceId });
+    marker.addListener('click', () => handlePinClick(p));
+    bindMarkerHover(g, marker, p);
     mapMarkers.push(marker);
-    void inRoute;
   });
 
-  // 순서 폴리라인 (leg별 색)
-  const stops = orderedStops(day).filter((p) => p.lat != null && p.lng != null);
+  // 오늘 동선의 정류지(숙소 포함) — 순서 번호 배지(크게)
+  stops.forEach((p, i) => {
+    const isBasecamp = !!basecamp && i === 0 && p.id === basecamp.id;
+    const marker = buildMarkerV2(g, p, { isBasecamp, included: true, num: i + 1, highlighted: p.id === highlightedPlaceId });
+    marker.addListener('click', () => handlePinClick(p));
+    bindMarkerHover(g, marker, p);
+    mapMarkers.push(marker);
+  });
+
+  // 구간 폴리라인(모드별 스타일 + 화살표) + 이동 캡슐
   for (let i = 0; i < stops.length - 1; i++) {
-    const line = new g.maps.Polyline({
-      map: mapInstance,
-      path: [
-        { lat: stops[i].lat!, lng: stops[i].lng! },
-        { lat: stops[i + 1].lat!, lng: stops[i + 1].lng! },
-      ],
-      strokeColor: LEG_PALETTE[i % LEG_PALETTE.length],
-      strokeOpacity: 0.9,
-      strokeWeight: 4,
-    });
+    const leg = legs[i];
+    const key = legKey(stops[i].id, stops[i + 1].id);
+    const selected = selectedLegKey === key;
+    const dimmed = !!selectedLegKey && selectedLegKey !== key;
+
+    const line = buildLegPolyline(g, stops[i], stops[i + 1], leg, { selected, dimmed });
+    line.addListener('click', () => handleLegClick(stops[i].id, stops[i + 1].id));
     routePolylines.push(line);
+
+    const midLat = (stops[i].lat! + stops[i + 1].lat!) / 2;
+    const midLng = (stops[i].lng! + stops[i + 1].lng!) / 2;
+    const Ctor = getOverlayCtor(g);
+    const cls = 'rt-map-capsule ' + modeColorClass(leg.mode) + (selected ? ' rt-leg-selected' : dimmed ? ' rt-leg-dimmed' : '');
+    const capsule = new Ctor(new g.maps.LatLng(midLat, midLng), legCapsuleHtml(leg), cls, () =>
+      handleLegClick(stops[i].id, stops[i + 1].id, capsule.div ?? undefined)
+    );
+    capsule.setMap(mapInstance);
+    mapOverlays.push(capsule);
   }
 
-  fitRouteBounds();
+  if (refit) fitRouteBounds();
+}
+
+function legCapsuleHtml(leg: Leg): string {
+  const extra = leg.mode === 'WALK' ? fmtKm(leg.km) : (leg.costTHB > 0 ? leg.costTHB + ' THB' : '무료');
+  return modeIcon(leg.mode) + '<span>' + fmtMin(leg.min) + '</span><span class="rt-cap-dist">' + extra + '</span>';
 }
 
 function fitRouteBounds(): void {
@@ -789,47 +1306,173 @@ function fitRouteBounds(): void {
     return;
   }
   const bounds = new g.maps.LatLngBounds();
-  // 동선에 포함된 정류지가 있으면 그것 위주로, 없으면 전체 후보로
   const focus = orderedStops(day).filter((p) => p.lat != null && p.lng != null);
   const target = focus.length >= 2 ? focus : withCoords;
   target.forEach((p) => bounds.extend({ lat: p.lat!, lng: p.lng! }));
-  mapInstance.fitBounds(bounds, 56);
+  mapInstance.fitBounds(bounds, 64);
 }
 
-/** 커스텀 SVG 마커 생성 */
-function buildMarker(g: any, p: Place, opt: { kind: 'basecamp' | 'stop' | 'candidate'; num?: number }): any {
-  let svg: string;
-  if (opt.kind === 'basecamp') {
-    svg =
-      '<svg xmlns="http://www.w3.org/2000/svg" width="42" height="50" viewBox="0 0 42 50">' +
-      '<path d="M21 49C21 49 39 30 39 17.5C39 8.4 31 1 21 1C11 1 3 8.4 3 17.5C3 30 21 49 21 49Z" fill="#0B2A5C" stroke="#fff" stroke-width="2.5"/>' +
-      '<g transform="translate(11,10)" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M0 12v-4a1.3 1.3 0 0 1 1.3-1.3h17.4A1.3 1.3 0 0 1 20 8v4M0 12v2M20 12v2M0 8V5.3A1.3 1.3 0 0 1 1.3 4h2.7v4"/></g>' +
-      '</svg>';
-  } else if (opt.kind === 'stop') {
-    const color = LEG_PALETTE[((opt.num ?? 1) - 1) % LEG_PALETTE.length];
-    svg =
-      '<svg xmlns="http://www.w3.org/2000/svg" width="38" height="46" viewBox="0 0 38 46">' +
-      '<path d="M19 45C19 45 35 28 35 16C35 7.7 27.8 1 19 1C10.2 1 3 7.7 3 16C3 28 19 45 19 45Z" fill="' + color + '" stroke="#fff" stroke-width="2.5"/>' +
-      '<text x="19" y="21" text-anchor="middle" font-family="Arial" font-size="15" font-weight="700" fill="#fff">' + (opt.num ?? '') + '</text>' +
-      '</svg>';
-  } else {
-    svg =
-      '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">' +
-      '<circle cx="11" cy="11" r="7" fill="#fff" stroke="#94A3B8" stroke-width="2"/>' +
-      '<circle cx="11" cy="11" r="3" fill="#94A3B8"/>' +
-      '</svg>';
+/* 마커 호버 시 사진·이름·평점 미니카드 */
+function bindMarkerHover(g: any, marker: any, p: Place): void {
+  marker.addListener('mouseover', () => {
+    if (hoverCardOverlay) { hoverCardOverlay.setMap(null); hoverCardOverlay = null; }
+    const Ctor = getOverlayCtor(g);
+    const html = [
+      p.photo_url ? '<div class="rt-hovercard-photo" style="background-image:url(\'' + p.photo_url + '\')"></div>' : '',
+      '<div class="rt-hovercard-body">',
+      '  <div class="rt-hovercard-name">' + escapeHtml(p.name) + '</div>',
+      p.google_rating ? '  <div class="rt-hovercard-rate">' + IC_STAR + ' ' + p.google_rating.toFixed(1) + '</div>' : '',
+      '</div>',
+    ].join('');
+    hoverCardOverlay = new Ctor(new g.maps.LatLng(p.lat!, p.lng!), html, 'rt-hovercard');
+    hoverCardOverlay.setMap(mapInstance);
+  });
+  marker.addListener('mouseout', () => {
+    if (hoverCardOverlay) { hoverCardOverlay.setMap(null); hoverCardOverlay = null; }
+  });
+}
+
+function showRipple(g: any, p: Place, color: string): void {
+  const Ctor = getOverlayCtor(g);
+  const ripple = new Ctor(new g.maps.LatLng(p.lat!, p.lng!), '', 'rt-ripple', undefined, { '--ripple-color': color });
+  ripple.setMap(mapInstance);
+  setTimeout(() => ripple.setMap(null), 700);
+}
+
+/** 지도 위에 임의의 HTML을 올리는 범용 OverlayView (이동 캡슐 / 호버카드 / 리플에서 공용) */
+let MapHtmlOverlayCtor: any = null;
+function getOverlayCtor(g: any): any {
+  if (MapHtmlOverlayCtor) return MapHtmlOverlayCtor;
+  class MapHtmlOverlay extends g.maps.OverlayView {
+    div: HTMLDivElement | null = null;
+    position: any;
+    html: string;
+    cls: string;
+    onClick?: () => void;
+    styleVars?: Record<string, string>;
+    constructor(position: any, html: string, cls: string, onClick?: () => void, styleVars?: Record<string, string>) {
+      super();
+      this.position = position;
+      this.html = html;
+      this.cls = cls;
+      this.onClick = onClick;
+      this.styleVars = styleVars;
+    }
+    onAdd() {
+      const div = document.createElement('div');
+      div.className = this.cls;
+      div.innerHTML = this.html;
+      if (this.styleVars) {
+        Object.entries(this.styleVars).forEach(([k, v]) => div.style.setProperty(k, v));
+      }
+      if (this.onClick) {
+        div.addEventListener('click', (e: MouseEvent) => {
+          e.stopPropagation();
+          this.onClick!();
+        });
+      }
+      this.div = div;
+      this.getPanes().floatPane.appendChild(div);
+    }
+    draw() {
+      if (!this.div) return;
+      const proj = this.getProjection();
+      if (!proj) return;
+      const pt = proj.fromLatLngToDivPixel(this.position);
+      if (!pt) return;
+      this.div.style.left = pt.x + 'px';
+      this.div.style.top = pt.y + 'px';
+    }
+    onRemove() {
+      if (this.div) { this.div.remove(); this.div = null; }
+    }
   }
-  const size = opt.kind === 'basecamp' ? { w: 42, h: 50 } : opt.kind === 'stop' ? { w: 38, h: 46 } : { w: 22, h: 22 };
+  MapHtmlOverlayCtor = MapHtmlOverlay;
+  return MapHtmlOverlayCtor;
+}
+
+function iconInner(svg: string): string {
+  return svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
+}
+
+/** 커스텀 원형 배지 마커 — 후보(카테고리 아이콘) / 동선 포함(순서 번호) */
+function buildMarkerV2(g: any, p: Place, opts: { isBasecamp: boolean; included: boolean; num?: number; highlighted?: boolean }): any {
+  const meta = categoryMeta(p, opts.isBasecamp);
+  const scale = opts.highlighted ? 1.15 : 1;
+  const r = (opts.included ? 15 : 10) * scale;
+  const size = Math.ceil(r * 2 + 10);
+  const c = size / 2;
+
+  const shadow = '<ellipse cx="' + c + '" cy="' + (c + r * 0.55) + '" rx="' + (r * 0.8) + '" ry="' + (r * 0.3) + '" fill="rgba(11,42,92,0.18)"/>';
+  const ring = opts.highlighted
+    ? '<circle cx="' + c + '" cy="' + c + '" r="' + (r + 4) + '" fill="none" stroke="#fff" stroke-width="3"/>'
+    : '';
+  const inner = opts.included
+    ? '<text x="' + c + '" y="' + (c + 4) + '" text-anchor="middle" font-family="Arial" font-size="' + Math.round(11 * scale) + '" font-weight="800" fill="#fff">' + (opts.num ?? '') + '</text>'
+    : '<g transform="translate(' + (c - 6) + ',' + (c - 6) + ') scale(0.5)" color="#fff" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + iconInner(meta.icon) + '</g>';
+
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">' +
+    shadow + ring +
+    '<circle cx="' + c + '" cy="' + c + '" r="' + r + '" fill="' + meta.color + '" stroke="#fff" stroke-width="2.5"/>' +
+    inner +
+    '</svg>';
+
   return new g.maps.Marker({
     position: { lat: p.lat!, lng: p.lng! },
     map: mapInstance,
     title: p.name,
-    zIndex: opt.kind === 'basecamp' ? 100 : opt.kind === 'stop' ? 50 : 10,
+    zIndex: opts.included ? 100 + (opts.num ?? 0) : 10,
     icon: {
       url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
-      scaledSize: new g.maps.Size(size.w, size.h),
-      anchor: opt.kind === 'candidate' ? new g.maps.Point(size.w / 2, size.h / 2) : new g.maps.Point(size.w / 2, size.h),
+      scaledSize: new g.maps.Size(size, size),
+      anchor: new g.maps.Point(c, c),
     },
+  });
+}
+
+/** 구간 폴리라인 — 이동수단별 스타일(도보 점선/대중교통·자동차 실선) + 끝 화살표 */
+function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: { selected: boolean; dimmed: boolean }): any {
+  const style = MODE_STYLE[leg.mode];
+  const path = [
+    { lat: from.lat!, lng: from.lng! },
+    { lat: to.lat!, lng: to.lng! },
+  ];
+  const lineOpacity = opts.dimmed ? 0.35 : opts.selected ? 1 : 0.85;
+  const weight = opts.selected ? style.weight + 2 : style.weight;
+
+  const icons: any[] = [];
+  if (style.dashed) {
+    icons.push({ icon: { path: 'M 0,-1 0,1', strokeOpacity: lineOpacity, strokeColor: style.color, strokeWeight: weight, scale: 3 }, offset: '0', repeat: '13px' });
+  }
+  icons.push({
+    icon: { path: g.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale: 3.2, strokeColor: style.color, strokeOpacity: lineOpacity, fillColor: style.color, fillOpacity: lineOpacity },
+    offset: '97%',
+  });
+
+  if (opts.selected) {
+    const glow = new g.maps.Polyline({
+      map: mapInstance,
+      path,
+      strokeColor: style.color,
+      strokeOpacity: style.dashed ? 0 : 0.22,
+      strokeWeight: weight + 8,
+      zIndex: 9,
+      icons: style.dashed
+        ? [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 0.22, strokeColor: style.color, strokeWeight: weight + 8, scale: 5 }, offset: '0', repeat: '18px' }]
+        : [],
+    });
+    routePolylines.push(glow);
+  }
+
+  return new g.maps.Polyline({
+    map: mapInstance,
+    path,
+    strokeColor: style.color,
+    strokeOpacity: style.dashed ? 0 : lineOpacity,
+    strokeWeight: weight,
+    icons,
+    zIndex: opts.selected ? 20 : 10,
   });
 }
 
@@ -839,14 +1482,11 @@ const MAP_STYLE_LIGHT = [
   { elementType: 'labels.text.stroke', stylers: [{ color: '#F8FBFE' }] },
   { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
   { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.attraction', elementType: 'labels', stylers: [{ visibility: 'on' }] },
   { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#E7EEF5' }] },
   { featureType: 'road', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   { featureType: 'transit', stylers: [{ visibility: 'off' }] },
   { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#D5EEFB' }] },
   { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#F1F6FB' }] },
 ];
-
-void syntheticDestinationName;
-void IC_BUS;
-void IC_CAR;
-void IC_TRAIN_MINI;
