@@ -14,42 +14,22 @@
   box-sizing: border-box;
 }
 
-/* ── 스테퍼 ── */
-.rt-stepper-row {
-  display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  margin-bottom: 16px;
-}
-.rt-stepper { display: flex; align-items: center; gap: 10px; }
-.rt-step {
-  display: flex; align-items: center; gap: 7px;
-  padding: 5px 12px 5px 5px;
-  border-radius: 999px; background: #F1F6FB; color: #94A3B8;
-}
-.rt-step.active { background: #0B2A5C; color: #fff; }
-.rt-step.done { background: #EAF6FD; color: #0B7CC4; cursor: pointer; }
-.rt-step.done:hover { background: #DCEEFB; }
-.rt-step-num {
-  width: 19px; height: 19px; border-radius: 50%;
-  background: rgba(255,255,255,0.25);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 700; flex-shrink: 0;
-}
-.rt-step.done .rt-step-num { background: rgba(11,124,196,0.14); }
-.rt-step.done .rt-step-num svg { width: 11px; height: 11px; }
-.rt-step-label { font-size: 12px; font-weight: 700; }
-.rt-step-line { width: 20px; height: 1px; background: rgba(130,150,170,0.3); }
 .rt-to-timeline-top {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 8px 12px; border-radius: 12px;
   border: 1px solid rgba(130,150,170,0.24); background: rgba(255,255,255,0.65);
   color: #0B2A5C; font-size: 12px; font-weight: 700; cursor: pointer;
+  flex-shrink: 0;
   transition: border-color 150ms ease, background 150ms ease;
 }
 .rt-to-timeline-top:hover { border-color: #8FD8F8; background: #fff; }
 .rt-to-timeline-top svg { width: 13px; height: 13px; color: #0B7CC4; }
 
 /* ── 헤더 ── */
-.rt-header { margin-bottom: 14px; }
+.rt-header {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+  margin-bottom: 14px;
+}
 .rt-eyebrow {
   font-size: 10.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
   color: #0B7CC4; margin-bottom: 3px;

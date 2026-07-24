@@ -261,7 +261,6 @@ export async function renderRouteContent(container: HTMLElement, tripId: string)
   if (!basecamp) {
     container.innerHTML = [
       '<div class="rt-shell">',
-      renderStepperHtml(),
       '  <div class="rt-empty">',
       '    <div class="rt-empty-title">아직 숙소를 확정하지 않았어요</div>',
       '    <div class="rt-empty-hint">SHORTLIST에서 숙소를 여행의 중심으로 확정하면, 그 숙소를 출발점으로 하루 동선을 만들 수 있어요.</div>',
@@ -269,45 +268,17 @@ export async function renderRouteContent(container: HTMLElement, tripId: string)
       '  </div>',
       '</div>',
     ].join('\n');
-    bindStepper(container);
     container.querySelector('#rt-go-shortlist')?.addEventListener('click', () => gotoGate('shortlist'));
     return;
   }
 
   container.innerHTML = buildPageHtml();
-  bindStepper(container);
+  bindHeaderNav(container);
   bindPage(container);
   await initMap(container);
 }
 
-/* ── 상단 스테퍼 (지역 선택 → 숙소 선택 → 최종 확인 → ROUTE) ── */
-function renderStepperHtml(): string {
-  const steps = [
-    { label: '지역 선택', gate: 'shortlist' },
-    { label: '숙소 선택', gate: 'shortlist' },
-    { label: '최종 확인', gate: 'shortlist' },
-  ];
-  const done = steps
-    .map(
-      (s) =>
-        '<div class="rt-step done" data-gate="' + s.gate + '"><span class="rt-step-num">' + IC_CHECK + '</span><span class="rt-step-label">' + s.label + '</span></div><div class="rt-step-line"></div>'
-    )
-    .join('');
-  return [
-    '<div class="rt-stepper-row">',
-    '  <div class="rt-stepper">',
-    done,
-    '    <div class="rt-step active"><span class="rt-step-num">4</span><span class="rt-step-label">ROUTE</span></div>',
-    '  </div>',
-    '  <button type="button" class="rt-to-timeline-top" id="rt-to-timeline-top">' + IC_ARROW + ' 타임라인으로</button>',
-    '</div>',
-  ].join('\n');
-}
-
-function bindStepper(container: HTMLElement): void {
-  container.querySelectorAll('.rt-step.done').forEach((el) => {
-    el.addEventListener('click', () => gotoGate((el as HTMLElement).dataset.gate || 'shortlist'));
-  });
+function bindHeaderNav(container: HTMLElement): void {
   container.querySelector('#rt-to-timeline-top')?.addEventListener('click', () => gotoGate('timeline'));
 }
 
@@ -319,11 +290,13 @@ function gotoGate(gate: string): void {
 function buildPageHtml(): string {
   return [
     '<div class="rt-shell">',
-    renderStepperHtml(),
 
     '  <div class="rt-header">',
-    '    <div class="rt-eyebrow">ROUTE</div>',
-    '    <div class="rt-title">지도를 클릭하여 하루의 동선을 만들어보세요</div>',
+    '    <div class="rt-header-text">',
+    '      <div class="rt-eyebrow">ROUTE</div>',
+    '      <div class="rt-title">지도를 클릭하여 하루의 동선을 만들어보세요</div>',
+    '    </div>',
+    '    <button type="button" class="rt-to-timeline-top" id="rt-to-timeline-top">' + IC_ARROW + ' 타임라인으로</button>',
     '  </div>',
 
     '  <div class="rt-toolbar">',
