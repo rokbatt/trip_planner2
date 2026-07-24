@@ -346,6 +346,7 @@ function buildAiDemoContent(): string {
 /** 'ideas' 게이트를 벗어날 때 realtime 채널을 정리하기 위한 참조 */
 let boardModuleRef: { teardownBoard: () => void } | null = null;
 let shortlistModuleRef: { teardownShortlist: () => void } | null = null;
+let routeModuleRef: { teardownRoute: () => void } | null = null;
 let navigateGateHandlerRef: EventListener | null = null;
 let activeDestChangeHandler: ((e: Event) => void) | null = null;
 
@@ -358,6 +359,10 @@ async function renderGate(body: HTMLElement, tripId: string, gate: string): Prom
     shortlistModuleRef.teardownShortlist();
     shortlistModuleRef = null;
   }
+  if (gate !== 'route' && routeModuleRef) {
+    routeModuleRef.teardownRoute();
+    routeModuleRef = null;
+  }
 
   if (gate === 'ideas') {
     const mod = await import('../board/board');
@@ -367,6 +372,10 @@ async function renderGate(body: HTMLElement, tripId: string, gate: string): Prom
     const mod = await import('../shortlist/shortlist');
     shortlistModuleRef = mod;
     await mod.renderShortlistContent(body, tripId);
+  } else if (gate === 'route') {
+    const mod = await import('../route/route');
+    routeModuleRef = mod;
+    await mod.renderRouteContent(body, tripId);
   } else {
     const title = GATE_TITLES[gate] || gate;
     body.innerHTML = [
@@ -386,6 +395,8 @@ function bindEvents(page: HTMLElement, tripId: string): void {
     boardModuleRef = null;
     shortlistModuleRef?.teardownShortlist();
     shortlistModuleRef = null;
+    routeModuleRef?.teardownRoute();
+    routeModuleRef = null;
     navigate('trips');
   });
 
