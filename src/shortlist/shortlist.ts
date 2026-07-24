@@ -2515,7 +2515,6 @@ function addMarkerForNewCandidate(place: Place): void {
     pendingHotelId = place.id;
     highlightBasecampMarker(place.id);
   });
-  step2MapInstance.panTo({ lat: place.lat, lng: place.lng });
   highlightBasecampMarker(place.id);
 }
 
@@ -2599,18 +2598,34 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
   });
 }
 
-/** 숙소 후보 리스트에서 클릭한 항목을 지도 마커에서도 확대·강조 */
+/** 숙소를 선택했을 때 지도를 이동시켜 보여줄 적당한 줌 레벨(기본 지도 줌 15보다 한 단계 더 확대) */
+const STEP2_SELECT_ZOOM = 17;
+
+/** 숙소 후보 리스트에서 클릭한 항목을 지도 마커에서도 확대·강조하고, 그 위치로 지도를 이동·줌인 */
 function highlightBasecampMarker(placeId: string | null): void {
   const g = (window as any).google;
   if (!g?.maps) return;
+  let selectedMarker: any = null;
   step2Markers.forEach((marker, id) => {
     const isSelected = id === placeId;
     marker.setZIndex(isSelected ? 50 : 20);
     marker.setAnimation(isSelected ? g.maps.Animation.BOUNCE : null);
     if (isSelected) {
+      selectedMarker = marker;
       setTimeout(() => marker.setAnimation(null), 700);
     }
   });
+
+  // 선택 취소 후 같은 숙소를 다시 선택하는 경우에도 매번 다시 이동·줌인되도록,
+  // 매 선택 시점마다(이전 상태와 무관하게) 무조건 실행한다.
+  if (selectedMarker && step2MapInstance) {
+    const pos = selectedMarker.getPosition?.();
+    if (pos) {
+      step2MapInstance.panTo(pos);
+      const currentZoom = step2MapInstance.getZoom() ?? STEP2_SELECT_ZOOM;
+      step2MapInstance.setZoom(Math.max(currentZoom, STEP2_SELECT_ZOOM));
+    }
+  }
 }
 
 
