@@ -2210,11 +2210,16 @@ interface StayFilters {
 
 let stayFilters: StayFilters = { budget: '', customMinKRW: null, customMaxKRW: null };
 
-/** 트립의 실제 여행 날짜를 YYYY-MM-DD로 반환 (사이트 검색 URL의 checkin/checkout에 사용) */
+/**
+ * 숙소 검색 URL의 checkin/checkout에 쓸 날짜(YYYY-MM-DD).
+ * formatTripDateRange()와 같은 우선순위: 활성 숙소 구간(나뉜 경우) → 여행지 기간 → 트립 전체 기간.
+ * "수정" 버튼으로 숙박 기간을 바꾸면 이 값도 즉시 갱신돼야 검색 필터가 실제로 반영됨.
+ */
 function getTripDatesISO(): { checkin: string; checkout: string } | null {
-  const trip = currentTrip;
-  if (!trip?.start_date || !trip?.end_date) return null;
-  return { checkin: trip.start_date.slice(0, 10), checkout: trip.end_date.slice(0, 10) };
+  const start = slActiveSegment?.start_date || slActiveDest?.start_date || currentTrip?.start_date;
+  const end = slActiveSegment?.end_date || slActiveDest?.end_date || currentTrip?.end_date;
+  if (!start || !end) return null;
+  return { checkin: start.slice(0, 10), checkout: end.slice(0, 10) };
 }
 
 interface HotelSite {
@@ -2241,6 +2246,9 @@ const HOTEL_SITES: HotelSite[] = [
         url.searchParams.set('checkin', dates.checkin);
         url.searchParams.set('checkout', dates.checkout);
       }
+      url.searchParams.set('group_adults', String(getTripHeadcount()));
+      url.searchParams.set('no_rooms', '1');
+      url.searchParams.set('group_children', '0');
       const range = resolveBudgetRangeKRW(f);
       if (range) {
         url.searchParams.set('nflt', 'price=USD-' + krwToUsd(range.minKRW) + '-' + krwToUsd(range.maxKRW) + '-1');
@@ -2272,6 +2280,7 @@ const HOTEL_SITES: HotelSite[] = [
         url.searchParams.set('checkin', dates.checkin);
         url.searchParams.set('checkout', dates.checkout);
       }
+      url.searchParams.set('adults', String(getTripHeadcount()));
       const range = resolveBudgetRangeKRW(f);
       if (range) {
         url.searchParams.set('price_min', String(krwToUsd(range.minKRW)));
@@ -2506,7 +2515,6 @@ function addMarkerForNewCandidate(place: Place): void {
     pendingHotelId = place.id;
     highlightBasecampMarker(place.id);
   });
-  step2MapInstance.panTo({ lat: place.lat, lng: place.lng });
   highlightBasecampMarker(place.id);
 }
 
@@ -2590,18 +2598,34 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
   });
 }
 
-/** 숙소 후보 리스트에서 클릭한 항목을 지도 마커에서도 확대·강조 */
+/** 숙소를 선택했을 때 지도를 이동시켜 보여줄 적당한 줌 레벨(기본 지도 줌 15보다 한 단계 더 확대) */
+const STEP2_SELECT_ZOOM = 17;
+
+/** 숙소 후보 리스트에서 클릭한 항목을 지도 마커에서도 확대·강조하고, 그 위치로 지도를 이동·줌인 */
 function highlightBasecampMarker(placeId: string | null): void {
   const g = (window as any).google;
   if (!g?.maps) return;
+  let selectedMarker: any = null;
   step2Markers.forEach((marker, id) => {
     const isSelected = id === placeId;
     marker.setZIndex(isSelected ? 50 : 20);
     marker.setAnimation(isSelected ? g.maps.Animation.BOUNCE : null);
     if (isSelected) {
+      selectedMarker = marker;
       setTimeout(() => marker.setAnimation(null), 700);
     }
   });
+
+  // 선택 취소 후 같은 숙소를 다시 선택하는 경우에도 매번 다시 이동·줌인되도록,
+  // 매 선택 시점마다(이전 상태와 무관하게) 무조건 실행한다.
+  if (selectedMarker && step2MapInstance) {
+    const pos = selectedMarker.getPosition?.();
+    if (pos) {
+      step2MapInstance.panTo(pos);
+      const currentZoom = step2MapInstance.getZoom() ?? STEP2_SELECT_ZOOM;
+      step2MapInstance.setZoom(Math.max(currentZoom, STEP2_SELECT_ZOOM));
+    }
+  }
 }
 
 
