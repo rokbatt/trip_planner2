@@ -699,58 +699,9 @@ async function resortSegments(): Promise<void> {
   slSegments = sorted;
 }
 
-/**
- * 새로 나눌 구간의 날짜([newStart,newEnd])를 품고 있던 기존 구간을 찾아 자동으로 정리한다.
- *  - 기존 구간의 한쪽 끝에 맞닿아 있으면 → 기존 구간은 남는 쪽만 남기고 축소(구간 1개 그대로 update)
- *  - 기존 구간 중간을 잘라내면 → 기존 구간은 앞쪽만 남기고, 뒤쪽 남는 기간은 기존 구간과
- *    동일한 지역/숙소 선택 상태를 그대로 이어받은 새 구간으로 하나 더 만듦
- * → 사용자가 남는 기간을 또 손으로 지정할 필요 없이 항상 날짜가 이가 맞게 자동 세팅됨.
- */
-async function splitCoveringSegment(newStart: string, newEnd: string): Promise<void> {
-  if (!currentTrip || !slActiveDest) return;
-  const covering = slSegments.find((s) => {
-    if (!s.start_date || !s.end_date) return false;
-    if (s.start_date === newStart && s.end_date === newEnd) return false;
-    return s.start_date <= newStart && s.end_date >= newEnd;
-  });
-  if (!covering) return;
-
-  const covStart = covering.start_date!;
-  const covEnd = covering.end_date!;
-  const touchesStart = covStart === newStart;
-  const touchesEnd = covEnd === newEnd;
-
-  if (touchesStart && !touchesEnd) {
-    // 앞쪽을 잘라냄 → 기존 구간은 뒤쪽 남는 기간만 유지
-    const updated = await updateSegmentDates(currentTrip, slActiveDest, covering, newEnd, covEnd);
-    slSegments = slSegments.map((s) => (s.id === covering.id ? updated : s));
-  } else if (touchesEnd && !touchesStart) {
-    // 뒤쪽을 잘라냄 → 기존 구간은 앞쪽 남는 기간만 유지
-    const updated = await updateSegmentDates(currentTrip, slActiveDest, covering, covStart, newStart);
-    slSegments = slSegments.map((s) => (s.id === covering.id ? updated : s));
-  } else if (!touchesStart && !touchesEnd) {
-    // 중간을 잘라냄 → 기존 구간은 앞쪽만 남기고, 뒤쪽 남는 기간은 같은 숙소 상태로 구간 하나 더 생성
-    const updatedFront = await updateSegmentDates(currentTrip, slActiveDest, covering, covStart, newStart);
-    slSegments = slSegments.map((s) => (s.id === covering.id ? updatedFront : s));
-    const back = await createStaySegment(currentTrip, slActiveDest, {
-      startDate: newEnd,
-      endDate: covEnd,
-      sortOrder: slSegments.length,
-      zoneName: covering.zone_name,
-      zonePlaceIds: covering.zone_place_ids,
-      basecampPlaceId: covering.basecamp_place_id,
-      confirmedPlaceIds: covering.confirmed_place_ids,
-    });
-    if (back) slSegments = [...slSegments, back];
-  }
-}
-
-/** "숙소 나누기" — 새 빈 구간을 만들고 그 구간으로 전환 (선택한 기간과 함께). 겹치는 기존 구간은 자동으로 정리. */
-async function addSegment(startDate: string | null, endDate: string | null): Promise<void> {
+/** 빈 구간을 하나 추가하고 그 구간으로 전환 (날짜 지정 없이 나눌 때의 폴백) */
+async function addEmptySegmentAndSwitch(startDate: string | null, endDate: string | null): Promise<void> {
   if (!currentTrip || !slActiveDest || !slContainer) return;
-  if (startDate && endDate) {
-    await splitCoveringSegment(startDate, endDate);
-  }
   const created = await createStaySegment(currentTrip, slActiveDest, {
     startDate,
     endDate,
@@ -761,7 +712,88 @@ async function addSegment(startDate: string | null, endDate: string | null): Pro
   await resortSegments();
   slActiveSegment = created;
   setActiveSegmentId(slActiveDest.id, created.id);
-  restoreStateFromSegment(created); // 새 구간은 빈 상태 → Step1부터
+  restoreStateFromSegment(created);
+  renderStep(slContainer);
+}
+
+/**
+ * "숙소 나누기" — 사용자가 고른 기간([pickStart,pickEnd])은 **현재(활성) 숙소가 묵는 기간**으로
+ * 그대로 두고, 그 기간이 잘라내고 남은 앞/뒤 날짜를 **새 빈 구간**으로 자동 분리한다.
+ *
+ * 예) 전체 10~15, 현재 숙소를 11~15로 고르면 → 현재 숙소 = 11~15(설정 유지),
+ *     남는 10~11 = 새 빈 구간(다음에 숙소 지정). 이후 날짜순으로 정렬해 10~11이 앞에 온다.
+ *
+ * 기존 구간은 삭제 후 재생성해서 destination 날짜를 건드리지 않고 실제 stay_segments 행으로만 나눈다.
+ */
+async function addSegment(pickStart: string | null, pickEnd: string | null): Promise<void> {
+  if (!currentTrip || !slActiveDest || !slContainer) return;
+
+  // 날짜를 안 골랐으면 그냥 빈 구간 추가(폴백)
+  if (!pickStart || !pickEnd) {
+    await addEmptySegmentAndSwitch(pickStart, pickEnd);
+    return;
+  }
+
+  // 고른 기간을 품고 있는 기준 구간 — 활성 구간을 우선, 아니면 포함하는 구간 탐색
+  const containsPick = (s: StaySegment) =>
+    !!s.start_date && !!s.end_date && s.start_date <= pickStart && s.end_date >= pickEnd;
+  const base =
+    slActiveSegment && containsPick(slActiveSegment)
+      ? slActiveSegment
+      : slSegments.find(containsPick) ?? null;
+
+  // 포함하는 구간이 없으면(예외) 그냥 빈 구간으로 추가
+  if (!base || !base.start_date || !base.end_date) {
+    await addEmptySegmentAndSwitch(pickStart, pickEnd);
+    return;
+  }
+
+  const bStart = base.start_date;
+  const bEnd = base.end_date;
+  // 기준 구간의 지역/숙소 선택 상태 — 고른 기간(현재 숙소)에 그대로 이어붙임
+  const keepState = {
+    zoneName: base.zone_name,
+    zonePlaceIds: base.zone_place_ids,
+    basecampPlaceId: base.basecamp_place_id,
+    confirmedPlaceIds: base.confirmed_place_ids,
+  };
+
+  // 기존 기준 구간 제거(실제 DB 행이면 삭제) — destination 날짜는 건드리지 않음
+  if (!isSyntheticSegment(base.id)) await deleteStaySegment(base.id);
+  slSegments = slSegments.filter((s) => s.id !== base.id);
+
+  // ① 현재 숙소 = 고른 기간(설정 유지)
+  const configured = await createStaySegment(currentTrip, slActiveDest, {
+    startDate: pickStart,
+    endDate: pickEnd,
+    sortOrder: 0,
+    zoneName: keepState.zoneName,
+    zonePlaceIds: keepState.zonePlaceIds,
+    basecampPlaceId: keepState.basecampPlaceId,
+    confirmedPlaceIds: keepState.confirmedPlaceIds,
+  });
+
+  // ② 남는 앞/뒤 기간 = 새 빈 구간
+  const leftovers: StaySegment[] = [];
+  if (bStart < pickStart) {
+    const front = await createStaySegment(currentTrip, slActiveDest, { startDate: bStart, endDate: pickStart });
+    if (front) leftovers.push(front);
+  }
+  if (pickEnd < bEnd) {
+    const back = await createStaySegment(currentTrip, slActiveDest, { startDate: pickEnd, endDate: bEnd });
+    if (back) leftovers.push(back);
+  }
+
+  slSegments = [...slSegments, ...(configured ? [configured] : []), ...leftovers];
+  await resortSegments(); // 날짜순 정렬 (10~11이 11~15보다 앞)
+
+  // 빈 구간이 생겼으면 그리로 전환해 숙소 지정을 유도, 없으면 설정 구간 유지
+  const target = leftovers[0] ?? configured ?? slSegments[0] ?? null;
+  if (target) {
+    slActiveSegment = target;
+    setActiveSegmentId(slActiveDest.id, target.id);
+    restoreStateFromSegment(target);
+  }
   renderStep(slContainer);
 }
 
@@ -988,16 +1020,19 @@ function openDateRangeModal(opts: DateRangeModalOptions): void {
   });
 }
 
-/** "숙소 나누기" — 새 숙소 구간의 기간을 고르는 모달 (선택) */
+/** "숙소 나누기" — 현재 숙소가 묵는 기간을 고르면, 남는 날짜를 새 빈 구간으로 자동 분리 */
 function openSegmentDatePopover(_anchor: HTMLElement): void {
-  const rangeStart = slActiveDest?.start_date || currentTrip?.start_date || null;
-  const rangeEnd = slActiveDest?.end_date || currentTrip?.end_date || null;
+  // 나눌 대상은 현재(활성) 숙소 구간. 그 구간의 범위 안에서 기간을 고른다.
+  const rangeStart = slActiveSegment?.start_date || slActiveDest?.start_date || currentTrip?.start_date || null;
+  const rangeEnd = slActiveSegment?.end_date || slActiveDest?.end_date || currentTrip?.end_date || null;
   openDateRangeModal({
-    title: '새 숙소 구간',
-    desc: '이 숙소에 묵는 기간을 정해요 <span class="sl-seg-pop-opt">(선택, 시작일→종료일 순으로 클릭)</span>',
+    title: '숙소 나누기',
+    desc: '현재 숙소가 <b>묵는 기간</b>을 정하면, 남는 날짜는 새 숙소 구간으로 자동 분리돼요 <span class="sl-seg-pop-opt">(시작일→종료일 순으로 클릭)</span>',
     rangeStart,
     rangeEnd,
-    saveLabel: '추가',
+    initialStart: slActiveSegment?.start_date ?? null,
+    initialEnd: slActiveSegment?.end_date ?? null,
+    saveLabel: '나누기',
     onSave: async (start, end) => {
       await addSegment(start, end);
     },
@@ -1107,11 +1142,13 @@ async function renderStep1(body: HTMLElement): Promise<void> {
   await initMap(body);
 }
 
-/** 사용자가 직접 검색해 추가한 권역 카드 — AI 통계(장소 수/이동시간 등)가 없어 간소화된 형태 */
+/** 사용자가 직접 검색해 추가한 권역 카드 — AI 통계(장소 수/이동시간 등)가 없어 간소화된 형태.
+ *  직접 추가한 것이라 언제든 제거할 수 있게 우측 상단에 ✕ 버튼을 둔다. */
 function buildCustomZoneCardHtml(zone: Zone): string {
   const isSelected = pendingSelectedZoneId === zone.id;
   return [
     '<button type="button" class="sl-zone-card sl-zone-card-custom' + (isSelected ? ' selected' : '') + '" data-zone-id="' + zone.id + '" style="--zone-color:' + zoneColor(zone.id) + '">',
+    '  <span class="sl-zone-custom-remove" data-remove-zone="' + zone.id + '" title="이 지역 제거">' + IC_XCLOSE + '</span>',
     '  <div class="sl-zone-card-hero sl-zone-card-hero-empty sl-zone-card-hero-custom">' + IC_PIN + '</div>',
     '  <div class="sl-zone-card-main">',
     '    <div class="sl-zone-card-top">',
@@ -1122,6 +1159,15 @@ function buildCustomZoneCardHtml(zone: Zone): string {
     '  </div>',
     '</button>',
   ].join('');
+}
+
+/** 직접 추가한 권역을 목록에서 제거 (선택돼 있었으면 해제하고 지도도 재구성) */
+async function removeCustomZone(zoneId: string, body: HTMLElement): Promise<void> {
+  zones = zones.filter((z) => z.id !== zoneId);
+  if (pendingSelectedZoneId === zoneId) pendingSelectedZoneId = null;
+  renderZoneCards(body);
+  renderSelectBar(body);
+  await initMap(body);
 }
 
 function renderZoneCards(body: HTMLElement): void {
@@ -1179,10 +1225,25 @@ function renderZoneCards(body: HTMLElement): void {
     })
     .join('');
 
+  // 직접 추가한 권역의 ✕ 제거 버튼
+  listEl.querySelectorAll('[data-remove-zone]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      void removeCustomZone((btn as HTMLElement).dataset.removeZone!, body);
+    });
+  });
+
   listEl.querySelectorAll('.sl-zone-card').forEach((card) => {
     const zoneId = (card as HTMLElement).dataset.zoneId!;
+    const isCustom = (card as HTMLElement).classList.contains('sl-zone-card-custom');
     card.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).classList.contains('sl-zone-thumb-more')) return;
+      if ((e.target as HTMLElement).closest('[data-remove-zone]')) return; // ✕는 별도 처리
+      // 직접 추가한 권역은 이미 선택된 상태에서 다시 누르면(토글 오프) 아예 제거
+      if (isCustom && pendingSelectedZoneId === zoneId) {
+        void removeCustomZone(zoneId, body);
+        return;
+      }
       pendingSelectedZoneId = pendingSelectedZoneId === zoneId ? null : zoneId;
       highlightZone(pendingSelectedZoneId);
       renderZoneCards(body);

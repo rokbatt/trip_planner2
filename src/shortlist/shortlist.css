@@ -632,6 +632,15 @@
   overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
   -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
+.sl-zone-custom-remove {
+  position: absolute; top: 8px; right: 8px; z-index: 2;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 7px;
+  color: #B0BAC5; background: rgba(255,255,255,0.85);
+  transition: color 150ms ease, background 150ms ease;
+}
+.sl-zone-custom-remove:hover { color: #C0392B; background: #FDEEEC; }
+.sl-zone-custom-remove svg { width: 13px; height: 13px; }
 
 /* 통계와 썸네일을 같은 줄에 배치해서 세로 한 줄을 절약 */
 .sl-zone-card-bottom-row {
