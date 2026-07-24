@@ -17,7 +17,8 @@ import {
   updateStaySegment,
   updateSegmentDates,
 } from '../trips/destinations';
-import { loadGoogleMapsScript, getCategoryLabel } from '../utils/googleMaps';
+import { loadGoogleMapsScript, getCategoryLabel, getPlacePredictions, getPlaceDetails } from '../utils/googleMaps';
+import type { PlacePrediction } from '../utils/googleMaps';
 import type { Database, TripDestination, StaySegment } from '../types/database';
 import './shortlist.css';
 
@@ -78,6 +79,9 @@ interface Zone {
   topPlaces: Place[];
   efficiencyLabel: string;
   rank: number;
+  /** AI 추천이 아니라 사용자가 지역 검색으로 직접 추가한 권역(예: 공항 근처) — 카드가 간소화되고 항상 목록 맨 위 */
+  isCustom?: boolean;
+  address?: string | null;
 }
 
 let highlightedZoneId: string | null = null;
@@ -1084,6 +1088,10 @@ async function renderStep1(body: HTMLElement): Promise<void> {
     '    </div>',
     '    <div class="sl-zone-panel">',
     '      <div class="sl-zone-panel-head"><span>AI 추천 지역</span><span class="sl-zone-panel-sort">추천 순</span></div>',
+    '      <div class="sl-zone-search">',
+    '        <span class="sl-zone-search-icon">' + IC_SEARCH2 + '</span>',
+    '        <input type="text" id="sl-zone-search-input" class="sl-zone-search-input" placeholder="추천 목록에 없는 지역·장소 검색해서 추가 (예: 수완나품 공항)" autocomplete="off" />',
+    '      </div>',
     '      <div class="sl-zone-list" id="sl-zone-list"></div>',
     zoneDataSource === 'ai_fallback'
       ? '      <div class="sl-ai-reason sl-ai-reason-compact"><span class="sl-ai-reason-icon">' + IC_SPARK + '</span><span class="sl-ai-reason-text">이 여행지는 아직 검수된 지역 데이터가 없어 AI가 추정한 생활권을 사용 중이에요.</span></div>'
@@ -1095,15 +1103,38 @@ async function renderStep1(body: HTMLElement): Promise<void> {
   ].join('\n');
 
   renderZoneCards(body);
+  attachZoneSearch(body);
   await initMap(body);
+}
+
+/** 사용자가 직접 검색해 추가한 권역 카드 — AI 통계(장소 수/이동시간 등)가 없어 간소화된 형태 */
+function buildCustomZoneCardHtml(zone: Zone): string {
+  const isSelected = pendingSelectedZoneId === zone.id;
+  return [
+    '<button type="button" class="sl-zone-card sl-zone-card-custom' + (isSelected ? ' selected' : '') + '" data-zone-id="' + zone.id + '" style="--zone-color:' + zoneColor(zone.id) + '">',
+    '  <div class="sl-zone-card-hero sl-zone-card-hero-empty sl-zone-card-hero-custom">' + IC_PIN + '</div>',
+    '  <div class="sl-zone-card-main">',
+    '    <div class="sl-zone-card-top">',
+    '      <div class="sl-zone-card-name">' + escapeHtml(zone.name) + '</div>',
+    '    </div>',
+    '    <div class="sl-zone-card-tags"><span class="sl-zone-tag sl-zone-tag-custom">직접 추가</span></div>',
+    zone.address ? '    <div class="sl-zone-card-custom-address">' + escapeHtml(zone.address) + '</div>' : '',
+    '  </div>',
+    '</button>',
+  ].join('');
 }
 
 function renderZoneCards(body: HTMLElement): void {
   const listEl = body.querySelector('#sl-zone-list') as HTMLElement;
-  const sorted = [...zones].sort((a, b) => a.rank - b.rank);
+  // 직접 추가한 권역은 AI 순위(rank)와 무관하게 항상 맨 위에 고정
+  const customZones = zones.filter((z) => z.isCustom);
+  const aiZones = [...zones.filter((z) => !z.isCustom)].sort((a, b) => a.rank - b.rank);
+  const sorted = [...customZones, ...aiZones];
 
   listEl.innerHTML = sorted
     .map((zone) => {
+      if (zone.isCustom) return buildCustomZoneCardHtml(zone);
+
       const stars = zone.avgRating != null ? buildStars(zone.avgRating) : '';
       const isSelected = pendingSelectedZoneId === zone.id;
       const heroPhoto = zone.topPlaces.find((p) => p.photo_url)?.photo_url ?? null;
@@ -1176,6 +1207,141 @@ function renderZoneCards(body: HTMLElement): void {
   });
 
   renderSelectBar(body);
+}
+
+/* ══════════ 지역 직접 검색 — AI 추천에 없는 곳(예: 공항 근처)을 직접 추가 ══════════ */
+
+let zoneSearchDebounce: ReturnType<typeof setTimeout> | null = null;
+let zoneSearchPredictions: PlacePrediction[] = [];
+let zoneSearchDropdownEl: HTMLElement | null = null;
+let zoneSearchDismiss: ((e: MouseEvent) => void) | null = null;
+
+function closeZoneSearchDropdown(): void {
+  zoneSearchDropdownEl?.remove();
+  zoneSearchDropdownEl = null;
+  if (zoneSearchDismiss) {
+    document.removeEventListener('mousedown', zoneSearchDismiss);
+    zoneSearchDismiss = null;
+  }
+}
+
+function attachZoneSearch(body: HTMLElement): void {
+  const input = body.querySelector('#sl-zone-search-input') as HTMLInputElement | null;
+  if (!input) return;
+
+  input.addEventListener('input', () => {
+    const query = input.value.trim();
+    if (zoneSearchDebounce) clearTimeout(zoneSearchDebounce);
+    if (query.length < 2) {
+      closeZoneSearchDropdown();
+      return;
+    }
+    zoneSearchDebounce = setTimeout(async () => {
+      try {
+        await loadGoogleMapsScript();
+      } catch {
+        return;
+      }
+      const predictions = await getPlacePredictions(query);
+      if (input.value.trim() !== query) return; // 그새 입력이 더 바뀌었으면 낡은 결과 무시
+      zoneSearchPredictions = predictions;
+      if (predictions.length === 0) {
+        closeZoneSearchDropdown();
+        return;
+      }
+      renderZoneSearchDropdown(input, body);
+    }, 350);
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeZoneSearchDropdown();
+  });
+}
+
+function renderZoneSearchDropdown(input: HTMLInputElement, body: HTMLElement): void {
+  closeZoneSearchDropdown();
+
+  const dropdown = document.createElement('div');
+  dropdown.className = 'sl-zone-search-dropdown';
+  dropdown.innerHTML = zoneSearchPredictions
+    .map((p, i) => [
+      '<button type="button" class="sl-zone-search-item" data-idx="' + i + '">',
+      '  <span class="sl-zone-search-item-icon">' + IC_PIN + '</span>',
+      '  <span class="sl-zone-search-item-text">',
+      '    <span class="sl-zone-search-item-main">' + escapeHtml(p.mainText) + '</span>',
+      p.secondaryText ? '    <span class="sl-zone-search-item-sub">' + escapeHtml(p.secondaryText) + '</span>' : '',
+      '  </span>',
+      '</button>',
+    ].join(''))
+    .join('');
+  document.body.appendChild(dropdown);
+  zoneSearchDropdownEl = dropdown;
+
+  const r = input.getBoundingClientRect();
+  dropdown.style.position = 'fixed';
+  dropdown.style.left = r.left + 'px';
+  dropdown.style.width = r.width + 'px';
+  dropdown.style.top = r.bottom + 6 + 'px';
+
+  dropdown.querySelectorAll('.sl-zone-search-item').forEach((el) => {
+    el.addEventListener('click', async () => {
+      const idx = Number((el as HTMLElement).dataset.idx);
+      const prediction = zoneSearchPredictions[idx];
+      closeZoneSearchDropdown();
+      input.value = '';
+      await addCustomZoneFromPrediction(prediction, body);
+    });
+  });
+
+  zoneSearchDismiss = (e: MouseEvent) => {
+    if (zoneSearchDropdownEl && !zoneSearchDropdownEl.contains(e.target as Node) && e.target !== input) {
+      closeZoneSearchDropdown();
+    }
+  };
+  setTimeout(() => document.addEventListener('mousedown', zoneSearchDismiss!), 0);
+}
+
+/** 검색해서 고른 위치를 places 없는 "직접 추가" 권역으로 만들어 목록 맨 위에 꽂고 바로 선택 상태로 */
+async function addCustomZoneFromPrediction(prediction: PlacePrediction, body: HTMLElement): Promise<void> {
+  let details: any;
+  try {
+    details = await getPlaceDetails(prediction.placeId);
+  } catch (e) {
+    console.error('[Shortlist] 지역 검색 상세정보 조회 실패:', (e as Error).message);
+    return;
+  }
+  const lat = details.location ? details.location.lat() : null;
+  const lng = details.location ? details.location.lng() : null;
+  if (lat == null || lng == null) return;
+
+  const id = 'custom:' + prediction.placeId;
+  if (!zones.some((z) => z.id === id)) {
+    const customZone: Zone = {
+      id,
+      name: details.displayName || prediction.mainText,
+      features: [],
+      places: [],
+      centerLat: lat,
+      centerLng: lng,
+      avgRating: null,
+      avgInternalWalkMin: null,
+      recommendedNights: 1,
+      topPlaces: [],
+      efficiencyLabel: '',
+      rank: 0,
+      isCustom: true,
+      address: details.formattedAddress || prediction.secondaryText || null,
+    };
+    zones = [customZone, ...zones];
+  }
+  pendingSelectedZoneId = id;
+
+  renderZoneCards(body);
+  renderSelectBar(body);
+  // 새 권역의 폴리곤/마커/라벨을 지도에 반영하려면 재초기화 필요(초기화 시 초기 화면 맞춤이
+  // 이뤄지므로, 방금 추가한 권역으로 다시 포커스하는 highlightZone을 그 다음에 호출)
+  await initMap(body);
+  highlightZone(id);
 }
 
 function renderSelectBar(body: HTMLElement): void {
