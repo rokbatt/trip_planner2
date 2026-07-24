@@ -28,7 +28,7 @@ export function openCreateTripModal(onCreated: () => void): void {
     '    </div>',
     '    <div class="tc-field">',
     '      <label class="tc-field-label">목적지 도시</label>',
-    '      <input class="tc-input" id="tc-city" type="text" placeholder="예: 방콕" />',
+    '      <input class="tc-input" id="tc-city" type="text" placeholder="예: 방콕, 파타야 (여러 도시는 콤마로 구분)" />',
     '    </div>',
     '    <div class="tc-row">',
     '      <div class="tc-field">',
@@ -132,6 +132,10 @@ async function handleSubmit(
     return;
   }
 
+  const destinations = city
+    ? city.split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+
   submitBtn.disabled = true;
   submitBtn.textContent = '만드는 중...';
 
@@ -144,7 +148,7 @@ async function handleSubmit(
         end_date: endDate,
         headcount: headcountRaw ? Number(headcountRaw) : null,
         theme: theme || null,
-        destinations: city ? [city] : null,
+        destinations: destinations.length ? destinations : null,
         owner_id: user.id,
       })
       .select()
@@ -157,13 +161,18 @@ async function handleSubmit(
     const metaAvatar = user.user_metadata && user.user_metadata.avatar_url;
     const metaPicture = user.user_metadata && user.user_metadata.picture;
 
-    const { error: memberError } = await supabase.from('trip_members').insert({
-      trip_id: trip.id,
-      user_id: user.id,
-      role: 'owner',
-      display_name: metaFullName || metaName || user.email || '나',
-      avatar_url: metaAvatar || metaPicture || null,
-    });
+    // 트리거가 owner를 trip_members에 이미 추가했을 수 있으므로
+    // 멤버가 이미 있으면 충돌(409) 없이 조용히 넘어간다.
+    const { error: memberError } = await supabase.from('trip_members').upsert(
+      {
+        trip_id: trip.id,
+        user_id: user.id,
+        role: 'owner',
+        display_name: metaFullName || metaName || user.email || '나',
+        avatar_url: metaAvatar || metaPicture || null,
+      },
+      { onConflict: 'trip_id,user_id', ignoreDuplicates: true }
+    );
 
     if (memberError) throw memberError;
 
