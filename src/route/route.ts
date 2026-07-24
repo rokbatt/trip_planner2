@@ -399,9 +399,10 @@ async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
     .map((id) => placeById.get(id))
     .filter((p): p is Place => !!p && p.id !== basecampId && p.lat != null && p.lng != null);
 
-  // 체류 일수 = 구간 날짜 기준(없으면 트립 기준), 기본 1일
-  const start = seg?.start_date ?? activeDest?.start_date ?? trip.start_date;
-  const end = seg?.end_date ?? activeDest?.end_date ?? trip.end_date;
+  // 체류 일수 = 여행지 전체 기간 기준(숙소 나누기로 구간이 쪼개져 있어도 DAY는 전체 기간을
+  // 다 채워야 함 — 활성 구간의 날짜만 쓰면 그 구간의 좁혀진 기간만큼만 DAY가 생기는 버그가 있었음)
+  const start = activeDest?.start_date ?? seg?.start_date ?? trip.start_date;
+  const end = activeDest?.end_date ?? seg?.end_date ?? trip.end_date;
   dayRangeStartDate = start ?? null;
   let nights = 1;
   if (start && end) {
@@ -487,17 +488,10 @@ function buildPageHtml(): string {
   return [
     '<div class="rt-shell">',
 
-    '  <div class="rt-header">',
-    '    <div class="rt-header-text">',
-    '      <div class="rt-eyebrow">ROUTE</div>',
-    '      <div class="rt-title">지도를 클릭하여 하루의 동선을 만들어보세요</div>',
-    '    </div>',
-    '    <button type="button" class="rt-to-timeline-top" id="rt-to-timeline-top">' + IC_ARROW + ' 타임라인으로</button>',
-    '  </div>',
-
     '  <div class="rt-toolbar">',
     '    <div class="rt-daytabs" id="rt-daytabs"></div>',
     '    <div class="rt-toolbar-right">',
+    '      <button type="button" class="rt-to-timeline-top" id="rt-to-timeline-top">' + IC_ARROW + ' 타임라인으로</button>',
     '      <div class="rt-searchbox">' + IC_SEARCH + '<input type="text" id="rt-search-top" placeholder="여행지 검색" /></div>',
     '      <button type="button" class="rt-optionsbtn" id="rt-options-btn">' + IC_DOTS + '<span>옵션</span>' + IC_CHEVRON + '</button>',
     '    </div>',
