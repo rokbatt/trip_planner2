@@ -2008,6 +2008,8 @@ async function renderStep2(body: HTMLElement): Promise<void> {
     '          <span class="sl-budget-custom-unit">원</span>',
     '        </div>',
     '      </div>',
+    '      <div class="sl-step2-summary-divider"></div>',
+    '      <button type="button" class="sl-step2-summary-edit" id="sl-step2-date-edit">' + IC_EXTLINK + ' 수정</button>',
     '    </div>',
     '  </div>',
 
@@ -2078,6 +2080,8 @@ async function renderStep2(body: HTMLElement): Promise<void> {
     step2SortMode = (e.target as HTMLSelectElement).value as 'rating' | 'distance';
     renderBasecampList(body, candidates);
   });
+
+  body.querySelector('#sl-step2-date-edit')?.addEventListener('click', openStayDateEditor);
 
   body.querySelector('#sl-budget-select')?.addEventListener('change', (e) => {
     stayFilters.budget = (e.target as HTMLSelectElement).value;
