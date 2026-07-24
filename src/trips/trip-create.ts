@@ -36,7 +36,7 @@ export function openCreateTripModal(onCreated: () => void): void {
     '        <input class="tc-input" id="tc-start" type="date" required />',
     '      </div>',
     '      <div class="tc-field">',
-    '        <label class="tc-field-label">도착일</label>',
+    '        <label class="tc-field-label">복귀일</label>',
     '        <input class="tc-input" id="tc-end" type="date" required />',
     '      </div>',
     '    </div>',
@@ -127,7 +127,7 @@ async function handleSubmit(
   }
 
   if (new Date(endDate) < new Date(startDate)) {
-    errorEl.textContent = '도착일은 출발일보다 빠를 수 없어요.';
+    errorEl.textContent = '복귀일은 출발일보다 빠를 수 없어요.';
     errorEl.classList.add('show');
     return;
   }
