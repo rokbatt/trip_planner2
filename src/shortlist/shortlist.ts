@@ -15,7 +15,6 @@ import {
   deleteStaySegment,
   isSyntheticSegment,
   updateStaySegment,
-  updateSegmentDates,
 } from '../trips/destinations';
 import { loadGoogleMapsScript, getCategoryLabel, getPlacePredictions, getPlaceDetails } from '../utils/googleMaps';
 import type { PlacePrediction } from '../utils/googleMaps';
@@ -716,23 +715,75 @@ async function addEmptySegmentAndSwitch(startDate: string | null, endDate: strin
   renderStep(slContainer);
 }
 
+/** 여행지 전체 기간([fullStart,fullEnd]) 중 어떤 구간에도 속하지 않는 빈 날짜 범위를 찾음 */
+function findCoverageGaps(
+  fullStart: string,
+  fullEnd: string,
+  segs: StaySegment[]
+): Array<{ start: string; end: string }> {
+  const dated = segs
+    .filter((s) => !!s.start_date && !!s.end_date)
+    .map((s) => ({ start: s.start_date as string, end: s.end_date as string }))
+    .sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
+
+  const gaps: Array<{ start: string; end: string }> = [];
+  let cursor = fullStart;
+  for (const seg of dated) {
+    if (seg.start > cursor) gaps.push({ start: cursor, end: seg.start });
+    if (seg.end > cursor) cursor = seg.end;
+  }
+  if (cursor < fullEnd) gaps.push({ start: cursor, end: fullEnd });
+  return gaps;
+}
+
 /**
- * "숙소 나누기" — 사용자가 고른 기간([pickStart,pickEnd])은 **현재(활성) 숙소가 묵는 기간**으로
- * 그대로 두고, 그 기간이 잘라내고 남은 앞/뒤 날짜를 **새 빈 구간**으로 자동 분리한다.
+ * 확정("이 숙소를 여행 중심으로 확정하기") 시점에 전체 숙박 기간 중 어떤 구간도 채우지
+ * 않은 빈 날짜가 있으면, 그 빈 기간(들)을 새 빈 구간으로 자동 분리해 첫 구간으로 전환한다.
+ * 하나라도 채웠으면 true를 반환 — 호출부는 이 경우 route로 넘어가지 않고 화면 전환에 맡긴다.
+ */
+async function fillCoverageGapsIfAny(): Promise<boolean> {
+  if (!currentTrip || !slActiveDest || !slContainer) return false;
+  const fullStart = slActiveDest.start_date || currentTrip.start_date;
+  const fullEnd = slActiveDest.end_date || currentTrip.end_date;
+  if (!fullStart || !fullEnd) return false;
+
+  const gaps = findCoverageGaps(fullStart, fullEnd, slSegments);
+  if (!gaps.length) return false;
+
+  const created: StaySegment[] = [];
+  for (const gap of gaps) {
+    const seg = await createStaySegment(currentTrip, slActiveDest, { startDate: gap.start, endDate: gap.end });
+    if (seg) created.push(seg);
+  }
+  slSegments = [...slSegments, ...created];
+  await resortSegments();
+
+  const target = created[0] ?? null;
+  if (target) {
+    slActiveSegment = target;
+    setActiveSegmentId(slActiveDest.id, target.id);
+    restoreStateFromSegment(target);
+  }
+  renderStep(slContainer);
+  return true;
+}
+
+/**
+ * 사용자가 고른 기간([pickStart,pickEnd])을 품고 있는 기준 구간을 찾아, 그 기간은
+ * **현재 숙소가 묵는 기간(설정 유지)**으로 좁히고, 잘려나간 앞/뒤 날짜는 **새 빈 구간**으로
+ * 자동 분리한다. "숙소 나누기"와 "숙박 기간 수정"이 공유하는 핵심 로직.
  *
  * 예) 전체 10~15, 현재 숙소를 11~15로 고르면 → 현재 숙소 = 11~15(설정 유지),
  *     남는 10~11 = 새 빈 구간(다음에 숙소 지정). 이후 날짜순으로 정렬해 10~11이 앞에 온다.
  *
- * 기존 구간은 삭제 후 재생성해서 destination 날짜를 건드리지 않고 실제 stay_segments 행으로만 나눈다.
+ * 기존 구간은 삭제 후 재생성해서 destination 날짜는 건드리지 않고 실제 stay_segments 행으로만 나눈다.
+ * 활성 구간 전환이나 렌더링은 호출부(addSegment/openStayDateEditor)가 각자의 정책대로 처리한다.
  */
-async function addSegment(pickStart: string | null, pickEnd: string | null): Promise<void> {
-  if (!currentTrip || !slActiveDest || !slContainer) return;
-
-  // 날짜를 안 골랐으면 그냥 빈 구간 추가(폴백)
-  if (!pickStart || !pickEnd) {
-    await addEmptySegmentAndSwitch(pickStart, pickEnd);
-    return;
-  }
+async function splitSegmentToRange(
+  pickStart: string,
+  pickEnd: string
+): Promise<{ configured: StaySegment | null; leftovers: StaySegment[] } | null> {
+  if (!currentTrip || !slActiveDest) return null;
 
   // 고른 기간을 품고 있는 기준 구간 — 활성 구간을 우선, 아니면 포함하는 구간 탐색
   const containsPick = (s: StaySegment) =>
@@ -742,11 +793,7 @@ async function addSegment(pickStart: string | null, pickEnd: string | null): Pro
       ? slActiveSegment
       : slSegments.find(containsPick) ?? null;
 
-  // 포함하는 구간이 없으면(예외) 그냥 빈 구간으로 추가
-  if (!base || !base.start_date || !base.end_date) {
-    await addEmptySegmentAndSwitch(pickStart, pickEnd);
-    return;
-  }
+  if (!base || !base.start_date || !base.end_date) return null;
 
   const bStart = base.start_date;
   const bEnd = base.end_date;
@@ -787,7 +834,27 @@ async function addSegment(pickStart: string | null, pickEnd: string | null): Pro
   slSegments = [...slSegments, ...(configured ? [configured] : []), ...leftovers];
   await resortSegments(); // 날짜순 정렬 (10~11이 11~15보다 앞)
 
-  // 빈 구간이 생겼으면 그리로 전환해 숙소 지정을 유도, 없으면 설정 구간 유지
+  return { configured, leftovers };
+}
+
+/** "숙소 나누기" — 나뉜 뒤 빈 구간(없으면 설정 구간)으로 전환해 숙소 지정을 유도 */
+async function addSegment(pickStart: string | null, pickEnd: string | null): Promise<void> {
+  if (!currentTrip || !slActiveDest || !slContainer) return;
+
+  // 날짜를 안 골랐으면 그냥 빈 구간 추가(폴백)
+  if (!pickStart || !pickEnd) {
+    await addEmptySegmentAndSwitch(pickStart, pickEnd);
+    return;
+  }
+
+  const result = await splitSegmentToRange(pickStart, pickEnd);
+  if (!result) {
+    // 포함하는 구간이 없으면(예외) 그냥 빈 구간으로 추가
+    await addEmptySegmentAndSwitch(pickStart, pickEnd);
+    return;
+  }
+
+  const { configured, leftovers } = result;
   const target = leftovers[0] ?? configured ?? slSegments[0] ?? null;
   if (target) {
     slActiveSegment = target;
@@ -1039,33 +1106,31 @@ function openSegmentDatePopover(_anchor: HTMLElement): void {
   });
 }
 
-/** "수정" — 현재 활성 숙소 구간의 숙박 기간을 다시 고르는 모달 */
+/**
+ * "수정" — 현재 활성 숙소 구간의 숙박 기간을 다시 고르는 모달. "숙소 나누기"와 같은 규칙으로
+ * 좁힌 기간 밖으로 밀려난 날짜는 새 빈 구간으로 자동 분리되지만(splitSegmentToRange 공유),
+ * 나누기와 달리 화면은 Step1로 넘어가지 않고 지금 편집 중인(좁혀진) 숙소의 3단계에 그대로 머문다.
+ */
 function openStayDateEditor(): void {
   if (!currentTrip || !slActiveDest || !slActiveSegment || !slContainer) return;
-  const rangeStart = slActiveDest.start_date || currentTrip.start_date || null;
-  const rangeEnd = slActiveDest.end_date || currentTrip.end_date || null;
+  const rangeStart = slActiveSegment.start_date || slActiveDest.start_date || currentTrip.start_date || null;
+  const rangeEnd = slActiveSegment.end_date || slActiveDest.end_date || currentTrip.end_date || null;
   openDateRangeModal({
     title: '숙박 기간 수정',
-    desc: '이 숙소에 묵는 기간을 다시 정해요 <span class="sl-seg-pop-opt">(시작일→종료일 순으로 클릭)</span>',
+    desc: '이 숙소에 묵는 기간을 다시 정해요. 남는 날짜는 새 숙소 구간으로 자동 분리돼요 <span class="sl-seg-pop-opt">(시작일→종료일 순으로 클릭)</span>',
     rangeStart,
     rangeEnd,
     initialStart: slActiveSegment.start_date,
     initialEnd: slActiveSegment.end_date,
     saveLabel: '저장',
     onSave: async (start, end) => {
-      const trip = currentTrip!;
-      const dest = slActiveDest!;
-      const seg = slActiveSegment!;
-      const updated = await updateSegmentDates(trip, dest, seg, start, end);
-      slSegments = slSegments.map((s) => (s.id === seg.id ? updated : s));
-      slActiveSegment = updated;
-      if (isSyntheticDestination(dest.id)) {
-        currentTrip = { ...trip, start_date: start, end_date: end };
-      } else if (isSyntheticSegment(updated.id)) {
-        slActiveDest = { ...dest, start_date: start, end_date: end };
+      if (!start || !end || !slContainer) return;
+      const result = await splitSegmentToRange(start, end);
+      if (result?.configured) {
+        slActiveSegment = result.configured;
+        setActiveSegmentId(slActiveDest!.id, result.configured.id);
       }
-      await resortSegments();
-      renderStep(slContainer!);
+      renderStep(slContainer);
     },
   });
 }
@@ -2799,6 +2864,12 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     btn.disabled = true;
     btn.innerHTML = '저장 중...';
     await saveShortlistState();
+
+    // 전체 숙박 기간 중 아직 아무 구간도 채우지 않은 빈 날짜가 있으면 자동으로 나눠서
+    // 그 구간을 채우게 하고, route로는 넘어가지 않는다.
+    const filled = await fillCoverageGapsIfAny();
+    if (filled) return;
+
     window.dispatchEvent(
       new CustomEvent('mongsil:navigateGate', { detail: { tripId: currentTripId, gate: 'route' } })
     );
