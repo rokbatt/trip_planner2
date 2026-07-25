@@ -1396,8 +1396,9 @@
   align-items: center;
   justify-content: center;
   border-radius: 9px;
-  color: var(--stat-color);
-  background: color-mix(in srgb, var(--stat-color) 13%, white);
+  /* "확정하기" 버튼과 같은 진한 배경 + 흰 아이콘 (연한 틴트 칩 대신) */
+  color: #fff;
+  background: var(--stat-color);
   margin-bottom: 8px;
 }
 .sl-step3-stat-icon svg { width: 17px; height: 17px; }
