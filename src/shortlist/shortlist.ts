@@ -162,6 +162,7 @@ export function teardownShortlist(): void {
   step3MapInstance = null;
   step3InfraLines = [];
   step3Facilities = [];
+  step3VisitItems = [];
   mapMarkers = [];
   highlightedZoneId = null;
   pendingSelectedZoneId = null;
@@ -2836,6 +2837,15 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     });
   }
 
+  // "관광지 접근성" 타일용 — 이 권역이 아니라 활성 여행지 전체의 VISIT 장소 기준(자기충족 오류 방지).
+  // 우선 직선거리 추정치로 즉시 채우고, 아래에서 실측 배치 호출로 교체함.
+  step3VisitItems = allPlaces
+    .filter((p) => p.id !== basecamp.id && p.mood === '가고싶어' && p.lat != null && p.lng != null)
+    .map((p) => {
+      const km = haversineKm(basecamp.lat!, basecamp.lng!, p.lat!, p.lng!);
+      return { place: p, km, minutes: estimateMinutes(km), real: false };
+    });
+
   const closeCount = withDistance.filter((item) => item.km <= 1.5).length;
   const stayNights = currentStayNights();
   const stayHeadcount = getTripHeadcount();
@@ -3123,6 +3133,23 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     renderStep3Lists(body, withDistance);
   });
 
+  // "관광지 접근성"(트립 전체 VISIT 장소)도 같은 방식으로 배치 실측 — withDistance와 별개 호출이지만
+  // 여기서도 장소 수만큼이 아니라 도보/차량 묶음당 1회씩(최대 2회)이라 비용이 크게 늘지 않음
+  if (step3VisitItems.length > 0) {
+    loadRealTravelTimes(basecamp, step3VisitItems).then((realTimes) => {
+      if (!realTimes || step !== 3) return;
+      step3VisitItems.forEach((item) => {
+        const real = realTimes.get(item.place.id);
+        if (!real) return;
+        item.minutes = real.durationMin;
+        item.real = true;
+        item.realMode = real.mode;
+        item.realText = real.durationText;
+      });
+      renderStep3Lists(body, withDistance);
+    });
+  }
+
   // Phase 2 실데이터 — 도착하면 예시를 실데이터로 교체, 실패하면 예시+안내를 그대로 유지
   const walkable = withDistance.filter((item) => item.km <= 1.5).length;
   const avgMin = withDistance.length
@@ -3349,12 +3376,13 @@ function amenityAccess(): { avgMin: number | null; foundCount: number } {
   return { avgMin: Math.round(mins.reduce((a, b) => a + b, 0) / mins.length), foundCount: mins.length };
 }
 
-function buildStatTile(icon: string, color: string, title: string, value: string, desc: string): string {
+/** iconColor는 카테고리 고정 톤(중복 없이 서로 다른 색), valueColor는 등급(있으면)만 색으로 표시 */
+function buildStatTile(icon: string, iconColor: string, title: string, value: string, desc: string, valueColor?: string): string {
   return [
     '<div class="sl-step3-stat-tile">',
-    '  <span class="sl-step3-stat-icon" style="--stat-color:' + color + '">' + icon + '</span>',
+    '  <span class="sl-step3-stat-icon" style="--stat-color:' + iconColor + '">' + icon + '</span>',
     '  <div class="sl-step3-stat-title">' + title + '</div>',
-    '  <div class="sl-step3-stat-value">' + value + '</div>',
+    '  <div class="sl-step3-stat-value"' + (valueColor ? ' style="color:' + valueColor + '"' : '') + '>' + value + '</div>',
     '  <div class="sl-step3-stat-desc">' + desc + '</div>',
     '</div>',
   ].join('');
@@ -3404,11 +3432,12 @@ function renderStep3Lists(body: HTMLElement, withDistance: Step3Item[]): void {
       ? Math.round(withDistance.reduce((sum, item) => sum + item.minutes, 0) / withDistance.length)
       : 0;
 
+    // 아이콘 색은 카테고리별 고정 톤(서로 겹치지 않게), 등급은 값 텍스트 색으로만 표시.
     // /api/nearby-infra가 아직 응답 전이면 등급 대신 "확인 중"으로 표시(잘못된 등급을 잠깐 보여주지 않기 위함)
-    const accessValue = (tier: AccessTier): { label: string; color: string } =>
+    const accessValue = (tier: AccessTier): { label: string; valueColor: string } =>
       step3FacilitiesLoaded
-        ? { label: ACCESS_TIER_LABEL[tier], color: ACCESS_TIER_COLOR[tier] }
-        : { label: '확인 중', color: '#94A3B8' };
+        ? { label: ACCESS_TIER_LABEL[tier], valueColor: ACCESS_TIER_COLOR[tier] }
+        : { label: '확인 중', valueColor: '#94A3B8' };
 
     const transitMin = facilityWalkMin('transit');
     const transit = accessValue(walkAccessTier(transitMin));
@@ -3426,23 +3455,24 @@ function renderStep3Lists(body: HTMLElement, withDistance: Step3Item[]): void {
         ? '평균 도보 ' + amenity.avgMin + '분 (' + amenity.foundCount + '/5)'
         : '2km 내 없음';
 
-    // 관광지 접근성 — 이 트립에 실제로 담은 VISIT(가고싶어) 장소까지 평균 이동시간 기준
-    const visitItems = withDistance.filter((item) => item.place.mood === '가고싶어');
-    const visitAvgMin = visitItems.length
-      ? Math.round(visitItems.reduce((sum, item) => sum + item.minutes, 0) / visitItems.length)
+    // 관광지 접근성 — 이 권역 안 장소가 아니라 "이 여행지에 담은 VISIT(가고싶어) 장소 전체" 대상.
+    // 권역별로 나눠서 보면 권역 배정 자체가 거리 기준이라 항상 "가깝다"로 나오는 자기충족 오류가 생겨서,
+    // 다른 권역 장소까지 포함한 step3VisitItems(트립 전체 VISIT)로 계산함.
+    const visitAvgMin = step3VisitItems.length
+      ? Math.round(step3VisitItems.reduce((sum, item) => sum + item.minutes, 0) / step3VisitItems.length)
       : null;
     const visit = accessValue(visitAccessTier(visitAvgMin));
-    const visitDesc = visitAvgMin != null ? '담은 관광지 ' + visitItems.length + '곳 평균' : '담은 관광지 없음';
+    const visitDesc = visitAvgMin != null ? '담은 관광지 ' + step3VisitItems.length + '곳 평균' : '담은 관광지 없음';
 
     // 평균 이동시간·도보권 장소·관광지 접근성: 이 트립에 담은 실제 장소까지 거리/이동시간(실측 도착 시 자동 교체).
     // 대중교통·편의시설·편의점 접근성: /api/nearby-infra(Google Places Nearby Search + Routes API 실측 도보시간).
     statsEl.innerHTML = [
       buildStatTile(IC_CLOCK, '#0B7CC4', '평균 이동시간', avgMin + '분', '전체 장소 기준'),
       buildStatTile(IC_WALK, '#1D9E75', '도보권 장소', walkable + '곳', '도보 15분 이내'),
-      buildStatTile(IC_BUS, transit.color, '대중교통 접근성', transit.label, transitDesc),
-      buildStatTile(IC_HOUSE, amenityAcc.color, '편의시설 접근성', amenityAcc.label, amenityDesc),
-      buildStatTile(IC_BUILDING, visit.color, '관광지 접근성', visit.label, visitDesc),
-      buildStatTile(IC_CART, conv.color, '편의점 접근성', conv.label, convDesc),
+      buildStatTile(IC_BUS, '#7F77DD', '대중교통 접근성', transit.label, transitDesc, transit.valueColor),
+      buildStatTile(IC_HOUSE, '#F5A623', '편의시설 접근성', amenityAcc.label, amenityDesc, amenityAcc.valueColor),
+      buildStatTile(IC_BUILDING, '#D4537E', '관광지 접근성', visit.label, visitDesc, visit.valueColor),
+      buildStatTile(IC_CART, '#0F9E9E', '편의점 접근성', conv.label, convDesc, conv.valueColor),
     ].join('');
   }
 }
@@ -3453,6 +3483,9 @@ let step3Facilities: InfraFacility[] = []; // 지도 준비/인프라 도착 순
 /** /api/nearby-infra 응답이 (결과가 비어있더라도) 한 번이라도 도착했는지 — 접근성 타일에서
  *  "아직 확인 중"과 "실제로 시설이 없어서 나쁨"을 구분하기 위해 필요 */
 let step3FacilitiesLoaded = false;
+/** "관광지 접근성" 계산용 — 활성 여행지 전체(권역 무관)의 VISIT(가고싶어) 장소. 초기엔 직선거리
+ *  추정치로 채우고, loadRealTravelTimes 배치 호출 결과가 오면 실측으로 교체됨 */
+let step3VisitItems: Step3Item[] = [];
 
 /** 편의시설 카테고리 아이콘을 배경 없이 지도 마커로 사용 (흰 아웃라인 필터로 대비만 확보) */
 function buildInfraMarkerIcon(g: any, meta: { icon: string; color: string }): any {
@@ -3612,6 +3645,21 @@ async function initMapStep3(body: HTMLElement): Promise<void> {
     zIndex: 30,
   });
 
-  // 인프라 데이터가 지도보다 먼저 도착했으면 이제 그림 (basecamp 마커 외엔 이 지도에 다른 장소를 넣지 않음)
+  // 이 권역뿐 아니라 다른 권역 브레인스토밍 장소도 작고 옅게 표시 — 줌아웃하면 트립 전체 그림이
+  // 한눈에 보여서 "이 숙소가 실제 관광지들과 얼마나 떨어져 있는지" 감이 오도록 함
+  allPlaces.forEach((p) => {
+    if (p.id === selectedBasecamp!.id || p.lat == null || p.lng == null) return;
+    const marker = new g.maps.Marker({
+      position: { lat: p.lat, lng: p.lng },
+      map,
+      title: p.name,
+      icon: buildCategoryIcon(g, p.mood, 'compact'),
+      opacity: 0.55,
+      zIndex: 1,
+    });
+    marker.addListener('click', () => showPlaceInfoWindow(g, map, marker, p));
+  });
+
+  // 인프라 데이터가 지도보다 먼저 도착했으면 이제 그림
   if (step3Facilities.length && selectedBasecamp) drawInfraLines(selectedBasecamp, step3Facilities);
 }
