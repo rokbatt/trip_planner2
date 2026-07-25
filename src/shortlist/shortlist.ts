@@ -3340,8 +3340,8 @@ function step3TravelLabel(item: Step3Item): { icon: string; text: string } {
 
 // "이 숙소를 선택하면" 팔레트 — 계속 다듬을 예정이라 색을 여기 한 군데에 모아둠.
 // 다음에 바꿀 땐 이 상수만 건드리면 됨. 하단 설명(desc, 회색 캡션)은 이 실험과 별개로 절대 건드리지 않음.
-const STAT_BRAND_COLOR = '#0D2F6B'; // 아이콘 칩 배경 — 네이비에서 아주 살짝만 블루 쪽으로
-const STAT_VALUE_COLOR = '#15308A'; // 값 텍스트 — 이전에 아이콘 배경으로 쓰던 블루 톤
+const STAT_BRAND_COLOR = '#0B7CC4'; // 아이콘 칩 배경 — "주변 편의 인프라"의 대중교통 아이콘과 같은 블루
+const STAT_VALUE_COLOR = '#0D2F6B'; // 값 텍스트 — 직전에 아이콘 배경으로 쓰던 네이비 톤
 const STAT_ALERT_COLOR = '#C0524B'; // 나중에 "나쁨"만 다시 강조하고 싶을 때 쓸 경고색 — 지금은 미사용
 
 /** 접근성 등급 4단계 — 인프라 지도 범례(도보 5/10/15분)와 같은 기준을 그대로 씀 */
