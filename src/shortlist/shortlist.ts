@@ -43,6 +43,7 @@ const IC_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const IC_SPARK = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.8 5.6L19.4 9.4 13.8 11.2 12 17l-1.8-5.8L4.6 9.4l5.6-1.8L12 2z"/></svg>';
 const IC_PLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 19.5l19-7.5-19-7.5 4 7.5-4 7.5z"/></svg>';
 const IC_SEARCH2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
+const IC_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
 const IC_EXTLINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>';
 const IC_XCLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
 const IC_SWAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3L3 7l4 4M3 7h13a4 4 0 0 1 4 4v1M17 21l4-4-4-4M21 17H8a4 4 0 0 1-4-4v-1"/></svg>';
@@ -2989,14 +2990,18 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '        <div class="sl-step3-stat-grid" id="sl-step3-stats"></div>',
     '      </div>',
 
-    // ② 숙소 근처 검색 (마사지·PC방처럼 자유 검색어로 거리순 결과)
+    // ② 숙소 근처 검색 (자유 검색어로 거리순 결과, 접고 펼 수 있음)
     '      <div class="sl-step3-card">',
     '        <div class="sl-step3-card-title">숙소 근처 검색</div>',
-    '        <div class="sl-step3-card-desc">마사지, PC방, 편의점처럼 원하는 걸 검색하면 숙소 근처 결과를 거리순으로 보여줘요.</div>',
+    '        <div class="sl-step3-card-desc">숙소 근처를 검색해보세요.</div>',
     '        <div class="sl-nearby-search-box">',
     '          <span class="sl-nearby-search-icon">' + IC_SEARCH2 + '</span>',
     '          <input type="text" class="sl-nearby-search-input" id="sl-nearby-search-input" placeholder="예: 마사지, PC방, 편의점" maxlength="40" />',
     '          <button type="button" class="sl-nearby-search-btn" id="sl-nearby-search-btn">검색</button>',
+    '        </div>',
+    '        <div class="sl-nearby-results-header" id="sl-nearby-results-header" style="display:none">',
+    '          <span class="sl-nearby-results-count" id="sl-nearby-results-count"></span>',
+    '          <button type="button" class="sl-nearby-toggle-btn" id="sl-nearby-toggle-btn">' + IC_CHEVRON_DOWN + '</button>',
     '        </div>',
     '        <div class="sl-nearby-search-results" id="sl-nearby-search-results"></div>',
     '      </div>',
@@ -3109,6 +3114,12 @@ async function renderStep3(body: HTMLElement): Promise<void> {
       runNearbySearch(body, basecamp);
     }
   });
+  body.querySelector('#sl-nearby-toggle-btn')?.addEventListener('click', () => {
+    const resultsEl = body.querySelector('#sl-nearby-search-results') as HTMLElement | null;
+    const toggleBtn = body.querySelector('#sl-nearby-toggle-btn') as HTMLElement | null;
+    const collapsed = resultsEl?.classList.toggle('sl-nearby-collapsed') ?? false;
+    toggleBtn?.classList.toggle('sl-nearby-toggle-collapsed', collapsed);
+  });
 
   renderStep3Lists(body, withDistance);
   initMapStep3(body);
@@ -3187,10 +3198,16 @@ interface NearbySearchResult {
 /** 이전 검색이 나중에 응답이 와서 최신 검색 결과를 덮어쓰지 않도록 막는 시퀀스 번호 */
 let nearbySearchSeq = 0;
 
+/** 클릭하면 구글에서 이 장소를 검색한 결과 창으로 이동 (이름+주소로 검색해 동명 장소와 헷갈리지 않게 함) */
+function googleSearchUrl(r: NearbySearchResult): string {
+  const q = r.address ? r.name + ' ' + r.address : r.name;
+  return 'https://www.google.com/search?q=' + encodeURIComponent(q);
+}
+
 function buildNearbySearchRow(r: NearbySearchResult): string {
   const km = r.meters >= 1000 ? (r.meters / 1000).toFixed(1) + 'km' : r.meters + 'm';
   return [
-    '<div class="sl-nearby-result-row">',
+    '<a class="sl-nearby-result-row" href="' + googleSearchUrl(r) + '" target="_blank" rel="noopener noreferrer">',
     '  <span class="sl-nearby-result-icon">' + IC_PIN + '</span>',
     '  <div class="sl-nearby-result-main">',
     '    <div class="sl-nearby-result-name">' + escapeHtml(r.name) + '</div>',
@@ -3200,8 +3217,26 @@ function buildNearbySearchRow(r: NearbySearchResult): string {
     '    <div class="sl-nearby-result-dist">' + r.walkMin + '분 · ' + km + '</div>',
     r.rating != null ? '    <div class="sl-nearby-result-rating">★ ' + r.rating.toFixed(1) + '</div>' : '',
     '  </div>',
-    '</div>',
+    '</a>',
   ].join('');
+}
+
+/** 결과 유무에 따라 "N개 결과 + 접기/펼치기" 헤더를 보이거나 숨김 (검색 중/실패/빈 결과일 땐 숨김) */
+function setNearbyResultsHeader(body: HTMLElement, count: number | null): void {
+  const headerEl = body.querySelector('#sl-nearby-results-header') as HTMLElement | null;
+  const countEl = body.querySelector('#sl-nearby-results-count') as HTMLElement | null;
+  const resultsEl = body.querySelector('#sl-nearby-search-results') as HTMLElement | null;
+  const toggleBtn = body.querySelector('#sl-nearby-toggle-btn') as HTMLElement | null;
+  if (!headerEl) return;
+  if (count == null || count === 0) {
+    headerEl.style.display = 'none';
+    return;
+  }
+  headerEl.style.display = 'flex';
+  if (countEl) countEl.textContent = count + '개 결과';
+  // 새 검색 결과는 항상 펼친 상태로 보여줌
+  resultsEl?.classList.remove('sl-nearby-collapsed');
+  toggleBtn?.classList.remove('sl-nearby-toggle-collapsed');
 }
 
 /** 자유 검색어로 숙소 근처 결과 조회 (/api/nearby-search) — Text Search + Route Matrix, 숙소+검색어 조합 단위로 서버 캐싱됨 */
@@ -3215,12 +3250,14 @@ async function runNearbySearch(body: HTMLElement, basecamp: Place): Promise<void
   if (!query) return;
 
   if (basecamp.lat == null || basecamp.lng == null) {
+    setNearbyResultsHeader(body, null);
     resultsEl.innerHTML = '<div class="sl-nearby-search-empty">숙소 좌표를 확인할 수 없어요.</div>';
     return;
   }
 
   const seq = ++nearbySearchSeq;
   if (btn) btn.disabled = true;
+  setNearbyResultsHeader(body, null);
   resultsEl.innerHTML = '<div class="sl-nearby-search-empty">검색 중...</div>';
 
   let results: NearbySearchResult[] = [];
@@ -3259,6 +3296,7 @@ async function runNearbySearch(body: HTMLElement, basecamp: Place): Promise<void
     return;
   }
   resultsEl.innerHTML = results.map(buildNearbySearchRow).join('');
+  setNearbyResultsHeader(body, results.length);
 }
 
 function buildEffRatingRow(label: string, stars: number): string {
