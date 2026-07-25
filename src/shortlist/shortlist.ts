@@ -3343,7 +3343,7 @@ function step3TravelLabel(item: Step3Item): { icon: string; text: string } {
 
 // "이 숙소를 선택하면" 팔레트 — 계속 다듬을 예정이라 색을 여기 한 군데에 모아둠.
 // 다음에 바꿀 땐 이 상수만 건드리면 됨. 하단 설명(desc, 회색 캡션)은 이 실험과 별개로 절대 건드리지 않음.
-const STAT_BRAND_COLOR = '#0A1E5C'; // 아이콘 칩 배경 — 대한항공 특유의 진한 네이비 톤
+const STAT_BRAND_COLOR = '#15308A'; // 아이콘 칩 배경 — 대한항공 네이비에서 살짝 밝힌 블루 톤
 const STAT_VALUE_COLOR = '#1A1A1F'; // 값 텍스트 — 블루 계열이 아니라 거의 검정에 가까운 무채색
 const STAT_ALERT_COLOR = '#C0524B'; // 나중에 "나쁨"만 다시 강조하고 싶을 때 쓸 경고색 — 지금은 미사용
 
