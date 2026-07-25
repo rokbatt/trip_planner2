@@ -3512,19 +3512,22 @@ const INFRA_MARKER_SIZE = 26; // 파스텔 원형 배경 지름 — 리스트 �
 const INFRA_ICON_SIZE = 15; // 아이콘 자체 크기 — 리스트 아이콘과 같은 크기
 function buildInfraMarkerIcon(g: any, meta: { icon: string; color: string }): any {
   const colored = meta.icon.replace(/currentColor/g, meta.color);
-  const innerMatch = colored.match(/<svg[^>]*>([\s\S]*)<\/svg>/);
-  const inner = innerMatch ? innerMatch[1] : colored;
+  const openTagMatch = colored.match(/<svg([^>]*)>([\s\S]*)<\/svg>/);
+  // IC_* 아이콘은 fill="none" stroke="..." stroke-width=".." 등을 전부 최상위 <svg> 태그에만
+  // 걸어두고 내부 <path>/<rect>는 상속에 의존함. 예전 버그: 내부 마크업만 뽑아 새 <g>에
+  // 넣으면서 이 속성들을 안 옮겨서, path/rect가 SVG 기본값(fill:black)으로 채워져 아이콘이
+  // 전부 검은 사각형/도형으로 보였음 — 반드시 이 속성들을 <g>에 그대로 옮겨줘야 함.
+  const attrs = openTagMatch ? openTagMatch[1].replace(/\bviewBox="[^"]*"/, '').trim() : '';
+  const inner = openTagMatch ? openTagMatch[2] : colored;
 
   const canvas = INFRA_MARKER_SIZE;
   const bg = mixWithWhite(meta.color, 0.12);
-  // 중첩 <svg>(x/y/width/height/viewBox)는 마커 이미지로 쓸 때 렌더러에 따라 깨져서
-  // (검은 사각형으로 표시됨) 대신 g에 translate+scale을 걸어 24x24 좌표계를 그대로 옮김
   const scale = INFRA_ICON_SIZE / 24;
   const offset = (canvas - INFRA_ICON_SIZE) / 2;
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="' + canvas + '" height="' + canvas + '" viewBox="0 0 ' + canvas + ' ' + canvas + '">' +
     '<circle cx="' + canvas / 2 + '" cy="' + canvas / 2 + '" r="' + canvas / 2 + '" fill="' + bg + '"/>' +
-    '<g transform="translate(' + offset + ',' + offset + ') scale(' + scale + ')">' + inner + '</g>' +
+    '<g ' + attrs + ' transform="translate(' + offset + ',' + offset + ') scale(' + scale + ')">' + inner + '</g>' +
     '</svg>';
 
   return {
