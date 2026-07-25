@@ -161,8 +161,11 @@ async function handleSubmit(
     const metaAvatar = user.user_metadata && user.user_metadata.avatar_url;
     const metaPicture = user.user_metadata && user.user_metadata.picture;
 
-    // 트리거가 owner를 trip_members에 이미 추가했을 수 있으므로
-    // 멤버가 이미 있으면 충돌(409) 없이 조용히 넘어간다.
+    // 트리거가 owner를 trip_members에 이미 추가했을 수 있으므로 upsert로 충돌(409) 없이
+    // 넘어가되, ignoreDuplicates는 쓰지 않는다 — 이미 있는 행이면 트리거가 만든 이름/아바타
+    // 없는 placeholder일 수 있으므로, 여기서 실제 프로필 정보(display_name/avatar_url)로
+    // 덮어써야 한다. (ignoreDuplicates:true였을 때는 이미 있는 행을 그대로 두고 조용히
+    // 넘어가서, 트리거가 만든 이름/아바타 없는 행이 계속 남아 프로필 사진이 "?"로 보였음)
     const { error: memberError } = await supabase.from('trip_members').upsert(
       {
         trip_id: trip.id,
@@ -171,7 +174,7 @@ async function handleSubmit(
         display_name: metaFullName || metaName || user.email || '나',
         avatar_url: metaAvatar || metaPicture || null,
       },
-      { onConflict: 'trip_id,user_id', ignoreDuplicates: true }
+      { onConflict: 'trip_id,user_id' }
     );
 
     if (memberError) throw memberError;
