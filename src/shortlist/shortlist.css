@@ -1408,39 +1408,68 @@
 .sl-step3-stat-value { font-size: 18px; font-weight: 700; color: #0B2A5C; margin-top: 3px; font-variant-numeric: tabular-nums; }
 .sl-step3-stat-desc { font-size: 10.5px; color: #94A3B8; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ── ⑤ 놓친 장소 체크 ── */
-.sl-step3-missed-list { display: flex; flex-direction: column; gap: 10px; }
-.sl-missed-item { padding: 10px; cursor: default; }
-.sl-missed-item:hover { border-color: #8FD8F8; box-shadow: 0 3px 10px rgba(11,42,92,0.06); transform: translateY(-1px); }
-.sl-missed-item .sl-basecamp-thumb { width: 46px; height: 46px; border-radius: 10px; }
-.sl-missed-item .sl-basecamp-name { font-size: 13px; }
-.sl-missed-tag { display: flex; align-items: center; gap: 7px; font-size: 11px; color: #94A3B8; margin-top: 4px; }
-.sl-missed-badge {
-  font-size: 9.5px;
-  font-weight: 700;
-  color: var(--badge-color);
-  background: color-mix(in srgb, var(--badge-color) 12%, white);
-  padding: 2px 7px;
-  border-radius: 999px;
-}
-.sl-missed-add-btn {
+/* ── ⑤ 숙소 근처 검색 ── */
+.sl-nearby-search-box {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(130,150,170,0.22);
+  background: rgba(255,255,255,0.75);
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.sl-nearby-search-box:focus-within { border-color: #8FD8F8; background: #fff; }
+.sl-nearby-search-icon { display: inline-flex; width: 14px; height: 14px; color: #94A3B8; flex-shrink: 0; }
+.sl-nearby-search-icon svg { width: 100%; height: 100%; }
+.sl-nearby-search-input {
+  flex: 1; min-width: 0; border: none; background: none; outline: none;
+  font-size: 12.5px; font-family: inherit; color: #0B2A5C;
+}
+.sl-nearby-search-input::placeholder { color: #B0BAC5; }
+.sl-nearby-search-btn {
   flex-shrink: 0;
-  border: 1px solid rgba(130,150,170,0.24);
-  background: #fff;
-  color: #0B2A5C;
+  border: none;
+  background: #0B7CC4;
+  color: #fff;
   font-size: 11.5px;
   font-weight: 700;
-  padding: 7px 12px;
-  border-radius: 9px;
+  padding: 7px 14px;
+  border-radius: 8px;
   cursor: pointer;
-  transition: background 150ms ease, border-color 150ms ease;
+  transition: opacity 150ms ease;
 }
-.sl-missed-add-btn svg { width: 11px; height: 11px; }
-.sl-missed-add-btn:hover { background: #F1F6FB; border-color: #8FD8F8; }
-.sl-step3-missed-empty { text-align: center; padding: 20px; font-size: 12.5px; color: #94A3B8; }
+.sl-nearby-search-btn:hover { opacity: 0.88; }
+.sl-nearby-search-btn:disabled { opacity: 0.6; cursor: default; }
+
+.sl-nearby-search-results { display: flex; flex-direction: column; margin-top: 4px; max-height: 320px; overflow-y: auto; }
+.sl-nearby-result-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 2px;
+  border-bottom: 1px dashed rgba(130,150,170,0.16);
+}
+.sl-nearby-result-row:last-child { border-bottom: none; }
+.sl-nearby-result-icon {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: #0B7CC4;
+  background: color-mix(in srgb, #0B7CC4 12%, white);
+}
+.sl-nearby-result-icon svg { width: 14px; height: 14px; }
+.sl-nearby-result-main { flex: 1; min-width: 0; }
+.sl-nearby-result-name { font-size: 12.5px; font-weight: 600; color: #1E293B; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sl-nearby-result-addr { font-size: 10.5px; color: #94A3B8; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sl-nearby-result-meta { flex-shrink: 0; text-align: right; }
+.sl-nearby-result-dist { font-size: 11.5px; font-weight: 600; color: #64748B; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sl-nearby-result-rating { font-size: 10.5px; color: #F5A623; font-weight: 700; margin-top: 2px; }
+.sl-nearby-search-empty { text-align: center; padding: 20px; font-size: 12.5px; color: #94A3B8; }
 
 /* ── ⑥ 멤버 투표 ── */
 /* 카드 제목 안의 아이콘(IC_SPARK)은 크기 지정이 없으면 SVG 기본 크기로 커져버림 — 반드시 제한 */
