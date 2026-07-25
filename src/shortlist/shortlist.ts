@@ -3382,11 +3382,15 @@ function amenityAccess(): { avgMin: number | null; foundCount: number } {
   return { avgMin: Math.round(mins.reduce((a, b) => a + b, 0) / mins.length), foundCount: mins.length };
 }
 
-/** iconColor는 카테고리 고정 톤(중복 없이 서로 다른 색), valueColor는 등급(있으면)만 색으로 표시 */
-function buildStatTile(icon: string, iconColor: string, title: string, value: string, desc: string, valueColor?: string): string {
+/**
+ * bgColor는 아이콘 칩 배경, valueColor는 등급(있으면)만 값 텍스트 색으로 표시.
+ * glyphColor를 넘기면 아이콘 자체 색을 흰색 대신 해당 색으로 표시(파스텔 배경 + 색상 아이콘 조합용).
+ */
+function buildStatTile(icon: string, bgColor: string, title: string, value: string, desc: string, valueColor?: string, glyphColor?: string): string {
+  const iconStyle = '--stat-color:' + bgColor + (glyphColor ? ';color:' + glyphColor : '');
   return [
     '<div class="sl-step3-stat-tile">',
-    '  <span class="sl-step3-stat-icon" style="--stat-color:' + iconColor + '">' + icon + '</span>',
+    '  <span class="sl-step3-stat-icon" style="' + iconStyle + '">' + icon + '</span>',
     '  <div class="sl-step3-stat-title">' + title + '</div>',
     '  <div class="sl-step3-stat-value"' + (valueColor ? ' style="color:' + valueColor + '"' : '') + '>' + value + '</div>',
     '  <div class="sl-step3-stat-desc">' + desc + '</div>',
@@ -3475,7 +3479,15 @@ function renderStep3Lists(body: HTMLElement, withDistance: Step3Item[]): void {
     statsEl.innerHTML = [
       buildStatTile(IC_CLOCK, STAT_BRAND_COLOR, '평균 이동시간', avgMin + '분', '전체 장소 기준', STAT_VALUE_COLOR),
       buildStatTile(IC_WALK, STAT_BRAND_COLOR, '도보권 장소', walkable + '곳', '도보 15분 이내', STAT_VALUE_COLOR),
-      buildStatTile(IC_BUS, STAT_BRAND_COLOR, '대중교통 접근성', transit.label, transitDesc, transit.valueColor),
+      buildStatTile(
+        IC_BUS,
+        mixWithWhite(INFRA_META.transit.color, 0.12),
+        '대중교통 접근성',
+        transit.label,
+        transitDesc,
+        transit.valueColor,
+        INFRA_META.transit.color
+      ),
       buildStatTile(IC_HOUSE, STAT_BRAND_COLOR, '편의시설 접근성', amenityAcc.label, amenityDesc, amenityAcc.valueColor),
       buildStatTile(IC_BUILDING, STAT_BRAND_COLOR, '관광지 접근성', visit.label, visitDesc, visit.valueColor),
       buildStatTile(IC_CART, STAT_BRAND_COLOR, '편의점 접근성', conv.label, convDesc, conv.valueColor),
