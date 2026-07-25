@@ -1442,14 +1442,43 @@
 .sl-nearby-search-btn:hover { opacity: 0.88; }
 .sl-nearby-search-btn:disabled { opacity: 0.6; cursor: default; }
 
+.sl-nearby-results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(130,150,170,0.14);
+}
+.sl-nearby-results-count { font-size: 11px; font-weight: 700; color: #94A3B8; }
+.sl-nearby-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: none;
+  color: #94A3B8;
+  cursor: pointer;
+  transition: transform 150ms ease;
+}
+.sl-nearby-toggle-btn svg { width: 15px; height: 15px; }
+.sl-nearby-toggle-btn.sl-nearby-toggle-collapsed { transform: rotate(-90deg); }
+
 .sl-nearby-search-results { display: flex; flex-direction: column; margin-top: 4px; max-height: 320px; overflow-y: auto; }
+.sl-nearby-search-results.sl-nearby-collapsed { display: none; }
 .sl-nearby-result-row {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 9px 2px;
   border-bottom: 1px dashed rgba(130,150,170,0.16);
+  text-decoration: none;
+  color: inherit;
+  transition: background 120ms ease;
 }
+.sl-nearby-result-row:hover { background: #F1F6FB; }
 .sl-nearby-result-row:last-child { border-bottom: none; }
 .sl-nearby-result-icon {
   width: 26px;
