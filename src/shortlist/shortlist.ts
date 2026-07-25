@@ -3493,30 +3493,32 @@ let step3FacilitiesLoaded = false;
  *  추정치로 채우고, loadRealTravelTimes 배치 호출 결과가 오면 실측으로 교체됨 */
 let step3VisitItems: Step3Item[] = [];
 
-/** 편의시설 카테고리 아이콘을 배경 없이 지도 마커로 사용 (흰 아웃라인 필터로 대비만 확보) */
+/**
+ * 편의시설 카테고리 아이콘을 지도 마커로 사용 — 카테고리색 원형 배경 위에 흰 아이콘을 얹음.
+ * 예전엔 배경 없이 흰 아웃라인만 둘러서 대비를 냈는데, 지도 위에서 잘 안 보인다는 피드백으로
+ * 원형 배경을 다시 넣되(가시성 우선) 아이콘 자체는 24x24 뷰박스 기준 80% 크기로 줄여서
+ * 배경 원 안에 여백을 두고 들어가게 함(롤백 가능성 있어 크기·색은 아래 상수로 모아둠).
+ */
+const INFRA_MARKER_SIZE = 26; // 원형 배경 지름
+const INFRA_ICON_SCALE = 0.8; // 24x24 아이콘을 이 비율로 축소
 function buildInfraMarkerIcon(g: any, meta: { icon: string; color: string }): any {
-  const colored = meta.icon.replace(/currentColor/g, meta.color);
-  const withOutline = colored.replace(
-    /(<svg[^>]*>)([\s\S]*)(<\/svg>)/,
-    (_m: string, open: string, inner: string, close: string) =>
-      // IC_* 아이콘 상수는 innerHTML로 인라인 삽입될 때만 쓰도록 만들어져 xmlns가 없음.
-      // data:image/svg+xml <img>는 독립 SVG 문서로 파싱되므로 xmlns가 없으면 파싱에 실패해
-      // 아이콘이 아예 안 보임(깨진 이미지) — 여기서만 보강해서 넣어준다.
-      open.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ') +
-      '<defs><filter id="infraOutline" x="-60%" y="-60%" width="220%" height="220%">' +
-      '<feMorphology in="SourceAlpha" operator="dilate" radius="1.2" result="thick"/>' +
-      '<feFlood flood-color="#ffffff" flood-opacity="0.95" result="white"/>' +
-      '<feComposite in="white" in2="thick" operator="in" result="outline"/>' +
-      '<feMerge><feMergeNode in="outline"/><feMergeNode in="SourceGraphic"/></feMerge>' +
-      '</filter></defs>' +
-      '<g filter="url(#infraOutline)">' + inner + '</g>' +
-      close
-  );
-  const size = 22;
+  const white = meta.icon.replace(/currentColor/g, '#ffffff');
+  const innerMatch = white.match(/<svg[^>]*>([\s\S]*)<\/svg>/);
+  const inner = innerMatch ? innerMatch[1] : white;
+
+  const canvas = INFRA_MARKER_SIZE;
+  const iconBox = 24 * INFRA_ICON_SCALE;
+  const offset = (canvas - iconBox) / 2;
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + canvas + '" height="' + canvas + '" viewBox="0 0 ' + canvas + ' ' + canvas + '">' +
+    '<circle cx="' + canvas / 2 + '" cy="' + canvas / 2 + '" r="' + canvas / 2 + '" fill="' + meta.color + '"/>' +
+    '<g transform="translate(' + offset + ',' + offset + ') scale(' + INFRA_ICON_SCALE + ')">' + inner + '</g>' +
+    '</svg>';
+
   return {
-    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(withOutline),
-    scaledSize: new g.maps.Size(size, size),
-    anchor: new g.maps.Point(size / 2, size / 2),
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new g.maps.Size(canvas, canvas),
+    anchor: new g.maps.Point(canvas / 2, canvas / 2),
   };
 }
 
