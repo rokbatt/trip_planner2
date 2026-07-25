@@ -114,6 +114,8 @@ let step: 1 | 2 | 3 = 1;
 let selectedZone: Zone | null = null;
 let zoneDataSource = 'curated';
 let selectedBasecamp: Place | null = null;
+/** 이 숙소 구간의 총 숙박 예산(원, 전체 인원·전체 숙박일 기준) — "확정하기" 시점에 DB로 저장됨 */
+let totalBudgetKRW: number | null = null;
 let pendingHotelId: string | null = null;
 /** 숙소 투표 요청 토스트의 "보러 가기"로 들어왔을 때, 그 숙소의 Step3로 강제 이동시키기 위한 1회성 타겟 */
 let pendingVoteTarget: { destinationId: string; placeId: string } | null = null;
@@ -148,6 +150,7 @@ export function teardownShortlist(): void {
   selectedZone = null;
   zoneDataSource = 'curated';
   selectedBasecamp = null;
+  totalBudgetKRW = null;
   pendingHotelId = null;
   step2SortMode = 'rating';
   step2FilterText = '';
@@ -356,6 +359,7 @@ async function saveShortlistState(): Promise<void> {
     zone_place_ids: selectedZone ? selectedZone.places.map((p) => p.id) : null,
     basecamp_place_id: selectedBasecamp?.id ?? null,
     confirmed_place_ids: [...confirmedIds],
+    total_budget_krw: totalBudgetKRW,
   };
   // 활성 여행지의 숙소 구간에 저장 (합성 여행지면 내부적으로 기존 trips.shortlist_* 컬럼으로 폴백).
   // insert된 실제 행의 id를 이어받아 다음 저장이 update가 되도록 slActiveSegment 갱신.
@@ -374,6 +378,7 @@ async function saveShortlistState(): Promise<void> {
       shortlist_zone_place_ids: state.zone_place_ids,
       shortlist_basecamp_place_id: state.basecamp_place_id,
       shortlist_confirmed_place_ids: state.confirmed_place_ids,
+      shortlist_total_budget_krw: state.total_budget_krw,
     };
     store.set('currentTrip', currentTrip);
   }
@@ -686,6 +691,7 @@ function restoreStateFromSegment(seg: StaySegment | null): void {
   selectedZone = null;
   selectedBasecamp = null;
   confirmedIds = new Set();
+  totalBudgetKRW = seg?.total_budget_krw ?? null;
   if (seg?.zone_name && seg.zone_place_ids) {
     const zpids = seg.zone_place_ids;
     const restoredZone = zones.find((z) => z.places.some((p) => zpids.includes(p.id)));
@@ -1024,7 +1030,9 @@ interface DateRangeModalOptions {
   initialStart?: string | null;
   initialEnd?: string | null;
   saveLabel: string;
-  onSave: (start: string | null, end: string | null) => void | Promise<void>;
+  /** 날짜 선택 UI 아래, 액션 버튼 위에 끼워 넣을 추가 필드 HTML (예: 예산 입력) */
+  extraFieldsHtml?: string;
+  onSave: (start: string | null, end: string | null, extra: Record<string, string>) => void | Promise<void>;
 }
 
 /**
@@ -1087,6 +1095,7 @@ function openDateRangeModal(opts: DateRangeModalOptions): void {
           '    <input class="sl-seg-pop-input" id="sp-end" type="date" value="' + (pickedEnd ?? '') + '" />',
           '  </div>',
         ].join(''),
+    opts.extraFieldsHtml ?? '',
     '  <div class="sl-seg-pop-actions">',
     '    <button type="button" class="sl-seg-pop-cancel" id="sp-cancel">취소</button>',
     '    <button type="button" class="sl-seg-pop-save" id="sp-save">' + IC_PLUS + ' ' + escapeHtml(opts.saveLabel) + '</button>',
@@ -1131,9 +1140,13 @@ function openDateRangeModal(opts: DateRangeModalOptions): void {
       start = (overlay.querySelector('#sp-start') as HTMLInputElement).value || null;
       end = (overlay.querySelector('#sp-end') as HTMLInputElement).value || null;
     }
+    const extra: Record<string, string> = {};
+    overlay.querySelectorAll<HTMLInputElement>('[data-extra-field]').forEach((el) => {
+      extra[el.dataset.extraField!] = el.value;
+    });
     (overlay.querySelector('#sp-save') as HTMLButtonElement).disabled = true;
     closeSegPopover();
-    await opts.onSave(start, end);
+    await opts.onSave(start, end, extra);
   });
 
   overlay.addEventListener('mousedown', (e) => {
@@ -1169,6 +1182,18 @@ function openStayDateEditor(): void {
   if (!currentTrip || !slActiveDest || !slActiveSegment || !slContainer) return;
   const rangeStart = slActiveSegment.start_date || slActiveDest.start_date || currentTrip.start_date || null;
   const rangeEnd = slActiveSegment.end_date || slActiveDest.end_date || currentTrip.end_date || null;
+  const headcount = getTripHeadcount();
+  const budgetFieldHtml = [
+    '  <div class="sl-seg-pop-budget">',
+    '    <label class="sl-seg-pop-budget-label">총 숙박 예산 (전체 ' + headcount + '인 · 전체 숙박일 기준)</label>',
+    '    <div class="sl-seg-pop-budget-row">',
+    '      <input type="number" class="sl-seg-pop-input" data-extra-field="totalBudget" id="sp-budget-total" placeholder="예: 900000" value="' + (totalBudgetKRW ?? '') + '" />',
+    '      <span class="sl-budget-custom-unit">원</span>',
+    '    </div>',
+    '    <div class="sl-seg-pop-budget-hint">숙박일 수 × 인원수로 나눠서 "1박 1인" 기준으로 표기돼요</div>',
+    '  </div>',
+  ].join('\n');
+
   openDateRangeModal({
     title: '숙박 기간 수정',
     desc: '이 숙소에 묵는 기간을 다시 정해요. 남는 날짜는 새 숙소 구간으로 자동 분리돼요 <span class="sl-seg-pop-opt">(시작일→종료일 순으로 클릭)</span>',
@@ -1177,12 +1202,16 @@ function openStayDateEditor(): void {
     initialStart: slActiveSegment.start_date,
     initialEnd: slActiveSegment.end_date,
     saveLabel: '저장',
-    onSave: async (start, end) => {
-      if (!start || !end || !slContainer) return;
-      const result = await splitSegmentToRange(start, end);
-      if (result?.configured) {
-        slActiveSegment = result.configured;
-        setActiveSegmentId(slActiveDest!.id, result.configured.id);
+    extraFieldsHtml: budgetFieldHtml,
+    onSave: async (start, end, extra) => {
+      totalBudgetKRW = extra.totalBudget ? Number(extra.totalBudget) : null;
+      if (!slContainer) return;
+      if (start && end) {
+        const result = await splitSegmentToRange(start, end);
+        if (result?.configured) {
+          slActiveSegment = result.configured;
+          setActiveSegmentId(slActiveDest!.id, result.configured.id);
+        }
       }
       renderStep(slContainer);
     },
@@ -2192,6 +2221,15 @@ function formatTripDateRange(): string {
   return fmt(s) + ' – ' + fmt(e);
 }
 
+/** formatTripDateRange()와 같은 우선순위로 현재 숙박 일수(박)를 계산 — 최소 1박 */
+function currentStayNights(): number {
+  const start = slActiveSegment?.start_date || slActiveDest?.start_date || currentTrip?.start_date;
+  const end = slActiveSegment?.end_date || slActiveDest?.end_date || currentTrip?.end_date;
+  if (!start || !end) return 1;
+  const nights = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000);
+  return Math.max(1, nights);
+}
+
 /* 예산 단계(1박 1인 기준, 원화) → USD 환산 (사이트 기본 통화가 USD인 경우가 많아 근사 환산에 사용) */
 const BUDGET_PRESETS: Record<string, { minKRW: number; maxKRW: number; label: string }> = {
   'under5': { minKRW: 0, maxKRW: 50000, label: '5만원 이하' },
@@ -2794,7 +2832,16 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   }
 
   const closeCount = withDistance.filter((item) => item.km <= 1.5).length;
-  const budgetLabel = stayFilters.budget ? (BUDGET_PRESETS[stayFilters.budget]?.label ?? '직접설정') : '전체';
+  const stayNights = currentStayNights();
+  const stayHeadcount = getTripHeadcount();
+  const perNightPerPerson =
+    totalBudgetKRW != null && totalBudgetKRW > 0
+      ? Math.round(totalBudgetKRW / stayNights / stayHeadcount)
+      : null;
+  const budgetLabel =
+    perNightPerPerson != null
+      ? perNightPerPerson.toLocaleString() + '원 (총 ' + totalBudgetKRW!.toLocaleString() + '원 · ' + stayNights + '박 ' + stayHeadcount + '인)'
+      : '미입력';
 
   void closeCount;
   // 스테퍼 줄 우측(#sl-stepper-extra)은 이제 renderShortlistDestBar가 "여행지 변경"을

@@ -176,6 +176,11 @@
 }
 .sl-seg-pop-input:focus { outline: none; border-color: #8FD8F8; }
 .sl-seg-pop-tilde { color: #94A3B8; flex-shrink: 0; }
+.sl-seg-pop-budget { margin-top: 4px; margin-bottom: 14px; }
+.sl-seg-pop-budget-label { display: block; font-size: 11.5px; font-weight: 700; color: #46536B; margin-bottom: 6px; }
+.sl-seg-pop-budget-row { display: flex; align-items: center; gap: 8px; }
+.sl-seg-pop-budget-row .sl-seg-pop-input { flex: 1; padding: 9px 10px; }
+.sl-seg-pop-budget-hint { margin-top: 5px; font-size: 10.5px; color: #B0BAC5; }
 .sl-seg-daystrip {
   display: flex; gap: 6px; overflow-x: auto; padding: 2px 2px 12px;
   margin-bottom: 6px;
