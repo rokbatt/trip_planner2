@@ -173,6 +173,8 @@ api/                                  ← Vercel 서버리스 함수 (각각 완
   nearby-infra.ts                    ← 숙소 주변 편의시설 (고정 카테고리, Places+Routes API + DB 캐싱)
   nearby-search.ts                   ← 숙소 근처 자유 검색어 (Text Search + Routes API + DB 캐싱)
   cleanup-search-cache.ts            ← Vercel Cron: 자유 입력 캐시 테이블 TTL 정리 (3-5 참고)
+  hotel-score.ts                     ← 여행 효율 점수 (Gemini 정형 채점 + DB 캐싱)
+  hotel-review-summary.ts            ← AI 리뷰 요약 (Gemini + Google Search 그라운딩, 버튼 클릭 시에만 호출 + DB 캐싱)
 ```
 
 ---

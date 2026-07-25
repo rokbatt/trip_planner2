@@ -163,6 +163,9 @@ export function teardownShortlist(): void {
   step3InfraLines = [];
   step3Facilities = [];
   step3VisitItems = [];
+  reviewSummaryData = null;
+  reviewSummaryLoading = false;
+  reviewSummaryPlaceId = null;
   mapMarkers = [];
   highlightedZoneId = null;
   pendingSelectedZoneId = null;
@@ -2816,6 +2819,14 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   step3Facilities = [];
   step3FacilitiesLoaded = false;
 
+  // AI 리뷰 요약은 호출당 비용이 있어 같은 숙소면 재렌더링(투표 등)이 와도 유지하고,
+  // 다른 숙소로 바뀔 때만 리셋함
+  if (reviewSummaryPlaceId !== basecamp.id) {
+    reviewSummaryData = null;
+    reviewSummaryLoading = false;
+    reviewSummaryPlaceId = basecamp.id;
+  }
+
   const others = zone.places.filter((p) => p.id !== basecamp.id);
   const withDistance: Step3Item[] = others
     .filter((p) => p.lat != null && p.lng != null)
@@ -2921,6 +2932,9 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     })
     .join('');
 
+  // 이미 이 숙소의 AI 리뷰 요약을 불러온 적이 있으면(다른 카드 갱신으로 재렌더링된 경우) 버튼 대신 결과를 바로 보여줌
+  const reviewAlreadyLoaded = reviewSummaryData != null;
+
   body.innerHTML = [
     '<div class="sl-step3">',
 
@@ -2980,7 +2994,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '      <div class="sl-step3-card sl-step3-eff-card">',
     '        <div class="sl-step3-eff-score">',
     '          <div class="sl-step3-eff-num" id="sl-eff-num">' + eff.score + '<span class="sl-step3-eff-max">/100</span></div>',
-    '          <div class="sl-step3-eff-grade" id="sl-eff-grade">' + escapeHtml(eff.grade) + '</div>',
+    '          <div class="sl-step3-eff-grade" id="sl-eff-grade" style="' + gradeBadgeStyle(eff.grade) + '">' + escapeHtml(eff.grade) + '</div>',
     '          <div class="sl-step3-eff-note" id="sl-eff-grade-note">' + escapeHtml(eff.note) + '</div>',
     '        </div>',
     '        <div class="sl-step3-eff-ratings" id="sl-eff-ratings">' + effRatings + '</div>',
@@ -2997,7 +3011,19 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '        <div class="sl-step3-stat-grid" id="sl-step3-stats"></div>',
     '      </div>',
 
-    // ② 숙소 근처 검색 (자유 검색어로 거리순 결과, 접고 펼 수 있음)
+    // ② AI 리뷰 요약 — 버튼을 눌러야 그때 Gemini(Google 검색 그라운딩) 요청 (비용이 드는 기능이라 자동 조회 안 함)
+    '      <div class="sl-step3-card">',
+    '        <div class="sl-step3-card-title">AI 리뷰 요약</div>',
+    '        <div class="sl-step3-card-desc">실제 이용자 후기를 AI가 찾아 정리해드려요.</div>',
+    '        <button type="button" class="sl-review-summary-btn" id="sl-review-summary-btn"' + (reviewAlreadyLoaded ? ' style="display:none"' : '') + '>' + IC_SPARK + ' AI 리뷰 요약 보기</button>',
+    '        <div class="sl-review-summary-header" id="sl-review-summary-header" style="display:' + (reviewAlreadyLoaded ? 'flex' : 'none') + '">',
+    '          <span class="sl-review-summary-header-label">AI가 찾은 실제 후기 요약</span>',
+    '          <button type="button" class="sl-nearby-toggle-btn" id="sl-review-summary-toggle">' + IC_CHEVRON_DOWN + '</button>',
+    '        </div>',
+    '        <div class="sl-review-summary-body" id="sl-review-summary-body"></div>',
+    '      </div>',
+
+    // ③ 숙소 근처 검색 (자유 검색어로 거리순 결과, 접고 펼 수 있음)
     '      <div class="sl-step3-card">',
     '        <div class="sl-step3-card-title">숙소 근처 검색</div>',
     '        <div class="sl-step3-card-desc">숙소 근처를 검색해보세요.</div>',
@@ -3013,10 +3039,10 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '        <div class="sl-nearby-search-results" id="sl-nearby-search-results"></div>',
     '      </div>',
 
-    // ③ 멤버 투표
+    // ④ 멤버 투표
     voteCardHtml,
 
-    // ④ 숙소 나누기 진입 (실제 여행지 + 아직 단일 구간일 때만 — 구간이 2개 이상이면 상단 바로 대체됨)
+    // ⑤ 숙소 나누기 진입 (실제 여행지 + 아직 단일 구간일 때만 — 구간이 2개 이상이면 상단 바로 대체됨)
     (slActiveDest && !isSyntheticDestination(slActiveDest.id) && slSegments.length < 2)
       ? [
           '      <div class="sl-step3-split-card">',
@@ -3029,7 +3055,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
         ].join('\n')
       : '',
 
-    // ⑤ 하단 CTA (우측 컬럼 맨 아래 — 레퍼런스와 동일)
+    // ⑥ 하단 CTA (우측 컬럼 맨 아래 — 레퍼런스와 동일)
     '      <div class="sl-step3-cta-wrap">',
     '        <button class="sl-step2-cta sl-step3-cta" id="sl-proceed"><span class="sl-step3-cta-main">' + IC_CHECK + ' 이 숙소를 여행 중심으로 확정하기</span></button>',
     '      </div>',
@@ -3131,6 +3157,16 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     toggleBtn?.classList.toggle('sl-nearby-toggle-collapsed', collapsed);
   });
 
+  body.querySelector('#sl-review-summary-btn')?.addEventListener('click', () => runReviewSummary(body, basecamp, zone.name, getTripDestination()));
+  body.querySelector('#sl-review-summary-toggle')?.addEventListener('click', () => {
+    const resultsEl = body.querySelector('#sl-review-summary-body') as HTMLElement | null;
+    const toggleBtn = body.querySelector('#sl-review-summary-toggle') as HTMLElement | null;
+    const collapsed = resultsEl?.classList.toggle('sl-nearby-collapsed') ?? false;
+    toggleBtn?.classList.toggle('sl-nearby-toggle-collapsed', collapsed);
+  });
+  // 재렌더링(투표 등)으로 버튼/헤더 DOM이 새로 생겼어도 이미 불러온 결과가 있으면 즉시 다시 채워줌
+  if (reviewSummaryData) renderReviewSummary(body, reviewSummaryData);
+
   renderStep3Lists(body, withDistance);
   initMapStep3(body);
 
@@ -3202,6 +3238,99 @@ function attachInfraRowClickHandlers(container: HTMLElement): void {
       if (key) zoomToInfraMarker(key);
     });
   });
+}
+
+interface ReviewSummaryResult {
+  pros: string[];
+  cons: string[];
+  tips: string[];
+  sources: { title: string; uri: string }[];
+}
+
+/** 한 번 불러온 결과는 재요청 없이 접었다 펼 수 있도록 보관 (Google Search 그라운딩은 호출당 비용이 있어 재요청을 피함) */
+let reviewSummaryData: ReviewSummaryResult | null = null;
+let reviewSummaryLoading = false;
+/** reviewSummaryData가 어느 숙소(placeId) 결과인지 — 다른 숙소로 바꾸면 리셋해야 함 */
+let reviewSummaryPlaceId: string | null = null;
+
+function buildReviewSection(icon: string, title: string, items: string[]): string {
+  return [
+    '<div class="sl-review-section">',
+    '  <div class="sl-review-section-title">' + icon + ' ' + title + '</div>',
+    '  <ul class="sl-review-section-list">' + items.map((t) => '<li>' + escapeHtml(t) + '</li>').join('') + '</ul>',
+    '</div>',
+  ].join('');
+}
+
+function renderReviewSummary(body: HTMLElement, data: ReviewSummaryResult): void {
+  const bodyEl = body.querySelector('#sl-review-summary-body') as HTMLElement | null;
+  if (!bodyEl) return;
+  bodyEl.innerHTML = [
+    buildReviewSection('👍', '장점', data.pros),
+    buildReviewSection('👎', '단점 및 주의사항', data.cons),
+    buildReviewSection('💡', '꿀팁', data.tips),
+    data.sources.length
+      ? '<div class="sl-review-sources">출처: ' +
+        data.sources.map((s) => '<a href="' + s.uri + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(s.title) + '</a>').join(', ') +
+        '</div>'
+      : '',
+  ].join('');
+}
+
+/** "AI 리뷰 요약 보기" 클릭 — 이미 불러왔으면 재요청 없이 접기/펼치기만, 처음이면 /api/hotel-review-summary 호출 */
+async function runReviewSummary(
+  body: HTMLElement,
+  basecamp: Place,
+  zoneName: string,
+  destination: string
+): Promise<void> {
+  const btn = body.querySelector('#sl-review-summary-btn') as HTMLButtonElement | null;
+  const headerEl = body.querySelector('#sl-review-summary-header') as HTMLElement | null;
+  const bodyEl = body.querySelector('#sl-review-summary-body') as HTMLElement | null;
+  if (!btn || !headerEl || !bodyEl) return;
+
+  if (reviewSummaryData) {
+    const collapsed = bodyEl.classList.toggle('sl-nearby-collapsed');
+    body.querySelector('#sl-review-summary-toggle')?.classList.toggle('sl-nearby-toggle-collapsed', collapsed);
+    return;
+  }
+  if (reviewSummaryLoading) return;
+
+  reviewSummaryLoading = true;
+  btn.disabled = true;
+  btn.textContent = 'AI가 후기를 찾는 중...';
+
+  let result: ReviewSummaryResult | null = null;
+  try {
+    const res = await fetch('/api/hotel-review-summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        placeId: basecamp.google_place_id ?? undefined,
+        hotelName: basecamp.name,
+        address: basecamp.address ?? '',
+        zoneName,
+        destination,
+      }),
+    });
+    if (res.ok) result = await res.json();
+  } catch {
+    /* result는 null로 유지 → 아래 실패 처리 */
+  }
+
+  reviewSummaryLoading = false;
+  if (step !== 3) return;
+
+  if (!result) {
+    btn.disabled = false;
+    btn.textContent = 'AI 리뷰 요약을 가져오지 못했어요. 다시 시도';
+    return;
+  }
+
+  reviewSummaryData = result;
+  btn.style.display = 'none';
+  headerEl.style.display = 'flex';
+  renderReviewSummary(body, result);
 }
 
 interface NearbySearchResult {
@@ -3397,7 +3526,10 @@ async function loadHotelScore(
   const numEl = body.querySelector('#sl-eff-num') as HTMLElement;
   if (numEl) numEl.innerHTML = result.score + '<span class="sl-step3-eff-max">/100</span>';
   const gradeEl = body.querySelector('#sl-eff-grade') as HTMLElement;
-  if (gradeEl) gradeEl.textContent = result.grade;
+  if (gradeEl) {
+    gradeEl.textContent = result.grade;
+    gradeEl.setAttribute('style', gradeBadgeStyle(result.grade));
+  }
   const gradeNoteEl = body.querySelector('#sl-eff-grade-note') as HTMLElement;
   if (gradeNoteEl) gradeNoteEl.textContent = GRADE_NOTE[result.grade] ?? '';
   const ratingsEl = body.querySelector('#sl-eff-ratings') as HTMLElement;
@@ -3474,13 +3606,25 @@ async function loadRealTravelTimes(
 // 다음에 바꿀 땐 이 상수만 건드리면 됨. 하단 설명(desc, 회색 캡션)은 이 실험과 별개로 절대 건드리지 않음.
 const STAT_BRAND_COLOR = '#5B9BD5'; // 아이콘 칩 배경 구 버전 — 지금은 6개 타일 전부 지도 마커 색(대중교통 톤)으로 통일해 미사용
 const STAT_VALUE_COLOR = '#0D2F6B'; // 값 텍스트 — 직전에 아이콘 배경으로 쓰던 네이비 톤
-const STAT_ALERT_COLOR = '#C0524B'; // 나중에 "나쁨"만 다시 강조하고 싶을 때 쓸 경고색 — 지금은 미사용
+const STAT_ALERT_COLOR = '#C0524B'; // "나쁨"류를 강조할 때 쓰는 경고색 — 여행 효율 등급 배지(Basic)에 사용 중
+
+/** 여행 효율 등급 배지 색 — api/hotel-score.ts의 gradeFor() 임계값(85/70/55)과 1:1 대응.
+ *  전엔 등급과 무관하게 항상 초록 하나였는데(버그), 등급별로 실제 구분되게 함 */
+const GRADE_BADGE_COLOR: Record<string, string> = {
+  Excellent: '#0F6E56',
+  Good: '#0B7CC4',
+  Fair: '#B45309',
+  Basic: STAT_ALERT_COLOR,
+};
+function gradeBadgeStyle(grade: string): string {
+  const c = GRADE_BADGE_COLOR[grade] ?? STAT_VALUE_COLOR;
+  return '--grade-bg:' + mixWithWhite(c, 0.14) + ';--grade-fg:' + c;
+}
 
 /** 접근성 등급 4단계 — 인프라 지도 범례(도보 5/10/15분)와 같은 기준을 그대로 씀 */
 type AccessTier = 'great' | 'good' | 'ok' | 'bad';
 const ACCESS_TIER_LABEL: Record<AccessTier, string> = { great: '아주 좋음', good: '좋음', ok: '보통', bad: '나쁨' };
 // 우선은 등급(좋음/나쁨)과 무관하게 값 텍스트를 전부 STAT_VALUE_COLOR로 통일
-void STAT_ALERT_COLOR;
 void STAT_BRAND_COLOR;
 const ACCESS_TIER_COLOR: Record<AccessTier, string> = {
   great: STAT_VALUE_COLOR,
