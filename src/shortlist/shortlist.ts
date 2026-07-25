@@ -2966,7 +2966,6 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     // ② 주변 편의 인프라 — 지도 + 시설 리스트(Phase 2 예시)
     '      <div class="sl-step3-card sl-step3-infra-card">',
     '        <div class="sl-step3-card-title">주변 편의 인프라</div>',
-    '        <div class="sl-step3-card-desc">숙소를 기준으로 주요 편의시설까지의 거리입니다.</div>',
     '        <div class="sl-step3-infra-body">',
     '          <div class="sl-map-wrap sl-step3-map-wrap">',
     '            <div id="sl-map3" class="sl-map"></div>',
@@ -2980,7 +2979,6 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '            </div>',
     '          </div>',
     '        </div>',
-    '        <div class="sl-step3-sample-note" id="sl-infra-note">* 시설별 거리는 레이아웃 예시예요. 실제 데이터는 곧 연동됩니다.</div>',
     '      </div>',
 
     // ③ 여행 효율 점수 (Gemini 정형 채점 — 도착 전엔 예시)
@@ -3225,8 +3223,6 @@ async function loadNearbyInfra(body: HTMLElement, basecamp: Place, withDistance:
         })
         .join('');
     }
-    const noteEl = body.querySelector('#sl-infra-note') as HTMLElement;
-    if (noteEl) noteEl.textContent = '* 숙소 기준 실제 도보 경로 거리·시간이에요.';
     drawInfraLines(basecamp, facilities); // 지도가 아직이면 no-op → 지도 준비 후 initMapStep3에서 다시 그림
   }
 

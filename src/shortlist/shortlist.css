@@ -1311,9 +1311,11 @@
 }
 .sl-step3-summary-edit { align-self: end; }
 
-/* ── ② 주변 편의 인프라 (지도 70% + 시설 리스트 30%) ── */
-.sl-step3-infra-body { display: flex; gap: 20px; }
-.sl-step3-map-wrap { flex: 68 1 0%; min-width: 0; height: 340px; }
+/* ── ② 주변 편의 인프라 (지도 70% + 시설 리스트 30%) ──
+   설명 문구·하단 안내 문구를 없앤 만큼 지도 높이를 늘려 그 여백을 채움.
+   카드 자체 padding(24px)이 지도 아래쪽 여백 역할을 하므로 별도 margin은 필요 없음 */
+.sl-step3-infra-body { display: flex; gap: 20px; margin-top: 16px; }
+.sl-step3-map-wrap { flex: 68 1 0%; min-width: 0; height: 404px; }
 .sl-step3-infra-side { flex: 32 1 0%; min-width: 0; display: flex; flex-direction: column; }
 .sl-step3-infra-list { display: flex; flex-direction: column; }
 .sl-infra-row {
