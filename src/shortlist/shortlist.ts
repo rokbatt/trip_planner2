@@ -2815,6 +2815,11 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   const basecamp = selectedBasecamp;
   const dateRange = formatTripDateRange();
 
+  // 접근성 타일이 이전(다른) 숙소의 인프라 데이터를 한 프레임이라도 잘못 보여주지 않도록,
+  // 매 Step3 진입 시 여기서 먼저 리셋 — 실제 재조회는 아래 loadNearbyInfra가 담당(서버 캐시라 저렴함)
+  step3Facilities = [];
+  step3FacilitiesLoaded = false;
+
   const others = zone.places.filter((p) => p.id !== basecamp.id);
   const withDistance: Step3Item[] = others
     .filter((p) => p.lat != null && p.lng != null)
@@ -2991,7 +2996,6 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '      <div class="sl-step3-card">',
     '        <div class="sl-step3-card-title">이 숙소를 선택하면</div>',
     '        <div class="sl-step3-stat-grid" id="sl-step3-stats"></div>',
-    '        <div class="sl-step3-sample-note">* 접근성 지표는 곧 실제 데이터로 연동돼요 (현재 예시)</div>',
     '      </div>',
 
     // ② 놓친 장소 체크
@@ -3124,7 +3128,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   const avgMin = withDistance.length
     ? Math.round(withDistance.reduce((s, item) => s + item.minutes, 0) / withDistance.length)
     : 0;
-  loadNearbyInfra(body, basecamp);
+  loadNearbyInfra(body, basecamp, withDistance);
   loadHotelScore(body, {
     placeId: basecamp.google_place_id ?? undefined,
     hotelName: basecamp.name,
@@ -3159,9 +3163,14 @@ function buildEffRatingRow(label: string, stars: number): string {
   ].join('');
 }
 
-/** 주변 편의 인프라 실데이터 (/api/nearby-infra) — 성공 시 리스트+지도 점선 교체 */
-async function loadNearbyInfra(body: HTMLElement, basecamp: Place): Promise<void> {
-  if (basecamp.lat == null || basecamp.lng == null) return;
+/** 주변 편의 인프라 실데이터 (/api/nearby-infra) — 성공 시 리스트+지도 점선+접근성 타일 교체 */
+async function loadNearbyInfra(body: HTMLElement, basecamp: Place, withDistance: Step3Item[]): Promise<void> {
+  if (basecamp.lat == null || basecamp.lng == null) {
+    step3FacilitiesLoaded = true; // 좌표가 없어 확인 자체가 불가 — "확인 중" 대신 바로 결과 없음으로 표시
+    if (step === 3) renderStep3Lists(body, withDistance);
+    return;
+  }
+
   let facilities: InfraFacility[] = [];
   try {
     const res = await fetch('/api/nearby-infra', {
@@ -3169,29 +3178,35 @@ async function loadNearbyInfra(body: HTMLElement, basecamp: Place): Promise<void
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ placeId: basecamp.google_place_id ?? undefined, lat: basecamp.lat, lng: basecamp.lng }),
     });
-    if (!res.ok) return;
-    const data = await res.json();
-    facilities = Array.isArray(data.facilities) ? data.facilities : [];
+    if (res.ok) {
+      const data = await res.json();
+      facilities = Array.isArray(data.facilities) ? data.facilities : [];
+    }
   } catch {
-    return;
+    /* 실패하면 빈 결과로 취급 — 아래에서 "로드는 됐지만 못 찾음" 상태로 마무리 */
   }
-  if (step !== 3 || facilities.length === 0) return;
 
-  const listEl = body.querySelector('#sl-infra-list') as HTMLElement;
-  if (listEl) {
-    listEl.innerHTML = facilities
-      .map((f) => {
-        const meta = INFRA_META[f.key];
-        const km = f.meters >= 1000 ? (f.meters / 1000).toFixed(1) + 'km' : f.meters + 'm';
-        return buildInfraRow(meta, f.walkMin + '분 · ' + km);
-      })
-      .join('');
-  }
-  const noteEl = body.querySelector('#sl-infra-note') as HTMLElement;
-  if (noteEl) noteEl.textContent = '* 숙소 기준 실제 도보 경로 거리·시간이에요.';
-
+  step3FacilitiesLoaded = true;
   step3Facilities = facilities;
-  drawInfraLines(basecamp, facilities); // 지도가 아직이면 no-op → 지도 준비 후 initMapStep3에서 다시 그림
+  if (step !== 3) return;
+
+  if (facilities.length > 0) {
+    const listEl = body.querySelector('#sl-infra-list') as HTMLElement;
+    if (listEl) {
+      listEl.innerHTML = facilities
+        .map((f) => {
+          const meta = INFRA_META[f.key];
+          const km = f.meters >= 1000 ? (f.meters / 1000).toFixed(1) + 'km' : f.meters + 'm';
+          return buildInfraRow(meta, f.walkMin + '분 · ' + km);
+        })
+        .join('');
+    }
+    const noteEl = body.querySelector('#sl-infra-note') as HTMLElement;
+    if (noteEl) noteEl.textContent = '* 숙소 기준 실제 도보 경로 거리·시간이에요.';
+    drawInfraLines(basecamp, facilities); // 지도가 아직이면 no-op → 지도 준비 후 initMapStep3에서 다시 그림
+  }
+
+  renderStep3Lists(body, withDistance); // "이 숙소를 선택하면" 접근성 타일도 이 데이터 기준이라 함께 갱신
 }
 
 /** 여행 효율 점수 실데이터 (/api/hotel-score) — 성공 시 점수/등급/별점 교체 */
@@ -3299,6 +3314,41 @@ function step3TravelLabel(item: Step3Item): { icon: string; text: string } {
   return { icon: travel.icon, text: travel.label };
 }
 
+/** 접근성 등급 4단계 — 인프라 지도 범례(도보 5/10/15분)와 같은 기준을 그대로 씀 */
+type AccessTier = 'great' | 'good' | 'ok' | 'bad';
+const ACCESS_TIER_LABEL: Record<AccessTier, string> = { great: '아주 좋음', good: '좋음', ok: '보통', bad: '나쁨' };
+const ACCESS_TIER_COLOR: Record<AccessTier, string> = { great: '#1D9E75', good: '#0B7CC4', ok: '#F5A623', bad: '#E24B4A' };
+
+function walkAccessTier(walkMin: number | null): AccessTier {
+  if (walkMin == null) return 'bad';
+  if (walkMin <= 5) return 'great';
+  if (walkMin <= 10) return 'good';
+  if (walkMin <= 15) return 'ok';
+  return 'bad';
+}
+
+/** 관광지 접근성 — 이 트립에 담은 장소까지 평균 "이동시간"(도보/차량 혼합) 기준이라 분 단위를 더 넉넉하게 잡음 */
+function visitAccessTier(avgMin: number | null): AccessTier {
+  if (avgMin == null) return 'bad';
+  if (avgMin <= 10) return 'great';
+  if (avgMin <= 20) return 'good';
+  if (avgMin <= 30) return 'ok';
+  return 'bad';
+}
+
+function facilityWalkMin(key: string): number | null {
+  const found = step3Facilities.find((f) => f.key === key);
+  return found ? found.walkMin : null;
+}
+
+/** "편의시설 접근성" = 편의점·카페·마트·약국·ATM 5개 평균 도보 시간(찾은 것만 평균) */
+const AMENITY_KEYS = ['convenience', 'cafe', 'supermarket', 'pharmacy', 'atm'];
+function amenityAccess(): { avgMin: number | null; foundCount: number } {
+  const mins = AMENITY_KEYS.map(facilityWalkMin).filter((m): m is number => m != null);
+  if (mins.length === 0) return { avgMin: null, foundCount: 0 };
+  return { avgMin: Math.round(mins.reduce((a, b) => a + b, 0) / mins.length), foundCount: mins.length };
+}
+
 function buildStatTile(icon: string, color: string, title: string, value: string, desc: string): string {
   return [
     '<div class="sl-step3-stat-tile">',
@@ -3354,15 +3404,45 @@ function renderStep3Lists(body: HTMLElement, withDistance: Step3Item[]): void {
       ? Math.round(withDistance.reduce((sum, item) => sum + item.minutes, 0) / withDistance.length)
       : 0;
 
-    // 평균 이동시간·도보권 장소는 실데이터(직선거리/실측 경로) 기반.
-    // 대중교통·편의시설·관광지·편의점 접근성은 Phase 2(Nearby Search) 예시 — 안전도(야간)는 실측 불가라 제외.
+    // /api/nearby-infra가 아직 응답 전이면 등급 대신 "확인 중"으로 표시(잘못된 등급을 잠깐 보여주지 않기 위함)
+    const accessValue = (tier: AccessTier): { label: string; color: string } =>
+      step3FacilitiesLoaded
+        ? { label: ACCESS_TIER_LABEL[tier], color: ACCESS_TIER_COLOR[tier] }
+        : { label: '확인 중', color: '#94A3B8' };
+
+    const transitMin = facilityWalkMin('transit');
+    const transit = accessValue(walkAccessTier(transitMin));
+    const transitDesc = !step3FacilitiesLoaded ? '잠시만요' : transitMin != null ? '도보 ' + transitMin + '분' : '2km 내 없음';
+
+    const convMin = facilityWalkMin('convenience');
+    const conv = accessValue(walkAccessTier(convMin));
+    const convDesc = !step3FacilitiesLoaded ? '잠시만요' : convMin != null ? '도보 ' + convMin + '분' : '2km 내 없음';
+
+    const amenity = amenityAccess();
+    const amenityAcc = accessValue(walkAccessTier(amenity.avgMin));
+    const amenityDesc = !step3FacilitiesLoaded
+      ? '잠시만요'
+      : amenity.avgMin != null
+        ? '평균 도보 ' + amenity.avgMin + '분 (' + amenity.foundCount + '/5)'
+        : '2km 내 없음';
+
+    // 관광지 접근성 — 이 트립에 실제로 담은 VISIT(가고싶어) 장소까지 평균 이동시간 기준
+    const visitItems = withDistance.filter((item) => item.place.mood === '가고싶어');
+    const visitAvgMin = visitItems.length
+      ? Math.round(visitItems.reduce((sum, item) => sum + item.minutes, 0) / visitItems.length)
+      : null;
+    const visit = accessValue(visitAccessTier(visitAvgMin));
+    const visitDesc = visitAvgMin != null ? '담은 관광지 ' + visitItems.length + '곳 평균' : '담은 관광지 없음';
+
+    // 평균 이동시간·도보권 장소·관광지 접근성: 이 트립에 담은 실제 장소까지 거리/이동시간(실측 도착 시 자동 교체).
+    // 대중교통·편의시설·편의점 접근성: /api/nearby-infra(Google Places Nearby Search + Routes API 실측 도보시간).
     statsEl.innerHTML = [
       buildStatTile(IC_CLOCK, '#0B7CC4', '평균 이동시간', avgMin + '분', '전체 장소 기준'),
       buildStatTile(IC_WALK, '#1D9E75', '도보권 장소', walkable + '곳', '도보 15분 이내'),
-      buildStatTile(IC_BUS, '#0B7CC4', '대중교통 접근성', '좋음', '주요 역·정류장 인접'),
-      buildStatTile(IC_HOUSE, '#F5A623', '편의시설 접근성', '좋음', '편의점·카페·마트 등'),
-      buildStatTile(IC_BUILDING, '#1D9E75', '관광지 접근성', '좋음', '주요 관광지 근접'),
-      buildStatTile(IC_CART, '#0F9E9E', '편의점 접근성', '좋음', '24시 편의점 인근'),
+      buildStatTile(IC_BUS, transit.color, '대중교통 접근성', transit.label, transitDesc),
+      buildStatTile(IC_HOUSE, amenityAcc.color, '편의시설 접근성', amenityAcc.label, amenityDesc),
+      buildStatTile(IC_BUILDING, visit.color, '관광지 접근성', visit.label, visitDesc),
+      buildStatTile(IC_CART, conv.color, '편의점 접근성', conv.label, convDesc),
     ].join('');
   }
 }
@@ -3370,6 +3450,9 @@ function renderStep3Lists(body: HTMLElement, withDistance: Step3Item[]): void {
 let step3MapInstance: any = null;
 let step3InfraLines: any[] = [];
 let step3Facilities: InfraFacility[] = []; // 지도 준비/인프라 도착 순서와 무관하게 다시 그리기 위해 보관
+/** /api/nearby-infra 응답이 (결과가 비어있더라도) 한 번이라도 도착했는지 — 접근성 타일에서
+ *  "아직 확인 중"과 "실제로 시설이 없어서 나쁨"을 구분하기 위해 필요 */
+let step3FacilitiesLoaded = false;
 
 /** 편의시설 카테고리 아이콘을 배경 없이 지도 마커로 사용 (흰 아웃라인 필터로 대비만 확보) */
 function buildInfraMarkerIcon(g: any, meta: { icon: string; color: string }): any {
@@ -3492,6 +3575,7 @@ async function initMapStep3(body: HTMLElement): Promise<void> {
   step3MapInstance = null;
   step3InfraLines = [];
   step3Facilities = [];
+  step3FacilitiesLoaded = false;
   if (!selectedBasecamp) return;
 
   try {

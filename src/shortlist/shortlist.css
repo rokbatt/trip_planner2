@@ -1379,8 +1379,10 @@
 .sl-eff-rating-stars svg { width: 13px; height: 13px; }
 .sl-eff-star-empty { color: #E2E8F0; display: inline-flex; }
 
-/* ── ④ 이 숙소를 선택하면 (2x3 컬러 타일) ── */
-.sl-step3-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* ── ④ 이 숙소를 선택하면 (2x3 컬러 타일) ──
+   이 카드는 .sl-step3-card-desc 없이 제목 바로 아래 그리드가 오는데, 제목엔 기본
+   margin-bottom이 없어서 그리드 내부 gap(10px)보다 위쪽 간격이 더 좁아 보였음 — 맞춤 */
+.sl-step3-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
 .sl-step3-stat-tile {
   border: 1px solid #E8EDF5;
   border-radius: 14px;
