@@ -1433,6 +1433,9 @@
 .sl-step3-missed-empty { text-align: center; padding: 20px; font-size: 12.5px; color: #94A3B8; }
 
 /* ── ⑥ 멤버 투표 ── */
+/* 카드 제목 안의 아이콘(IC_SPARK)은 크기 지정이 없으면 SVG 기본 크기로 커져버림 — 반드시 제한 */
+.hv-vote-card .sl-step3-card-title { display: flex; align-items: center; gap: 6px; }
+.hv-vote-card .sl-step3-card-title svg { width: 18px; height: 18px; flex-shrink: 0; }
 .hv-vote-card .hv-request-btn-block { width: 100%; justify-content: center; margin-top: 4px; }
 .hv-vote-card .hv-respond-actions { margin-top: 4px; }
 .hv-vote-card .hv-respond-btn { flex: 1; }
@@ -1449,6 +1452,20 @@
   cursor: pointer;
 }
 .hv-vote-skip-btn:hover { color: #697586; }
+
+.hv-tally {
+  display: flex;
+  gap: 14px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(130, 150, 170, 0.24);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #46536B;
+}
+.hv-tally-up { color: #1D9E75; }
+.hv-tally-down { color: #E24B4A; }
+.hv-my-vote { margin-top: 8px; font-size: 12px; color: #94A3B8; font-weight: 600; }
 
 /* ── 하단 CTA (Step2 .sl-step2-cta 기반) ──
    과거엔 margin-top:auto로 우측 컬럼 맨 아래(좌측 지도 높이 기준)에 붙였는데,
