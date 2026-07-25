@@ -1364,8 +1364,8 @@
   margin-top: 10px;
   padding: 3px 12px;
   border-radius: 999px;
-  background: #E1F5EE;
-  color: #0F6E56;
+  background: var(--grade-bg, #E1F5EE);
+  color: var(--grade-fg, #0F6E56);
   font-size: 12px;
   font-weight: 700;
 }
@@ -1404,7 +1404,61 @@
 .sl-step3-stat-value { font-size: 18px; font-weight: 700; color: #0B2A5C; margin-top: 3px; font-variant-numeric: tabular-nums; }
 .sl-step3-stat-desc { font-size: 10.5px; color: #94A3B8; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ── ⑤ 숙소 근처 검색 ── */
+/* ── AI 리뷰 요약 ── */
+.sl-review-summary-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  background: #0B7CC4;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: opacity 150ms ease;
+}
+.sl-review-summary-btn svg { width: 14px; height: 14px; }
+.sl-review-summary-btn:hover { opacity: 0.88; }
+.sl-review-summary-btn:disabled { opacity: 0.6; cursor: default; }
+
+.sl-review-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sl-review-summary-header-label { font-size: 11.5px; font-weight: 700; color: #0B2A5C; }
+
+.sl-review-summary-body.sl-nearby-collapsed { display: none; }
+.sl-review-section { margin-top: 14px; }
+.sl-review-section:first-child { margin-top: 10px; }
+.sl-review-section-title { font-size: 12.5px; font-weight: 700; color: #0B2A5C; }
+.sl-review-section-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.sl-review-section-list li {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #475569;
+  padding-left: 12px;
+  position: relative;
+}
+.sl-review-section-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.6em;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: #B0BAC5;
+}
+.sl-review-sources { font-size: 10.5px; color: #94A3B8; margin-top: 14px; padding-top: 10px; border-top: 1px solid rgba(130,150,170,0.14); line-height: 1.6; }
+.sl-review-sources a { color: #185FA5; text-decoration: none; }
+.sl-review-sources a:hover { text-decoration: underline; }
+
+/* ── 숙소 근처 검색 ── */
 .sl-nearby-search-box {
   display: flex;
   align-items: center;
