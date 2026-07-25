@@ -19,7 +19,16 @@ import {
 import { loadGoogleMapsScript, getCategoryLabel, getPlacePredictions, getPlaceDetails } from '../utils/googleMaps';
 import type { PlacePrediction } from '../utils/googleMaps';
 import type { Database, TripDestination, StaySegment } from '../types/database';
-import { sendVoteRequest, getPendingVoteResponseFor, castVote, clearPendingVoteResponse } from '../collab/hotelVote';
+import {
+  sendVoteRequest,
+  getPendingVoteResponseFor,
+  castVote,
+  clearPendingVoteResponse,
+  getActiveRequestIdForPlace,
+  getTally,
+  getMyVoteForPlace,
+  type VoteTally,
+} from '../collab/hotelVote';
 import './shortlist.css';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -118,6 +127,10 @@ export function teardownShortlist(): void {
   if (shellResizeHandler) {
     window.removeEventListener('resize', shellResizeHandler);
     shellResizeHandler = null;
+  }
+  if (voteTallyListenerRef) {
+    window.removeEventListener('mongsil:voteTallyChanged', voteTallyListenerRef);
+    voteTallyListenerRef = null;
   }
   if (placeInfoWindow) {
     placeInfoWindow.close();
@@ -453,6 +466,7 @@ function getTripDestination(): string {
 
 let shellResizeHandler: (() => void) | null = null;
 let step2MapResizeHandler: (() => void) | null = null;
+let voteTallyListenerRef: EventListener | null = null;
 
 /**
  * `.sl-shell`의 높이를 CSS calc()로 추측하는 대신, 실제 화면에서 남은 공간을
@@ -2788,27 +2802,57 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   // 같은 정보(선택 지역/숙박 기간/예산)는 아래 "여행 중심 요약" 카드에 이미 있고,
   // 그 카드의 "수정" 버튼이 openStayDateEditor로 계속 연결돼 있어 기능은 그대로 유지됨.
 
-  // 투표 요청을 타고 이 숙소의 Step3로 들어온 경우엔 응답 카드를, 아니면 요청 카드를 보여줌
+  // 투표 요청을 타고 이 숙소의 Step3로 들어온 경우엔 응답 카드를, 이미 투표했으면 결과 카드를,
+  // 요청을 보내놓고 기다리는 중이면 결과+재요청 카드를, 아니면 기본 요청 카드를 보여줌
   const pendingVote = getPendingVoteResponseFor(basecamp.id);
-  const voteCardHtml = pendingVote
-    ? [
-        '      <div class="sl-step3-card hv-vote-card">',
-        '        <div class="sl-step3-card-title">' + IC_SPARK + ' 이 숙소 어때요?</div>',
-        '        <div class="sl-step3-card-desc">투표를 요청받았어요. 의견을 남겨주세요.</div>',
-        '        <div class="hv-respond-actions">',
-        '          <button type="button" class="hv-respond-btn hv-respond-up" id="hv-vote-up">👍 좋아요</button>',
-        '          <button type="button" class="hv-respond-btn hv-respond-down" id="hv-vote-down">👎 별로예요</button>',
-        '        </div>',
-        '        <button type="button" class="hv-vote-skip-btn" id="hv-vote-skip">나중에 할게요</button>',
-        '      </div>',
-      ].join('\n')
-    : [
-        '      <div class="sl-step3-card hv-vote-card">',
-        '        <div class="sl-step3-card-title">멤버 투표</div>',
-        '        <div class="sl-step3-card-desc">이 숙소가 어떤지 다른 멤버에게 물어보세요.</div>',
-        '        <button type="button" class="hv-request-btn hv-request-btn-block" id="hv-request-vote">' + IC_SPARK + ' 멤버에게 투표 요청</button>',
-        '      </div>',
-      ].join('\n');
+  const myVote = getMyVoteForPlace(basecamp.id);
+  const activeRequestId = getActiveRequestIdForPlace(basecamp.id);
+  const tally: VoteTally = activeRequestId ? getTally(activeRequestId) : { up: 0, down: 0 };
+  const tallyRowHtml =
+    '        <div class="hv-tally" id="hv-tally">' +
+    '<span class="hv-tally-up">👍 좋아요 ' + tally.up + '명</span>' +
+    '<span class="hv-tally-down">👎 별로예요 ' + tally.down + '명</span>' +
+    '</div>';
+
+  let voteCardHtml: string;
+  if (pendingVote) {
+    voteCardHtml = [
+      '      <div class="sl-step3-card hv-vote-card" data-request-id="' + pendingVote.requestId + '">',
+      '        <div class="sl-step3-card-title">' + IC_SPARK + ' 이 숙소 어때요?</div>',
+      '        <div class="sl-step3-card-desc">투표를 요청받았어요. 의견을 남겨주세요.</div>',
+      '        <div class="hv-respond-actions">',
+      '          <button type="button" class="hv-respond-btn hv-respond-up" id="hv-vote-up">👍 좋아요</button>',
+      '          <button type="button" class="hv-respond-btn hv-respond-down" id="hv-vote-down">👎 별로예요</button>',
+      '        </div>',
+      '        <button type="button" class="hv-vote-skip-btn" id="hv-vote-skip">나중에 할게요</button>',
+      '      </div>',
+    ].join('\n');
+  } else if (myVote && activeRequestId) {
+    voteCardHtml = [
+      '      <div class="sl-step3-card hv-vote-card" data-request-id="' + activeRequestId + '">',
+      '        <div class="sl-step3-card-title">' + IC_SPARK + ' 멤버 투표</div>',
+      '        <div class="hv-my-vote">내 투표: ' + (myVote === 'up' ? '👍 좋아요' : '👎 별로예요') + '</div>',
+      tallyRowHtml,
+      '      </div>',
+    ].join('\n');
+  } else if (activeRequestId) {
+    voteCardHtml = [
+      '      <div class="sl-step3-card hv-vote-card" data-request-id="' + activeRequestId + '">',
+      '        <div class="sl-step3-card-title">멤버 투표</div>',
+      '        <div class="sl-step3-card-desc">멤버에게 요청을 보냈어요. 응답을 기다리는 중이에요.</div>',
+      '        <button type="button" class="hv-request-btn hv-request-btn-block" id="hv-request-vote">' + IC_SPARK + ' 다시 요청하기</button>',
+      tallyRowHtml,
+      '      </div>',
+    ].join('\n');
+  } else {
+    voteCardHtml = [
+      '      <div class="sl-step3-card hv-vote-card">',
+      '        <div class="sl-step3-card-title">멤버 투표</div>',
+      '        <div class="sl-step3-card-desc">이 숙소가 어떤지 다른 멤버에게 물어보세요.</div>',
+      '        <button type="button" class="hv-request-btn hv-request-btn-block" id="hv-request-vote">' + IC_SPARK + ' 멤버에게 투표 요청</button>',
+      '      </div>',
+    ].join('\n');
+  }
 
   const stars = typeof basecamp.google_rating === 'number' ? buildStars(basecamp.google_rating) : '';
   const categoryLabel = basecamp.category || (basecamp.mood ? MOOD_LABEL[basecamp.mood] : '') || '숙소';
@@ -2939,7 +2983,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
 
   body.querySelector('#sl-back-2c')?.addEventListener('click', openStayDateEditor);
 
-  // 멤버에게 투표 요청 — 응답을 못 받았어도 잠기지 않고 몇 번이든 다시 보낼 수 있음
+  // 멤버에게 투표 요청 — 응답을 못 받았어도 잠기지 않고 버튼을 다시 눌러 몇 번이든 재요청 가능
   body.querySelector('#hv-request-vote')?.addEventListener('click', () => {
     if (!slActiveDest) return;
     sendVoteRequest(currentTripId, slActiveDest.id, {
@@ -2947,17 +2991,24 @@ async function renderStep3(body: HTMLElement): Promise<void> {
       name: basecamp.name,
       photo_url: basecamp.photo_url,
     });
-    const btn = body.querySelector('#hv-request-vote') as HTMLButtonElement | null;
-    if (btn) {
-      const original = btn.innerHTML;
-      btn.innerHTML = IC_CHECK + ' 요청 보냄';
-      btn.disabled = true;
-      setTimeout(() => {
-        btn.innerHTML = original;
-        btn.disabled = false;
-      }, 2500);
-    }
+    renderStep3(body);
   });
+
+  // 실시간으로 다른 멤버의 응답이 오면(요청자·이미 투표한 멤버 모두) 집계 숫자만 바로 갱신
+  if (voteTallyListenerRef) window.removeEventListener('mongsil:voteTallyChanged', voteTallyListenerRef);
+  voteTallyListenerRef = ((e: CustomEvent<{ requestId: string; placeId: string; tally: VoteTally }>) => {
+    if (e.detail.placeId !== basecamp.id) return;
+    const tallyEl = body.querySelector('#hv-tally');
+    if (tallyEl) {
+      tallyEl.innerHTML =
+        '<span class="hv-tally-up">👍 좋아요 ' + e.detail.tally.up + '명</span>' +
+        '<span class="hv-tally-down">👎 별로예요 ' + e.detail.tally.down + '명</span>';
+    } else {
+      // 집계 영역이 아직 없던 상태(예: 요청 전이었는데 방금 첫 응답이 옴)면 카드 자체를 다시 그림
+      renderStep3(body);
+    }
+  }) as EventListener;
+  window.addEventListener('mongsil:voteTallyChanged', voteTallyListenerRef);
 
   body.querySelector('#hv-vote-up')?.addEventListener('click', () => {
     castVote('up');
