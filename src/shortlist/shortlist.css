@@ -1267,7 +1267,6 @@
 /* 우측 컬럼 하단이 좌측(지도 포함)보다 더 아래로 내려가지 않도록, 우측 카드만 여백을 살짝 좁힘 */
 .sl-step3-right .sl-step3-card { padding: 18px; }
 .sl-step3-right .sl-step3-card-desc { margin-bottom: 12px; }
-.sl-step3-right .sl-step3-sample-note { margin-top: 10px; }
 
 /* ── ① 여행 중심 요약 ── */
 .sl-step3-summary-body-wrap { display: flex; gap: 22px; margin-top: 18px; }
@@ -1324,7 +1323,11 @@
   gap: 10px;
   padding: 8px 2px;
   border-bottom: 1px dashed rgba(130,150,170,0.16);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 120ms ease;
 }
+.sl-infra-row:hover { background: #F1F6FB; }
 .sl-infra-row:last-child { border-bottom: none; }
 .sl-infra-icon {
   width: 26px;
@@ -1350,13 +1353,6 @@
 }
 .sl-step3-infra-scale span { display: flex; align-items: center; gap: 7px; font-size: 10.5px; color: #94A3B8; font-weight: 600; }
 .sl-infra-scale-line { width: 16px; height: 0; border-top: 2px dotted var(--sc); flex-shrink: 0; }
-
-.sl-step3-sample-note { font-size: 10.5px; color: #B0BAC5; margin-top: 14px; }
-.sl-step3-eff-samplenote { margin-top: -14px; padding-left: 4px; }
-/* 우측(카드+CTA 버튼)이 좌측보다 콘텐츠가 더 길 때(예: 놓친 장소가 여러 개일 때)도
-   좌측 마지막 줄이 컨테이너 하단까지 따라 내려가도록 — 우측 CTA 버튼과 동일한 원리.
-   콘텐츠가 짧을 때(남는 공간 없음)는 auto가 0으로 계산돼 위 -14px만 적용됨. */
-.sl-step3-left > .sl-step3-eff-samplenote { margin-top: auto; }
 
 /* ── ③ 여행 효율 점수 ── */
 .sl-step3-eff-card { display: flex; align-items: center; gap: 28px; }
