@@ -120,6 +120,39 @@ async function getTripMembers(tripId: string): Promise<TripMemberLite[]> {
   return data ?? [];
 }
 
+/**
+ * 예전에 trip_members 행이 이름/아바타 없이 만들어진 경우(과거 409 우회 버그로 인한
+ * placeholder 행 등) 자동으로 보정한다 — 그래서 마이페이지에서는 구글 프로필 사진이
+ * 잘 뜨는데 트립 안(보드 헤더 등)에서는 회색 "?"로 보이는 문제가 새 트립뿐 아니라
+ * 이미 만들어져 있던 트립에서도 다음 방문 시 저절로 고쳐지게 한다.
+ */
+async function ensureOwnMemberProfile(tripId: string): Promise<void> {
+  const user = store.get('user');
+  if (!user) return;
+  const meta = user.user_metadata ?? {};
+  const displayName: string | null = meta.full_name || meta.name || user.email || null;
+  const avatarUrl: string | null = meta.avatar_url || meta.picture || null;
+  if (!displayName && !avatarUrl) return;
+
+  const { data: existing } = await supabase
+    .from('trip_members')
+    .select('id, display_name, avatar_url')
+    .eq('trip_id', tripId)
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (!existing) return;
+  if (existing.display_name && existing.avatar_url) return; // 이미 다 채워져 있으면 손대지 않음
+
+  await supabase
+    .from('trip_members')
+    .update({
+      display_name: existing.display_name || displayName,
+      avatar_url: existing.avatar_url || avatarUrl,
+    })
+    .eq('id', existing.id);
+}
+
 function formatDateShort(d: string): string {
   const dt = new Date(d);
   return (dt.getMonth() + 1) + '.' + String(dt.getDate()).padStart(2, '0');
@@ -168,9 +201,11 @@ export async function renderWorkspace(tripId: string, subPath?: string): Promise
   const header = page.querySelector('#ws-header') as HTMLElement;
   header.innerHTML = buildContentHeader(trip, activeGate, headerDestInfo(trip, activeDest));
 
-  getTripMembers(tripId).then((members) => {
-    const avatarsEl = header.querySelector('#ws-member-avatars');
-    if (avatarsEl) avatarsEl.outerHTML = buildMemberAvatars(members);
+  ensureOwnMemberProfile(tripId).then(() => {
+    getTripMembers(tripId).then((members) => {
+      const avatarsEl = header.querySelector('#ws-member-avatars');
+      if (avatarsEl) avatarsEl.outerHTML = buildMemberAvatars(members);
+    });
   });
 
   // 보드/shortlist에서 "여행지 변경"으로 활성 여행지를 바꾸면(게이트 재렌더 없이도)
