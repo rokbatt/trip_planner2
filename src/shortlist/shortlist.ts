@@ -3583,7 +3583,7 @@ function showInfraInfoWindow(
   placeInfoWindow.open({ map, anchor: marker });
 }
 
-/** 숙소 → 각 편의시설로 컬러 점선 연결 + 카테고리 아이콘 마커 (Nearby Search 실데이터 도착 시 호출) */
+/** 숙소 → 각 편의시설로 컬러 실선 연결 + 카테고리 아이콘 마커 (Nearby Search 실데이터 도착 시 호출) */
 function drawInfraLines(basecamp: Place, facilities: InfraFacility[]): void {
   const g = (window as any).google;
   if (!g?.maps || !step3MapInstance || basecamp.lat == null || basecamp.lng == null) return;
@@ -3600,14 +3600,9 @@ function drawInfraLines(basecamp: Place, facilities: InfraFacility[]): void {
         { lat: f.lat, lng: f.lng },
       ],
       map: step3MapInstance,
-      strokeOpacity: 0,
-      icons: [
-        {
-          icon: { path: 'M 0,-1 0,1', strokeOpacity: 0.7, strokeWeight: 2, scale: 2, strokeColor: meta.color },
-          offset: '0',
-          repeat: '9px',
-        },
-      ],
+      strokeColor: meta.color,
+      strokeOpacity: 0.7,
+      strokeWeight: 2,
       zIndex: 5,
     });
     step3InfraLines.push(line);
