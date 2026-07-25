@@ -3343,7 +3343,7 @@ function step3TravelLabel(item: Step3Item): { icon: string; text: string } {
 
 // "이 숙소를 선택하면" 팔레트 — 브랜드 톤(딥네이비) 하나로 통일, 색은 정말 나쁠 때만 예외.
 // 계속 다듬을 예정이라 색을 여기 한 군데에 모아둠 — 다음에 바꿀 땐 이 두 상수만 건드리면 됨.
-const STAT_BRAND_COLOR = '#0B2A5C'; // 딥네이비 — 아이콘 전부 이 색으로 통일
+const STAT_BRAND_COLOR = '#8FD8F8'; // 스카이블루(브랜드 보조색) — 아이콘 전부 이 색으로 통일
 const STAT_ALERT_COLOR = '#C0524B'; // "나쁨"일 때만 쓰는 절제된 경고색 (채도 낮춘 레드)
 
 /** 접근성 등급 4단계 — 인프라 지도 범례(도보 5/10/15분)와 같은 기준을 그대로 씀 */
