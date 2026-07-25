@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { store } from '../store';
 import {
   loadDestinations,
   createDestination,
@@ -118,6 +119,10 @@ export function openEditTripModal(trip: Trip, onSaved: () => void): void {
     '    <div class="tc-field">',
     '      <label class="tc-field-label">여행 이름</label>',
     '      <input class="tc-input" id="te-name" type="text" value="' + escapeHtml(trip.name) + '" required />',
+    '    </div>',
+    '    <div class="tc-field">',
+    '      <label class="tc-field-label">인원</label>',
+    '      <input class="tc-input" id="te-headcount" type="number" min="1" placeholder="2" value="' + (trip.headcount ?? '') + '" />',
     '    </div>',
     '    <div class="tc-field">',
     '      <label class="tc-field-label">여행지</label>',
@@ -250,6 +255,8 @@ async function handleSave(
     errorEl.classList.add('show');
     return;
   }
+  const headcountRaw = (overlay.querySelector('#te-headcount') as HTMLInputElement).value;
+  const headcount = headcountRaw ? Number(headcountRaw) : null;
   const cleaned = working.map((w) => ({ ...w, name: w.name.trim() }));
   if (cleaned.length === 0 || cleaned.some((w) => !w.name)) {
     errorEl.textContent = '모든 여행지에 도시 이름을 입력해주세요.';
@@ -268,7 +275,13 @@ async function handleSave(
   submitBtn.textContent = '저장 중...';
 
   try {
-    await supabase.from('trips').update({ name }).eq('id', trip.id);
+    await supabase.from('trips').update({ name, headcount }).eq('id', trip.id);
+    // 워크스페이스가 store에 캐싱해둔 트립 객체를 그대로 재사용하므로, 여기서도 갱신해야
+    // 이 트립에 이미 한 번 들어갔다 나온 세션에서 방금 고친 인원수가 그대로 반영된다.
+    const cachedTrip = store.get('currentTrip');
+    if (cachedTrip && cachedTrip.id === trip.id) {
+      store.set('currentTrip', { ...cachedTrip, name, headcount });
+    }
 
     const original = await loadDestinations(trip);
     const originalIsSynthetic = original.length === 1 && isSyntheticDestination(original[0].id);

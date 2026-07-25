@@ -2853,10 +2853,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     totalBudgetKRW != null && totalBudgetKRW > 0
       ? Math.round(totalBudgetKRW / stayNights / stayHeadcount)
       : null;
-  const budgetLabel =
-    perNightPerPerson != null
-      ? perNightPerPerson.toLocaleString() + '원 (총 ' + totalBudgetKRW!.toLocaleString() + '원 · ' + stayNights + '박 ' + stayHeadcount + '인)'
-      : '미입력';
+  const budgetLabel = perNightPerPerson != null ? perNightPerPerson.toLocaleString() + '원' : '미입력';
 
   void closeCount;
   // 스테퍼 줄 우측(#sl-stepper-extra)은 이제 renderShortlistDestBar가 "여행지 변경"을
@@ -3343,7 +3340,7 @@ function step3TravelLabel(item: Step3Item): { icon: string; text: string } {
 
 // "이 숙소를 선택하면" 팔레트 — 계속 다듬을 예정이라 색을 여기 한 군데에 모아둠.
 // 다음에 바꿀 땐 이 상수만 건드리면 됨. 하단 설명(desc, 회색 캡션)은 이 실험과 별개로 절대 건드리지 않음.
-const STAT_BRAND_COLOR = '#0B2A5C'; // 아이콘 칩 배경 — "확정하기" 버튼과 같은 네이비
+const STAT_BRAND_COLOR = '#0D2F6B'; // 아이콘 칩 배경 — 네이비에서 아주 살짝만 블루 쪽으로
 const STAT_VALUE_COLOR = '#15308A'; // 값 텍스트 — 이전에 아이콘 배경으로 쓰던 블루 톤
 const STAT_ALERT_COLOR = '#C0524B'; // 나중에 "나쁨"만 다시 강조하고 싶을 때 쓸 경고색 — 지금은 미사용
 
