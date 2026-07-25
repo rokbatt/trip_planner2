@@ -3,6 +3,7 @@ import { store } from '../store';
 import { navigate } from '../router';
 import { initChat, teardownChat, setBadgeListener, countUnreadSince, markAsRead, renderChatPanelUI } from '../chat/chat';
 import { initComments, teardownComments, renderCommentsUI } from '../comments/comments';
+import { initHotelVoteChannel, teardownHotelVoteChannel } from '../collab/hotelVote';
 import { loadDestinations, resolveActiveDestination, ACTIVE_DESTINATION_CHANGED_EVENT } from '../trips/destinations';
 import type { Database, TripDestination } from '../types/database';
 import type { ChatMessage } from '../types/database';
@@ -154,6 +155,9 @@ export async function renderWorkspace(tripId: string, subPath?: string): Promise
     page.innerHTML = '<div class="ws-placeholder">여행 정보를 찾을 수 없어요</div>';
     return page;
   }
+
+  // 숙소 투표 요청 실시간 채널 — 트립이 같으면 재구독하지 않음(chat과 동일한 패턴)
+  initHotelVoteChannel(tripId);
 
   const sidebar = page.querySelector('#ws-sidebar') as HTMLElement;
   sidebar.innerHTML = buildSidebar(trip, activeGate);
@@ -348,6 +352,7 @@ let boardModuleRef: { teardownBoard: () => void } | null = null;
 let shortlistModuleRef: { teardownShortlist: () => void } | null = null;
 let routeModuleRef: { teardownRoute: () => void } | null = null;
 let navigateGateHandlerRef: EventListener | null = null;
+let openVoteTargetHandlerRef: EventListener | null = null;
 let activeDestChangeHandler: ((e: Event) => void) | null = null;
 
 async function renderGate(body: HTMLElement, tripId: string, gate: string): Promise<void> {
@@ -391,6 +396,7 @@ async function renderGate(body: HTMLElement, tripId: string, gate: string): Prom
 function bindEvents(page: HTMLElement, tripId: string): void {
   page.querySelector('#ws-back')?.addEventListener('click', () => {
     teardownChat();
+    teardownHotelVoteChannel();
     boardModuleRef?.teardownBoard();
     boardModuleRef = null;
     shortlistModuleRef?.teardownShortlist();
@@ -407,6 +413,20 @@ function bindEvents(page: HTMLElement, tripId: string): void {
     navigate('trip/' + e.detail.tripId + '/' + e.detail.gate);
   }) as EventListener;
   window.addEventListener('mongsil:navigateGate', navigateGateHandlerRef);
+
+  // 숙소 투표 요청 토스트에서 "보러 가기"를 누르면, 그 숙소의 Step3로 바로 이동
+  if (openVoteTargetHandlerRef) {
+    window.removeEventListener('mongsil:openVoteTarget', openVoteTargetHandlerRef);
+  }
+  openVoteTargetHandlerRef = (async (
+    e: CustomEvent<{ tripId: string; destinationId: string; placeId: string }>
+  ) => {
+    const { tripId: tid, destinationId, placeId } = e.detail;
+    const mod = await import('../shortlist/shortlist');
+    mod.openVoteTarget(destinationId, placeId);
+    navigate('trip/' + tid + '/shortlist');
+  }) as unknown as EventListener;
+  window.addEventListener('mongsil:openVoteTarget', openVoteTargetHandlerRef);
 
   const sidebar = page.querySelector('#ws-sidebar') as HTMLElement;
   page.querySelector('#ws-toggle')?.addEventListener('click', () => {

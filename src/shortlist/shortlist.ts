@@ -19,6 +19,7 @@ import {
 import { loadGoogleMapsScript, getCategoryLabel, getPlacePredictions, getPlaceDetails } from '../utils/googleMaps';
 import type { PlacePrediction } from '../utils/googleMaps';
 import type { Database, TripDestination, StaySegment } from '../types/database';
+import { sendVoteRequest, getPendingVoteResponseFor, castVote, clearPendingVoteResponse } from '../collab/hotelVote';
 import './shortlist.css';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -105,6 +106,8 @@ let selectedZone: Zone | null = null;
 let zoneDataSource = 'curated';
 let selectedBasecamp: Place | null = null;
 let pendingHotelId: string | null = null;
+/** 숙소 투표 요청 토스트의 "보러 가기"로 들어왔을 때, 그 숙소의 Step3로 강제 이동시키기 위한 1회성 타겟 */
+let pendingVoteTarget: { destinationId: string; placeId: string } | null = null;
 let step2SortMode: 'rating' | 'distance' = 'rating';
 let step2FilterText = '';
 let confirmedIds = new Set<string>();
@@ -363,6 +366,14 @@ async function saveShortlistState(): Promise<void> {
   }
 }
 
+/**
+ * 숙소 투표 요청 토스트의 "보러 가기"에서 호출 — 다음 renderShortlistContent 호출 때
+ * 이 숙소가 있는 여행지·구간으로 강제 전환하고 Step3로 바로 진입시킨다(1회성).
+ */
+export function openVoteTarget(destinationId: string, placeId: string): void {
+  pendingVoteTarget = { destinationId, placeId };
+}
+
 /* ── 메인 렌더 ── */
 export async function renderShortlistContent(container: HTMLElement, tripId: string): Promise<void> {
   teardownShortlist();
@@ -376,6 +387,9 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
 
   // 여행지 결정 + 활성 여행지의 장소만 사용
   slDestinations = trip ? await loadDestinations(trip) : [];
+  if (pendingVoteTarget && slDestinations.some((d) => d.id === pendingVoteTarget!.destinationId)) {
+    setActiveDestinationId(tripId, pendingVoteTarget.destinationId);
+  }
   slActiveDest = slDestinations.length ? resolveActiveDestination(tripId, slDestinations) : null;
   allPlaces = slActiveDest ? places.filter((p) => placeBelongsToDestination(p, slActiveDest!)) : places;
 
@@ -415,6 +429,18 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
     slSegments = sortSegmentsByDate(await loadStaySegments(trip, slActiveDest));
     slActiveSegment = resolveActiveSegment(slActiveDest.id, slSegments);
     restoreStateFromSegment(slActiveSegment);
+  }
+
+  // 투표 요청으로 들어온 경우, 방금 복원한 상태를 덮어쓰고 그 숙소의 Step3로 강제 진입
+  if (pendingVoteTarget) {
+    const targetZone = zones.find((z) => z.places.some((p) => p.id === pendingVoteTarget!.placeId));
+    const targetPlace = targetZone?.places.find((p) => p.id === pendingVoteTarget!.placeId);
+    if (targetZone && targetPlace) {
+      selectedZone = targetZone;
+      selectedBasecamp = targetPlace;
+      step = 3;
+    }
+    pendingVoteTarget = null;
   }
 
   await renderStep(container);
@@ -2762,6 +2788,21 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   // 같은 정보(선택 지역/숙박 기간/예산)는 아래 "여행 중심 요약" 카드에 이미 있고,
   // 그 카드의 "수정" 버튼이 openStayDateEditor로 계속 연결돼 있어 기능은 그대로 유지됨.
 
+  // 투표 요청을 타고 이 숙소의 Step3로 들어온 경우에만, 좋음/별로 응답 바를 보여줌
+  const pendingVote = getPendingVoteResponseFor(basecamp.id);
+  const respondBarHtml = pendingVote
+    ? [
+        '  <div class="hv-respond-bar">',
+        '    <span class="hv-respond-text">' + IC_SPARK + ' 이 숙소 어때요? 투표를 요청받았어요.</span>',
+        '    <div class="hv-respond-actions">',
+        '      <button type="button" class="hv-respond-btn hv-respond-up" id="hv-vote-up">👍 좋아요</button>',
+        '      <button type="button" class="hv-respond-btn hv-respond-down" id="hv-vote-down">👎 별로예요</button>',
+        '      <button type="button" class="hv-toast-btn hv-toast-dismiss" id="hv-vote-skip">나중에</button>',
+        '    </div>',
+        '  </div>',
+      ].join('\n')
+    : '';
+
   const stars = typeof basecamp.google_rating === 'number' ? buildStars(basecamp.google_rating) : '';
   const categoryLabel = basecamp.category || (basecamp.mood ? MOOD_LABEL[basecamp.mood] : '') || '숙소';
 
@@ -2783,7 +2824,10 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '      <div class="sl-eyebrow">FINAL CHECK</div>',
     '      <div class="sl-title">이 숙소를 여행의 중심으로 확정할까요?</div>',
     '    </div>',
+    '    <button type="button" class="hv-request-btn" id="hv-request-vote">' + IC_SPARK + ' 멤버에게 투표 요청</button>',
     '  </div>',
+
+    respondBarHtml,
 
     '  <div class="sl-step3-layout">',
 
@@ -2902,6 +2946,39 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     window.dispatchEvent(
       new CustomEvent('mongsil:navigateGate', { detail: { tripId: currentTripId, gate: 'expense' } })
     );
+  });
+
+  // 멤버에게 투표 요청 — 응답을 못 받았어도 잠기지 않고 몇 번이든 다시 보낼 수 있음
+  body.querySelector('#hv-request-vote')?.addEventListener('click', () => {
+    if (!slActiveDest) return;
+    sendVoteRequest(currentTripId, slActiveDest.id, {
+      id: basecamp.id,
+      name: basecamp.name,
+      photo_url: basecamp.photo_url,
+    });
+    const btn = body.querySelector('#hv-request-vote') as HTMLButtonElement | null;
+    if (btn) {
+      const original = btn.innerHTML;
+      btn.innerHTML = IC_CHECK + ' 요청 보냄';
+      btn.disabled = true;
+      setTimeout(() => {
+        btn.innerHTML = original;
+        btn.disabled = false;
+      }, 2500);
+    }
+  });
+
+  body.querySelector('#hv-vote-up')?.addEventListener('click', () => {
+    castVote('up');
+    body.querySelector('.hv-respond-bar')?.remove();
+  });
+  body.querySelector('#hv-vote-down')?.addEventListener('click', () => {
+    castVote('down');
+    body.querySelector('.hv-respond-bar')?.remove();
+  });
+  body.querySelector('#hv-vote-skip')?.addEventListener('click', () => {
+    clearPendingVoteResponse();
+    body.querySelector('.hv-respond-bar')?.remove();
   });
 
   body.querySelector('#sl-proceed')?.addEventListener('click', async () => {
