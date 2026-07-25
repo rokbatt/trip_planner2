@@ -3517,11 +3517,14 @@ function buildInfraMarkerIcon(g: any, meta: { icon: string; color: string }): an
 
   const canvas = INFRA_MARKER_SIZE;
   const bg = mixWithWhite(meta.color, 0.12);
-  const iconOffset = (canvas - INFRA_ICON_SIZE) / 2;
+  // 중첩 <svg>(x/y/width/height/viewBox)는 마커 이미지로 쓸 때 렌더러에 따라 깨져서
+  // (검은 사각형으로 표시됨) 대신 g에 translate+scale을 걸어 24x24 좌표계를 그대로 옮김
+  const scale = INFRA_ICON_SIZE / 24;
+  const offset = (canvas - INFRA_ICON_SIZE) / 2;
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="' + canvas + '" height="' + canvas + '" viewBox="0 0 ' + canvas + ' ' + canvas + '">' +
     '<circle cx="' + canvas / 2 + '" cy="' + canvas / 2 + '" r="' + canvas / 2 + '" fill="' + bg + '"/>' +
-    '<svg x="' + iconOffset + '" y="' + iconOffset + '" width="' + INFRA_ICON_SIZE + '" height="' + INFRA_ICON_SIZE + '" viewBox="0 0 24 24">' + inner + '</svg>' +
+    '<g transform="translate(' + offset + ',' + offset + ') scale(' + scale + ')">' + inner + '</g>' +
     '</svg>';
 
   return {
