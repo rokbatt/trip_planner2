@@ -37,7 +37,6 @@ type Trip = Database['public']['Tables']['trips']['Row'];
 /* ── 아이콘 ── */
 const IC_BED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6M3 18v2M21 18v2M3 12V8a2 2 0 0 1 2-2h4v6"/></svg>';
 const IC_WALK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4" r="2"/><path d="M11 8l-3 3 2 7M11 8l3 2 3-1M8 11l-3 2v6M13 10l2 4-2 6"/></svg>';
-const IC_TRAIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="14" rx="2"/><path d="M4 11h16M8 21l2-4h4l2 4M8 7h.01M16 7h.01"/></svg>';
 const IC_TAXI = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M5 17a2 2 0 1 0 4 0M15 17a2 2 0 1 0 4 0M5 17l1.5-5h11L19 17M8 12V8h8v4"/></svg>';
 const IC_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
 const IC_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
@@ -187,19 +186,6 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
     Math.sin(dLat / 2) ** 2 +
     Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-/** 직선거리 기준 예상 이동수단/시간 (실제 Routes API 호출 없음 — 대략치) */
-function estimateTravel(km: number): { mode: string; icon: string; label: string } {
-  if (km <= 1.2) {
-    const min = Math.max(2, Math.round(km * 12));
-    return { mode: 'walk', icon: IC_WALK, label: '도보 ' + min + '분' };
-  }
-  if (km <= 4) {
-    return { mode: 'transit', icon: IC_TRAIN, label: '대중교통 이용 (약 ' + km.toFixed(1) + 'km)' };
-  }
-  const min = Math.max(5, Math.round(km * 2.4));
-  return { mode: 'taxi', icon: IC_TAXI, label: '택시 약 ' + min + '분' };
 }
 
 /* ── 지역 클러스터링 (거리 기반, API 호출 없음) ── */
@@ -2798,7 +2784,7 @@ const SCORE_LABELS: { key: string; label: string }[] = [
   { key: '가성비', label: '가성비' },
 ];
 
-/** 평균 이동시간 등 집계용 분 단위 환산 — estimateTravel과 동일한 속도 가정(도보/대중교통/차량)을 모든 구간에 적용 */
+/** 평균 이동시간 등 집계용 분 단위 환산 — 도보/대중교통/차량 속도 가정을 모든 구간에 적용 */
 function estimateMinutes(km: number): number {
   if (km <= 1.2) return Math.max(2, Math.round(km * 12));
   if (km <= 4) return Math.max(8, Math.round(km * 4));
@@ -3003,11 +2989,16 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '        <div class="sl-step3-stat-grid" id="sl-step3-stats"></div>',
     '      </div>',
 
-    // ② 놓친 장소 체크
+    // ② 숙소 근처 검색 (마사지·PC방처럼 자유 검색어로 거리순 결과)
     '      <div class="sl-step3-card">',
-    '        <div class="sl-step3-card-title">놓친 장소 체크</div>',
-    '        <div class="sl-step3-card-desc">선택하지 않은 주변 장소예요. 추가하면 여행이 더 풍성해져요.</div>',
-    '        <div class="sl-step3-missed-list" id="sl-missed-list"></div>',
+    '        <div class="sl-step3-card-title">숙소 근처 검색</div>',
+    '        <div class="sl-step3-card-desc">마사지, PC방, 편의점처럼 원하는 걸 검색하면 숙소 근처 결과를 거리순으로 보여줘요.</div>',
+    '        <div class="sl-nearby-search-box">',
+    '          <span class="sl-nearby-search-icon">' + IC_SEARCH2 + '</span>',
+    '          <input type="text" class="sl-nearby-search-input" id="sl-nearby-search-input" placeholder="예: 마사지, PC방, 편의점" maxlength="40" />',
+    '          <button type="button" class="sl-nearby-search-btn" id="sl-nearby-search-btn">검색</button>',
+    '        </div>',
+    '        <div class="sl-nearby-search-results" id="sl-nearby-search-results"></div>',
     '      </div>',
 
     // ③ 멤버 투표
@@ -3111,6 +3102,14 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     openSegmentDatePopover(anchor);
   });
 
+  body.querySelector('#sl-nearby-search-btn')?.addEventListener('click', () => runNearbySearch(body, basecamp));
+  body.querySelector('#sl-nearby-search-input')?.addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key === 'Enter') {
+      e.preventDefault();
+      runNearbySearch(body, basecamp);
+    }
+  });
+
   renderStep3Lists(body, withDistance);
   initMapStep3(body);
 
@@ -3172,6 +3171,94 @@ function buildInfraRow(meta: { icon: string; color: string; name: string } | und
     '  <span class="sl-infra-dist">' + escapeHtml(distText) + '</span>',
     '</div>',
   ].join('');
+}
+
+interface NearbySearchResult {
+  name: string;
+  meters: number;
+  walkMin: number;
+  lat: number;
+  lng: number;
+  placeId?: string;
+  rating?: number;
+  address?: string;
+}
+
+/** 이전 검색이 나중에 응답이 와서 최신 검색 결과를 덮어쓰지 않도록 막는 시퀀스 번호 */
+let nearbySearchSeq = 0;
+
+function buildNearbySearchRow(r: NearbySearchResult): string {
+  const km = r.meters >= 1000 ? (r.meters / 1000).toFixed(1) + 'km' : r.meters + 'm';
+  return [
+    '<div class="sl-nearby-result-row">',
+    '  <span class="sl-nearby-result-icon">' + IC_PIN + '</span>',
+    '  <div class="sl-nearby-result-main">',
+    '    <div class="sl-nearby-result-name">' + escapeHtml(r.name) + '</div>',
+    r.address ? '    <div class="sl-nearby-result-addr">' + escapeHtml(r.address) + '</div>' : '',
+    '  </div>',
+    '  <div class="sl-nearby-result-meta">',
+    '    <div class="sl-nearby-result-dist">' + r.walkMin + '분 · ' + km + '</div>',
+    r.rating != null ? '    <div class="sl-nearby-result-rating">★ ' + r.rating.toFixed(1) + '</div>' : '',
+    '  </div>',
+    '</div>',
+  ].join('');
+}
+
+/** 자유 검색어로 숙소 근처 결과 조회 (/api/nearby-search) — Text Search + Route Matrix, 숙소+검색어 조합 단위로 서버 캐싱됨 */
+async function runNearbySearch(body: HTMLElement, basecamp: Place): Promise<void> {
+  const input = body.querySelector('#sl-nearby-search-input') as HTMLInputElement | null;
+  const resultsEl = body.querySelector('#sl-nearby-search-results') as HTMLElement | null;
+  const btn = body.querySelector('#sl-nearby-search-btn') as HTMLButtonElement | null;
+  if (!input || !resultsEl) return;
+
+  const query = input.value.trim();
+  if (!query) return;
+
+  if (basecamp.lat == null || basecamp.lng == null) {
+    resultsEl.innerHTML = '<div class="sl-nearby-search-empty">숙소 좌표를 확인할 수 없어요.</div>';
+    return;
+  }
+
+  const seq = ++nearbySearchSeq;
+  if (btn) btn.disabled = true;
+  resultsEl.innerHTML = '<div class="sl-nearby-search-empty">검색 중...</div>';
+
+  let results: NearbySearchResult[] = [];
+  let failed = false;
+  try {
+    const res = await fetch('/api/nearby-search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        placeId: basecamp.google_place_id ?? undefined,
+        lat: basecamp.lat,
+        lng: basecamp.lng,
+        query,
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      results = Array.isArray(data.results) ? data.results : [];
+    } else {
+      failed = true;
+    }
+  } catch {
+    failed = true;
+  }
+
+  // 그 사이 새 검색이 시작됐거나 다른 화면으로 이동했으면 이 응답은 버림
+  if (seq !== nearbySearchSeq || step !== 3) return;
+  if (btn) btn.disabled = false;
+
+  if (failed) {
+    resultsEl.innerHTML = '<div class="sl-nearby-search-empty">검색에 실패했어요. 다시 시도해주세요.</div>';
+    return;
+  }
+  if (results.length === 0) {
+    resultsEl.innerHTML = '<div class="sl-nearby-search-empty">"' + escapeHtml(query) + '" 검색 결과가 없어요.</div>';
+    return;
+  }
+  resultsEl.innerHTML = results.map(buildNearbySearchRow).join('');
 }
 
 function buildEffRatingRow(label: string, stars: number): string {
@@ -3324,16 +3411,6 @@ async function loadRealTravelTimes(
   return results;
 }
 
-/** 실제 경로가 도착했으면 그걸, 아니면 직선거리 추정치를 라벨로 */
-function step3TravelLabel(item: Step3Item): { icon: string; text: string } {
-  if (item.real && item.realMode && item.realText) {
-    const icon = item.realMode === 'WALKING' ? IC_WALK : IC_TAXI;
-    return { icon, text: (item.realMode === 'WALKING' ? '도보 ' : '차량 ') + item.realText };
-  }
-  const travel = estimateTravel(item.km);
-  return { icon: travel.icon, text: travel.label };
-}
-
 // "이 숙소를 선택하면" 팔레트 — 계속 다듬을 예정이라 색을 여기 한 군데에 모아둠.
 // 다음에 바꿀 땐 이 상수만 건드리면 됨. 하단 설명(desc, 회색 캡션)은 이 실험과 별개로 절대 건드리지 않음.
 const STAT_BRAND_COLOR = '#5B9BD5'; // 아이콘 칩 배경 구 버전 — 지금은 6개 타일 전부 지도 마커 색(대중교통 톤)으로 통일해 미사용
@@ -3399,42 +3476,9 @@ function buildStatTile(icon: string, bgColor: string, title: string, value: stri
   ].join('');
 }
 
-/** 놓친 장소 · 통계 타일을 confirmedIds 기준으로 다시 그림 (장소를 '추가'해 확정할 때마다 호출) */
+/** 통계 타일을 confirmedIds/실측 데이터 기준으로 다시 그림 */
 function renderStep3Lists(body: HTMLElement, withDistance: Step3Item[]): void {
   if (!selectedZone || !selectedBasecamp) return;
-
-  const missedEl = body.querySelector('#sl-missed-list') as HTMLElement;
-  if (missedEl) {
-    const missed = withDistance.filter((item) => !confirmedIds.has(item.place.id));
-    missedEl.innerHTML = missed.length
-      ? missed
-          .map((item) => {
-            const { text } = step3TravelLabel(item);
-            const moodLabel = MOOD_LABEL[item.place.mood ?? ''] || '';
-            return [
-              '<div class="sl-basecamp-card sl-missed-item">',
-              item.place.photo_url
-                ? '  <div class="sl-basecamp-thumb" style="background-image:url(\'' + item.place.photo_url + '\')"></div>'
-                : '  <div class="sl-basecamp-thumb sl-basecamp-thumb-empty">' + IC_PIN + '</div>',
-              '  <div class="sl-basecamp-info">',
-              '    <div class="sl-basecamp-name">' + escapeHtml(item.place.name) + '</div>',
-              '    <div class="sl-missed-tag"><span class="sl-missed-badge" style="--badge-color:' + (MOOD_COLOR[item.place.mood ?? ''] || '#94A3B8') + '">' + escapeHtml(moodLabel) + '</span>' + escapeHtml(text) + '</div>',
-              '  </div>',
-              '  <button type="button" class="sl-missed-add-btn" data-place-id="' + item.place.id + '">' + IC_PLUS + ' 추가</button>',
-              '</div>',
-            ].join('');
-          })
-          .join('')
-      : '<div class="sl-step3-missed-empty">모든 주변 장소를 확정했어요.</div>';
-
-    missedEl.querySelectorAll('.sl-missed-add-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const placeId = (btn as HTMLElement).dataset.placeId!;
-        confirmedIds.add(placeId);
-        renderStep3Lists(body, withDistance);
-      });
-    });
-  }
 
   const statsEl = body.querySelector('#sl-step3-stats') as HTMLElement;
   if (statsEl) {
