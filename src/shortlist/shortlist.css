@@ -1250,9 +1250,7 @@
 .sl-step3-card-title { font-size: 16px; font-weight: 700; color: #0B2A5C; letter-spacing: -0.01em; }
 .sl-step3-card-desc { font-size: 12.5px; color: #94A3B8; margin-top: 5px; margin-bottom: 18px; }
 
-/* ── 레이아웃: 좌 65% / 우 35% ──
-   align-items: stretch — 좌측(지도 포함, 더 긴 편)에 맞춰 우측 컬럼도 늘어나면서
-   우측 맨 아래 CTA(margin-top:auto)가 바닥에 정렬됨 (레퍼런스와 동일한 하단 배치) */
+/* ── 레이아웃: 좌 65% / 우 35% ── */
 .sl-step3-layout {
   display: flex;
   align-items: stretch;
@@ -1434,31 +1432,28 @@
 .sl-missed-add-btn:hover { background: #F1F6FB; border-color: #8FD8F8; }
 .sl-step3-missed-empty { text-align: center; padding: 20px; font-size: 12.5px; color: #94A3B8; }
 
-/* ── ⑥ 예상 교통비 ── */
-.sl-step3-transport-row { display: flex; align-items: center; gap: 8px; }
-.sl-step3-transport-input { flex: 1; padding: 11px 12px; }
-.sl-step3-expense-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
+/* ── ⑥ 멤버 투표 ── */
+.hv-vote-card .hv-request-btn-block { width: 100%; justify-content: center; margin-top: 4px; }
+.hv-vote-card .hv-respond-actions { margin-top: 4px; }
+.hv-vote-card .hv-respond-btn { flex: 1; }
+.hv-vote-skip-btn {
+  display: block;
   width: 100%;
-  margin-top: 12px;
-  padding: 10px;
-  border: 1px solid rgba(130,150,170,0.24);
-  border-radius: 10px;
-  background: #F8FBFE;
-  color: #0B7CC4;
-  font-size: 12.5px;
-  font-weight: 700;
+  margin-top: 8px;
+  padding: 8px;
+  border: none;
+  background: none;
+  color: #94A3B8;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
-  transition: background 150ms ease, border-color 150ms ease;
 }
-.sl-step3-expense-btn svg { width: 13px; height: 13px; }
-.sl-step3-expense-btn:hover { background: #EAF6FD; border-color: #8FD8F8; }
+.hv-vote-skip-btn:hover { color: #697586; }
 
-/* ── 하단 CTA (우측 컬럼 맨 아래, Step2 .sl-step2-cta 기반) ── */
-.sl-step3-cta-wrap { margin-top: auto; }
+/* ── 하단 CTA (Step2 .sl-step2-cta 기반) ──
+   과거엔 margin-top:auto로 우측 컬럼 맨 아래(좌측 지도 높이 기준)에 붙였는데,
+   우측 카드 수가 적을 때 위 여백이 지나치게 넓어져서 다른 카드들과 같은 gap으로 통일함 */
+.sl-step3-cta-wrap { margin-top: 0; }
 /* .sl-step2-cta의 margin-top(16px)은 카드 사이 gap과 중복이라 여기서 제거, 패딩도 살짝 좁힘 */
 .sl-step3-cta { padding: 14px; height: auto; margin-top: 0; }
 .sl-step3-cta-main { display: flex; align-items: center; gap: 6px; font-size: 14.5px; }

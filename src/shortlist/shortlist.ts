@@ -2788,20 +2788,27 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   // 같은 정보(선택 지역/숙박 기간/예산)는 아래 "여행 중심 요약" 카드에 이미 있고,
   // 그 카드의 "수정" 버튼이 openStayDateEditor로 계속 연결돼 있어 기능은 그대로 유지됨.
 
-  // 투표 요청을 타고 이 숙소의 Step3로 들어온 경우에만, 좋음/별로 응답 바를 보여줌
+  // 투표 요청을 타고 이 숙소의 Step3로 들어온 경우엔 응답 카드를, 아니면 요청 카드를 보여줌
   const pendingVote = getPendingVoteResponseFor(basecamp.id);
-  const respondBarHtml = pendingVote
+  const voteCardHtml = pendingVote
     ? [
-        '  <div class="hv-respond-bar">',
-        '    <span class="hv-respond-text">' + IC_SPARK + ' 이 숙소 어때요? 투표를 요청받았어요.</span>',
-        '    <div class="hv-respond-actions">',
-        '      <button type="button" class="hv-respond-btn hv-respond-up" id="hv-vote-up">👍 좋아요</button>',
-        '      <button type="button" class="hv-respond-btn hv-respond-down" id="hv-vote-down">👎 별로예요</button>',
-        '      <button type="button" class="hv-toast-btn hv-toast-dismiss" id="hv-vote-skip">나중에</button>',
-        '    </div>',
-        '  </div>',
+        '      <div class="sl-step3-card hv-vote-card">',
+        '        <div class="sl-step3-card-title">' + IC_SPARK + ' 이 숙소 어때요?</div>',
+        '        <div class="sl-step3-card-desc">투표를 요청받았어요. 의견을 남겨주세요.</div>',
+        '        <div class="hv-respond-actions">',
+        '          <button type="button" class="hv-respond-btn hv-respond-up" id="hv-vote-up">👍 좋아요</button>',
+        '          <button type="button" class="hv-respond-btn hv-respond-down" id="hv-vote-down">👎 별로예요</button>',
+        '        </div>',
+        '        <button type="button" class="hv-vote-skip-btn" id="hv-vote-skip">나중에 할게요</button>',
+        '      </div>',
       ].join('\n')
-    : '';
+    : [
+        '      <div class="sl-step3-card hv-vote-card">',
+        '        <div class="sl-step3-card-title">멤버 투표</div>',
+        '        <div class="sl-step3-card-desc">이 숙소가 어떤지 다른 멤버에게 물어보세요.</div>',
+        '        <button type="button" class="hv-request-btn hv-request-btn-block" id="hv-request-vote">' + IC_SPARK + ' 멤버에게 투표 요청</button>',
+        '      </div>',
+      ].join('\n');
 
   const stars = typeof basecamp.google_rating === 'number' ? buildStars(basecamp.google_rating) : '';
   const categoryLabel = basecamp.category || (basecamp.mood ? MOOD_LABEL[basecamp.mood] : '') || '숙소';
@@ -2824,10 +2831,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '      <div class="sl-eyebrow">FINAL CHECK</div>',
     '      <div class="sl-title">이 숙소를 여행의 중심으로 확정할까요?</div>',
     '    </div>',
-    '    <button type="button" class="hv-request-btn" id="hv-request-vote">' + IC_SPARK + ' 멤버에게 투표 요청</button>',
     '  </div>',
-
-    respondBarHtml,
 
     '  <div class="sl-step3-layout">',
 
@@ -2906,16 +2910,8 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '        <div class="sl-step3-missed-list" id="sl-missed-list"></div>',
     '      </div>',
 
-    // ③ 예상 교통비
-    '      <div class="sl-step3-card">',
-    '        <div class="sl-step3-card-title">예상 교통비 (1인 기준)</div>',
-    '        <div class="sl-step3-card-desc">입력한 예산은 Expense 탭에 연동돼요.</div>',
-    '        <div class="sl-step3-transport-row">',
-    '          <input type="number" class="sl-budget-custom-input sl-step3-transport-input" id="sl-transport-cost" placeholder="교통비 예산 입력 (예: 100000)" />',
-    '          <span class="sl-budget-custom-unit">원</span>',
-    '        </div>',
-    '        <button class="sl-step3-expense-btn" id="sl-expense-link">Expense 탭에서 관리하기 ' + IC_EXTLINK + '</button>',
-    '      </div>',
+    // ③ 멤버 투표
+    voteCardHtml,
 
     // ④ 숙소 나누기 진입 (실제 여행지 + 아직 단일 구간일 때만 — 구간이 2개 이상이면 상단 바로 대체됨)
     (slActiveDest && !isSyntheticDestination(slActiveDest.id) && slSegments.length < 2)
@@ -2942,11 +2938,6 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   ].join('\n');
 
   body.querySelector('#sl-back-2c')?.addEventListener('click', openStayDateEditor);
-  body.querySelector('#sl-expense-link')?.addEventListener('click', () => {
-    window.dispatchEvent(
-      new CustomEvent('mongsil:navigateGate', { detail: { tripId: currentTripId, gate: 'expense' } })
-    );
-  });
 
   // 멤버에게 투표 요청 — 응답을 못 받았어도 잠기지 않고 몇 번이든 다시 보낼 수 있음
   body.querySelector('#hv-request-vote')?.addEventListener('click', () => {
@@ -2970,15 +2961,15 @@ async function renderStep3(body: HTMLElement): Promise<void> {
 
   body.querySelector('#hv-vote-up')?.addEventListener('click', () => {
     castVote('up');
-    body.querySelector('.hv-respond-bar')?.remove();
+    renderStep3(body);
   });
   body.querySelector('#hv-vote-down')?.addEventListener('click', () => {
     castVote('down');
-    body.querySelector('.hv-respond-bar')?.remove();
+    renderStep3(body);
   });
   body.querySelector('#hv-vote-skip')?.addEventListener('click', () => {
     clearPendingVoteResponse();
-    body.querySelector('.hv-respond-bar')?.remove();
+    renderStep3(body);
   });
 
   body.querySelector('#sl-proceed')?.addEventListener('click', async () => {
