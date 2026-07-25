@@ -3493,26 +3493,35 @@ let step3FacilitiesLoaded = false;
  *  추정치로 채우고, loadRealTravelTimes 배치 호출 결과가 오면 실측으로 교체됨 */
 let step3VisitItems: Step3Item[] = [];
 
+/** hex 색을 흰색과 섞어 파스텔 톤으로 — 우측 시설 리스트의 color-mix(in srgb, color 12%, white)와 동일 공식 */
+function mixWithWhite(hex: string, ratio: number): string {
+  const n = parseInt(hex.replace('#', ''), 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  const mix = (c: number) => Math.round(255 * (1 - ratio) + c * ratio);
+  return '#' + [mix(r), mix(g), mix(b)].map((c) => c.toString(16).padStart(2, '0')).join('');
+}
+
 /**
- * 편의시설 카테고리 아이콘을 지도 마커로 사용 — 카테고리색 원형 배경 위에 흰 아이콘을 얹음.
- * 예전엔 배경 없이 흰 아웃라인만 둘러서 대비를 냈는데, 지도 위에서 잘 안 보인다는 피드백으로
- * 원형 배경을 다시 넣되(가시성 우선) 아이콘 자체는 24x24 뷰박스 기준 80% 크기로 줄여서
- * 배경 원 안에 여백을 두고 들어가게 함(롤백 가능성 있어 크기·색은 아래 상수로 모아둠).
+ * 편의시설 카테고리 아이콘을 지도 마커로 사용 — 우측 "주변 편의 인프라" 리스트 아이콘과 같은
+ * 파스텔 배경(색 12% + 흰색) + 카테고리색 아이콘. 리스트는 둥근 사각형(8px)이지만 지도 위
+ * 마커는 원형이 자연스러워 배경만 원형으로 바꿈(롤백 가능성 있어 크기는 상수로 모아둠).
  */
-const INFRA_MARKER_SIZE = 26; // 원형 배경 지름
-const INFRA_ICON_SCALE = 0.8; // 24x24 아이콘을 이 비율로 축소
+const INFRA_MARKER_SIZE = 26; // 파스텔 원형 배경 지름 — 리스트 아이콘 칩과 같은 크기
+const INFRA_ICON_SIZE = 15; // 아이콘 자체 크기 — 리스트 아이콘과 같은 크기
 function buildInfraMarkerIcon(g: any, meta: { icon: string; color: string }): any {
-  const white = meta.icon.replace(/currentColor/g, '#ffffff');
-  const innerMatch = white.match(/<svg[^>]*>([\s\S]*)<\/svg>/);
-  const inner = innerMatch ? innerMatch[1] : white;
+  const colored = meta.icon.replace(/currentColor/g, meta.color);
+  const innerMatch = colored.match(/<svg[^>]*>([\s\S]*)<\/svg>/);
+  const inner = innerMatch ? innerMatch[1] : colored;
 
   const canvas = INFRA_MARKER_SIZE;
-  const iconBox = 24 * INFRA_ICON_SCALE;
-  const offset = (canvas - iconBox) / 2;
+  const bg = mixWithWhite(meta.color, 0.12);
+  const iconOffset = (canvas - INFRA_ICON_SIZE) / 2;
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="' + canvas + '" height="' + canvas + '" viewBox="0 0 ' + canvas + ' ' + canvas + '">' +
-    '<circle cx="' + canvas / 2 + '" cy="' + canvas / 2 + '" r="' + canvas / 2 + '" fill="' + meta.color + '"/>' +
-    '<g transform="translate(' + offset + ',' + offset + ') scale(' + INFRA_ICON_SCALE + ')">' + inner + '</g>' +
+    '<circle cx="' + canvas / 2 + '" cy="' + canvas / 2 + '" r="' + canvas / 2 + '" fill="' + bg + '"/>' +
+    '<svg x="' + iconOffset + '" y="' + iconOffset + '" width="' + INFRA_ICON_SIZE + '" height="' + INFRA_ICON_SIZE + '" viewBox="0 0 24 24">' + inner + '</svg>' +
     '</svg>';
 
   return {
