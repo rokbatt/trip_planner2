@@ -347,6 +347,20 @@ async function saveShortlistState(): Promise<void> {
   // 구간 목록도 동기화 (합성 구간이 insert되며 id가 바뀌는 경우 포함)
   slSegments = slSegments.map((s) => (s.id === prevId ? saved : s));
   slActiveSegment = saved;
+
+  // 합성 여행지(단일 여행지, 마이그레이션 전)는 trips.shortlist_* 컬럼에 직접 저장되는데,
+  // loadTrip()이 store의 캐시된 트립을 그대로 재사용하기 때문에 여기서 캐시도 함께 갱신해야
+  // Route로 갔다가 돌아오거나 다시 진입했을 때 방금 확정한 숙소가 "사라진 것처럼" 보이지 않는다.
+  if (isSyntheticDestination(slActiveDest.id)) {
+    currentTrip = {
+      ...currentTrip,
+      shortlist_zone_name: state.zone_name,
+      shortlist_zone_place_ids: state.zone_place_ids,
+      shortlist_basecamp_place_id: state.basecamp_place_id,
+      shortlist_confirmed_place_ids: state.confirmed_place_ids,
+    };
+    store.set('currentTrip', currentTrip);
+  }
 }
 
 /* ── 메인 렌더 ── */
@@ -2460,6 +2474,9 @@ async function handleImportHotelLink(body: HTMLElement, candidates: Place[]): Pr
         is_idea: false,
         added_by: user?.id ?? null,
         sort_order: Math.floor(Date.now() / 1000),
+        // 실제 여행지(마이그레이션 후)에서는 destination_id를 태깅해야 placeBelongsToDestination
+        // 필터에 걸리지 않고 재로드(예: Route 갔다 오는 경우) 후에도 계속 후보로 남는다.
+        destination_id: slActiveDest && !isSyntheticDestination(slActiveDest.id) ? slActiveDest.id : null,
         address: data.address,
         lat: data.lat,
         lng: data.lng,
@@ -2897,6 +2914,14 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     // 그 구간을 채우게 하고, route로는 넘어가지 않는다.
     const filled = await fillCoverageGapsIfAny();
     if (filled) return;
+
+    // 숙소 나누기로 이미 구간이 여러 개 생겼는데, 그중 아직 숙소를 확정하지 않은 구간이
+    // 남아있으면 그 구간으로 전환해 마저 정하게 하고 route로는 넘어가지 않는다.
+    const unresolved = slSegments.find((s) => !s.basecamp_place_id);
+    if (unresolved) {
+      switchSegment(unresolved.id);
+      return;
+    }
 
     window.dispatchEvent(
       new CustomEvent('mongsil:navigateGate', { detail: { tripId: currentTripId, gate: 'route' } })
