@@ -2909,7 +2909,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   const infraRows = INFRA_SAMPLE
     .map((f) => {
       const meta = INFRA_META[f.key];
-      return buildInfraRow(meta, f.min + ' · ' + f.dist);
+      return buildInfraRow(meta, f.min + ' · ' + f.dist, f.key);
     })
     .join('');
 
@@ -2977,7 +2977,6 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '        </div>',
     '        <div class="sl-step3-eff-ratings" id="sl-eff-ratings">' + effRatings + '</div>',
     '      </div>',
-    '      <div class="sl-step3-sample-note sl-step3-eff-samplenote" id="sl-eff-note">* AI가 분석할 예정이에요 (현재 예시 점수)</div>',
 
     '    </div>',
 
@@ -3034,6 +3033,9 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   ].join('\n');
 
   body.querySelector('#sl-back-2c')?.addEventListener('click', openStayDateEditor);
+
+  const infraListEl = body.querySelector('#sl-infra-list') as HTMLElement | null;
+  if (infraListEl) attachInfraRowClickHandlers(infraListEl);
 
   // 멤버에게 투표 요청 — 응답을 못 받았어도 잠기지 않고 버튼을 다시 눌러 몇 번이든 재요청 가능
   body.querySelector('#hv-request-vote')?.addEventListener('click', () => {
@@ -3173,15 +3175,25 @@ async function renderStep3(body: HTMLElement): Promise<void> {
   });
 }
 
-function buildInfraRow(meta: { icon: string; color: string; name: string } | undefined, distText: string): string {
+function buildInfraRow(meta: { icon: string; color: string; name: string } | undefined, distText: string, key?: string): string {
   if (!meta) return '';
   return [
-    '<div class="sl-infra-row">',
+    '<div class="sl-infra-row"' + (key ? ' data-infra-key="' + key + '"' : '') + '>',
     '  <span class="sl-infra-icon" style="--infra-color:' + meta.color + '">' + meta.icon + '</span>',
     '  <span class="sl-infra-name">' + escapeHtml(meta.name) + '</span>',
     '  <span class="sl-infra-dist">' + escapeHtml(distText) + '</span>',
     '</div>',
   ].join('');
+}
+
+/** 리스트 행 클릭 → 해당 카테고리의 지도 마커로 확대 이동 (한 카테고리엔 마커가 하나뿐이라 key로 바로 찾음) */
+function attachInfraRowClickHandlers(container: HTMLElement): void {
+  container.querySelectorAll<HTMLElement>('.sl-infra-row[data-infra-key]').forEach((row) => {
+    row.addEventListener('click', () => {
+      const key = row.dataset.infraKey;
+      if (key) zoomToInfraMarker(key);
+    });
+  });
 }
 
 interface NearbySearchResult {
@@ -3344,9 +3356,10 @@ async function loadNearbyInfra(body: HTMLElement, basecamp: Place, withDistance:
         .map((f) => {
           const meta = INFRA_META[f.key];
           const km = f.meters >= 1000 ? (f.meters / 1000).toFixed(1) + 'km' : f.meters + 'm';
-          return buildInfraRow(meta, f.walkMin + '분 · ' + km);
+          return buildInfraRow(meta, f.walkMin + '분 · ' + km, f.key);
         })
         .join('');
+      attachInfraRowClickHandlers(listEl);
     }
     drawInfraLines(basecamp, facilities); // 지도가 아직이면 no-op → 지도 준비 후 initMapStep3에서 다시 그림
   }
@@ -3383,8 +3396,6 @@ async function loadHotelScore(
       .map((r) => buildEffRatingRow(r.label, result!.ratings[r.key] ?? 3))
       .join('');
   }
-  const noteEl = body.querySelector('#sl-eff-note') as HTMLElement;
-  if (noteEl) noteEl.textContent = '* AI가 위치·주변 정보를 종합해 평가한 점수예요 (이용자 리뷰 점수 아님).';
 }
 
 interface RealTravelResult {
@@ -3576,6 +3587,30 @@ function renderStep3Lists(body: HTMLElement, withDistance: Step3Item[]): void {
 let step3MapInstance: any = null;
 let step3InfraLines: any[] = [];
 let step3Facilities: InfraFacility[] = []; // 지도 준비/인프라 도착 순서와 무관하게 다시 그리기 위해 보관
+/** 리스트 행 클릭 시 확대 이동할 마커 — 카테고리(key)당 마커가 하나뿐이라 key로 바로 찾음 */
+let step3InfraMarkersByKey: Map<string, any> = new Map();
+
+/** 지도를 해당 마커 위치로 부드럽게 이동 + 단계적으로 확대(즉시 점프 대신 줌인되는 느낌) */
+function zoomToInfraMarker(key: string): void {
+  const g = (window as any).google;
+  const marker = step3InfraMarkersByKey.get(key);
+  if (!g?.maps || !step3MapInstance || !marker) return;
+  const position = marker.getPosition();
+  if (!position) return;
+
+  step3MapInstance.panTo(position);
+
+  const targetZoom = 17;
+  const startZoom = step3MapInstance.getZoom() ?? targetZoom;
+  if (startZoom >= targetZoom) return; // 이미 그 이상 확대돼 있으면 팬 이동만으로 충분
+
+  let zoom = startZoom;
+  const timer = setInterval(() => {
+    zoom += 1;
+    step3MapInstance.setZoom(zoom);
+    if (zoom >= targetZoom) clearInterval(timer);
+  }, 90);
+}
 /** /api/nearby-infra 응답이 (결과가 비어있더라도) 한 번이라도 도착했는지 — 접근성 타일에서
  *  "아직 확인 중"과 "실제로 시설이 없어서 나쁨"을 구분하기 위해 필요 */
 let step3FacilitiesLoaded = false;
@@ -3672,6 +3707,7 @@ function drawInfraLines(basecamp: Place, facilities: InfraFacility[]): void {
 
   step3InfraLines.forEach((l) => l.setMap(null));
   step3InfraLines = [];
+  step3InfraMarkersByKey = new Map();
 
   facilities.forEach((f) => {
     const meta = INFRA_META[f.key];
@@ -3700,6 +3736,7 @@ function drawInfraLines(basecamp: Place, facilities: InfraFacility[]): void {
       showInfraInfoWindow(g, step3MapInstance, marker, meta, f, basecamp);
     });
     step3InfraLines.push(marker);
+    step3InfraMarkersByKey.set(f.key, marker);
   });
 
   // 숙소를 중심으로 가장 먼 시설이 화면 끝에서 약 1cm(38px) 안쪽에 들어오도록 확대
@@ -3715,6 +3752,7 @@ function drawInfraLines(basecamp: Place, facilities: InfraFacility[]): void {
 async function initMapStep3(body: HTMLElement): Promise<void> {
   step3MapInstance = null;
   step3InfraLines = [];
+  step3InfraMarkersByKey = new Map();
   step3Facilities = [];
   step3FacilitiesLoaded = false;
   if (!selectedBasecamp) return;
