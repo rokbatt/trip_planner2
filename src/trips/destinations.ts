@@ -80,6 +80,7 @@ function syntheticSegmentFromTrip(trip: Trip, destination: TripDestination): Sta
     zone_place_ids: trip.shortlist_zone_place_ids,
     basecamp_place_id: trip.shortlist_basecamp_place_id,
     confirmed_place_ids: trip.shortlist_confirmed_place_ids,
+    total_budget_krw: trip.shortlist_total_budget_krw,
     created_at: trip.created_at,
   };
 }
@@ -97,6 +98,7 @@ function emptySegment(trip: Trip, destination: TripDestination): StaySegment {
     zone_place_ids: null,
     basecamp_place_id: null,
     confirmed_place_ids: null,
+    total_budget_krw: null,
     created_at: trip.created_at,
   };
 }
@@ -131,6 +133,7 @@ export interface SegmentState {
   zone_place_ids: string[] | null;
   basecamp_place_id: string | null;
   confirmed_place_ids: string[] | null;
+  total_budget_krw: number | null;
 }
 
 /**
@@ -154,6 +157,7 @@ export async function saveStaySegment(
         shortlist_zone_place_ids: state.zone_place_ids,
         shortlist_basecamp_place_id: state.basecamp_place_id,
         shortlist_confirmed_place_ids: state.confirmed_place_ids,
+        shortlist_total_budget_krw: state.total_budget_krw,
       })
       .eq('id', trip.id);
     return { ...segment, ...state };
