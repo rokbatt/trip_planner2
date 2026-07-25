@@ -1355,7 +1355,7 @@
 .sl-infra-scale-line { width: 16px; height: 0; border-top: 2px dotted var(--sc); flex-shrink: 0; }
 
 /* ── ③ 여행 효율 점수 ── */
-.sl-step3-eff-card { display: flex; align-items: center; gap: 28px; }
+.sl-step3-eff-card { display: flex; align-items: center; gap: 28px; margin-bottom: 6px; }
 .sl-step3-eff-score { flex-shrink: 0; text-align: center; padding-right: 28px; border-right: 1px solid #E8EDF5; }
 .sl-step3-eff-num { font-size: 46px; font-weight: 800; color: #0B2A5C; line-height: 1; letter-spacing: -0.02em; }
 .sl-step3-eff-max { font-size: 17px; font-weight: 700; color: #B0BAC5; }

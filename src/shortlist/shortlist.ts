@@ -2785,6 +2785,14 @@ const SCORE_LABELS: { key: string; label: string }[] = [
   { key: '가성비', label: '가성비' },
 ];
 
+/** api/hotel-score.ts의 gradeFor()와 같은 기준(85/70/55) — 등급 배지 옆 한 줄 설명을 점수와 어긋나지 않게 매핑 */
+const GRADE_NOTE: Record<string, string> = {
+  Excellent: '여행 거점으로 아주 적합한 숙소예요',
+  Good: '여행 거점으로 적합한 숙소예요',
+  Fair: '여행 거점으로 무난한 숙소예요',
+  Basic: '여행 거점으로는 다소 아쉬울 수 있어요',
+};
+
 /** 평균 이동시간 등 집계용 분 단위 환산 — 도보/대중교통/차량 속도 가정을 모든 구간에 적용 */
 function estimateMinutes(km: number): number {
   if (km <= 1.2) return Math.max(2, Math.round(km * 12));
@@ -2973,7 +2981,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '        <div class="sl-step3-eff-score">',
     '          <div class="sl-step3-eff-num" id="sl-eff-num">' + eff.score + '<span class="sl-step3-eff-max">/100</span></div>',
     '          <div class="sl-step3-eff-grade" id="sl-eff-grade">' + escapeHtml(eff.grade) + '</div>',
-    '          <div class="sl-step3-eff-note">' + escapeHtml(eff.note) + '</div>',
+    '          <div class="sl-step3-eff-note" id="sl-eff-grade-note">' + escapeHtml(eff.note) + '</div>',
     '        </div>',
     '        <div class="sl-step3-eff-ratings" id="sl-eff-ratings">' + effRatings + '</div>',
     '      </div>',
@@ -3390,6 +3398,8 @@ async function loadHotelScore(
   if (numEl) numEl.innerHTML = result.score + '<span class="sl-step3-eff-max">/100</span>';
   const gradeEl = body.querySelector('#sl-eff-grade') as HTMLElement;
   if (gradeEl) gradeEl.textContent = result.grade;
+  const gradeNoteEl = body.querySelector('#sl-eff-grade-note') as HTMLElement;
+  if (gradeNoteEl) gradeNoteEl.textContent = GRADE_NOTE[result.grade] ?? '';
   const ratingsEl = body.querySelector('#sl-eff-ratings') as HTMLElement;
   if (ratingsEl) {
     ratingsEl.innerHTML = SCORE_LABELS
