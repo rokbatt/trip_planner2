@@ -3341,10 +3341,21 @@ function step3TravelLabel(item: Step3Item): { icon: string; text: string } {
   return { icon: travel.icon, text: travel.label };
 }
 
+// "이 숙소를 선택하면" 팔레트 — 브랜드 톤(딥네이비) 하나로 통일, 색은 정말 나쁠 때만 예외.
+// 계속 다듬을 예정이라 색을 여기 한 군데에 모아둠 — 다음에 바꿀 땐 이 두 상수만 건드리면 됨.
+const STAT_BRAND_COLOR = '#0B2A5C'; // 딥네이비 — 아이콘 전부 이 색으로 통일
+const STAT_ALERT_COLOR = '#C0524B'; // "나쁨"일 때만 쓰는 절제된 경고색 (채도 낮춘 레드)
+
 /** 접근성 등급 4단계 — 인프라 지도 범례(도보 5/10/15분)와 같은 기준을 그대로 씀 */
 type AccessTier = 'great' | 'good' | 'ok' | 'bad';
 const ACCESS_TIER_LABEL: Record<AccessTier, string> = { great: '아주 좋음', good: '좋음', ok: '보통', bad: '나쁨' };
-const ACCESS_TIER_COLOR: Record<AccessTier, string> = { great: '#1D9E75', good: '#0B7CC4', ok: '#F5A623', bad: '#E24B4A' };
+// 등급 4개를 색으로 다 구분하지 않고, "나쁨"만 경고색으로 눈에 띄게 하고 나머진 기본 네이비로 통일
+const ACCESS_TIER_COLOR: Record<AccessTier, string> = {
+  great: STAT_BRAND_COLOR,
+  good: STAT_BRAND_COLOR,
+  ok: STAT_BRAND_COLOR,
+  bad: STAT_ALERT_COLOR,
+};
 
 function walkAccessTier(walkMin: number | null): AccessTier {
   if (walkMin == null) return 'bad';
@@ -3467,12 +3478,12 @@ function renderStep3Lists(body: HTMLElement, withDistance: Step3Item[]): void {
     // 평균 이동시간·도보권 장소·관광지 접근성: 이 트립에 담은 실제 장소까지 거리/이동시간(실측 도착 시 자동 교체).
     // 대중교통·편의시설·편의점 접근성: /api/nearby-infra(Google Places Nearby Search + Routes API 실측 도보시간).
     statsEl.innerHTML = [
-      buildStatTile(IC_CLOCK, '#0B7CC4', '평균 이동시간', avgMin + '분', '전체 장소 기준'),
-      buildStatTile(IC_WALK, '#1D9E75', '도보권 장소', walkable + '곳', '도보 15분 이내'),
-      buildStatTile(IC_BUS, '#7F77DD', '대중교통 접근성', transit.label, transitDesc, transit.valueColor),
-      buildStatTile(IC_HOUSE, '#F5A623', '편의시설 접근성', amenityAcc.label, amenityDesc, amenityAcc.valueColor),
-      buildStatTile(IC_BUILDING, '#D4537E', '관광지 접근성', visit.label, visitDesc, visit.valueColor),
-      buildStatTile(IC_CART, '#0F9E9E', '편의점 접근성', conv.label, convDesc, conv.valueColor),
+      buildStatTile(IC_CLOCK, STAT_BRAND_COLOR, '평균 이동시간', avgMin + '분', '전체 장소 기준'),
+      buildStatTile(IC_WALK, STAT_BRAND_COLOR, '도보권 장소', walkable + '곳', '도보 15분 이내'),
+      buildStatTile(IC_BUS, STAT_BRAND_COLOR, '대중교통 접근성', transit.label, transitDesc, transit.valueColor),
+      buildStatTile(IC_HOUSE, STAT_BRAND_COLOR, '편의시설 접근성', amenityAcc.label, amenityDesc, amenityAcc.valueColor),
+      buildStatTile(IC_BUILDING, STAT_BRAND_COLOR, '관광지 접근성', visit.label, visitDesc, visit.valueColor),
+      buildStatTile(IC_CART, STAT_BRAND_COLOR, '편의점 접근성', conv.label, convDesc, conv.valueColor),
     ].join('');
   }
 }
