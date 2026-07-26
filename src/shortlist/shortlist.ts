@@ -15,6 +15,7 @@ import {
   deleteStaySegment,
   isSyntheticSegment,
   updateStaySegment,
+  repairOrphanPlaces,
 } from '../trips/destinations';
 import { loadGoogleMapsScript, getCategoryLabel, getPlacePredictions, getPlaceDetails } from '../utils/googleMaps';
 import type { PlacePrediction } from '../utils/googleMaps';
@@ -399,6 +400,18 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
   if (pendingVoteTarget && slDestinations.some((d) => d.id === pendingVoteTarget!.destinationId)) {
     setActiveDestinationId(tripId, pendingVoteTarget.destinationId);
   }
+
+  // 과거 버그(여행지를 추가할 때 기존 장소를 새 여행지에 배정하는 걸 놓침) 복구 —
+  // 이미 실제 여행지가 있는데 destination_id가 없는 장소가 있으면 첫 여행지로 조용히 배정.
+  // 정상 트립은 orphans가 항상 비어있어 추가 쿼리가 안 나감.
+  if (slDestinations.length > 0 && !isSyntheticDestination(slDestinations[0].id)) {
+    const orphans = places.filter((p) => p.destination_id == null);
+    if (orphans.length > 0) {
+      await repairOrphanPlaces(slDestinations[0].id, orphans.map((p) => p.id));
+      orphans.forEach((p) => { p.destination_id = slDestinations[0].id; });
+    }
+  }
+
   slActiveDest = slDestinations.length ? resolveActiveDestination(tripId, slDestinations) : null;
   allPlaces = slActiveDest ? places.filter((p) => placeBelongsToDestination(p, slActiveDest!)) : places;
 

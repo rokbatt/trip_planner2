@@ -7,6 +7,7 @@ import {
   setActiveDestinationId,
   placeBelongsToDestination,
   isSyntheticDestination,
+  repairOrphanPlaces,
 } from '../trips/destinations';
 import type { Database, TripDestination } from '../types/database';
 import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -535,6 +536,17 @@ export async function renderBoardContent(container: HTMLElement, tripId: string)
 
   const allTripPlaces = await loadPlaces(tripId);
   if (myGeneration !== boardGeneration) return; // 그 사이 다른 렌더가 시작됨
+
+  // 과거 버그(여행지를 추가할 때 기존 장소를 새 여행지에 배정하는 걸 놓침) 복구 —
+  // 이미 실제 여행지가 있는데 destination_id가 없는 장소가 있으면 첫 여행지로 조용히 배정.
+  // 정상 트립은 orphans가 항상 비어있어 추가 쿼리가 안 나감.
+  if (boardDestinations.length > 0 && !isSyntheticDestination(boardDestinations[0].id)) {
+    const orphans = allTripPlaces.filter((p) => p.destination_id == null);
+    if (orphans.length > 0) {
+      await repairOrphanPlaces(boardDestinations[0].id, orphans.map((p) => p.id));
+      orphans.forEach((p) => { p.destination_id = boardDestinations[0].id; });
+    }
+  }
 
   allTripPlaces.forEach((p) => placesCache.set(p.id, p));
 

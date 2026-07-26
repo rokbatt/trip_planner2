@@ -246,6 +246,20 @@ export function placeBelongsToDestination(
   return place.destination_id === destination.id;
 }
 
+/**
+ * 과거 버그(여행지를 추가해 synthetic → 실제로 전환될 때 기존 장소를 새 여행지에 배정하는
+ * 걸 놓침) 때문에 이미 destination_id가 null로 저장돼버린 장소를 복구.
+ * supabase/multi_destination.sql의 5b 마이그레이션과 같은 동작을 앱에서도 매번 보정해서,
+ * 이미 저장된 트립이 코드 수정만으론 안 고쳐지는 상황을 막는다.
+ * 호출부가 미리 orphanIds(= destination_id가 null인 장소)를 메모리에서 걸러서 넘겨야
+ * 정상 트립에서는 불필요한 쿼리가 안 나감.
+ */
+export async function repairOrphanPlaces(firstDestId: string, orphanIds: string[]): Promise<void> {
+  if (orphanIds.length === 0) return;
+  const { error } = await supabase.from('places').update({ destination_id: firstDestId }).in('id', orphanIds);
+  if (error) console.error('[destinations] 기존 장소 여행지 배정 복구 실패:', error.message);
+}
+
 /* ── 쓰기 ── */
 
 export async function createDestination(

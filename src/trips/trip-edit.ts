@@ -303,6 +303,11 @@ async function handleSave(
       //  다음 로드 때 trip_destinations가 비어있지 않아 그 여행지 정보가 사라짐)
       const keepIds = new Set<string>();
       let sortOrder = 0;
+      // synthetic → 실제 전환 순간 새로 생기는 "첫 여행지"의 새 id — 이 여행에 이미 있던
+      // (destination_id가 아직 null인) 장소들을 여기로 배정해야 브레인스토밍 보드가 안 비워짐
+      // (placeBelongsToDestination은 destination_id 일치 여부만 보기 때문에, 배정을 안 하면
+      // 기존 장소가 새 여행지에도 새로 추가한 여행지에도 안 속하게 돼버림)
+      let migratedSyntheticDestId: string | null = null;
       for (const w of cleaned) {
         if (w.realId) {
           await updateDestination(w.realId, { name: w.name, start_date: w.start || null, end_date: w.end || null, sort_order: sortOrder });
@@ -313,10 +318,23 @@ async function handleSave(
             endDate: w.end || null,
             sortOrder,
           });
-          if (created) keepIds.add(created.id);
+          if (created) {
+            keepIds.add(created.id);
+            if (originalIsSynthetic && sortOrder === 0) migratedSyntheticDestId = created.id;
+          }
         }
         sortOrder++;
       }
+
+      if (migratedSyntheticDestId) {
+        const { error: backfillError } = await supabase
+          .from('places')
+          .update({ destination_id: migratedSyntheticDestId })
+          .eq('trip_id', trip.id)
+          .is('destination_id', null);
+        if (backfillError) console.error('[trip-edit] 기존 장소 여행지 배정 실패:', backfillError.message);
+      }
+
       if (!originalIsSynthetic) {
         const reassignTo = [...keepIds][0] ?? null;
         for (const o of original) {
