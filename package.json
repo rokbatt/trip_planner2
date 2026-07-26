@@ -10,7 +10,12 @@
     "types": "npx supabase gen types typescript --project-id YOUR_PROJECT_ID > src/types/database.ts"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.1"
+    "@supabase/supabase-js": "^2.49.1",
+    "@turf/bbox": "^7.3.5",
+    "@turf/circle": "^7.3.5",
+    "@turf/helpers": "^7.3.5",
+    "@turf/intersect": "^7.3.5",
+    "@turf/voronoi": "^7.3.5"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
