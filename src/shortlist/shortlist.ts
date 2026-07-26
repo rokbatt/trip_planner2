@@ -917,8 +917,26 @@ async function addSegment(pickStart: string | null, pickEnd: string | null): Pro
 
 async function removeSegment(segId: string): Promise<void> {
   if (!slActiveDest || !slContainer || slSegments.length <= 1) return;
+  const removed = slSegments.find((s) => s.id === segId) ?? null;
   if (!isSyntheticSegment(segId)) await deleteStaySegment(segId);
   slSegments = slSegments.filter((s) => s.id !== segId);
+
+  // 삭제된 구간이 차지하던 날짜를 인접 구간이 이어받도록 확장. 안 그러면 남은 구간들의
+  // 날짜 범위 합이 원래 전체 기간보다 좁아져(예: 26~30을 26~27/27~30으로 나눴다가 26~27을
+  // 지우면 27~30만 남음) "수정" 모달이 그 좁아진 범위 밖은 고를 수 없게 됨(openStayDateEditor는
+  // slActiveSegment.start_date/end_date를 그대로 선택 가능 범위로 씀).
+  if (removed?.start_date && removed?.end_date) {
+    const before = slSegments.find((s) => s.end_date === removed.start_date);
+    const after = before ? null : slSegments.find((s) => s.start_date === removed.end_date);
+    if (before) {
+      before.end_date = removed.end_date;
+      if (!isSyntheticSegment(before.id)) await updateStaySegment(before.id, { end_date: before.end_date });
+    } else if (after) {
+      after.start_date = removed.start_date;
+      if (!isSyntheticSegment(after.id)) await updateStaySegment(after.id, { start_date: after.start_date });
+    }
+  }
+
   if (slActiveSegment?.id === segId) {
     slActiveSegment = slSegments[0] ?? null;
     if (slActiveSegment) setActiveSegmentId(slActiveDest.id, slActiveSegment.id);
