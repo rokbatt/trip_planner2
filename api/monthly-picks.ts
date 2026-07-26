@@ -7,7 +7,17 @@
  * 흐름:
  * 1. Supabase(ai_monthly_picks)에서 [destination + 이번 달] 캐시 먼저 조회
  * 2. 있으면 그대로 반환 (Gemini 호출 안 함)
- * 3. 없으면 Gemini 호출 → JSON 응답 파싱 → DB에 캐싱 → 반환
+ * 3. 없으면 Gemini + Google Search 그라운딩 호출 → 텍스트 파싱 → DB에 캐싱 → 반환
+ *
+ * ⚠️ Google Search 그라운딩 없이(모델 학습 지식만으로) 이 프롬프트를 실행하면 "마사지",
+ *    "루프탑 바"처럼 실제 장소명이 아니라 카테고리/업종명만 지어내는 경우가 있었음(실사용
+ *    보고). 그래서 hotel-review-summary.ts와 동일하게 Google Search 그라운딩 툴을 붙여
+ *    실제 검색된 장소만 적게 함. 그라운딩 + JSON 강제 응답(responseMimeType) 조합은
+ *    Gemini 2.x 계열에서 호환성 문제(400 오류)가 보고돼 있어, 고정 구분자 텍스트 포맷을
+ *    요청하고 서버에서 파싱함.
+ * ⚠️ Google Search 그라운딩은 유료 기능(Gemini 2.5 계열 기준 일 1,500회 무료, 프로젝트
+ *    공유 한도, 초과분은 1,000회당 $35)이지만, destination+월 단위로 DB 캐싱되므로 같은
+ *    달에 같은 여행지를 보는 모든 사용자가 캐시를 공유해 호출이 매우 드묾.
  *
  * 필요한 Vercel 환경변수 (전부 서버 전용, VITE_ 접두사 아님 — 브라우저에 노출 안 됨):
  * - SUPABASE_URL               (기존 VITE_SUPABASE_URL과 같은 값이어도 됨)
@@ -32,6 +42,30 @@ interface VercelResponse {
 }
 
 const GATE_KEYS = ['가고싶어', '먹고싶어', '하고싶어', '숙소'] as const;
+const GATE_MARKERS: Record<(typeof GATE_KEYS)[number], string> = {
+  가고싶어: '###가고싶어###',
+  먹고싶어: '###먹고싶어###',
+  하고싶어: '###하고싶어###',
+  숙소: '###숙소###',
+};
+
+/** "###MARKER###" 다음 줄부터 다른 마커가 나오기 전까지의 "- " 불릿만 뽑음 (최대 5개) */
+function extractBullets(text: string, marker: string, otherMarkers: string[]): string[] {
+  const startIdx = text.indexOf(marker);
+  if (startIdx === -1) return [];
+  let section = text.slice(startIdx + marker.length);
+  for (const m of otherMarkers) {
+    const idx = section.indexOf(m);
+    if (idx !== -1) section = section.slice(0, idx);
+  }
+  return section
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('-'))
+    .map((l) => l.replace(/^-+\s*/, '').trim())
+    .filter(Boolean)
+    .slice(0, 5);
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -86,16 +120,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
 
-  // 참고: 아래 조건들 중 "실제 운영 중", "최근 리뷰 반영", "공사 여부", "폐업 제외"는
-  // 이 API 호출이 실시간 웹 검색(grounding) 없이 동작하기 때문에 모델의 학습 지식
-  // 기준으로 판단하는 것이며, 100% 실시간 정확성을 보장하지는 않음.
-  // 진짜 실시간 검증이 필요하면 Google Search grounding 도구를 별도로 붙여야 함.
   const prompt = [
-    '너는 여행 컨시어지야.',
+    '너는 여행 컨시어지야. Google 검색으로 실제 정보를 확인하고 답해.',
     '',
     destination + ' 여행, ' + year + '년 ' + month + '월 기준으로 방문객에게 추천할 장소를 골라줘.',
     '',
-    '조건:',
+    '조건(검색해서 확인):',
     '- 실제 운영 중인 곳만 (폐업/휴업 제외)',
     '- 최근 평판과 리뷰 경향을 반영',
     '- 한국 관광객들 사이에서 만족도가 높거나 인기 있는 곳 우선 (블로그·인기도 고려)',
@@ -105,9 +135,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     '- 현재 공사/리모델링 중인 곳 제외',
     '- 카테고리 간 중복 장소 없이',
     '',
-    '카테고리별로 정확히 5개씩, 실제로 존재하는 구체적인 장소명(가게명/관광지명)만 골라줘. 설명 없이 이름만.',
-    '아래 JSON 형식으로만 응답하고 다른 텍스트는 절대 붙이지 마:',
-    '{"가고싶어": ["장소1","장소2","장소3","장소4","장소5"], "먹고싶어": ["...5개"], "하고싶어": ["...5개"], "숙소": ["...5개"]}',
+    '⚠️ 반드시 검색해서 찾은 구체적인 장소명(가게 상호명/관광지 고유명사)만 적어.',
+    '⚠️ "마사지", "루프탑 바", "카페"처럼 업종/카테고리 이름만 쓰면 안 됨 — 예를 들어',
+    '   "루프탑 바"가 아니라 검색으로 찾은 실제 상호명(예: "옥토버 루프탑 바")을 적어.',
+    '',
+    '카테고리별로 정확히 5개씩. 다른 설명 없이 정확히 이 형식으로만 응답해:',
+    GATE_MARKERS.가고싶어,
+    '- 장소1',
+    '- 장소2',
+    '- 장소3',
+    '- 장소4',
+    '- 장소5',
+    GATE_MARKERS.먹고싶어,
+    '- (5개)',
+    GATE_MARKERS.하고싶어,
+    '- (5개)',
+    GATE_MARKERS.숙소,
+    '- (5개)',
   ].join('\n');
 
   let geminiRes: Response;
@@ -119,7 +163,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json' },
+          tools: [{ google_search: {} }],
         }),
       }
     );
@@ -135,23 +179,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const geminiData: any = await geminiRes.json();
-  const rawText: string | undefined = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
+  const candidate = geminiData?.candidates?.[0];
+  const rawText: string | undefined = Array.isArray(candidate?.content?.parts)
+    ? candidate.content.parts
+        .map((p: any) => p?.text)
+        .filter((t: any) => typeof t === 'string')
+        .join('\n')
+    : undefined;
 
   if (!rawText) {
     res.status(502).json({ error: 'Gemini 응답에서 텍스트를 찾지 못했어요.' });
     return;
   }
 
-  let picks: Record<string, string[]>;
-  try {
-    picks = JSON.parse(rawText);
-  } catch (e) {
-    res.status(502).json({ error: 'Gemini 응답 JSON 파싱 실패' });
-    return;
+  const allMarkers = Object.values(GATE_MARKERS);
+  const picks: Record<string, string[]> = {};
+  for (const key of GATE_KEYS) {
+    const marker = GATE_MARKERS[key];
+    picks[key] = extractBullets(rawText, marker, allMarkers.filter((m) => m !== marker));
   }
 
-  // 응답 형태 최소 검증 (게이트 4개 키 + 배열)
-  const isValid = GATE_KEYS.every((k) => Array.isArray(picks[k]));
+  // 응답 형태 최소 검증 (게이트 4개 전부 최소 1곳 이상)
+  const isValid = GATE_KEYS.every((k) => picks[k].length > 0);
   if (!isValid) {
     res.status(502).json({ error: 'Gemini 응답 형태가 예상과 달라요.' });
     return;

@@ -47,6 +47,7 @@ const IC = {
   chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
   panelClose: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
   mapPin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21C12 21 19 14.5 19 9.5C19 5.9 15.9 3 12 3C8.1 3 5 5.9 5 9.5C5 14.5 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.2"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
 };
 
 interface NavItem {
@@ -689,6 +690,16 @@ function buildDetailPanelShell(place: any): string {
     '</a>',
   ].join('');
 
+  // 이름+주소로 일반 구글 검색 — 블로그·리뷰 등 지도에는 없는 정보를 확인할 수 있게
+  const searchQuery = place.address ? place.name + ' ' + place.address : place.name;
+  const searchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(searchQuery);
+  const searchLink = [
+    '<a class="ws-maps-link" href="' + searchUrl + '" target="_blank" rel="noopener noreferrer">',
+    IC.search,
+    '<span>Google에서 검색</span>',
+    '</a>',
+  ].join('');
+
   const address = place.address
     ? '<div class="ws-detail-section"><span class="ws-detail-label">주소</span><div class="ws-detail-text">' + escapeHtml(place.address) + '</div></div>'
     : '';
@@ -719,7 +730,7 @@ function buildDetailPanelShell(place: any): string {
            rating,
     '    </div>',
     '    <span class="ws-detail-save-hint" id="detail-name-hint"></span>',
-         mapsLink,
+    '    <div class="ws-detail-links">' + mapsLink + searchLink + '</div>',
          category,
          address,
          hours,
