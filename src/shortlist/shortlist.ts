@@ -82,6 +82,12 @@ const MOOD_COLOR: Record<string, string> = {
   '하고싶어': '#7F77DD',
   '숙소': '#185FA5',
 };
+const MOOD_ICON: Record<string, string> = {
+  '가고싶어': '📷',
+  '먹고싶어': '🍴',
+  '하고싶어': '🎟',
+  '숙소': '🛏',
+};
 
 interface Zone {
   id: string;
@@ -1887,17 +1893,20 @@ function buildCategoryIcon(g: any, mood: string | null, variant: 'compact' | 'de
   const color = MOOD_COLOR[mood ?? ''] || '#94A3B8';
 
   if (variant === 'compact') {
-    // Step1의 추상화된 지도 위에서는 작고 얇은 핀이 오히려 자연스러움
+    // Step1의 추상화된 지도 위에서는 어떤 종류인지 색만으론 구분이 안 돼서, 작은 원형 배지에 카테고리 아이콘을 넣음
+    const icon = MOOD_ICON[mood ?? ''] || '📍';
+    const size = 16;
+    const r = size / 2;
     const svg = [
-      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="22" viewBox="0 0 16 22">',
-      '<path d="M8 0C3.6 0 0 3.6 0 8c0 6 8 14 8 14s8-8 8-14c0-4.4-3.6-8-8-8z" fill="' + color + '"/>',
-      '<circle cx="8" cy="7.7" r="2.7" fill="white"/>',
+      '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">',
+      '<circle cx="' + r + '" cy="' + r + '" r="' + (r - 1) + '" fill="' + color + '" stroke="white" stroke-width="1.4"/>',
+      '<text x="' + r + '" y="' + (r + 3) + '" font-size="8" text-anchor="middle">' + icon + '</text>',
       '</svg>',
     ].join('');
     return {
       url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
-      scaledSize: new g.maps.Size(16, 22),
-      anchor: new g.maps.Point(8, 22),
+      scaledSize: new g.maps.Size(size, size),
+      anchor: new g.maps.Point(r, r),
     };
   }
 
@@ -2116,13 +2125,6 @@ async function initMap(body: HTMLElement): Promise<void> {
 
   if (!bounds.isEmpty()) mapInstance.fitBounds(bounds, 40);
 }
-
-const ZONE_ICON: Record<string, string> = {
-  '가고싶어': '📷',
-  '먹고싶어': '🍴',
-  '하고싶어': '🎟',
-  '숙소': '🛏',
-};
 
 /** 지도 위에 뜨는 지역 정보 카드 (Google Maps 커스텀 OverlayView, 실제 DOM 엘리먼트) */
 function createZoneLabelOverlay(g: any, zone: Zone, color: string, labelPos: { lat: number; lng: number }): any {
