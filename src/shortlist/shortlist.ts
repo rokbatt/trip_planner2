@@ -436,6 +436,7 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
   // 활성 여행지의 숙소 구간들을 로드하고, 활성 구간의 저장 상태를 복원
   if (trip && slActiveDest) {
     slSegments = sortSegmentsByDate(await loadStaySegments(trip, slActiveDest));
+    await repairAdjacentSegmentGaps(trip, slActiveDest, slSegments);
     slActiveSegment = resolveActiveSegment(slActiveDest.id, slSegments);
     restoreStateFromSegment(slActiveSegment);
   }
@@ -785,6 +786,35 @@ function findCoverageGaps(
   }
   if (cursor < fullEnd) gaps.push({ start: cursor, end: fullEnd });
   return gaps;
+}
+
+/**
+ * removeSegment가 인접 구간으로 날짜를 이어받게 고쳐지기 전에 이미 삭제가 일어난 트립은
+ * DB에 좁아진 구간이 그대로 남아있어 코드만 고쳐선 반영되지 않는다. 구간을 새로 불러올
+ * 때마다 전체 기간 대비 빈 날짜가 있고 그 빈 날짜가 정확히 한 구간에만 맞닿아 있으면
+ * (다른 구간과는 안 겹치는, 진짜 "예전에 삭제된 구간이 남긴 빈틈") 그 구간을 확장해
+ * 조용히 복구한다 — 기존 구간을 지우거나 새로 만들지 않고 날짜만 넓히므로 진행 중이던
+ * 지역/숙소 선택 상태(zone_name, basecamp_place_id 등)는 그대로 유지된다.
+ */
+async function repairAdjacentSegmentGaps(trip: Trip, destination: TripDestination, segs: StaySegment[]): Promise<void> {
+  const fullStart = destination.start_date || trip.start_date;
+  const fullEnd = destination.end_date || trip.end_date;
+  if (!fullStart || !fullEnd) return;
+
+  const gaps = findCoverageGaps(fullStart, fullEnd, segs);
+  for (const gap of gaps) {
+    const before = segs.find((s) => s.end_date === gap.start);
+    const after = segs.find((s) => s.start_date === gap.end);
+    if (before && !after) {
+      before.end_date = gap.end;
+      if (!isSyntheticSegment(before.id)) await updateStaySegment(before.id, { end_date: before.end_date });
+    } else if (after && !before) {
+      after.start_date = gap.start;
+      if (!isSyntheticSegment(after.id)) await updateStaySegment(after.id, { start_date: after.start_date });
+    }
+    // 양쪽 다 있거나(다른 이유로 생긴 빈틈) 양쪽 다 없으면 손대지 않고 확정 시점의
+    // fillCoverageGapsIfAny가 필요하면 새 빈 구간으로 채우게 둠
+  }
 }
 
 /**
