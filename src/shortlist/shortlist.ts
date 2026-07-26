@@ -1916,15 +1916,14 @@ function buildCategoryIcon(
   const color = MOOD_COLOR[mood ?? ''] || '#94A3B8';
 
   if (variant === 'compact') {
-    // Step1의 추상화된 지도 위에서는 어떤 종류인지 색만으론 구분이 안 돼서, 작은 원형 배지에 카테고리 아이콘을 넣음
+    // Step1의 추상화된 지도 위에서는 배경 배지 없이 카테고리 아이콘만 딱 보이게
     // (구글 장소 세부 종류가 있으면 그걸 우선 쓰고, 없으면 mood 4종 기준으로 대체)
     const icon = CATEGORY_ICON[category ?? ''] || MOOD_ICON[mood ?? ''] || '📍';
-    const size = 16;
+    const size = 24;
     const r = size / 2;
     const svg = [
       '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">',
-      '<circle cx="' + r + '" cy="' + r + '" r="' + (r - 1) + '" fill="' + color + '" stroke="white" stroke-width="1.4"/>',
-      '<text x="' + r + '" y="' + (r + 3) + '" font-size="8" text-anchor="middle">' + icon + '</text>',
+      '<text x="' + r + '" y="' + r + '" font-size="20" text-anchor="middle" dominant-baseline="central">' + icon + '</text>',
       '</svg>',
     ].join('');
     return {
