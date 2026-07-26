@@ -82,11 +82,29 @@ const MOOD_COLOR: Record<string, string> = {
   '하고싶어': '#7F77DD',
   '숙소': '#185FA5',
 };
+/** place.category(구글 장소 세부 종류, 예: '카페'/'음식점')가 없을 때만 쓰는 대체 아이콘 — mood 4종 기준 */
 const MOOD_ICON: Record<string, string> = {
-  '가고싶어': '📷',
-  '먹고싶어': '🍴',
-  '하고싶어': '🎟',
-  '숙소': '🛏',
+  '가고싶어': '🏛',
+  '먹고싶어': '🍜',
+  '하고싶어': '🛍',
+  '숙소': '🏨',
+};
+/** place.category → 핀 아이콘. 확실히 구분되는 것만 세분화하고(카페 vs 맛집), 애매한 건 맛집으로 통일 */
+const CATEGORY_ICON: Record<string, string> = {
+  '카페': '☕',
+  '음식점': '🍜',
+  '베이커리': '🍜',
+  '바': '🍜',
+  '관광명소': '🏛',
+  '박물관': '🏛',
+  '미술관': '🏛',
+  '공원': '🏛',
+  '종교시설': '🏛',
+  '명소': '🏛',
+  '테마파크': '🏛',
+  '나이트라이프': '🏛',
+  '쇼핑': '🛍',
+  '숙소': '🏨',
 };
 
 interface Zone {
@@ -1889,12 +1907,18 @@ function showPlaceInfoWindow(g: any, map: any, marker: any, place: Place): void 
   placeInfoWindow.open({ map, anchor: marker });
 }
 
-function buildCategoryIcon(g: any, mood: string | null, variant: 'compact' | 'detailed' | 'detailed-lg' = 'compact'): any {
+function buildCategoryIcon(
+  g: any,
+  mood: string | null,
+  variant: 'compact' | 'detailed' | 'detailed-lg' = 'compact',
+  category?: string | null,
+): any {
   const color = MOOD_COLOR[mood ?? ''] || '#94A3B8';
 
   if (variant === 'compact') {
     // Step1의 추상화된 지도 위에서는 어떤 종류인지 색만으론 구분이 안 돼서, 작은 원형 배지에 카테고리 아이콘을 넣음
-    const icon = MOOD_ICON[mood ?? ''] || '📍';
+    // (구글 장소 세부 종류가 있으면 그걸 우선 쓰고, 없으면 mood 4종 기준으로 대체)
+    const icon = CATEGORY_ICON[category ?? ''] || MOOD_ICON[mood ?? ''] || '📍';
     const size = 16;
     const r = size / 2;
     const svg = [
@@ -2076,7 +2100,7 @@ async function initMap(body: HTMLElement): Promise<void> {
         position: { lat: p.lat, lng: p.lng },
         map: mapInstance,
         title: p.name,
-        icon: buildCategoryIcon(g, p.mood),
+        icon: buildCategoryIcon(g, p.mood, 'compact', p.category),
       });
       marker.addListener('click', () => {
         showPlaceInfoWindow(g, mapInstance, marker, p);
@@ -2837,7 +2861,7 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
       position: { lat: p.lat, lng: p.lng },
       map,
       title: p.name,
-      icon: buildCategoryIcon(g, p.mood, 'compact'),
+      icon: buildCategoryIcon(g, p.mood, 'compact', p.category),
       zIndex: 0,
     });
     marker.addListener('click', () => {
@@ -4143,7 +4167,7 @@ async function initMapStep3(body: HTMLElement): Promise<void> {
       position: { lat: p.lat, lng: p.lng },
       map,
       title: p.name,
-      icon: buildCategoryIcon(g, p.mood, 'compact'),
+      icon: buildCategoryIcon(g, p.mood, 'compact', p.category),
       opacity: 0.55,
       zIndex: 1,
     });
