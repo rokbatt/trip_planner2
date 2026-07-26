@@ -18,6 +18,11 @@ import {
   repairOrphanPlaces,
 } from '../trips/destinations';
 import { loadGoogleMapsScript, getCategoryLabel, getPlacePredictions, getPlaceDetails } from '../utils/googleMaps';
+import { points as turfPoints, featureCollection } from '@turf/helpers';
+import { voronoi } from '@turf/voronoi';
+import { circle } from '@turf/circle';
+import { intersect } from '@turf/intersect';
+import { bbox } from '@turf/bbox';
 import type { PlacePrediction } from '../utils/googleMaps';
 import type { Database, TripDestination, StaySegment } from '../types/database';
 import {
@@ -1658,53 +1663,79 @@ function zoneColor(zoneId: string): string {
   return ZONE_PALETTE[(idx < 0 ? 0 : idx) % ZONE_PALETTE.length];
 }
 
-/** 장소들의 좌표로 볼록 껍질(convex hull)을 계산 — 지역을 자연스러운 영역 형태로 표시하기 위함 */
-/** 문자열 시드로부터 안정적인(매번 같은) 난수를 만드는 간단한 PRNG */
-function seededRandom(seed: string): () => number {
-  let h = 1779033703 ^ seed.length;
-  for (let i = 0; i < seed.length; i++) {
-    h = Math.imul(h ^ seed.charCodeAt(i), 3432918353);
-    h = (h << 13) | (h >>> 19);
-  }
-  return () => {
-    h = Math.imul(h ^ (h >>> 16), 2246822507);
-    h = Math.imul(h ^ (h >>> 13), 3266489909);
-    h ^= h >>> 16;
-    return (h >>> 0) / 4294967296;
-  };
-}
+/** 권역 중심에서 이 거리보다 먼 장소는 "이 권역 도형" 범위 계산에서만 제외(장소 자체의 권역 소속·마커 표시는 그대로 유지) */
+const ZONE_OUTLIER_KM = 4;
+/** 보로노이 셀을 이 반경 원과 교집합해서 무한히 뻗어나가는 바깥쪽 셀을 예쁘게 잘라냄 */
+const ZONE_TRIM_RADIUS_KM = 2;
 
 /**
- * 실제 저장된 장소 개수와 무관하게, 그 동네다운 자연스러운 크기의 얼룩(blob) 모양 영역을 만듦.
- * 장소가 1~2개뿐이어도 좁은 사각형이 되지 않도록, 중심점 기준으로 일정 범위를 두르는 방식.
- * (정밀한 행정구역 경계 데이터가 없어서 완전히 정확한 경계는 아니고, 시각적으로 "이 동네 근처"를 보여주는 근사치)
+ * 권역 폴리곤 — 예전엔 실제 배정된 장소 위치와 무관하게 사인파로 랜덤한 "얼룩" 모양을 그려서
+ * (a) 이웃 권역과 간격이 들쑥날쑥하거나 겹치고 (b) 장소가 있어도 도형이 그 위치를 못 감싸는
+ * 문제가 있었음(수완나폼 공항처럼 먼 outlier가 가장 가까운 권역에 배정되면 그 권역 도형이
+ * 실제와 안 맞아 보임).
+ *
+ * 지금은 각 권역의 중심점(assignPlacesToZones가 최근접 배정에 쓰는 것과 동일한 centerLat/
+ * centerLng)으로 보로노이 다이어그램을 만들어 이웃 권역과 절대 겹치지 않게 하고, 각 셀을
+ * ZONE_TRIM_RADIUS_KM 반경 원과 교집합해서 무한 확장을 막음. outlier(권역 중심에서
+ * ZONE_OUTLIER_KM 이상 떨어진 장소)는 이 도형 범위 계산에서만 제외됨 — 그 장소가 이 권역
+ * 소속이라는 사실이나 대표 마커 표시는 그대로 유지됨.
+ * 유효한 장소가 하나도 없는(전부 outlier인) 권역은 폴리곤을 만들지 않음(Map에 항목 없음).
  */
-function generateZoneBlob(zone: Zone): { lat: number; lng: number }[] {
-  const rand = seededRandom(zone.id + zone.name);
-  const baseRadiusKm = Math.min(2.4, Math.max(1.1, 0.95 + Math.sqrt(zone.places.length) * 0.22));
-  const numPoints = 28;
+function computeZonePolygons(allZones: Zone[]): Map<string, { lat: number; lng: number }[]> {
+  const result = new Map<string, { lat: number; lng: number }[]>();
 
-  // 저주파 사인파 여러 개를 합성해서 각지지 않고 부드럽게 굴곡진 얼룩 모양을 만듦
-  // (점마다 독립적인 난수를 쓰면 뾰족뾰족한 별 모양이 되기 쉬움)
-  const harmonics = [
-    { freq: 2, amp: 0.10 + rand() * 0.07, phase: rand() * Math.PI * 2 },
-    { freq: 3, amp: 0.07 + rand() * 0.05, phase: rand() * Math.PI * 2 },
-    { freq: 5, amp: 0.04 + rand() * 0.03, phase: rand() * Math.PI * 2 },
+  const validZones = allZones.filter(
+    (z) =>
+      Number.isFinite(z.centerLat) &&
+      Number.isFinite(z.centerLng) &&
+      z.places.some(
+        (p) => p.lat != null && p.lng != null && haversineKm(z.centerLat, z.centerLng, p.lat, p.lng) <= ZONE_OUTLIER_KM
+      )
+  );
+  if (validZones.length === 0) return result;
+
+  const seedPoints = turfPoints(validZones.map((z) => [z.centerLng, z.centerLat]));
+
+  const rawBbox = bbox(seedPoints);
+  const padDeg = (ZONE_TRIM_RADIUS_KM * 2) / 111; // 대략 위경도 1도 ≈ 111km
+  const voronoiBbox: [number, number, number, number] = [
+    rawBbox[0] - padDeg,
+    rawBbox[1] - padDeg,
+    rawBbox[2] + padDeg,
+    rawBbox[3] + padDeg,
   ];
 
-  const points: { lat: number; lng: number }[] = [];
-  for (let i = 0; i < numPoints; i++) {
-    const angle = (i / numPoints) * Math.PI * 2;
-    let variance = 1;
-    harmonics.forEach((h) => {
-      variance += h.amp * Math.sin(h.freq * angle + h.phase);
-    });
-    const r = baseRadiusKm * variance;
-    const dLat = (r / 111) * Math.cos(angle);
-    const dLng = (r / (111 * Math.cos((zone.centerLat * Math.PI) / 180))) * Math.sin(angle);
-    points.push({ lat: zone.centerLat + dLat, lng: zone.centerLng + dLng });
+  let cells;
+  try {
+    cells = voronoi(seedPoints, { bbox: voronoiBbox });
+  } catch {
+    return result; // 씨앗점이 1개뿐이거나 일직선상에 있는 등 계산 불가 케이스 — 폴리곤 없이 폴백
   }
-  return points;
+
+  validZones.forEach((zone, i) => {
+    const cell = cells.features[i];
+    if (!cell) return;
+    const trimCircle = circle([zone.centerLng, zone.centerLat], ZONE_TRIM_RADIUS_KM, { units: 'kilometers' });
+
+    let trimmed;
+    try {
+      trimmed = intersect(featureCollection([cell, trimCircle]));
+    } catch {
+      return;
+    }
+    if (!trimmed) return;
+
+    const ring =
+      trimmed.geometry.type === 'Polygon' ? trimmed.geometry.coordinates[0] : trimmed.geometry.coordinates[0]?.[0]; // MultiPolygon이면 가장 큰 조각(트림 원과의 교집합이라 보통 단일 조각)
+    if (!ring || ring.length < 4) return;
+
+    result.set(
+      zone.id,
+      ring.map(([lng, lat]) => ({ lat, lng }))
+    );
+  });
+
+  return result;
 }
 
 const MOOD_ICON_SYMBOL: Record<string, string> = {
@@ -1921,7 +1952,7 @@ async function initMap(body: HTMLElement): Promise<void> {
   zonePolygons = [];
   zoneLabelOverlays.forEach((o) => o.setMap(null));
   zoneLabelOverlays = [];
-  zoneBlobPoints = new Map();
+  zoneBlobPoints = computeZonePolygons(zones);
 
   zones.forEach((zone) => {
     const color = zoneColor(zone.id);
@@ -1953,14 +1984,11 @@ async function initMap(body: HTMLElement): Promise<void> {
 
     markersByZone.set(zone.id, zoneMarkers);
 
-    // 좌표가 유효하지 않으면(예전 캐시 데이터 등) 폴리곤을 그리지 않고 건너뜀 — 지도 전체를 뒤덮는 렌더링 오류 방지
-    if (!Number.isFinite(zone.centerLat) || !Number.isFinite(zone.centerLng)) {
+    // 보로노이 계산에서 폴리곤이 안 나온 권역(좌표 없음/전부 outlier 등)은 도형 없이 마커만 표시
+    const hullPoints = zoneBlobPoints.get(zone.id);
+    if (!hullPoints) {
       return;
     }
-
-    // 권역 영역 — 저장된 장소 개수와 무관하게 그 동네다운 자연스러운 크기의 얼룩 모양으로
-    const hullPoints = generateZoneBlob(zone);
-    zoneBlobPoints.set(zone.id, hullPoints);
 
     const polygon = new g.maps.Polygon({
       map: mapInstance,
