@@ -85,26 +85,28 @@ const MOOD_COLOR: Record<string, string> = {
 /** place.category(구글 장소 세부 종류, 예: '카페'/'음식점')가 없을 때만 쓰는 대체 아이콘 — mood 4종 기준 */
 const MOOD_ICON: Record<string, string> = {
   '가고싶어': '🏛',
-  '먹고싶어': '🍜',
-  '하고싶어': '🛍',
-  '숙소': '🏨',
+  '먹고싶어': '🍽️',
+  '하고싶어': '🎡',
+  '숙소': '🛏️',
 };
-/** place.category → 핀 아이콘. 확실히 구분되는 것만 세분화하고(카페 vs 맛집), 애매한 건 맛집으로 통일 */
+/** place.category → 핀 아이콘. 확실히 구분되는 것만 세분화하고(카페 vs 맛집), 애매한 건 맛집으로 통일
+ *  (쇼핑백 🛍/침대 🛏 이모지는 U+FE0F 변형 선택자 없이 쓰면 일부 폰트에서 흑백 텍스트 글리프로 뜨는 문제가 있어 반드시 붙여야 함) */
 const CATEGORY_ICON: Record<string, string> = {
   '카페': '☕',
-  '음식점': '🍜',
-  '베이커리': '🍜',
-  '바': '🍜',
+  '음식점': '🍽️',
+  '베이커리': '🍽️',
+  '바': '🍽️',
   '관광명소': '🏛',
   '박물관': '🏛',
   '미술관': '🏛',
   '공원': '🏛',
   '종교시설': '🏛',
   '명소': '🏛',
-  '테마파크': '🏛',
-  '나이트라이프': '🏛',
-  '쇼핑': '🛍',
-  '숙소': '🏨',
+  '테마파크': '🎡',
+  '나이트라이프': '🎡',
+  '쇼핑': '🛍️',
+  '숙소': '🛏️',
+  '공항': '✈️',
 };
 
 interface Zone {
@@ -484,6 +486,11 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
     slActiveSegment = resolveActiveSegment(slActiveDest.id, slSegments);
     restoreStateFromSegment(slActiveSegment);
   }
+
+  // 이전에 어디까지 진행했든(지역만 골랐든, 숙소까지 확정했든) 나갔다 들어올 땐 항상
+  // Step1부터 시작 — selectedZone/selectedBasecamp/confirmedIds 등 실제 진행 데이터는
+  // restoreStateFromSegment가 그대로 복원해 둔 상태라 여기서 step만 되돌려도 유실되지 않음
+  step = 1;
 
   // 투표 요청으로 들어온 경우, 방금 복원한 상태를 덮어쓰고 그 숙소의 Step3로 강제 진입
   if (pendingVoteTarget) {
@@ -1050,11 +1057,13 @@ function bindSegmentPillHandlers(wrap: HTMLElement): void {
  * 헤더 바로 아래 줄에 최대한 압축된 구간 pill만 보여줌(라벨·숙소 나누기 버튼 없음,
  * N박 표기 없이 기간만) — 1·2·3단계 공통. "숙소 나누기"는 확정(3단계) 본문의
  * 전용 카드(이 여행지에서 숙소를 나눠 묵나요?)에서만 시작하도록 상단에서는 제거.
+ * 구간이 하나뿐이어도 "확정됐다"는 표시는 봐야 하므로, 구간이 1개 이상이면 항상 보여줌
+ * (구간을 나누지 않은 경우엔 pill 1개만 뜸).
  */
 function renderSegmentBar(container: HTMLElement): void {
   const wrap = container.querySelector('#sl-dest-bar-wrap') as HTMLElement | null;
   if (!wrap) return;
-  if (!slActiveDest || isSyntheticDestination(slActiveDest.id) || slSegments.length < 2) {
+  if (!slActiveDest || isSyntheticDestination(slActiveDest.id) || slSegments.length === 0) {
     wrap.innerHTML = '';
     return;
   }
@@ -1062,13 +1071,14 @@ function renderSegmentBar(container: HTMLElement): void {
   const pills = slSegments
     .map((seg, i) => {
       const active = seg.id === slActiveSegment?.id;
+      const confirmed = !!seg.basecamp_place_id;
       const meta = dateRangeOnly(seg.start_date, seg.end_date);
       return [
-        '<button type="button" class="sl-seg-pill sl-seg-pill-compact' + (active ? ' active' : '') + '" data-seg-id="' + seg.id + '">',
-        '  <span class="sl-seg-pill-idx">' + (i + 1) + '</span>',
+        '<button type="button" class="sl-seg-pill sl-seg-pill-compact' + (active ? ' active' : '') + (confirmed ? ' confirmed' : '') + '" data-seg-id="' + seg.id + '">',
+        '  <span class="sl-seg-pill-idx">' + (confirmed ? IC_CHECK : String(i + 1)) + '</span>',
         '  <span class="sl-seg-pill-text">',
         '    <span class="sl-seg-pill-name">' + escapeHtml(segmentLabel(seg, i)) + '</span>',
-        meta ? '    <span class="sl-seg-pill-meta">' + escapeHtml(meta) + '</span>' : '',
+        '    <span class="sl-seg-pill-meta">' + (meta ? escapeHtml(meta) + (confirmed ? ' · ' : '') : '') + (confirmed ? '<span class="sl-seg-pill-confirmed">확정됨</span>' : '') + '</span>',
         '  </span>',
         slSegments.length > 1 ? '  <span class="sl-seg-pill-del" data-del-seg="' + seg.id + '" title="이 숙소 구간 삭제">' + IC_XCLOSE + '</span>' : '',
         '</button>',
@@ -1336,6 +1346,10 @@ function renderStepper(container: HTMLElement): void {
 
 /* ══════════════════ STEP 1 — Overview Map ══════════════════ */
 async function renderStep1(body: HTMLElement): Promise<void> {
+  // 이미 진행 중인 지역이 있으면(Step2/3에서 되돌아왔거나, 재진입으로 Step1부터 다시 시작된
+  // 경우) 카드/지도에 그 선택을 바로 표시해 어디까지 진행했는지 한눈에 보이게 함
+  if (selectedZone) pendingSelectedZoneId = selectedZone.id;
+
   body.innerHTML = [
     '<div class="sl-step1">',
     '  <div class="sl-step1-header">',
@@ -1370,7 +1384,9 @@ async function renderStep1(body: HTMLElement): Promise<void> {
 
   renderZoneCards(body);
   attachZoneSearch(body);
+  renderSelectBar(body);
   await initMap(body);
+  if (pendingSelectedZoneId) highlightZone(pendingSelectedZoneId);
 }
 
 /** 사용자가 직접 검색해 추가한 권역 카드 — AI 통계(장소 수/이동시간 등)가 없어 간소화된 형태.
@@ -1649,19 +1665,27 @@ function renderSelectBar(body: HTMLElement): void {
   const zone = zones.find((z) => z.id === pendingSelectedZoneId);
   if (!zone) return;
 
+  // 이미 이 지역으로 진행 중이었으면(Step1로 되돌아왔을 뿐) "새로 시작"이 아니라 "이어서
+  // 진행"임 — 문구도 다르게 보여주고, 클릭해도 이미 고른 숙소/확정 내역을 지우지 않음
+  const isResuming = selectedZone?.id === zone.id && (selectedBasecamp != null || confirmedIds.size > 0);
+
   barEl.classList.add('visible');
   barEl.innerHTML = [
     '<button type="button" class="sl-zone-cta-btn" id="sl-confirm-zone">',
-    '  <span>' + IC_PLANE + escapeHtml(zone.name) + ' 지역을 중심으로 숙소를 선택할게요</span>',
+    '  <span>' + IC_PLANE + escapeHtml(zone.name) +
+      (isResuming ? ' 지역 — 이어서 진행할게요' : ' 지역을 중심으로 숙소를 선택할게요') + '</span>',
     '  ' + IC_ARROW,
     '</button>',
   ].join('\n');
 
   barEl.querySelector('#sl-confirm-zone')?.addEventListener('click', () => {
+    const isSameZone = selectedZone?.id === zone.id;
     selectedZone = zone;
-    selectedBasecamp = null;
-    confirmedIds = new Set();
-    step = 2;
+    if (!isSameZone) {
+      selectedBasecamp = null;
+      confirmedIds = new Set();
+    }
+    step = selectedBasecamp ? 3 : 2;
     // 지역 선택 시점에 바로 저장 — 여기서 새로고침해도 Step2부터 복원됨 (진행상황 유실 방지)
     void saveShortlistState();
     const container = body.closest('.sl-shell')!.parentElement as HTMLElement;

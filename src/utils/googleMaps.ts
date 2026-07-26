@@ -106,6 +106,7 @@ const CATEGORY_MAP: Record<string, string> = {
   night_club: '나이트라이프',
   amusement_park: '테마파크',
   point_of_interest: '명소',
+  airport: '공항',
 };
 
 /** 새 Place 클래스 인스턴스(fetchFields 완료 후)를 몽실이 표준 포맷으로 변환 */
@@ -149,7 +150,7 @@ const CATEGORY_TO_GATE: Record<string, string> = {
   '관광명소': '가고싶어', '박물관': '가고싶어', '미술관': '가고싶어', '공원': '가고싶어',
   '종교시설': '가고싶어', '명소': '가고싶어',
   '쇼핑': '하고싶어', '나이트라이프': '하고싶어', '테마파크': '하고싶어',
-  '숙소': '숙소',
+  '숙소': '숙소', '공항': '가고싶어',
 };
 
 export function suggestGateFromCategory(category: string | null): string | null {
