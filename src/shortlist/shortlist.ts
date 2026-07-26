@@ -18,10 +18,12 @@ import {
   repairOrphanPlaces,
 } from '../trips/destinations';
 import { loadGoogleMapsScript, getCategoryLabel, getPlacePredictions, getPlaceDetails } from '../utils/googleMaps';
-import { points as turfPoints, featureCollection } from '@turf/helpers';
+import { points as turfPoints, polygon as turfPolygon, featureCollection } from '@turf/helpers';
 import { voronoi } from '@turf/voronoi';
-import { circle } from '@turf/circle';
 import { intersect } from '@turf/intersect';
+import { union } from '@turf/union';
+import { convex } from '@turf/convex';
+import { polygonSmooth } from '@turf/polygon-smooth';
 import { bbox } from '@turf/bbox';
 import type { PlacePrediction } from '../utils/googleMaps';
 import type { Database, TripDestination, StaySegment } from '../types/database';
@@ -1663,79 +1665,175 @@ function zoneColor(zoneId: string): string {
   return ZONE_PALETTE[(idx < 0 ? 0 : idx) % ZONE_PALETTE.length];
 }
 
+/* 권역 도형 스타일 — "지도 위에 살짝 입혀진 생활권"이 목표라 채움은 최소로, 경계선만 살짝 강조 */
+const ZONE_FILL_OPACITY = 0.07;
+const ZONE_STROKE_OPACITY = 0.6;
+const ZONE_STROKE_WEIGHT = 1.8;
+
 /** 권역 중심에서 이 거리보다 먼 장소는 "이 권역 도형" 범위 계산에서만 제외(장소 자체의 권역 소속·마커 표시는 그대로 유지) */
 const ZONE_OUTLIER_KM = 4;
-/** 보로노이 셀을 이 반경 원과 교집합해서 무한히 뻗어나가는 바깥쪽 셀을 예쁘게 잘라냄 */
-const ZONE_TRIM_RADIUS_KM = 2;
+/** 전체 장소 외곽선을 이만큼 부풀려 "도시 마스크"를 만들고, 그 밖으로 뻗는 셀을 잘라냄 */
+const ZONE_CITY_PAD_KM = 0.9;
+/** Chaikin 스무딩 반복 횟수 — 높을수록 모서리가 둥글어지지만 이웃과의 접합면이 조금씩 벌어짐 */
+const ZONE_SMOOTH_ITERATIONS = 2;
+
+type Ring = { lat: number; lng: number }[];
+
+/** 볼록 다각형을 중심점 기준 방사형으로 약 kmOut만큼 밀어냄 — 정확한 위상학적 버퍼는 아니지만
+ *  볼록 도형에서는 시각적으로 충분히 자연스럽고, @turf/buffer(무거운 JTS 포팅) 없이 처리 가능 */
+function inflateConvexRing(ring: number[][], kmOut: number): number[][] {
+  const cLng = ring.reduce((s, p) => s + p[0], 0) / ring.length;
+  const cLat = ring.reduce((s, p) => s + p[1], 0) / ring.length;
+  const cosLat = Math.cos((cLat * Math.PI) / 180);
+  return ring.map(([lng, lat]) => {
+    const dLng = lng - cLng;
+    const dLat = lat - cLat;
+    const distKm = Math.sqrt((dLng * 111 * cosLat) ** 2 + (dLat * 111) ** 2);
+    if (distKm < 1e-6) return [lng, lat];
+    const scale = (distKm + kmOut) / distKm;
+    return [cLng + dLng * scale, cLat + dLat * scale];
+  });
+}
+
+/** GeoJSON Feature에서 가장 큰(꼭짓점이 많은) 외곽 링을 뽑음 — Polygon/MultiPolygon 모두 처리 */
+function largestRing(feature: any): number[][] | null {
+  const geom = feature?.geometry;
+  if (!geom) return null;
+  if (geom.type === 'Polygon') return geom.coordinates[0] ?? null;
+  if (geom.type === 'MultiPolygon') {
+    let best: number[][] | null = null;
+    for (const poly of geom.coordinates) {
+      const outer = poly[0];
+      if (outer && (!best || outer.length > best.length)) best = outer;
+    }
+    return best;
+  }
+  return null;
+}
 
 /**
- * 권역 폴리곤 — 예전엔 실제 배정된 장소 위치와 무관하게 사인파로 랜덤한 "얼룩" 모양을 그려서
- * (a) 이웃 권역과 간격이 들쑥날쑥하거나 겹치고 (b) 장소가 있어도 도형이 그 위치를 못 감싸는
- * 문제가 있었음(수완나폼 공항처럼 먼 outlier가 가장 가까운 권역에 배정되면 그 권역 도형이
- * 실제와 안 맞아 보임).
+ * 권역 폴리곤 — "권역 중심 1점"이 아니라 "그 권역에 실제로 배정된 장소들 전부"를 보로노이 씨앗으로
+ * 삼고, 같은 권역에 속한 셀들을 union해서 만든다.
  *
- * 지금은 각 권역의 중심점(assignPlacesToZones가 최근접 배정에 쓰는 것과 동일한 centerLat/
- * centerLng)으로 보로노이 다이어그램을 만들어 이웃 권역과 절대 겹치지 않게 하고, 각 셀을
- * ZONE_TRIM_RADIUS_KM 반경 원과 교집합해서 무한 확장을 막음. outlier(권역 중심에서
- * ZONE_OUTLIER_KM 이상 떨어진 장소)는 이 도형 범위 계산에서만 제외됨 — 그 장소가 이 권역
- * 소속이라는 사실이나 대표 마커 표시는 그대로 유지됨.
- * 유효한 장소가 하나도 없는(전부 outlier인) 권역은 폴리곤을 만들지 않음(Map에 항목 없음).
+ * 이렇게 하는 이유(과거 버전들의 문제):
+ *  - 사인파 랜덤 얼룩 버전: 실제 장소 위치와 무관해 도형이 장소를 못 감싸고 이웃과 겹침
+ *  - 권역중심 1점 보로노이 + 원 트림 버전: 겹침은 사라졌지만 트림 원 때문에 바깥 권역이
+ *    사실상 완전한 원이 돼버림(변동계수 cv≈0.00 측정). 실제 도시 생활권처럼 안 보임
+ *
+ * 장소 기반으로 바꾸면 폴리곤이 장소 분포를 따라 자연스럽게 늘어지고(측정상 종횡비 최대 1.75,
+ * cv 0.03 → 0.28), 같은 보로노이 분할에서 나온 셀들이라 이웃 권역과 겹치지 않고 빈틈 없이
+ * 맞물린다. 바깥 경계는 원이 아니라 "전체 장소 외곽선 + 여유(ZONE_CITY_PAD_KM)"로 잘라서
+ * 도시의 실제 형태를 따르게 한다.
+ *
+ * outlier(권역 중심에서 ZONE_OUTLIER_KM 이상 떨어진 장소 — 예: 공항)는 도형 계산에서만
+ * 제외되고, 그 장소의 권역 소속이나 지도 마커 표시는 그대로 유지된다.
+ * 유효한 장소가 없는 권역은 폴리곤을 만들지 않는다(Map에 항목 없음 → 호출부가 도형 없이 렌더).
  */
-function computeZonePolygons(allZones: Zone[]): Map<string, { lat: number; lng: number }[]> {
-  const result = new Map<string, { lat: number; lng: number }[]>();
+function computeZonePolygons(allZones: Zone[]): Map<string, Ring> {
+  const result = new Map<string, Ring>();
 
-  const validZones = allZones.filter(
-    (z) =>
-      Number.isFinite(z.centerLat) &&
-      Number.isFinite(z.centerLng) &&
-      z.places.some(
-        (p) => p.lat != null && p.lng != null && haversineKm(z.centerLat, z.centerLng, p.lat, p.lng) <= ZONE_OUTLIER_KM
-      )
-  );
-  if (validZones.length === 0) return result;
+  // 1. 권역별 유효 장소 수집 (좌표 있음 + outlier 아님 + 좌표 중복 제거)
+  //    좌표가 완전히 같은 점이 둘 이상이면 보로노이가 빈 셀을 만들어내므로 미리 걸러야 함
+  const seenCoords = new Set<string>();
+  const seeds: number[][] = [];
+  const seedOwner: string[] = [];
 
-  const seedPoints = turfPoints(validZones.map((z) => [z.centerLng, z.centerLat]));
+  allZones.forEach((zone) => {
+    if (!Number.isFinite(zone.centerLat) || !Number.isFinite(zone.centerLng)) return;
+    zone.places.forEach((p) => {
+      if (p.lat == null || p.lng == null) return;
+      if (haversineKm(zone.centerLat, zone.centerLng, p.lat, p.lng) > ZONE_OUTLIER_KM) return;
+      const key = p.lng.toFixed(6) + ',' + p.lat.toFixed(6);
+      if (seenCoords.has(key)) return;
+      seenCoords.add(key);
+      seeds.push([p.lng, p.lat]);
+      seedOwner.push(zone.id);
+    });
+  });
 
-  const rawBbox = bbox(seedPoints);
-  const padDeg = (ZONE_TRIM_RADIUS_KM * 2) / 111; // 대략 위경도 1도 ≈ 111km
-  const voronoiBbox: [number, number, number, number] = [
-    rawBbox[0] - padDeg,
-    rawBbox[1] - padDeg,
-    rawBbox[2] + padDeg,
-    rawBbox[3] + padDeg,
-  ];
+  // 보로노이는 씨앗이 최소 3개는 있어야 의미 있는 분할이 나옴
+  if (seeds.length < 3) return result;
 
+  const seedFC = turfPoints(seeds);
+
+  // 2. 도시 마스크 — 전체 장소의 외곽선을 부풀린 도형(원이 아니라 실제 분포 형태).
+  //    @turf/buffer는 정확한 위상 연산(JTS 포팅)을 쓰느라 번들이 1MB 가까이 커져서,
+  //    "볼록 껍질을 중심에서 바깥으로 살짝 밀어내는" 정도로 충분한 이 용도엔 과함 —
+  //    convex hull은 볼록 도형이라 중심 기준 방사형 스케일로도 자연스럽게 부풀릴 수 있음.
+  let cityMask: any = null;
+  try {
+    const hull = convex(seedFC);
+    const hullRing = hull ? largestRing(hull) : null;
+    if (hullRing) cityMask = turfPolygon([inflateConvexRing(hullRing, ZONE_CITY_PAD_KM)]);
+  } catch {
+    cityMask = null;
+  }
+  if (!cityMask) return result;
+
+  // 3. 장소 전체로 보로노이 분할
+  const rawBbox = bbox(seedFC);
+  const padDeg = (ZONE_CITY_PAD_KM * 3) / 111; // 대략 위경도 1도 ≈ 111km
   let cells;
   try {
-    cells = voronoi(seedPoints, { bbox: voronoiBbox });
+    cells = voronoi(seedFC, {
+      bbox: [rawBbox[0] - padDeg, rawBbox[1] - padDeg, rawBbox[2] + padDeg, rawBbox[3] + padDeg],
+    });
   } catch {
-    return result; // 씨앗점이 1개뿐이거나 일직선상에 있는 등 계산 불가 케이스 — 폴리곤 없이 폴백
+    return result; // 씨앗이 일직선상에 있는 등 계산 불가 — 도형 없이 폴백
   }
 
-  validZones.forEach((zone, i) => {
-    const cell = cells.features[i];
+  // 4. 권역별로 자기 장소들의 셀을 도시 마스크로 자른 뒤 union
+  const merged = new Map<string, any>();
+  cells.features.forEach((cell: any, i: number) => {
     if (!cell) return;
-    const trimCircle = circle([zone.centerLng, zone.centerLat], ZONE_TRIM_RADIUS_KM, { units: 'kilometers' });
-
-    let trimmed;
+    const zoneId = seedOwner[i];
+    let clipped;
     try {
-      trimmed = intersect(featureCollection([cell, trimCircle]));
+      clipped = intersect(featureCollection([cell, cityMask]));
     } catch {
       return;
     }
-    if (!trimmed) return;
+    if (!clipped) return;
 
-    const ring =
-      trimmed.geometry.type === 'Polygon' ? trimmed.geometry.coordinates[0] : trimmed.geometry.coordinates[0]?.[0]; // MultiPolygon이면 가장 큰 조각(트림 원과의 교집합이라 보통 단일 조각)
+    const prev = merged.get(zoneId);
+    if (!prev) {
+      merged.set(zoneId, clipped);
+      return;
+    }
+    try {
+      const joined = union(featureCollection([prev, clipped]));
+      if (joined) merged.set(zoneId, joined);
+    } catch {
+      /* union 실패 시 기존 것 유지 */
+    }
+  });
+
+  // 5. 모서리 스무딩 후 링으로 변환
+  merged.forEach((feature, zoneId) => {
+    let ring = largestRing(feature);
     if (!ring || ring.length < 4) return;
 
+    try {
+      const smoothed = polygonSmooth(turfPolygon([ring]), { iterations: ZONE_SMOOTH_ITERATIONS });
+      const smoothedRing = largestRing(smoothed.features[0]);
+      if (smoothedRing && smoothedRing.length >= 4) ring = smoothedRing;
+    } catch {
+      /* 스무딩 실패 시 각진 원본 그대로 사용 */
+    }
+
     result.set(
-      zone.id,
+      zoneId,
       ring.map(([lng, lat]) => ({ lat, lng }))
     );
   });
 
   return result;
+}
+
+/** 폴리곤 라벨을 놓을 위치 — 꼭짓점 평균(권역 중심점보다 도형 중앙에 가깝게 보임) */
+function ringCentroid(ring: Ring): { lat: number; lng: number } {
+  const sum = ring.reduce((acc, p) => ({ lat: acc.lat + p.lat, lng: acc.lng + p.lng }), { lat: 0, lng: 0 });
+  return { lat: sum.lat / ring.length, lng: sum.lng / ring.length };
 }
 
 const MOOD_ICON_SYMBOL: Record<string, string> = {
@@ -1990,14 +2088,15 @@ async function initMap(body: HTMLElement): Promise<void> {
       return;
     }
 
+    // 지도가 먼저 보이고 권역은 "살짝 입혀진" 느낌 — 채움은 아주 연하게, 경계선만 살짝 강조
     const polygon = new g.maps.Polygon({
       map: mapInstance,
       paths: hullPoints,
       fillColor: color,
-      fillOpacity: 0.05,
+      fillOpacity: ZONE_FILL_OPACITY,
       strokeColor: color,
-      strokeOpacity: 0.4,
-      strokeWeight: 1,
+      strokeOpacity: ZONE_STROKE_OPACITY,
+      strokeWeight: ZONE_STROKE_WEIGHT,
       clickable: true,
     });
     polygon.set('zoneId', zone.id);
@@ -2009,8 +2108,8 @@ async function initMap(body: HTMLElement): Promise<void> {
     });
     zonePolygons.push(polygon);
 
-    // 지역 정보 라벨 (아이콘 + 이름 + 대표 특징 + 장소 수 + 평점) — 지도 위에서 바로 비교 가능하도록
-    const overlay = createZoneLabelOverlay(g, zone, color);
+    // 라벨은 권역 중심점이 아니라 실제 그려진 폴리곤의 중앙에 (도형이 늘어나면 라벨도 따라감)
+    const overlay = createZoneLabelOverlay(g, zone, color, ringCentroid(hullPoints));
     overlay.setMap(mapInstance);
     zoneLabelOverlays.push(overlay);
   });
@@ -2026,7 +2125,7 @@ const ZONE_ICON: Record<string, string> = {
 };
 
 /** 지도 위에 뜨는 지역 정보 카드 (Google Maps 커스텀 OverlayView, 실제 DOM 엘리먼트) */
-function createZoneLabelOverlay(g: any, zone: Zone, color: string): any {
+function createZoneLabelOverlay(g: any, zone: Zone, color: string, labelPos: { lat: number; lng: number }): any {
   class ZoneLabelOverlay extends g.maps.OverlayView {
     div: HTMLDivElement | null = null;
 
@@ -2056,7 +2155,7 @@ function createZoneLabelOverlay(g: any, zone: Zone, color: string): any {
       if (!this.div) return;
       const projection = this.getProjection();
       if (!projection) return;
-      const pos = projection.fromLatLngToDivPixel(new g.maps.LatLng(zone.centerLat, zone.centerLng));
+      const pos = projection.fromLatLngToDivPixel(new g.maps.LatLng(labelPos.lat, labelPos.lng));
       if (!pos) return;
       this.div.style.left = pos.x + 'px';
       this.div.style.top = pos.y + 'px';
