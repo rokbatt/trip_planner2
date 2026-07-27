@@ -81,6 +81,7 @@ function syntheticSegmentFromTrip(trip: Trip, destination: TripDestination): Sta
     basecamp_place_id: trip.shortlist_basecamp_place_id,
     confirmed_place_ids: trip.shortlist_confirmed_place_ids,
     total_budget_krw: trip.shortlist_total_budget_krw,
+    basecamp_confirmed_at: trip.shortlist_basecamp_confirmed_at,
     created_at: trip.created_at,
   };
 }
@@ -99,6 +100,7 @@ function emptySegment(trip: Trip, destination: TripDestination): StaySegment {
     basecamp_place_id: null,
     confirmed_place_ids: null,
     total_budget_krw: null,
+    basecamp_confirmed_at: null,
     created_at: trip.created_at,
   };
 }
@@ -134,6 +136,7 @@ export interface SegmentState {
   basecamp_place_id: string | null;
   confirmed_place_ids: string[] | null;
   total_budget_krw: number | null;
+  basecamp_confirmed_at: string | null;
 }
 
 /**
@@ -158,6 +161,7 @@ export async function saveStaySegment(
         shortlist_basecamp_place_id: state.basecamp_place_id,
         shortlist_confirmed_place_ids: state.confirmed_place_ids,
         shortlist_total_budget_krw: state.total_budget_krw,
+        shortlist_basecamp_confirmed_at: state.basecamp_confirmed_at,
       })
       .eq('id', trip.id);
     return { ...segment, ...state };
@@ -331,6 +335,7 @@ export async function createStaySegment(
     zonePlaceIds?: string[] | null;
     basecampPlaceId?: string | null;
     confirmedPlaceIds?: string[] | null;
+    basecampConfirmedAt?: string | null;
   } = {}
 ): Promise<StaySegment | null> {
   const { data, error } = await supabase
@@ -345,6 +350,7 @@ export async function createStaySegment(
       zone_place_ids: opts.zonePlaceIds ?? null,
       basecamp_place_id: opts.basecampPlaceId ?? null,
       confirmed_place_ids: opts.confirmedPlaceIds ?? null,
+      basecamp_confirmed_at: opts.basecampConfirmedAt ?? null,
     })
     .select()
     .single();
