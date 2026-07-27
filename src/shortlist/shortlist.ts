@@ -1942,9 +1942,19 @@ let placeInfoWindow: any = null;
 /** true면 클릭으로 "고정"된 상태 — hover로 다른 마커를 지나가도 안 바뀌고, mouseout으로도 안 닫힘 */
 let placeInfoWindowPinned = false;
 
+/* ── 장소 정보창 치수 — 여기 숫자만 바꾸면 Step1/2/3 정보창 크기가 한 번에 바뀜 ── */
+const INFO_WINDOW_MAX_WIDTH_PX = 220;
+const INFO_WINDOW_MAX_WIDTH_VW = 60; // 좁은 화면에서는 뷰포트 폭의 이 비율을 넘지 않음
+const INFO_WINDOW_PHOTO_MIN_H = 40;
+const INFO_WINDOW_PHOTO_MAX_H = 90;
+/** 사진 높이 = 지도 컨테이너 실제 높이 × 이 비율 (min/max 사이로 clamp) */
+const INFO_WINDOW_PHOTO_HEIGHT_RATIO = 0.22;
+const INFO_WINDOW_CLOSE_BTN_SIZE = 22;
+const INFO_WINDOW_CLOSE_BTN_ID = 'sl-info-close-btn';
+
 /**
  * 마커에 마우스를 올리거나 클릭하면 이미 우리 DB에 저장돼 있는 장소 정보(이름/카테고리/평점/
- * 주소/사진)를 보여줌. Google Place Details를 다시 호출하지 않음 — 추가 API 비용 0원.
+ * 사진)를 보여줌. Google Place Details를 다시 호출하지 않음 — 추가 API 비용 0원.
  * "Google Maps에서 보기" 링크도 google_place_id 기반 딥링크라 API 호출이 필요 없음.
  *
  * pin=true(클릭)면 hover로 열렸을 때와 달리 mouseout으로 닫히지 않고 유지됨 — X 버튼을
@@ -1958,9 +1968,16 @@ function showPlaceInfoWindow(g: any, map: any, marker: any, place: Place, pin = 
     placeInfoWindow.addListener('closeclick', () => {
       placeInfoWindowPinned = false;
     });
+    // 구글 기본 닫기 버튼(사진과 겹쳐 어색하게 뜸)은 CSS로 숨기고, 사진 우측 상단에
+    // 우리가 만든 X 버튼을 대신 씀 — domready마다 내용이 새로 그려지므로 매번 다시 바인딩
+    placeInfoWindow.addListener('domready', () => {
+      document.getElementById(INFO_WINDOW_CLOSE_BTN_ID)?.addEventListener('click', () => {
+        placeInfoWindowPinned = false;
+        placeInfoWindow.close();
+      });
+    });
   }
 
-  const color = MOOD_COLOR[place.mood ?? ''] || '#94A3B8';
   const moodLabel = MOOD_LABEL[place.mood ?? ''] || '';
   const stars = typeof place.google_rating === 'number' ? '★ ' + place.google_rating.toFixed(1) : '';
 
@@ -1969,22 +1986,33 @@ function showPlaceInfoWindow(g: any, map: any, marker: any, place: Place, pin = 
     : 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(place.name);
 
   // 작은 노트북 화면에서는 지도 컨테이너 자체가 낮아서(.sl-map-wrap이 overflow:hidden) 사진이
-  // 고정 높이(90px)면 아래 이름/평점/주소가 정보창 밖으로 밀려 잘려 보이던 문제 — 브라우저
-  // 전체 뷰포트가 아니라 "이 지도 컨테이너"의 실제 렌더링 높이에 비례해서 사진 높이를 줄임
+  // 고정 높이면 아래 이름/평점이 정보창 밖으로 밀려 잘려 보이던 문제 — 브라우저 전체 뷰포트가
+  // 아니라 "이 지도 컨테이너"의 실제 렌더링 높이에 비례해서 사진 높이를 줄임
   const mapContainerH = (map?.getDiv?.() as HTMLElement | undefined)?.clientHeight || window.innerHeight;
-  const photoH = Math.max(40, Math.min(90, Math.round(mapContainerH * 0.22)));
+  const photoH = Math.max(
+    INFO_WINDOW_PHOTO_MIN_H,
+    Math.min(INFO_WINDOW_PHOTO_MAX_H, Math.round(mapContainerH * INFO_WINDOW_PHOTO_HEIGHT_RATIO))
+  );
+
+  const closeBtn = [
+    '<button type="button" id="' + INFO_WINDOW_CLOSE_BTN_ID + '" style="',
+    'position:absolute;top:6px;right:6px;width:' + INFO_WINDOW_CLOSE_BTN_SIZE + 'px;height:' + INFO_WINDOW_CLOSE_BTN_SIZE + 'px;',
+    'border:none;border-radius:50%;background:rgba(255,255,255,0.92);color:#334155;',
+    'font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;',
+    'box-shadow:0 1px 4px rgba(11,42,92,0.35);padding:0;">✕</button>',
+  ].join('');
 
   const content = [
-    '<div style="font-family:inherit;width:min(220px, 60vw);">',
+    '<div style="font-family:inherit;width:min(' + INFO_WINDOW_MAX_WIDTH_PX + 'px, ' + INFO_WINDOW_MAX_WIDTH_VW + 'vw);position:relative;">',
+    closeBtn,
     place.photo_url
       ? '<div style="width:100%;height:' + photoH + 'px;border-radius:8px;background-size:cover;background-position:center;background-image:url(\'' + place.photo_url + '\');margin-bottom:8px;"></div>'
       : '',
     '<div style="font-size:13.5px;font-weight:700;color:#0B2A5C;margin-bottom:2px;">' + escapeHtml(place.name) + '</div>',
     moodLabel
-      ? '<span style="display:inline-block;font-size:10px;font-weight:700;color:' + color + ';background:' + color + '1A;padding:2px 7px;border-radius:999px;margin-bottom:4px;">' + moodLabel + '</span>'
+      ? '<span style="display:inline-block;font-size:10px;font-weight:700;color:' + MOOD_COLOR[place.mood ?? ''] + ';background:' + MOOD_COLOR[place.mood ?? ''] + '1A;padding:2px 7px;border-radius:999px;margin-bottom:4px;">' + moodLabel + '</span>'
       : '',
     stars ? '<div style="font-size:11.5px;color:#F5A623;font-weight:700;margin-top:4px;">' + stars + '</div>' : '',
-    place.address ? '<div style="font-size:11px;color:#64748B;margin-top:4px;line-height:1.4;">' + escapeHtml(place.address) + '</div>' : '',
     '<a href="' + mapsUrl + '" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-top:8px;font-size:11.5px;font-weight:700;color:#185FA5;text-decoration:none;">Google Maps에서 보기 →</a>',
     '</div>',
   ].join('');
@@ -2002,56 +2030,26 @@ function isAirportPlace(name: string | null | undefined, category: string | null
   return !!name && /공항|airport/i.test(name);
 }
 
-function buildCategoryIcon(
-  g: any,
-  mood: string | null,
-  variant: 'compact' | 'detailed' | 'detailed-lg' = 'compact',
-  category?: string | null,
-  name?: string | null,
-): any {
-  const color = MOOD_COLOR[mood ?? ''] || '#94A3B8';
+/** 카테고리 핀 크기·글자 크기 — 이 두 값만 바꾸면 Step1/2/3 지도 전체 핀이 한 번에 바뀜.
+ *  Step2/Step3도 예전엔 흰 테두리 물방울 핀("detailed" 스타일)을 따로 썼지만, Step1의
+ *  배경 없는 카테고리 아이콘 스타일로 전 단계 통일함 */
+const CATEGORY_PIN_SIZE = 24;
+const CATEGORY_PIN_FONT_SIZE = 20;
 
-  if (variant === 'compact') {
-    // Step1의 추상화된 지도 위에서는 배경 배지 없이 카테고리 아이콘만 딱 보이게
-    // (구글 장소 세부 종류가 있으면 그걸 우선 쓰고, 없으면 mood 4종 기준으로 대체)
-    const icon = isAirportPlace(name, category) ? '✈️' : CATEGORY_ICON[category ?? ''] || MOOD_ICON[mood ?? ''] || '📍';
-    const size = 24;
-    const r = size / 2;
-    const svg = [
-      '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">',
-      '<text x="' + r + '" y="' + r + '" font-size="20" text-anchor="middle" dominant-baseline="central">' + icon + '</text>',
-      '</svg>',
-    ].join('');
-    return {
-      url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
-      scaledSize: new g.maps.Size(size, size),
-      anchor: new g.maps.Point(r, r),
-    };
-  }
-
-  // Step2처럼 정보가 많은 실제 구글맵 위에서는 두꺼운 흰 테두리 + 그림자로 대비를 크게 줘야 눈에 띔
-  const big = variant === 'detailed-lg';
-  const w = big ? 30 : 22;
-  const h = big ? 41 : 30;
-  const cx = w / 2;
-  const holeR = big ? 5.1 : 3.7;
-  const holeCy = big ? 14.4 : 10.6;
-  const pinPath = big
-    ? 'M15 0C6.75 0 0 6.75 0 15c0 15.75 15 26.25 15 26.25s15-10.5 15-26.25C30 6.75 23.25 0 15 0z'
-    : 'M11 0C4.95 0 0 4.95 0 11c0 8.25 11 19.25 11 19.25s11-11 11-19.25C22 4.95 17.05 0 11 0z';
-
+/** 카테고리별(구글 장소 세부 종류 우선, 없으면 mood 4종) 아이콘만 있는 핀 — 배경 배지 없음 */
+function buildCategoryIcon(g: any, mood: string | null, category?: string | null, name?: string | null): any {
+  const icon = isAirportPlace(name, category) ? '✈️' : CATEGORY_ICON[category ?? ''] || MOOD_ICON[mood ?? ''] || '📍';
+  const size = CATEGORY_PIN_SIZE;
+  const r = size / 2;
   const svg = [
-    '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">',
-    '<defs><filter id="ds" x="-50%" y="-30%" width="200%" height="160%"><feDropShadow dx="0" dy="1.5" stdDeviation="1.3" flood-color="#0B2A5C" flood-opacity="0.5"/></filter></defs>',
-    '<path filter="url(#ds)" d="' + pinPath + '" fill="' + color + '" stroke="white" stroke-width="' + (big ? 3 : 2.4) + '" paint-order="stroke fill"/>',
-    '<circle cx="' + cx + '" cy="' + holeCy + '" r="' + holeR + '" fill="white"/>',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">',
+    '<text x="' + r + '" y="' + r + '" font-size="' + CATEGORY_PIN_FONT_SIZE + '" text-anchor="middle" dominant-baseline="central">' + icon + '</text>',
     '</svg>',
   ].join('');
-
   return {
     url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
-    scaledSize: new g.maps.Size(w, h),
-    anchor: new g.maps.Point(cx, h),
+    scaledSize: new g.maps.Size(size, size),
+    anchor: new g.maps.Point(r, r),
   };
 }
 
@@ -2197,7 +2195,7 @@ async function initMap(body: HTMLElement): Promise<void> {
         position: { lat: p.lat, lng: p.lng },
         map: mapInstance,
         title: p.name,
-        icon: buildCategoryIcon(g, p.mood, 'compact', p.category, p.name),
+        icon: buildCategoryIcon(g, p.mood, p.category, p.name),
       });
       // 클릭 없이 마우스만 올려도 바로 정보가 뜨게(터치 기기는 hover가 없으니 click도 유지).
       // 클릭으로 고정된 상태(pinned)면 다른 마커 hover에 안 밀리고 mouseout에도 안 닫힘
@@ -2261,7 +2259,7 @@ async function initMap(body: HTMLElement): Promise<void> {
       position: { lat: p.lat, lng: p.lng },
       map: mapInstance,
       title: p.name,
-      icon: buildCategoryIcon(g, p.mood, 'compact', p.category, p.name),
+      icon: buildCategoryIcon(g, p.mood, p.category, p.name),
     });
     marker.addListener('mouseover', () => {
       if (!placeInfoWindowPinned) showPlaceInfoWindow(g, mapInstance, marker, p);
@@ -2742,19 +2740,21 @@ const HOTEL_SITES: HotelSite[] = [
  * 있음). Google Hotels로도 시도했지만 checkin/checkout이 반영 안 되는 문제가 있었음.
  * 최종적으로 "숙소명 + 도시명"(위 HOTEL_SITES의 Booking.com 지역 검색과 같은 형태, 다만
  * 권역명 대신 숙소명을 앞자리에 씀) 조합으로 브라우저에서 직접 검색이 되는 걸 확인함.
+ *
+ * `URLSearchParams.set`으로 인코딩하면 문자열 안의 띄어쓰기가 전부 "+"로 바뀌어서
+ * "골든+포이어+스완나품+에어포트+호텔+방콕"처럼 숙소명 안에서도 단어마다 끊겨 검색됨.
+ * 숙소명은 하나의 구(phrase)로, 도시명과의 경계에만 "+" 하나가 오도록 ss 파라미터만
+ * 직접 조립함(숙소명 내부 띄어쓰기는 %20으로 인코딩되어 실제 공백으로 남음).
  */
 function buildHotelSearchUrl(place: Place): string {
-  const url = new URL('https://www.booking.com/searchresults.ko.html');
-  url.searchParams.set('ss', place.name + ' ' + getTripDestination());
+  const ss = encodeURIComponent(place.name) + '+' + encodeURIComponent(getTripDestination());
+  const params = ['ss=' + ss];
   const dates = getTripDatesISO();
   if (dates) {
-    url.searchParams.set('checkin', dates.checkin);
-    url.searchParams.set('checkout', dates.checkout);
+    params.push('checkin=' + dates.checkin, 'checkout=' + dates.checkout);
   }
-  url.searchParams.set('group_adults', String(getTripHeadcount()));
-  url.searchParams.set('no_rooms', '1');
-  url.searchParams.set('group_children', '0');
-  return url.toString();
+  params.push('group_adults=' + getTripHeadcount(), 'no_rooms=1', 'group_children=0');
+  return 'https://www.booking.com/searchresults.ko.html?' + params.join('&');
 }
 
 function renderHotelSiteCards(body: HTMLElement, destination: string, zoneName: string): void {
@@ -2965,7 +2965,7 @@ function addMarkerForNewCandidate(place: Place): void {
     position: { lat: place.lat, lng: place.lng },
     map: step2MapInstance,
     title: place.name,
-    icon: buildCategoryIcon(g, place.mood, 'detailed'),
+    icon: buildCategoryIcon(g, place.mood, place.category, place.name),
     zIndex: 20,
   });
   step2Markers.set(place.id, marker);
@@ -3022,7 +3022,7 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
       position: { lat: p.lat, lng: p.lng },
       map,
       title: p.name,
-      icon: buildCategoryIcon(g, p.mood, 'compact', p.category, p.name),
+      icon: buildCategoryIcon(g, p.mood, p.category, p.name),
       zIndex: 0,
     });
     marker.addListener('click', () => {
@@ -3037,7 +3037,7 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
       position: { lat: p.lat, lng: p.lng },
       map,
       title: p.name,
-      icon: buildCategoryIcon(g, p.mood, 'detailed'),
+      icon: buildCategoryIcon(g, p.mood, p.category, p.name),
       zIndex: 20,
     });
     step2Markers.set(p.id, marker);
@@ -3057,7 +3057,7 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
       position: { lat: p.lat, lng: p.lng },
       map,
       title: p.name,
-      icon: buildCategoryIcon(g, p.mood, 'detailed'),
+      icon: buildCategoryIcon(g, p.mood, p.category, p.name),
       zIndex: 1,
     });
     // 숙소 후보가 아닌 장소는 선택 동작 없이 정보만 표시 (이미 저장된 데이터, 추가 API 호출 없음)
@@ -4326,7 +4326,7 @@ async function initMapStep3(body: HTMLElement): Promise<void> {
     position: { lat: selectedBasecamp.lat, lng: selectedBasecamp.lng },
     map,
     title: selectedBasecamp.name,
-    icon: buildCategoryIcon(g, '숙소', 'detailed'),
+    icon: buildCategoryIcon(g, '숙소', selectedBasecamp.category, selectedBasecamp.name),
     zIndex: 30,
   });
 
@@ -4338,7 +4338,7 @@ async function initMapStep3(body: HTMLElement): Promise<void> {
       position: { lat: p.lat, lng: p.lng },
       map,
       title: p.name,
-      icon: buildCategoryIcon(g, p.mood, 'compact', p.category, p.name),
+      icon: buildCategoryIcon(g, p.mood, p.category, p.name),
       opacity: 0.55,
       zIndex: 1,
     });
