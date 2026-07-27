@@ -29,6 +29,7 @@ export interface Database {
           shortlist_basecamp_place_id: string | null;
           shortlist_confirmed_place_ids: string[] | null;
           shortlist_total_budget_krw: number | null;
+          shortlist_basecamp_confirmed_at: string | null;
         };
         Insert: {
           id?: string;
@@ -49,6 +50,7 @@ export interface Database {
           shortlist_basecamp_place_id?: string | null;
           shortlist_confirmed_place_ids?: string[] | null;
           shortlist_total_budget_krw?: number | null;
+          shortlist_basecamp_confirmed_at?: string | null;
         };
         Update: Partial<Database['public']['Tables']['trips']['Insert']>;
         Relationships: [];
@@ -184,6 +186,7 @@ export interface Database {
           basecamp_place_id: string | null;
           confirmed_place_ids: string[] | null;
           total_budget_krw: number | null;
+          basecamp_confirmed_at: string | null;
           created_at: string;
         };
         Insert: {
@@ -198,6 +201,7 @@ export interface Database {
           basecamp_place_id?: string | null;
           confirmed_place_ids?: string[] | null;
           total_budget_krw?: number | null;
+          basecamp_confirmed_at?: string | null;
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['stay_segments']['Insert']>;

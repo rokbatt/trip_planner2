@@ -151,6 +151,10 @@ let step: 1 | 2 | 3 = 1;
 let selectedZone: Zone | null = null;
 let zoneDataSource = 'curated';
 let selectedBasecamp: Place | null = null;
+/** Step3 "이 숙소를 여행 중심으로 확정하기" 버튼을 실제로 눌렀을 때만 채워짐(ISO 시각).
+ *  Step2에서 후보만 고른 상태(selectedBasecamp만 있고 이건 null)와는 구분해야
+ *  "확정됨" 표시가 진짜 확정 전에 뜨는 일이 없음 */
+let basecampConfirmedAt: string | null = null;
 /** 이 숙소 구간의 총 숙박 예산(원, 전체 인원·전체 숙박일 기준) — "확정하기" 시점에 DB로 저장됨 */
 let totalBudgetKRW: number | null = null;
 let pendingHotelId: string | null = null;
@@ -188,6 +192,7 @@ export function teardownShortlist(): void {
   selectedZone = null;
   zoneDataSource = 'curated';
   selectedBasecamp = null;
+  basecampConfirmedAt = null;
   totalBudgetKRW = null;
   pendingHotelId = null;
   step2SortMode = 'rating';
@@ -399,6 +404,7 @@ async function saveShortlistState(): Promise<void> {
     basecamp_place_id: selectedBasecamp?.id ?? null,
     confirmed_place_ids: [...confirmedIds],
     total_budget_krw: totalBudgetKRW,
+    basecamp_confirmed_at: basecampConfirmedAt,
   };
   // 활성 여행지의 숙소 구간에 저장 (합성 여행지면 내부적으로 기존 trips.shortlist_* 컬럼으로 폴백).
   // insert된 실제 행의 id를 이어받아 다음 저장이 update가 되도록 slActiveSegment 갱신.
@@ -418,6 +424,7 @@ async function saveShortlistState(): Promise<void> {
       shortlist_basecamp_place_id: state.basecamp_place_id,
       shortlist_confirmed_place_ids: state.confirmed_place_ids,
       shortlist_total_budget_krw: state.total_budget_krw,
+      shortlist_basecamp_confirmed_at: state.basecamp_confirmed_at,
     };
     store.set('currentTrip', currentTrip);
   }
@@ -749,6 +756,7 @@ function restoreStateFromSegment(seg: StaySegment | null): void {
   step = 1;
   selectedZone = null;
   selectedBasecamp = null;
+  basecampConfirmedAt = null;
   confirmedIds = new Set();
   totalBudgetKRW = seg?.total_budget_krw ?? null;
   if (seg?.zone_name && seg.zone_place_ids) {
@@ -761,6 +769,7 @@ function restoreStateFromSegment(seg: StaySegment | null): void {
         const bc = restoredZone.places.find((p) => p.id === seg.basecamp_place_id);
         if (bc) {
           selectedBasecamp = bc;
+          basecampConfirmedAt = seg.basecamp_confirmed_at ?? null;
           step = 3;
           confirmedIds = new Set(seg.confirmed_place_ids ?? []);
         }
@@ -951,6 +960,7 @@ async function splitSegmentToRange(
     zonePlaceIds: base.zone_place_ids,
     basecampPlaceId: base.basecamp_place_id,
     confirmedPlaceIds: base.confirmed_place_ids,
+    basecampConfirmedAt: base.basecamp_confirmed_at,
   };
 
   // 기존 기준 구간 제거(실제 DB 행이면 삭제) — destination 날짜는 건드리지 않음
@@ -966,6 +976,7 @@ async function splitSegmentToRange(
     zonePlaceIds: keepState.zonePlaceIds,
     basecampPlaceId: keepState.basecampPlaceId,
     confirmedPlaceIds: keepState.confirmedPlaceIds,
+    basecampConfirmedAt: keepState.basecampConfirmedAt,
   });
 
   // ② 남는 앞/뒤 기간 = 새 빈 구간
@@ -1087,7 +1098,7 @@ function renderSegmentBar(container: HTMLElement): void {
   const pills = slSegments
     .map((seg, i) => {
       const active = seg.id === slActiveSegment?.id;
-      const confirmed = !!seg.basecamp_place_id;
+      const confirmed = !!seg.basecamp_confirmed_at;
       const meta = dateRangeOnly(seg.start_date, seg.end_date);
       return [
         '<button type="button" class="sl-seg-pill sl-seg-pill-compact' + (active ? ' active' : '') + (confirmed ? ' confirmed' : '') + '" data-seg-id="' + seg.id + '">',
@@ -2753,6 +2764,9 @@ function renderSelectedHotelPreview(body: HTMLElement, candidates: Place[]): voi
   if (!hotel) return;
 
   ctaBtn.onclick = () => {
+    // 후보만 고른 것(Step3 미리보기)이지 "확정"이 아님 — 다른 숙소로 바꿔 고른 거면
+    // 이전에 확정했던 기록도 더 이상 유효하지 않으니 같이 지움(같은 숙소 재선택이면 유지)
+    if (selectedBasecamp?.id !== hotel.id) basecampConfirmedAt = null;
     selectedBasecamp = hotel;
     confirmedIds = new Set();
     step = 3;
@@ -3394,6 +3408,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     const btn = body.querySelector('#sl-proceed') as HTMLButtonElement;
     btn.disabled = true;
     btn.innerHTML = '저장 중...';
+    basecampConfirmedAt = new Date().toISOString();
     await saveShortlistState();
 
     // 전체 숙박 기간 중 아직 아무 구간도 채우지 않은 빈 날짜가 있으면 자동으로 나눠서
@@ -3401,9 +3416,10 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     const filled = await fillCoverageGapsIfAny();
     if (filled) return;
 
-    // 숙소 나누기로 이미 구간이 여러 개 생겼는데, 그중 아직 숙소를 확정하지 않은 구간이
-    // 남아있으면 그 구간으로 전환해 마저 정하게 하고 route로는 넘어가지 않는다.
-    const unresolved = slSegments.find((s) => !s.basecamp_place_id);
+    // 숙소 나누기로 이미 구간이 여러 개 생겼는데, 그중 아직 숙소를 확정하지 않은(버튼을
+    // 실제로 안 누른) 구간이 남아있으면 그 구간으로 전환해 마저 확정하게 하고 route로는
+    // 넘어가지 않는다.
+    const unresolved = slSegments.find((s) => !s.basecamp_confirmed_at);
     if (unresolved) {
       switchSegment(unresolved.id);
       return;
