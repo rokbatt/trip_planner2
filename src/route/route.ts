@@ -52,6 +52,9 @@ const IC_NOTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const IC_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2m-8 0 1 13a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-13"/></svg>';
 const IC_UNDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-2"/></svg>';
 const IC_REDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h2"/></svg>';
+const IC_GRIP = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>';
+const IC_ALERT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>';
+const IC_ROUTEPATH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H14a3.5 3.5 0 0 0 0-7h-4a3.5 3.5 0 0 1 0-7h5.5"/></svg>';
 
 type CatKey = 'VISIT' | 'FOOD' | 'ACTIVITY' | 'SHOPPING' | 'STAY';
 const CAT_COLOR: Record<CatKey, string> = {
@@ -87,6 +90,16 @@ type ToolKind = 'select' | 'add' | 'connect' | 'transport' | 'memo' | 'delete';
 
 const MEMBER_PALETTE = ['#2E6BE6', '#F59E0B', '#16A34A', '#9333EA', '#DB2777', '#0891B2'];
 
+/** 하단 플로팅 툴바 정의 — 라벨/툴팁/단축키를 한 곳에서 관리 */
+const TOOLS: Array<{ key: ToolKind; label: string; icon: string; tip: string; shortcut: string; danger?: boolean }> = [
+  { key: 'select', label: '선택', icon: IC_CURSOR, tip: '선택 · 핀을 눌러 정보 보기 (V)', shortcut: 'v' },
+  { key: 'add', label: '장소 추가', icon: IC_PIN_PLUS, tip: '장소 추가 · 핀을 눌러 담기 (A)', shortcut: 'a' },
+  { key: 'connect', label: '연결', icon: IC_LINK, tip: '연결 · 두 핀을 순서대로 잇기 (C)', shortcut: 'c' },
+  { key: 'transport', label: '교통수단', icon: IC_CAR, tip: '교통수단 · 구간을 눌러 변경 (T)', shortcut: 't' },
+  { key: 'memo', label: '메모', icon: IC_NOTE, tip: '메모 · 핀을 눌러 메모 입력 (M)', shortcut: 'm' },
+  { key: 'delete', label: '삭제', icon: IC_TRASH, tip: '삭제 · 핀을 눌러 동선에서 빼기 (D)', shortcut: 'd', danger: true },
+];
+
 /* ── 모듈 상태 ── */
 let currentTripId = '';
 let currentTrip: Trip | null = null;
@@ -116,7 +129,8 @@ let mapInstance: any = null;
 let mapMarkers: any[] = [];
 let routePolylines: any[] = [];
 let mapOverlays: any[] = [];
-let hoverCardOverlay: any = null;
+let placeCardOverlay: any = null;
+let placeCardPlaceId: string | null = null;
 let resizeHandler: (() => void) | null = null;
 let escHandler: ((e: KeyboardEvent) => void) | null = null;
 
@@ -146,7 +160,8 @@ export function teardownRoute(): void {
   mapMarkers = [];
   routePolylines = [];
   mapOverlays = [];
-  hoverCardOverlay = null;
+  placeCardOverlay = null;
+  placeCardPlaceId = null;
   rtContainer = null;
 }
 
@@ -443,7 +458,7 @@ export async function renderRouteContent(container: HTMLElement, tripId: string)
   currentTripId = tripId;
   rtContainer = container;
 
-  container.innerHTML = '<div class="rt-loading">동선 준비 중...</div>';
+  container.innerHTML = '<div class="rt-loading"><span class="rt-loading-spinner"></span>동선 준비 중...</div>';
 
   const [trip, places, mem] = await Promise.all([loadTrip(tripId), loadPlaces(tripId), loadMembers(tripId)]);
   currentTrip = trip;
@@ -459,6 +474,7 @@ export async function renderRouteContent(container: HTMLElement, tripId: string)
     container.innerHTML = [
       '<div class="rt-shell">',
       '  <div class="rt-empty">',
+      '    <span class="rt-empty-icon">' + IC_BED + '</span>',
       '    <div class="rt-empty-title">아직 숙소를 확정하지 않았어요</div>',
       '    <div class="rt-empty-hint">SHORTLIST에서 숙소를 여행의 중심으로 확정하면, 그 숙소를 출발점으로 하루 동선을 만들 수 있어요.</div>',
       '    <button type="button" class="rt-empty-btn" id="rt-go-shortlist">' + IC_ARROW + ' SHORTLIST로 이동</button>',
@@ -510,16 +526,15 @@ function buildPageHtml(): string {
 
     '        <div class="rt-memberlegend" id="rt-memberlegend"></div>',
 
-    '        <div class="rt-toolfloat" id="rt-toolfloat">',
-    '          <button type="button" class="rt-tool active" data-tool="select">' + IC_CURSOR + '<span class="rt-tool-label">선택</span></button>',
-    '          <button type="button" class="rt-tool" data-tool="add">' + IC_PIN_PLUS + '<span class="rt-tool-label">장소 추가</span></button>',
-    '          <button type="button" class="rt-tool" data-tool="connect">' + IC_LINK + '<span class="rt-tool-label">연결</span></button>',
-    '          <button type="button" class="rt-tool" data-tool="transport">' + IC_CAR + '<span class="rt-tool-label">교통수단</span></button>',
-    '          <button type="button" class="rt-tool" data-tool="memo">' + IC_NOTE + '<span class="rt-tool-label">메모</span></button>',
-    '          <button type="button" class="rt-tool danger" data-tool="delete">' + IC_TRASH + '<span class="rt-tool-label">삭제</span></button>',
+    '        <div class="rt-toolfloat" id="rt-toolfloat" role="toolbar" aria-label="동선 편집 도구">',
+    TOOLS.map((t) =>
+      '          <button type="button" class="rt-tool' + (t.key === 'select' ? ' active' : '') + (t.danger ? ' danger' : '') +
+      '" data-tool="' + t.key + '" data-tip="' + t.tip + '" aria-label="' + t.label + '" aria-pressed="' + (t.key === 'select') + '">' +
+      t.icon + '<span class="rt-tool-label">' + t.label + '</span></button>'
+    ).join('\n'),
     '          <div class="rt-tool-sep"></div>',
-    '          <button type="button" class="rt-tool" id="rt-undo" disabled>' + IC_UNDO + '<span class="rt-tool-label">실행 취소</span></button>',
-    '          <button type="button" class="rt-tool" id="rt-redo" disabled>' + IC_REDO + '<span class="rt-tool-label">다시 실행</span></button>',
+    '          <button type="button" class="rt-tool" id="rt-undo" data-tip="실행 취소 · Ctrl+Z" aria-label="실행 취소" disabled>' + IC_UNDO + '<span class="rt-tool-label">실행 취소</span></button>',
+    '          <button type="button" class="rt-tool" id="rt-redo" data-tip="다시 실행 · Ctrl+Shift+Z" aria-label="다시 실행" disabled>' + IC_REDO + '<span class="rt-tool-label">다시 실행</span></button>',
     '        </div>',
     '      </div>',
     '    </div>',
@@ -558,9 +573,40 @@ function bindPage(container: HTMLElement): void {
   });
 
   if (escHandler) document.removeEventListener('keydown', escHandler);
-  escHandler = () => {};
   escHandler = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') setActiveTool(container, 'select');
+    // 입력 중일 땐 단축키를 가로채지 않음 (메모/시간/검색 입력을 방해하지 않도록)
+    const t = e.target as HTMLElement | null;
+    const typing = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+
+    if (e.key === 'Escape') {
+      // 명시적 해제 수단 — 열린 카드 → 즉석추가 모드 → 툴 순으로 하나씩 되돌린다
+      if (placeCardOverlay) { closePlaceCard(); return; }
+      if (adhocMode) { setAdhocMode(container, false); return; }
+      if (activeTool !== 'select') { setActiveTool(container, 'select'); return; }
+      if (highlightedPlaceId || selectedLegKey) {
+        highlightedPlaceId = null;
+        selectedLegKey = null;
+        drawRouteOnMap(false);
+        renderRightPanel(container);
+      }
+      if (typing) (t as HTMLInputElement).blur();
+      return;
+    }
+
+    if (typing) return;
+
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) doRedo(container);
+      else doUndo(container);
+      return;
+    }
+
+    const tool = TOOLS.find((x) => x.shortcut === e.key.toLowerCase());
+    if (tool && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      setActiveTool(container, tool.key);
+    }
   };
   document.addEventListener('keydown', escHandler);
 }
@@ -573,8 +619,13 @@ function renderDayTabs(container: HTMLElement): void {
     days
       .map((d, i) => {
         const active = d.id === activeDayId;
+        const filled = d.stopIds.length > 0;
         return [
-          '<button type="button" class="rt-daytab' + (active ? ' active' : '') + '" data-day="' + d.id + '">',
+          i > 0 ? '<span class="rt-daytab-line" aria-hidden="true"></span>' : '',
+          '<button type="button" class="rt-daytab' + (active ? ' active' : '') + '" data-day="' + d.id + '"' +
+            ' aria-current="' + (active ? 'true' : 'false') + '"' +
+            ' title="' + escapeHtml(d.label) + (filled ? ' · 장소 ' + d.stopIds.length + '곳' : ' · 비어 있음') + '">',
+          filled ? '  <span class="rt-daytab-filled" aria-hidden="true"></span>' : '',
           '  <span class="rt-daytab-label">' + escapeHtml(d.label) + '</span>',
           '  <span class="rt-daytab-date">' + dayDateLabel(i) + '</span>',
           '</button>',
@@ -627,7 +678,10 @@ function renderLeftPanel(container: HTMLElement): void {
   const items = filteredCandidates();
 
   if (!items.length) {
-    listEl.innerHTML = '<div class="rt-float-empty">확정된 장소가 없어요</div>';
+    // 검색 결과 없음 / 애초에 확정 장소 없음을 구분해서 안내
+    listEl.innerHTML = placeSearchQuery.trim()
+      ? '<div class="rt-float-empty">' + IC_SEARCH + '<div>\'' + escapeHtml(placeSearchQuery.trim()) + '\'와<br>일치하는 장소가 없어요</div></div>'
+      : '<div class="rt-float-empty">' + IC_PIN_PLUS + '<div>확정된 장소가 없어요<br>아래에서 직접 추가해보세요</div></div>';
     return;
   }
 
@@ -677,13 +731,17 @@ function renderMemberLegend(container: HTMLElement): void {
     return;
   }
   el.style.display = '';
-  el.innerHTML = members
-    .map(
-      (m, i) =>
-        '<div class="rt-memberlegend-item"><span class="rt-memberlegend-dot" style="background:' + memberColor(i) + '"></span>' +
-        escapeHtml(m.display_name || '멤버') + '</div>'
-    )
-    .join('');
+  const MAX = 4;
+  el.innerHTML =
+    members
+      .slice(0, MAX)
+      .map(
+        (m, i) =>
+          '<div class="rt-memberlegend-item"><span class="rt-memberlegend-dot" style="background:' + memberColor(i) + '"></span>' +
+          escapeHtml(m.display_name || '멤버') + '</div>'
+      )
+      .join('') +
+    (members.length > MAX ? '<span class="rt-memberlegend-more">+' + (members.length - MAX) + '</span>' : '');
 }
 
 /* ── 하단 플로팅 툴바 ── */
@@ -701,12 +759,14 @@ function bindToolbar(container: HTMLElement): void {
 function setActiveTool(container: HTMLElement, tool: ToolKind): void {
   activeTool = tool;
   connectFromId = null;
+  closePlaceCard();
   container.querySelectorAll('.rt-tool[data-tool]').forEach((btn) => {
-    btn.classList.toggle('active', (btn as HTMLElement).dataset.tool === tool);
+    const on = (btn as HTMLElement).dataset.tool === tool;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', String(on));
   });
-  if (tool === 'add') {
-    (container.querySelector('#rt-float-search-input') as HTMLElement | null)?.focus();
-  }
+  // 툴을 바꾸면 즉석추가 모드는 항상 해제 (모드가 겹쳐 헷갈리지 않도록)
+  if (adhocMode) setAdhocMode(container, false);
 }
 
 /* ── 옵션 드롭다운 ── */
@@ -719,14 +779,20 @@ function bindOptionsMenu(container: HTMLElement): void {
     const menu = document.createElement('div');
     menu.className = 'rt-options-menu';
     menu.innerHTML = [
-      '<button type="button" id="rt-opt-satellite">' + IC_SPARK + ' 위성 지도 보기</button>',
-      '<button type="button" class="danger" id="rt-opt-reset">이 여행지 동선 전체 초기화</button>',
+      '<button type="button" id="rt-opt-fit">' + IC_TARGET + ' 전체 동선 화면에 맞추기</button>',
+      '<button type="button" id="rt-opt-satellite">' + IC_SPARK + ' 위성 지도 전환</button>',
+      '<div class="rt-options-divider"></div>',
+      '<button type="button" class="danger" id="rt-opt-reset">' + IC_TRASH + ' 모든 DAY 동선 초기화</button>',
     ].join('');
     document.body.appendChild(menu);
     const r = btn.getBoundingClientRect();
     menu.style.top = r.bottom + 8 + 'px';
     menu.style.left = Math.max(12, r.right - 210) + 'px';
 
+    menu.querySelector('#rt-opt-fit')?.addEventListener('click', () => {
+      fitRouteBounds();
+      menu.remove();
+    });
     menu.querySelector('#rt-opt-satellite')?.addEventListener('click', () => {
       toggleSatellite();
       menu.remove();
@@ -756,9 +822,9 @@ function toggleSatellite(): void {
 }
 
 /* ── 지도 위 핀 클릭 — 활성 툴에 따라 다르게 동작 ── */
-function handlePinClick(p: Place): void {
+function handlePinClick(g: any, p: Place): void {
   const isBasecamp = !!basecamp && p.id === basecamp.id;
-  const g = (window as any).google;
+  closePlaceCard();
 
   if (activeTool === 'delete') {
     if (isBasecamp) return;
@@ -794,17 +860,25 @@ function handlePinClick(p: Place): void {
 
   if (activeTool === 'transport') return; // 이동수단 변경은 캡슐/커넥터 클릭으로 동작
 
-  // 선택 / 장소추가 툴(기본): 토글 추가/제거
-  if (isBasecamp) {
-    highlightedPlaceId = highlightedPlaceId === p.id ? null : p.id;
+  if (activeTool === 'add') {
+    // "장소 추가" 툴: 클릭 한 번으로 바로 담기/빼기
+    if (isBasecamp) return;
+    pushHistory();
+    toggleStop(p.id);
+    highlightedPlaceId = p.id;
+    if (g?.maps) showRipple(g, p, categoryMeta(p, false).color);
     refreshAll(rtContainer!, { refit: false });
     return;
   }
-  pushHistory();
-  toggleStop(p.id);
+
+  // 기본(선택) 툴: 장소 카드를 열어 정보를 보고 담을지 결정 — hover가 아니라 클릭으로만 반응
   highlightedPlaceId = p.id;
-  if (g?.maps) showRipple(g, p, categoryMeta(p, false).color);
-  refreshAll(rtContainer!, { refit: false });
+  if (g?.maps) {
+    showRipple(g, p, categoryMeta(p, isBasecamp).color);
+    openPlaceCard(g, p);
+  }
+  drawRouteOnMap(false);
+  renderRightPanel(rtContainer!);
 }
 
 function focusMemoInput(placeId: string): void {
@@ -825,13 +899,20 @@ function handleLegClick(fromId: string, toId: string, anchor?: HTMLElement): voi
 
 function openModeOverridePopover(key: string, anchor?: HTMLElement): void {
   document.querySelectorAll('.rt-mode-popover').forEach((el) => el.remove());
+  const cur = legModeOverride.get(key);
+  const row = (mode: string, icon: string, label: string) => {
+    const on = mode === 'AUTO' ? !cur : cur === mode;
+    return '<button type="button" data-mode="' + mode + '" class="' + (on ? 'selected' : '') + '">' +
+      icon + ' ' + label + (on ? '<span class="rt-mode-check">' + IC_CHECK + '</span>' : '') + '</button>';
+  };
   const pop = document.createElement('div');
   pop.className = 'rt-mode-popover';
   pop.innerHTML = [
-    '<button type="button" data-mode="WALK">' + IC_WALK + ' 도보</button>',
-    '<button type="button" data-mode="TRANSIT">' + IC_TRANSIT + ' 대중교통</button>',
-    '<button type="button" data-mode="TAXI">' + IC_TAXI + ' 자동차</button>',
-    '<button type="button" data-mode="AUTO">' + IC_SPARK + ' 자동 추정</button>',
+    '<div class="rt-mode-popover-title">이동수단</div>',
+    row('WALK', IC_WALK, '도보'),
+    row('TRANSIT', IC_TRANSIT, '대중교통'),
+    row('TAXI', IC_TAXI, '자동차'),
+    row('AUTO', IC_SPARK, '자동 추정'),
   ].join('');
   document.body.appendChild(pop);
   const r = anchor?.getBoundingClientRect();
@@ -863,6 +944,38 @@ function openModeOverridePopover(key: string, anchor?: HTMLElement): void {
 /* ── 시간 계산 (수동 오버라이드가 있으면 그 시각을 기준으로 이어서 계산) ── */
 function timeKey(dayId: string, placeId: string): string {
   return dayId + '|' + placeId;
+}
+
+/**
+ * 사용자가 친 시각 문자열을 24시간 "HH:MM"으로 정규화. "930"·"9:30"·"09:30" 모두 허용하고,
+ * 범위를 벗어나거나 해석할 수 없으면 null(→ 호출부가 계산값으로 되돌림).
+ */
+function parseTimeInput(raw: string): string | null {
+  const s = raw.trim();
+  if (!s) return null;
+  const digits = s.replace(/[^0-9]/g, '');
+  if (!digits) return null; // "abc"처럼 숫자가 하나도 없으면 Number('')===0에 걸리지 않도록 먼저 차단
+  let h: number;
+  let m: number;
+  if (s.includes(':')) {
+    const [hs, ms] = s.split(':');
+    h = Number(hs);
+    m = Number(ms);
+  } else if (digits.length === 3) {
+    h = Number(digits.slice(0, 1));
+    m = Number(digits.slice(1));
+  } else if (digits.length === 4) {
+    h = Number(digits.slice(0, 2));
+    m = Number(digits.slice(2));
+  } else if (digits.length <= 2) {
+    h = Number(digits);
+    m = 0;
+  } else {
+    return null;
+  }
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
 }
 
 function minToHHMM(min: number): string {
@@ -953,15 +1066,26 @@ function renderRightPanel(container: HTMLElement): void {
     const memo = memoStore.get(p.id) ?? '';
     const highlighted = p.id === highlightedPlaceId;
 
+    const manualTime = timeOverride.has(timeKey(day.id, p.id));
     rows.push(
       [
         '<div class="rt-panel-stop' + (highlighted ? ' rt-highlighted' : '') + '" draggable="' + (isBasecamp ? 'false' : 'true') + '" data-place-id="' + p.id + '">',
+        isBasecamp
+          ? '  <span class="rt-drag-handle locked" aria-hidden="true"></span>'
+          : '  <span class="rt-drag-handle" title="드래그해서 순서 바꾸기" aria-hidden="true">' + IC_GRIP + '</span>',
         '  <span class="rt-panel-badge" style="background:' + meta.color + '">' + (i + 1) + '</span>',
         '  <div class="rt-panel-name-col"><div class="rt-panel-name">' + escapeHtml(p.name) + '</div><div class="rt-panel-sub">' + escapeHtml(p.category || (isBasecamp ? '숙소' : '')) + '</div></div>',
-        '  <input type="time" class="rt-panel-time" value="' + times[i] + '" data-place-id="' + p.id + '" />',
-        !isBasecamp ? '  <button type="button" class="rt-panel-remove" data-place-id="' + p.id + '" title="제외">✕</button>' : '  <span></span>',
+        // native <input type="time">은 로케일에 따라 "오후 01:00"처럼 12시간제로 그려져
+        // 좁은 패널에서 접두사가 잘리면 13:00이 01:00으로 보이는 오표시가 발생한다.
+        // → 로케일과 무관하게 24시간 HH:MM으로 고정되는 텍스트 입력을 쓴다.
+        '  <input type="text" class="rt-panel-time' + (manualTime ? ' is-manual' : '') + '" value="' + times[i] + '"' +
+          ' data-place-id="' + p.id + '" inputmode="numeric" maxlength="5" spellcheck="false"' +
+          ' aria-label="' + escapeHtml(p.name) + ' 도착 시각 (24시간 HH:MM)" />',
+        !isBasecamp
+          ? '  <button type="button" class="rt-panel-remove" data-place-id="' + p.id + '" title="동선에서 빼기" aria-label="' + escapeHtml(p.name) + ' 동선에서 빼기">✕</button>'
+          : '  <span class="rt-panel-remove-spacer"></span>',
         '  <div class="rt-panel-memo-row">',
-        '    <input type="text" class="rt-panel-memo" placeholder="메모 추가" value="' + escapeHtml(memo) + '" data-place-id="' + p.id + '" />',
+        '    <input type="text" class="rt-panel-memo" placeholder="메모 추가" value="' + escapeHtml(memo) + '" data-place-id="' + p.id + '" aria-label="' + escapeHtml(p.name) + ' 메모" />',
         '    <span class="rt-panel-memo-icon">' + IC_NOTE + '</span>',
         '  </div>',
         '</div>',
@@ -972,12 +1096,15 @@ function renderRightPanel(container: HTMLElement): void {
       const leg = legs[i];
       const key = legKey(p.id, stops[i + 1].id);
       const selected = selectedLegKey === key;
+      const manual = legModeOverride.has(key);
       const extra = leg.costTHB > 0 ? leg.costTHB + ' THB' : (leg.mode === 'WALK' ? fmtKm(leg.km) : '무료');
       rows.push(
         [
-          '<div class="rt-panel-connector ' + modeColorClass(leg.mode) + (selected ? ' rt-highlighted' : '') + '" data-leg-key="' + key + '">',
+          '<div class="rt-panel-connector ' + modeColorClass(leg.mode) + (selected ? ' rt-highlighted' : '') + '" data-leg-key="' + key + '"' +
+            ' role="button" tabindex="0" title="눌러서 이 구간 강조 · 교통수단 툴에서는 이동수단 변경">',
           '  <span class="rt-panel-connector-icon">' + modeIcon(leg.mode) + '</span>',
           '  <span class="rt-panel-connector-label">' + modeLabel(leg.mode) + ' ' + fmtMin(leg.min) + ' <b>·</b> ' + extra + '</span>',
+          manual ? '  <span class="rt-panel-connector-manual" title="직접 지정한 이동수단"></span>' : '',
           '</div>',
         ].join('')
       );
@@ -995,19 +1122,30 @@ function renderRightPanel(container: HTMLElement): void {
         .map((m, i) => '<div class="rt-panel-avatar" style="background:' + memberColor(i) + '">' + escapeHtml((m.display_name || '?').charAt(0)) + '</div>')
         .join('') +
       '</div>',
-    '  <button type="button" class="rt-panel-more" id="rt-panel-more">' + IC_DOTS + '</button>',
+    '  <button type="button" class="rt-panel-more" id="rt-panel-more" aria-label="이 DAY 메뉴">' + IC_DOTS + '</button>',
     '</div>',
     '<div class="rt-panel-list" id="rt-panel-list">',
-    stops.length ? rows.join('') : '<div class="rt-panel-empty">지도에서 핀을 클릭하거나<br>왼쪽 목록에서 장소를 추가해보세요.</div>',
+    stops.length
+      ? rows.join('')
+      : [
+          '<div class="rt-panel-empty">',
+          '  <span class="rt-panel-empty-icon">' + IC_ROUTEPATH + '</span>',
+          '  <div class="rt-panel-empty-title">아직 담은 장소가 없어요</div>',
+          '  <div class="rt-panel-empty-hint">지도의 핀을 누르거나<br>왼쪽 목록에서 담아보세요.</div>',
+          '</div>',
+        ].join(''),
     '</div>',
     '<div class="rt-panel-summary">',
     '  <div class="rt-panel-summary-item"><div class="rt-panel-summary-label">총 이동시간</div><div class="rt-panel-summary-value">' + fmtMin(s.totalMin) + '</div></div>',
     '  <div class="rt-panel-summary-item"><div class="rt-panel-summary-label">총 이동거리</div><div class="rt-panel-summary-value">' + totalKm.toFixed(1) + 'km</div></div>',
     '  <div class="rt-panel-summary-item"><div class="rt-panel-summary-label">예상 교통비</div><div class="rt-panel-summary-value">' + s.totalCost + ' THB</div></div>',
     '</div>',
+    // 원칙 3-1 — 실제 경로 API 연동 전까지는 추정치임을 반드시 표기
+    '<div class="rt-panel-estimate-note">* 직선거리 기반 추정치예요</div>',
     '<div class="rt-panel-actions">',
     '  <button type="button" class="rt-panel-action" id="rt-panel-add">' + IC_PLUS + ' 장소 추가</button>',
-    '  <button type="button" class="rt-panel-action primary" id="rt-panel-optimize">' + IC_SPARK + ' 최적화 (수동)</button>',
+    '  <button type="button" class="rt-panel-action primary" id="rt-panel-optimize"' + (s.visitCount < 2 ? ' disabled' : '') +
+      ' title="' + (s.visitCount < 2 ? '장소가 2곳 이상일 때 정렬할 수 있어요' : '가까운 순서로 다시 정렬해요') + '">' + IC_SPARK + ' 순서 정리</button>',
     '</div>',
   ].join('\n');
 
@@ -1028,11 +1166,17 @@ function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
   });
 
   el.querySelectorAll('.rt-panel-time').forEach((input) => {
-    input.addEventListener('change', (e) => {
+    const commit = () => {
       const id = (input as HTMLElement).dataset.placeId!;
-      const val = (e.target as HTMLInputElement).value;
-      if (val) timeOverride.set(timeKey(activeDay().id, id), val);
+      const parsed = parseTimeInput((input as HTMLInputElement).value);
+      if (parsed) timeOverride.set(timeKey(activeDay().id, id), parsed);
+      // 형식이 잘못됐으면 조용히 되돌림(재렌더가 계산값으로 복구)
       renderRightPanel(container);
+    };
+    input.addEventListener('change', commit);
+    input.addEventListener('keydown', (e) => {
+      const ke = e as KeyboardEvent;
+      if (ke.key === 'Enter') { ke.preventDefault(); (input as HTMLInputElement).blur(); }
     });
     input.addEventListener('click', (e) => e.stopPropagation());
   });
@@ -1046,10 +1190,15 @@ function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
   });
 
   el.querySelectorAll('.rt-panel-connector').forEach((row) => {
-    row.addEventListener('click', () => {
+    const fire = () => {
       const key = (row as HTMLElement).dataset.legKey!;
       const [fromId, toId] = key.split('>');
       handleLegClick(fromId, toId, row as HTMLElement);
+    };
+    row.addEventListener('click', fire);
+    row.addEventListener('keydown', (e) => {
+      const ke = e as KeyboardEvent;
+      if (ke.key === 'Enter' || ke.key === ' ') { ke.preventDefault(); fire(); }
     });
   });
 
@@ -1168,7 +1317,7 @@ async function initMap(container: HTMLElement): Promise<void> {
   try {
     await loadGoogleMapsScript();
   } catch {
-    mapEl.innerHTML = '<div class="rt-map-error">지도를 불러오지 못했어요.</div>';
+    mapEl.innerHTML = '<div class="rt-map-error">' + IC_ALERT + '<div>지도를 불러오지 못했어요.<br>네트워크 상태를 확인한 뒤 새로고침해 주세요.</div></div>';
     return;
   }
   const g = (window as any).google;
@@ -1182,13 +1331,27 @@ async function initMap(container: HTMLElement): Promise<void> {
     isFractionalZoomEnabled: true,
     styles: MAP_STYLE_LIGHT,
     clickableIcons: false,
+    // Google 기본 컨트롤 사용(커스텀 금지). 좌하단은 멤버 범례가 쓰므로 전부 우측으로 모아
+    // 겹침을 방지한다 — 좌상단은 장소 검색 패널, 하단 중앙은 편집 툴바가 차지.
     zoomControl: true,
-    zoomControlOptions: { position: g.maps.ControlPosition.LEFT_BOTTOM },
+    zoomControlOptions: { position: g.maps.ControlPosition.RIGHT_BOTTOM },
     mapTypeControl: true,
-    mapTypeControlOptions: { style: g.maps.MapTypeControlStyle.DEFAULT, position: g.maps.ControlPosition.RIGHT_BOTTOM },
+    mapTypeControlOptions: { style: g.maps.MapTypeControlStyle.DEFAULT, position: g.maps.ControlPosition.RIGHT_TOP },
     streetViewControl: false,
     fullscreenControl: false,
     rotateControl: false,
+  });
+
+  // 지도 빈 곳 클릭 = 장소 카드/강조 해제 (원칙 3-3 명시적 해제 수단)
+  mapInstance.addListener('click', () => {
+    if (placeCardOverlay) { closePlaceCard(); return; }
+    if (highlightedPlaceId || selectedLegKey) {
+      highlightedPlaceId = null;
+      selectedLegKey = null;
+      connectFromId = null;
+      drawRouteOnMap(false);
+      renderRightPanel(container);
+    }
   });
 
   mapInstance.addListener('click', (e: any) => {
@@ -1241,8 +1404,7 @@ function drawRouteOnMap(refit: boolean): void {
     if (p.lat == null || p.lng == null) return;
     if (day.stopIds.includes(p.id)) return;
     const marker = buildMarkerV2(g, p, { isBasecamp: false, included: false, highlighted: p.id === highlightedPlaceId });
-    marker.addListener('click', () => handlePinClick(p));
-    bindMarkerHover(g, marker, p);
+    marker.addListener("click", () => handlePinClick(g, p));
     mapMarkers.push(marker);
   });
 
@@ -1250,8 +1412,7 @@ function drawRouteOnMap(refit: boolean): void {
   stops.forEach((p, i) => {
     const isBasecamp = !!basecamp && i === 0 && p.id === basecamp.id;
     const marker = buildMarkerV2(g, p, { isBasecamp, included: true, num: i + 1, highlighted: p.id === highlightedPlaceId });
-    marker.addListener('click', () => handlePinClick(p));
-    bindMarkerHover(g, marker, p);
+    marker.addListener("click", () => handlePinClick(g, p));
     mapMarkers.push(marker);
   });
 
@@ -1269,7 +1430,9 @@ function drawRouteOnMap(refit: boolean): void {
     const midLat = (stops[i].lat! + stops[i + 1].lat!) / 2;
     const midLng = (stops[i].lng! + stops[i + 1].lng!) / 2;
     const Ctor = getOverlayCtor(g);
-    const cls = 'rt-map-capsule ' + modeColorClass(leg.mode) + (selected ? ' rt-leg-selected' : dimmed ? ' rt-leg-dimmed' : '');
+    const cls = 'rt-map-capsule ' + modeColorClass(leg.mode) +
+      (selected ? ' rt-leg-selected' : dimmed ? ' rt-leg-dimmed' : '') +
+      (legModeOverride.has(key) ? ' rt-leg-manual' : '');
     const capsule = new Ctor(new g.maps.LatLng(midLat, midLng), legCapsuleHtml(leg), cls, () =>
       handleLegClick(stops[i].id, stops[i + 1].id, capsule.div ?? undefined)
     );
@@ -1306,23 +1469,63 @@ function fitRouteBounds(): void {
   mapInstance.fitBounds(bounds, 64);
 }
 
-/* 마커 호버 시 사진·이름·평점 미니카드 */
-function bindMarkerHover(g: any, marker: any, p: Place): void {
-  marker.addListener('mouseover', () => {
-    if (hoverCardOverlay) { hoverCardOverlay.setMap(null); hoverCardOverlay = null; }
-    const Ctor = getOverlayCtor(g);
-    const html = [
-      p.photo_url ? '<div class="rt-hovercard-photo" style="background-image:url(\'' + p.photo_url + '\')"></div>' : '',
-      '<div class="rt-hovercard-body">',
-      '  <div class="rt-hovercard-name">' + escapeHtml(p.name) + '</div>',
-      p.google_rating ? '  <div class="rt-hovercard-rate">' + IC_STAR + ' ' + p.google_rating.toFixed(1) + '</div>' : '',
-      '</div>',
-    ].join('');
-    hoverCardOverlay = new Ctor(new g.maps.LatLng(p.lat!, p.lng!), html, 'rt-hovercard');
-    hoverCardOverlay.setMap(mapInstance);
-  });
-  marker.addListener('mouseout', () => {
-    if (hoverCardOverlay) { hoverCardOverlay.setMap(null); hoverCardOverlay = null; }
+/**
+ * 핀을 **클릭**하면 뜨는 장소 카드(사진·이름·평점 + 담기/빼기).
+ * Claude.md 3-3 원칙 — hover로 강조/확대하지 않고 반드시 클릭으로만 반응하며,
+ * 닫기(✕)·지도 빈 곳 클릭·ESC 세 가지 명시적 해제 수단을 항상 제공한다.
+ */
+function closePlaceCard(): void {
+  if (placeCardOverlay) { placeCardOverlay.setMap(null); placeCardOverlay = null; }
+  placeCardPlaceId = null;
+}
+
+function openPlaceCard(g: any, p: Place): void {
+  closePlaceCard();
+  const isBasecamp = !!basecamp && p.id === basecamp.id;
+  const included = isBasecamp || activeDay().stopIds.includes(p.id);
+  const meta = categoryMeta(p, isBasecamp);
+
+  const html = [
+    p.photo_url
+      ? '<div class="rt-clickcard-photo" style="background-image:url(\'' + p.photo_url + '\')"></div>'
+      : '<div class="rt-clickcard-photo">' + meta.icon + '</div>',
+    '<button type="button" class="rt-clickcard-close" aria-label="닫기">✕</button>',
+    '<div class="rt-clickcard-body">',
+    '  <div class="rt-clickcard-name">' + escapeHtml(p.name) + '</div>',
+    '  <div class="rt-clickcard-meta">',
+    p.google_rating ? '    <span class="rt-clickcard-rate">' + IC_STAR + ' ' + p.google_rating.toFixed(1) + '</span>' : '',
+    p.category ? '    <span class="rt-clickcard-cat">' + escapeHtml(p.category) + '</span>' : '',
+    '  </div>',
+    isBasecamp
+      ? ''
+      : included
+        ? '  <button type="button" class="rt-clickcard-action remove" data-card-act="remove">' + IC_TRASH + ' 동선에서 빼기</button>'
+        : '  <button type="button" class="rt-clickcard-action" data-card-act="add">' + IC_PLUS + ' 이 동선에 담기</button>',
+    '</div>',
+  ].join('');
+
+  const Ctor = getOverlayCtor(g);
+  placeCardOverlay = new Ctor(new g.maps.LatLng(p.lat!, p.lng!), html, 'rt-clickcard');
+  placeCardOverlay.setMap(mapInstance);
+  placeCardPlaceId = p.id;
+
+  // OverlayView가 DOM에 붙은 뒤에 핸들러 연결
+  requestAnimationFrame(() => {
+    const div: HTMLElement | null = placeCardOverlay?.div ?? null;
+    if (!div) return;
+    div.querySelector('.rt-clickcard-close')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closePlaceCard();
+    });
+    div.querySelector('[data-card-act]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const act = (e.currentTarget as HTMLElement).dataset.cardAct;
+      pushHistory();
+      if (act === 'add') activeDay().stopIds.push(p.id);
+      else removeStop(p.id);
+      closePlaceCard();
+      refreshAll(rtContainer!, { refit: false });
+    });
   });
 }
 
