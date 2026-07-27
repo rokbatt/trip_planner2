@@ -58,6 +58,10 @@
 }
 .ws-sidebar-back:hover { background: #EAF6FD; }
 .ws-sidebar-back svg { width: 18px; height: 18px; flex-shrink: 0; }
+/* 사이드바가 접혔을 때 뒤로가기 버튼이 "다시 펼치기"로 바뀜 — 접기 아이콘(<<)을 좌우
+   반전해 펼치기(>>)로 보여줌. transition으로 두 상태 전환이 부드럽게 이어지게 함 */
+.ws-sidebar-back-icon { display: inline-flex; transition: transform 150ms ease; }
+.ws-sidebar-back-icon.flipped { transform: scaleX(-1); }
 .ws-sidebar-back-label {
   font-size: 15px;
   font-weight: 700;
