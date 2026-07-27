@@ -87,7 +87,7 @@ const MOOD_ICON: Record<string, string> = {
   '가고싶어': '🗽',
   '먹고싶어': '🍝',
   '하고싶어': '🏄',
-  '숙소': '🛏️',
+  '숙소': '🏠',
 };
 /** place.category → 핀 아이콘. 확실히 구분되는 것만 세분화하고(카페 vs 맛집), 애매한 건 맛집으로 통일 */
 const CATEGORY_ICON: Record<string, string> = {
@@ -104,7 +104,7 @@ const CATEGORY_ICON: Record<string, string> = {
   '테마파크': '🏄',
   '나이트라이프': '🏄',
   '쇼핑': '🛍️',
-  '숙소': '🛏️',
+  '숙소': '🏠',
   '공항': '✈️',
 };
 
