@@ -527,10 +527,11 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
     restoreStateFromSegment(slActiveSegment);
   }
 
-  // 이전에 어디까지 진행했든(지역만 골랐든, 숙소까지 확정했든) 나갔다 들어올 땐 항상
-  // Step1부터 시작 — selectedZone/selectedBasecamp/confirmedIds 등 실제 진행 데이터는
-  // restoreStateFromSegment가 그대로 복원해 둔 상태라 여기서 step만 되돌려도 유실되지 않음
-  step = 1;
+  // Step2까지만(지역은 골랐지만 숙소는 아직 안 고름) 진행하고 나갔다 들어오면 Step1부터
+  // 다시 시작하지만, 숙소 후보라도 골라 Step3까지 가봤으면 나갔다 들어와도 Step3를 그대로
+  // 유지(이어서 확인/확정하도록) — selectedZone/selectedBasecamp/confirmedIds 등 실제 진행
+  // 데이터는 어느 쪽이든 restoreStateFromSegment가 그대로 복원해 둔 상태라 유실되지 않음
+  if (step === 2) step = 1;
 
   // 투표 요청으로 들어온 경우, 방금 복원한 상태를 덮어쓰고 그 숙소의 Step3로 강제 진입
   if (pendingVoteTarget) {
