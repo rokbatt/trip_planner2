@@ -457,6 +457,12 @@
   display: none !important;
 }
 
+/* 장소 정보창(InfoWindow)의 구글 기본 닫기 버튼 숨김 — 사진과 겹쳐 어색하게 떠서
+   showPlaceInfoWindow가 사진 위에 직접 그리는 X 버튼(#sl-info-close-btn)으로 대체 */
+.sl-map-wrap .gm-ui-hover-effect {
+  display: none !important;
+}
+
 /* ── Zone 패널 ── */
 .sl-zone-panel {
   display: flex;
