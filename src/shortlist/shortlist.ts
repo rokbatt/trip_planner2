@@ -2699,6 +2699,23 @@ const HOTEL_SITES: HotelSite[] = [
   },
 ];
 
+/** Step3에서 확정한 숙소 이름을 클릭하면 이동할 URL — 지역명이 아니라 숙소 이름(+주소) 자체로
+ *  검색해서 그 숙소가 검색 결과 필터에 걸린 채로 뜨게 함. 공식 딥링크 API 없이 가능한 최선이라
+ *  일단 Booking.com만 지원(추후 다른 사이트로 확장 가능) */
+function buildBookingHotelSearchUrl(place: Place): string {
+  const url = new URL('https://www.booking.com/searchresults.ko.html');
+  url.searchParams.set('ss', place.name + (place.address ? ' ' + place.address : ''));
+  const dates = getTripDatesISO();
+  if (dates) {
+    url.searchParams.set('checkin', dates.checkin);
+    url.searchParams.set('checkout', dates.checkout);
+  }
+  url.searchParams.set('group_adults', String(getTripHeadcount()));
+  url.searchParams.set('no_rooms', '1');
+  url.searchParams.set('group_children', '0');
+  return url.toString();
+}
+
 function renderHotelSiteCards(body: HTMLElement, destination: string, zoneName: string): void {
   const gridEl = body.querySelector('#sl-hotel-sites') as HTMLElement;
   const filterNote = stayFilters.budget ? (BUDGET_PRESETS[stayFilters.budget]?.label ?? '직접설정 가격대') : '전체 숙소';
@@ -3282,7 +3299,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '          <div class="sl-step3-summary-photo"' + (basecamp.photo_url ? ' style="background-image:url(\'' + basecamp.photo_url + '\')"' : '') + '>' + (basecamp.photo_url ? '' : IC_BED) + '</div>',
     '          <div class="sl-step3-summary-body">',
     '            <div class="sl-step3-summary-top">',
-    '              <div class="sl-step3-summary-name">' + escapeHtml(basecamp.name) + '</div>',
+    '              <a class="sl-step3-summary-name sl-step3-summary-name-link" href="' + buildBookingHotelSearchUrl(basecamp) + '" target="_blank" rel="noopener noreferrer" title="Booking.com에서 이 숙소 검색">' + escapeHtml(basecamp.name) + ' ' + IC_EXTLINK + '</a>',
     stars ? '              <div class="sl-step3-summary-stars">' + stars + '</div>' : '',
     '            </div>',
     '            <div class="sl-step3-summary-tags"><span class="sl-zone-tag">' + escapeHtml(categoryLabel) + '</span></div>',
