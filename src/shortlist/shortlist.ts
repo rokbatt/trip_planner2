@@ -770,6 +770,31 @@ function dateRangeMeta(start: string | null, end: string | null): string {
   return (nights > 0 ? nights + '박 · ' : '') + fmt(s) + '–' + fmt(e);
 }
 
+/** 공항처럼 직접 검색해서 추가한 권역(custom zone)은 zone.places가 항상 비어있고,
+ *  그 근처 숙소 자체도 ZONE_ASSIGN_MAX_KM 밖이라 어느 권역의 zone.places에도 안 잡힘 —
+ *  그래서 zone_place_ids로는 다시 찾을 방법이 없음(페이지 새로고침·구간 전환마다 매번
+ *  Step1로 튕기던 원인). 이런 권역은 어차피 zone_name만 저장돼 있으므로, 이미 고른(혹은
+ *  확정한) 숙소 자체의 좌표를 권역 중심으로 삼아 임시 권역을 재구성해 복원을 이어감 */
+function reconstructZoneFromBasecamp(zoneName: string, segId: string, basecampPlaceId: string): Zone | null {
+  const bc = allPlaces.find((p) => p.id === basecampPlaceId);
+  if (!bc || bc.lat == null || bc.lng == null) return null;
+  return {
+    id: 'custom:restored:' + segId,
+    name: zoneName,
+    features: [],
+    places: [],
+    centerLat: bc.lat,
+    centerLng: bc.lng,
+    avgRating: null,
+    avgInternalWalkMin: null,
+    recommendedNights: 1,
+    topPlaces: [],
+    efficiencyLabel: '',
+    rank: 0,
+    isCustom: true,
+  };
+}
+
 /** 저장된 구간 상태(zone→hotel→confirm)를 모듈 상태로 복원. 없으면 Step1부터. */
 function restoreStateFromSegment(seg: StaySegment | null): void {
   step = 1;
@@ -778,21 +803,24 @@ function restoreStateFromSegment(seg: StaySegment | null): void {
   basecampConfirmedAt = null;
   confirmedIds = new Set();
   totalBudgetKRW = seg?.total_budget_krw ?? null;
-  if (seg?.zone_name && seg.zone_place_ids) {
-    const zpids = seg.zone_place_ids;
-    const restoredZone = zones.find((z) => z.places.some((p) => zpids.includes(p.id)));
-    if (restoredZone) {
-      selectedZone = restoredZone;
-      step = 2;
-      if (seg.basecamp_place_id) {
-        const bc = restoredZone.places.find((p) => p.id === seg.basecamp_place_id);
-        if (bc) {
-          selectedBasecamp = bc;
-          basecampConfirmedAt = seg.basecamp_confirmed_at ?? null;
-          step = 3;
-          confirmedIds = new Set(seg.confirmed_place_ids ?? []);
-        }
-      }
+  if (!seg?.zone_name) return;
+
+  const zpids = seg.zone_place_ids ?? [];
+  let restoredZone = zones.find((z) => z.places.some((p) => zpids.includes(p.id))) ?? null;
+  if (!restoredZone && seg.basecamp_place_id) {
+    restoredZone = reconstructZoneFromBasecamp(seg.zone_name, seg.id, seg.basecamp_place_id);
+  }
+  if (!restoredZone) return;
+
+  selectedZone = restoredZone;
+  step = 2;
+  if (seg.basecamp_place_id) {
+    const bc = restoredZone.places.find((p) => p.id === seg.basecamp_place_id) ?? allPlaces.find((p) => p.id === seg.basecamp_place_id);
+    if (bc) {
+      selectedBasecamp = bc;
+      basecampConfirmedAt = seg.basecamp_confirmed_at ?? null;
+      step = 3;
+      confirmedIds = new Set(seg.confirmed_place_ids ?? []);
     }
   }
 }
