@@ -43,7 +43,7 @@ type Place = Database['public']['Tables']['places']['Row'];
 type Trip = Database['public']['Tables']['trips']['Row'];
 
 /* ── 아이콘 ── */
-const IC_BED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6M3 18v2M21 18v2M3 12V8a2 2 0 0 1 2-2h4v6"/></svg>';
+const IC_BED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 13.5h17v5h-17z"/><path d="M3.5 13.5V6.5"/><path d="M3.5 18.5V21M20.5 18.5V21"/><path d="M6.5 13.5V11h4.5v2.5"/></svg>';
 const IC_WALK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4" r="2"/><path d="M11 8l-3 3 2 7M11 8l3 2 3-1M8 11l-3 2v6M13 10l2 4-2 6"/></svg>';
 const IC_TAXI = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M5 17a2 2 0 1 0 4 0M15 17a2 2 0 1 0 4 0M5 17l1.5-5h11L19 17M8 12V8h8v4"/></svg>';
 const IC_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
@@ -69,6 +69,12 @@ const IC_HOSPITAL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 const IC_ATM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h2M12 15h5"/></svg>';
 const IC_CART = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.2 11.2a1.5 1.5 0 0 0 1.5 1.2h8.3a1.5 1.5 0 0 0 1.5-1.2L21 8H6"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg>';
 const IC_STAR = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.3 6.9.7-5.1 4.6 1.4 6.8L12 17.6 5.9 20.4l1.4-6.8L2.2 9l6.9-.7L12 2z"/></svg>';
+const IC_FORK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v5a2.5 2.5 0 0 0 5 0V3"/><path d="M8.5 10v11"/><path d="M18.5 3c-1.9 1.4-2.9 3.3-2.9 5.7 0 1.7 1 2.8 2.9 3.2V21"/></svg>';
+const IC_LANDMARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5H4L12 3z"/><path d="M6.5 11v6M10 11v6M14 11v6M17.5 11v6"/><path d="M4 20.5h16"/></svg>';
+const IC_TICKET = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4V7z"/><path d="M13.5 7.5v1.6M13.5 11.2v1.6M13.5 14.9v1.6"/></svg>';
+const IC_BAG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l1 12H5L6 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>';
+/** 공항 핀 전용 — IC_PLANE(종이비행기)은 "이동/여행" 장식용이라 공항으로는 안 읽혀서 따로 둠 */
+const IC_AIRPLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.2c1 0 1.7 1.4 1.7 3.3v3.6l7.3 4.3v2.2l-7.3-2.2v4.1l2.4 1.8v1.7L12 20.2l-4.1.8v-1.7l2.4-1.8v-4.1L3 15.6v-2.2l7.3-4.3V5.5c0-1.9.7-3.3 1.7-3.3z"/></svg>';
 
 const MOOD_LABEL: Record<string, string> = {
   '가고싶어': 'VISIT',
@@ -84,29 +90,31 @@ const MOOD_COLOR: Record<string, string> = {
 };
 /** place.category(구글 장소 세부 종류, 예: '카페'/'음식점')가 없을 때만 쓰는 대체 아이콘 — mood 4종 기준 */
 const MOOD_ICON: Record<string, string> = {
-  '가고싶어': '🏛',
-  '먹고싶어': '🍽️',
-  '하고싶어': '🎡',
-  '숙소': '🛏️',
+  '가고싶어': IC_LANDMARK,
+  '먹고싶어': IC_FORK,
+  '하고싶어': IC_TICKET,
+  '숙소': IC_BED,
 };
-/** place.category → 핀 아이콘. 확실히 구분되는 것만 세분화하고(카페 vs 맛집), 애매한 건 맛집으로 통일
- *  (쇼핑백 🛍/침대 🛏 이모지는 U+FE0F 변형 선택자 없이 쓰면 일부 폰트에서 흑백 텍스트 글리프로 뜨는 문제가 있어 반드시 붙여야 함) */
+/** place.category → 핀 아이콘. 확실히 구분되는 것만 세분화하고(카페 vs 맛집), 애매한 건 맛집으로 통일.
+ *  예전엔 이모지(☕/🍽️/🏛…)를 썼는데 폰트마다 모양·색·굵기가 제각각이라 지도 위에서 통일감이 없었음 —
+ *  앱 전체 IC_* 아이콘 세트와 같은 아웃라인(선 굵기·둥근 끝 처리 통일)으로 교체함.
+ *  선 굵기·색은 buildCategoryIcon이 CATEGORY_PIN_* 상수로 일괄 적용하므로 여기선 모양만 고르면 됨 */
 const CATEGORY_ICON: Record<string, string> = {
-  '카페': '☕',
-  '음식점': '🍽️',
-  '베이커리': '🍽️',
-  '바': '🍽️',
-  '관광명소': '🏛',
-  '박물관': '🏛',
-  '미술관': '🏛',
-  '공원': '🏛',
-  '종교시설': '🏛',
-  '명소': '🏛',
-  '테마파크': '🎡',
-  '나이트라이프': '🎡',
-  '쇼핑': '🛍️',
-  '숙소': '🛏️',
-  '공항': '✈️',
+  '카페': IC_COFFEE,
+  '음식점': IC_FORK,
+  '베이커리': IC_FORK,
+  '바': IC_FORK,
+  '관광명소': IC_LANDMARK,
+  '박물관': IC_LANDMARK,
+  '미술관': IC_LANDMARK,
+  '공원': IC_LANDMARK,
+  '종교시설': IC_LANDMARK,
+  '명소': IC_LANDMARK,
+  '테마파크': IC_TICKET,
+  '나이트라이프': IC_TICKET,
+  '쇼핑': IC_BAG,
+  '숙소': IC_BED,
+  '공항': IC_AIRPLANE,
 };
 
 interface Zone {
@@ -1798,8 +1806,65 @@ const ZONE_OUTLIER_KM = 4;
 const ZONE_CITY_PAD_KM = 0.9;
 /** Chaikin 스무딩 반복 횟수 — 높을수록 모서리가 둥글어지지만 이웃과의 접합면이 조금씩 벌어짐 */
 const ZONE_SMOOTH_ITERATIONS = 2;
+/** 경계선을 흔들기 전에 이 간격(km)마다 점을 하나씩 끼워 넣음 — 보로노이가 만든 긴 직선
+ *  구간에도 흔들림이 실리게 하려면 점이 촘촘해야 함 */
+const ZONE_EDGE_DENSIFY_KM = 0.25;
+/** 경계선 각 점을 최대 이만큼(km) 밀어내 자연스러운 굴곡을 만듦. 0으로 두면 흔들림 없음 */
+const ZONE_EDGE_JITTER_KM = 0.13;
+/** densify 후 링 하나가 가질 수 있는 최대 점 개수(그린 뒤 스무딩에서 2배씩 늘어나므로 안전장치) */
+const ZONE_EDGE_MAX_POINTS = 400;
 
 type Ring = { lat: number; lng: number }[];
+
+/**
+ * 좌표만으로 결정되는 부드러운 의사난수(-1~1). Math.random()이 아니라 위치의 함수라서
+ *  ① 렌더링할 때마다 도형이 달라지지 않고,
+ *  ② 이웃 권역이 공유하는 경계선은 양쪽에서 "같은 좌표 → 같은 값"이 나와 똑같이 흔들리므로
+ *     보로노이로 맞물려 있던 접합면이 벌어지거나 겹치지 않음.
+ * 서로 다른 주파수의 sin을 겹쳐 이웃한 점끼리는 비슷하게, 멀어질수록 다르게 움직이게 함.
+ */
+function coherentNoise(lng: number, lat: number, seed: number): number {
+  const x = lng * 100 + seed * 13.7;
+  const y = lat * 100 + seed * 7.3;
+  return (
+    Math.sin(x * 1.7 + Math.cos(y * 1.3) * 2.1) * 0.6 +
+    Math.sin(y * 2.3 + Math.cos(x * 1.9) * 1.7) * 0.4
+  );
+}
+
+/** 긴 변에 중간점을 끼워 넣어 링을 촘촘하게 만듦 (흔들림이 실릴 자리를 확보) */
+function densifyRing(ring: number[][], stepKm: number, maxPoints: number): number[][] {
+  if (ring.length < 2) return ring;
+  const cosLat = Math.cos((ring[0][1] * Math.PI) / 180);
+  const out: number[][] = [];
+  for (let i = 0; i < ring.length - 1; i++) {
+    const [lng1, lat1] = ring[i];
+    const [lng2, lat2] = ring[i + 1];
+    out.push([lng1, lat1]);
+    const segKm = Math.sqrt(((lng2 - lng1) * 111 * cosLat) ** 2 + ((lat2 - lat1) * 111) ** 2);
+    const parts = Math.min(Math.floor(segKm / stepKm), maxPoints);
+    for (let k = 1; k < parts; k++) {
+      const t = k / parts;
+      out.push([lng1 + (lng2 - lng1) * t, lat1 + (lat2 - lat1) * t]);
+    }
+    if (out.length > maxPoints) break;
+  }
+  out.push(ring[ring.length - 1]);
+  return out;
+}
+
+/** 각 점을 좌표 기반 노이즈만큼 밀어 경계선을 자연스럽게 구불거리게 만듦 */
+function jitterRing(ring: number[][], jitterKm: number): number[][] {
+  if (jitterKm <= 0) return ring;
+  const cosLat = Math.max(0.1, Math.cos((ring[0][1] * Math.PI) / 180));
+  const jittered = ring.map(([lng, lat]) => [
+    lng + (coherentNoise(lng, lat, 1) * jitterKm) / (111 * cosLat),
+    lat + (coherentNoise(lng, lat, 2) * jitterKm) / 111,
+  ]);
+  // 링은 첫 점과 끝 점이 같아야 닫힘 — 노이즈는 좌표의 함수라 값이 같게 나오지만 명시적으로 맞춰줌
+  jittered[jittered.length - 1] = jittered[0];
+  return jittered;
+}
 
 /** 볼록 다각형을 중심점 기준 방사형으로 약 kmOut만큼 밀어냄 — 정확한 위상학적 버퍼는 아니지만
  *  볼록 도형에서는 시각적으로 충분히 자연스럽고, @turf/buffer(무거운 JTS 포팅) 없이 처리 가능 */
@@ -1930,10 +1995,15 @@ function computeZonePolygons(allZones: Zone[]): Map<string, Ring> {
     }
   });
 
-  // 5. 모서리 스무딩 후 링으로 변환
+  // 5. 촘촘하게 → 자연스럽게 흔들기 → 모서리 스무딩 후 링으로 변환.
+  //    보로노이 셀은 직선 변으로만 이뤄져 있어 그대로 두면 "칼로 자른 다각형"처럼 보임.
+  //    점을 촘촘히 깐 뒤 좌표 기반 노이즈로 밀어내면 실제 생활권처럼 불규칙한 곡선이 되고,
+  //    노이즈가 좌표의 함수라 이웃 권역과 맞닿은 면은 양쪽이 똑같이 움직여 틈이 안 생김.
   merged.forEach((feature, zoneId) => {
     let ring = largestRing(feature);
     if (!ring || ring.length < 4) return;
+
+    ring = jitterRing(densifyRing(ring, ZONE_EDGE_DENSIFY_KM, ZONE_EDGE_MAX_POINTS), ZONE_EDGE_JITTER_KM);
 
     try {
       const smoothed = polygonSmooth(turfPolygon([ring]), { iterations: ZONE_SMOOTH_ITERATIONS });
@@ -1957,13 +2027,6 @@ function ringCentroid(ring: Ring): { lat: number; lng: number } {
   const sum = ring.reduce((acc, p) => ({ lat: acc.lat + p.lat, lng: acc.lng + p.lng }), { lat: 0, lng: 0 });
   return { lat: sum.lat / ring.length, lng: sum.lng / ring.length };
 }
-
-const MOOD_ICON_SYMBOL: Record<string, string> = {
-  '가고싶어': '📷',
-  '먹고싶어': '🍴',
-  '하고싶어': '🎟',
-  '숙소': '🛏',
-};
 
 /** 카테고리별 색상이 채워진 원형 마커 아이콘 (data URI, 추가 요청 없음) */
 let placeInfoWindow: any = null;
@@ -2058,26 +2121,59 @@ function isAirportPlace(name: string | null | undefined, category: string | null
   return !!name && /공항|airport/i.test(name);
 }
 
-/** 카테고리 핀 크기·글자 크기 — 이 두 값만 바꾸면 Step1/2/3 지도 전체 핀이 한 번에 바뀜.
- *  Step2/Step3도 예전엔 흰 테두리 물방울 핀("detailed" 스타일)을 따로 썼지만, Step1의
- *  배경 없는 카테고리 아이콘 스타일로 전 단계 통일함 */
-const CATEGORY_PIN_SIZE = 24;
-const CATEGORY_PIN_FONT_SIZE = 20;
+/* ── 지도 카테고리 핀 — 이 상수들만 바꾸면 Step1/2/3 지도 전체 핀이 한 번에 바뀜.
+ *    Step2/Step3도 예전엔 흰 테두리 물방울 핀("detailed" 스타일)을 따로 썼지만,
+ *    Step1의 배경 배지 없는 카테고리 아이콘 스타일로 전 단계 통일함 ── */
+/** 핀 전체 캔버스 크기(px) — 아이콘 + halo가 들어갈 정사각형 */
+const CATEGORY_PIN_SIZE = 26;
+/** 캔버스 안에서 아이콘이 실제로 차지하는 크기(px). 남는 여백은 halo가 번질 자리 */
+const CATEGORY_PIN_ICON_SIZE = 20;
+/** 아이콘 선 굵기 — 카테고리와 무관하게 전부 이 값으로 통일(24 뷰박스 기준) */
+const CATEGORY_PIN_STROKE_WIDTH = 1.9;
+/** 같은 모양을 더 두꺼운 흰 선으로 뒤에 한 번 더 깔아, 지도 배경 위에서도 선이 묻히지 않게 함 */
+const CATEGORY_PIN_HALO_WIDTH = 4.6;
+const CATEGORY_PIN_HALO_COLOR = '#FFFFFF';
+/** mood가 없어 색을 정할 수 없는 장소의 핀 색 */
+const CATEGORY_PIN_FALLBACK_COLOR = '#64748B';
 
-/** 카테고리별(구글 장소 세부 종류 우선, 없으면 mood 4종) 아이콘만 있는 핀 — 배경 배지 없음 */
+/**
+ * IC_* 아이콘 문자열에서 <svg> 태그의 속성과 내부 마크업을 분리.
+ * IC_* 는 fill="none"/stroke/stroke-width 등을 전부 최상위 <svg> 태그에만 걸고 내부
+ * <path>/<rect>는 상속에 의존하기 때문에, 내부 마크업만 다른 SVG에 옮겨 심을 땐 이
+ * 속성들도 같이 옮겨야 함 — 안 그러면 SVG 기본값(fill:black)이 적용돼 아이콘이 검은
+ * 덩어리로 보임(실제로 겪었던 버그).
+ */
+function splitIconSvg(icon: string): { attrs: string; inner: string } {
+  const m = icon.match(/<svg([^>]*)>([\s\S]*)<\/svg>/);
+  if (!m) return { attrs: '', inner: icon };
+  return { attrs: m[1].replace(/\bviewBox="[^"]*"/, '').trim(), inner: m[2] };
+}
+
+/**
+ * 카테고리별(구글 장소 세부 종류 우선, 없으면 mood 4종) 아웃라인 아이콘 핀 — 배경 배지 없음.
+ * 각 아이콘이 원래 갖고 있던 stroke/stroke-width는 무시하고 CATEGORY_PIN_* 값으로 덮어써서
+ * 어떤 카테고리든 선 굵기·끝 처리·색 규칙이 완전히 같게 나옴.
+ */
 function buildCategoryIcon(g: any, mood: string | null, category?: string | null, name?: string | null): any {
-  const icon = isAirportPlace(name, category) ? '✈️' : CATEGORY_ICON[category ?? ''] || MOOD_ICON[mood ?? ''] || '📍';
-  const size = CATEGORY_PIN_SIZE;
-  const r = size / 2;
+  const icon = isAirportPlace(name, category) ? IC_AIRPLANE : CATEGORY_ICON[category ?? ''] || MOOD_ICON[mood ?? ''] || IC_PIN;
+  const color = MOOD_COLOR[mood ?? ''] || CATEGORY_PIN_FALLBACK_COLOR;
+  const inner = splitIconSvg(icon).inner.replace(/currentColor/g, color);
+
+  const canvas = CATEGORY_PIN_SIZE;
+  const scale = CATEGORY_PIN_ICON_SIZE / 24;
+  const offset = (canvas - CATEGORY_PIN_ICON_SIZE) / 2;
   const svg = [
-    '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">',
-    '<text x="' + r + '" y="' + r + '" font-size="' + CATEGORY_PIN_FONT_SIZE + '" text-anchor="middle" dominant-baseline="central">' + icon + '</text>',
-    '</svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + canvas + '" height="' + canvas + '" viewBox="0 0 ' + canvas + ' ' + canvas + '">',
+    '<g fill="none" stroke-linecap="round" stroke-linejoin="round" transform="translate(' + offset + ',' + offset + ') scale(' + scale + ')">',
+    '<g stroke="' + CATEGORY_PIN_HALO_COLOR + '" stroke-width="' + CATEGORY_PIN_HALO_WIDTH + '">' + inner + '</g>',
+    '<g stroke="' + color + '" stroke-width="' + CATEGORY_PIN_STROKE_WIDTH + '">' + inner + '</g>',
+    '</g></svg>',
   ].join('');
+
   return {
     url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
-    scaledSize: new g.maps.Size(size, size),
-    anchor: new g.maps.Point(r, r),
+    scaledSize: new g.maps.Size(canvas, canvas),
+    anchor: new g.maps.Point(canvas / 2, canvas / 2),
   };
 }
 
@@ -4203,14 +4299,7 @@ function mixWithWhite(hex: string, ratio: number): string {
 const INFRA_MARKER_SIZE = 26; // 파스텔 원형 배경 지름 — 리스트 아이콘 칩과 같은 크기
 const INFRA_ICON_SIZE = 15; // 아이콘 자체 크기 — 리스트 아이콘과 같은 크기
 function buildInfraMarkerIcon(g: any, meta: { icon: string; color: string }): any {
-  const colored = meta.icon.replace(/currentColor/g, meta.color);
-  const openTagMatch = colored.match(/<svg([^>]*)>([\s\S]*)<\/svg>/);
-  // IC_* 아이콘은 fill="none" stroke="..." stroke-width=".." 등을 전부 최상위 <svg> 태그에만
-  // 걸어두고 내부 <path>/<rect>는 상속에 의존함. 예전 버그: 내부 마크업만 뽑아 새 <g>에
-  // 넣으면서 이 속성들을 안 옮겨서, path/rect가 SVG 기본값(fill:black)으로 채워져 아이콘이
-  // 전부 검은 사각형/도형으로 보였음 — 반드시 이 속성들을 <g>에 그대로 옮겨줘야 함.
-  const attrs = openTagMatch ? openTagMatch[1].replace(/\bviewBox="[^"]*"/, '').trim() : '';
-  const inner = openTagMatch ? openTagMatch[2] : colored;
+  const { attrs, inner } = splitIconSvg(meta.icon.replace(/currentColor/g, meta.color));
 
   const canvas = INFRA_MARKER_SIZE;
   const bg = mixWithWhite(meta.color, 0.12);
