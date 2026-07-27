@@ -179,6 +179,7 @@ export function teardownShortlist(): void {
     placeInfoWindow.close();
     placeInfoWindow = null;
   }
+  placeInfoWindowPinned = false;
   closeSegPopover();
   closeShortlistDestSwitcher();
   allPlaces = [];
@@ -1938,15 +1939,25 @@ const MOOD_ICON_SYMBOL: Record<string, string> = {
 
 /** 카테고리별 색상이 채워진 원형 마커 아이콘 (data URI, 추가 요청 없음) */
 let placeInfoWindow: any = null;
+/** true면 클릭으로 "고정"된 상태 — hover로 다른 마커를 지나가도 안 바뀌고, mouseout으로도 안 닫힘 */
+let placeInfoWindowPinned = false;
 
 /**
- * 마커 클릭 시 이미 우리 DB에 저장돼 있는 장소 정보(이름/카테고리/평점/주소/사진)를 보여줌.
- * Google Place Details를 다시 호출하지 않음 — 추가 API 비용 0원.
+ * 마커에 마우스를 올리거나 클릭하면 이미 우리 DB에 저장돼 있는 장소 정보(이름/카테고리/평점/
+ * 주소/사진)를 보여줌. Google Place Details를 다시 호출하지 않음 — 추가 API 비용 0원.
  * "Google Maps에서 보기" 링크도 google_place_id 기반 딥링크라 API 호출이 필요 없음.
+ *
+ * pin=true(클릭)면 hover로 열렸을 때와 달리 mouseout으로 닫히지 않고 유지됨 — X 버튼을
+ * 누르거나 지도 빈 곳/다른 마커를 클릭해야 풀림.
  */
-function showPlaceInfoWindow(g: any, map: any, marker: any, place: Place): void {
+function showPlaceInfoWindow(g: any, map: any, marker: any, place: Place, pin = false): void {
   if (!placeInfoWindow) {
-    placeInfoWindow = new g.maps.InfoWindow();
+    // disableAutoPan: 정보창을 열 때 지도가 저절로 움직이던 것 방지(hover만 해도 지도가
+    // 흔들리던 문제) — 대신 내용 자체를 작은 화면에서도 안 잘리게 만드는 쪽으로 대응
+    placeInfoWindow = new g.maps.InfoWindow({ disableAutoPan: true });
+    placeInfoWindow.addListener('closeclick', () => {
+      placeInfoWindowPinned = false;
+    });
   }
 
   const color = MOOD_COLOR[place.mood ?? ''] || '#94A3B8';
@@ -1957,10 +1968,16 @@ function showPlaceInfoWindow(g: any, map: any, marker: any, place: Place): void 
     ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(place.name) + '&query_place_id=' + place.google_place_id
     : 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(place.name);
 
+  // 작은 노트북 화면에서는 지도 컨테이너 자체가 낮아서(.sl-map-wrap이 overflow:hidden) 사진이
+  // 고정 높이(90px)면 아래 이름/평점/주소가 정보창 밖으로 밀려 잘려 보이던 문제 — 브라우저
+  // 전체 뷰포트가 아니라 "이 지도 컨테이너"의 실제 렌더링 높이에 비례해서 사진 높이를 줄임
+  const mapContainerH = (map?.getDiv?.() as HTMLElement | undefined)?.clientHeight || window.innerHeight;
+  const photoH = Math.max(40, Math.min(90, Math.round(mapContainerH * 0.22)));
+
   const content = [
-    '<div style="font-family:inherit;min-width:180px;max-width:220px;">',
+    '<div style="font-family:inherit;width:min(220px, 60vw);">',
     place.photo_url
-      ? '<div style="width:100%;height:90px;border-radius:8px;background-size:cover;background-position:center;background-image:url(\'' + place.photo_url + '\');margin-bottom:8px;"></div>'
+      ? '<div style="width:100%;height:' + photoH + 'px;border-radius:8px;background-size:cover;background-position:center;background-image:url(\'' + place.photo_url + '\');margin-bottom:8px;"></div>'
       : '',
     '<div style="font-size:13.5px;font-weight:700;color:#0B2A5C;margin-bottom:2px;">' + escapeHtml(place.name) + '</div>',
     moodLabel
@@ -1974,6 +1991,7 @@ function showPlaceInfoWindow(g: any, map: any, marker: any, place: Place): void 
 
   placeInfoWindow.setContent(content);
   placeInfoWindow.open({ map, anchor: marker });
+  if (pin) placeInfoWindowPinned = true;
 }
 
 /** 구글이 매긴 category가 부정확하거나(예: 공항을 '관광명소'로 분류) 오래된 데이터라 아직
@@ -2146,9 +2164,11 @@ async function initMap(body: HTMLElement): Promise<void> {
 
   addCustomZoomControl(mapInstance, body.querySelector('#sl-map') as HTMLElement);
 
-  // 폴리곤/마커/라벨이 아닌 지도 빈 공간을 클릭하면 강조 해제
+  // 폴리곤/마커/라벨이 아닌 지도 빈 공간을 클릭하면 강조 해제 + 고정된 정보창도 닫음
   mapInstance.addListener('click', () => {
     pendingSelectedZoneId = null;
+    placeInfoWindowPinned = false;
+    placeInfoWindow?.close();
     highlightZone(null);
     renderZoneCards(body);
     renderSelectBar(body);
@@ -2179,11 +2199,16 @@ async function initMap(body: HTMLElement): Promise<void> {
         title: p.name,
         icon: buildCategoryIcon(g, p.mood, 'compact', p.category, p.name),
       });
-      // 클릭 없이 마우스만 올려도 바로 정보가 뜨게(터치 기기는 hover가 없으니 click도 유지)
-      marker.addListener('mouseover', () => showPlaceInfoWindow(g, mapInstance, marker, p));
-      marker.addListener('mouseout', () => placeInfoWindow?.close());
+      // 클릭 없이 마우스만 올려도 바로 정보가 뜨게(터치 기기는 hover가 없으니 click도 유지).
+      // 클릭으로 고정된 상태(pinned)면 다른 마커 hover에 안 밀리고 mouseout에도 안 닫힘
+      marker.addListener('mouseover', () => {
+        if (!placeInfoWindowPinned) showPlaceInfoWindow(g, mapInstance, marker, p);
+      });
+      marker.addListener('mouseout', () => {
+        if (!placeInfoWindowPinned) placeInfoWindow?.close();
+      });
       marker.addListener('click', () => {
-        showPlaceInfoWindow(g, mapInstance, marker, p);
+        showPlaceInfoWindow(g, mapInstance, marker, p, true);
       });
       zoneMarkers.push(marker);
       mapMarkers.push(marker);
@@ -2238,10 +2263,14 @@ async function initMap(body: HTMLElement): Promise<void> {
       title: p.name,
       icon: buildCategoryIcon(g, p.mood, 'compact', p.category, p.name),
     });
-    marker.addListener('mouseover', () => showPlaceInfoWindow(g, mapInstance, marker, p));
-    marker.addListener('mouseout', () => placeInfoWindow?.close());
+    marker.addListener('mouseover', () => {
+      if (!placeInfoWindowPinned) showPlaceInfoWindow(g, mapInstance, marker, p);
+    });
+    marker.addListener('mouseout', () => {
+      if (!placeInfoWindowPinned) placeInfoWindow?.close();
+    });
     marker.addListener('click', () => {
-      showPlaceInfoWindow(g, mapInstance, marker, p);
+      showPlaceInfoWindow(g, mapInstance, marker, p, true);
     });
     mapMarkers.push(marker);
   });
