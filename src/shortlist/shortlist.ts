@@ -2706,12 +2706,18 @@ const HOTEL_SITES: HotelSite[] = [
  * 시행착오 기록: Booking.com 직접 딥링크를 "숙소명 + 전체 주소", "숙소명 + 도시명(방콕)",
  * "권역명(시암 등) + 숙소명" 순서로 다 시도했지만 결국 안정적으로 되지 않아서(dest_id 없는
  * 순수 텍스트 검색이라 계속 홈으로 리다이렉트되는 경우가 있었음) Google Hotels로 교체함.
- * Google Hotels는 자체 장소 데이터베이스로 이름을 훨씬 잘 찾아내고, 위 HOTEL_SITES의
- * Google Hotels 카드와 같은 엔드포인트/패턴(zoneName + 검색어)이라 일관성도 있음.
+ * 권역명을 검색어 앞에 붙이면("시암 해피3") 오히려 엉뚱한 결과가 섞여서, 검색어는 숙소
+ * 이름만 남기고 체크인/체크아웃 날짜를 checkin/checkout 파라미터로 붙임.
  */
-function buildHotelSearchUrl(place: Place, zoneName: string): string {
-  const q = zoneName + ' ' + place.name;
-  return 'https://www.google.com/travel/search?q=' + encodeURIComponent(q);
+function buildHotelSearchUrl(place: Place): string {
+  const url = new URL('https://www.google.com/travel/search');
+  url.searchParams.set('q', place.name);
+  const dates = getTripDatesISO();
+  if (dates) {
+    url.searchParams.set('checkin', dates.checkin);
+    url.searchParams.set('checkout', dates.checkout);
+  }
+  return url.toString();
 }
 
 function renderHotelSiteCards(body: HTMLElement, destination: string, zoneName: string): void {
@@ -3297,7 +3303,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '          <div class="sl-step3-summary-photo"' + (basecamp.photo_url ? ' style="background-image:url(\'' + basecamp.photo_url + '\')"' : '') + '>' + (basecamp.photo_url ? '' : IC_BED) + '</div>',
     '          <div class="sl-step3-summary-body">',
     '            <div class="sl-step3-summary-top">',
-    '              <a class="sl-step3-summary-name sl-step3-summary-name-link" href="' + buildHotelSearchUrl(basecamp, zone.name) + '" target="_blank" rel="noopener noreferrer" title="Google Hotels에서 이 숙소 검색">' + escapeHtml(basecamp.name) + ' ' + IC_EXTLINK + '</a>',
+    '              <a class="sl-step3-summary-name sl-step3-summary-name-link" href="' + buildHotelSearchUrl(basecamp) + '" target="_blank" rel="noopener noreferrer" title="Google Hotels에서 이 숙소 검색">' + escapeHtml(basecamp.name) + ' ' + IC_EXTLINK + '</a>',
     stars ? '              <div class="sl-step3-summary-stars">' + stars + '</div>' : '',
     '            </div>',
     '            <div class="sl-step3-summary-tags"><span class="sl-zone-tag">' + escapeHtml(categoryLabel) + '</span></div>',
