@@ -745,9 +745,9 @@ function buildDetailPanelShell(place: any): string {
     '</a>',
   ].join('');
 
-  // 이름+주소로 일반 구글 검색 — 블로그·리뷰 등 지도에는 없는 정보를 확인할 수 있게
-  const searchQuery = place.address ? place.name + ' ' + place.address : place.name;
-  const searchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(searchQuery);
+  // 장소명 + "후기"로 검색 — 주소까지 붙이면 검색어가 너무 길어져 오히려 관련 블로그·리뷰가
+  // 잘 안 걸림. 예: "왓 아룬" → "왓 아룬 후기"
+  const searchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(place.name + ' 후기');
   const searchLink = [
     '<a class="ws-maps-link" href="' + searchUrl + '" target="_blank" rel="noopener noreferrer">',
     IC.search,
