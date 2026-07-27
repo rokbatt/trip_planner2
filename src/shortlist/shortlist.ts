@@ -117,6 +117,37 @@ const CATEGORY_ICON: Record<string, string> = {
   '공항': IC_AIRPLANE,
 };
 
+/**
+ * 지도 핀 색 — 이제 아이콘 모양 자체가 카테고리를 구분해주므로, 핀 색은 mood(4종)가 아니라
+ * "이 아이콘 모양에 제일 잘 어울리는 색"으로 고정. mood 색(MOOD_COLOR, ZONE_PALETTE)과 겹치면
+ * 권역 폴리곤·라벨과 같은 색이 되어 핀이 묻혀 보이던 문제가 있어, 두 팔레트와 최대한 겹치지
+ * 않는 색으로 새로 골랐다 — 지역 도형 위에서도 핀이 항상 도드라져 보이는 게 목적.
+ */
+const CATEGORY_PIN_COLOR: Record<string, string> = {
+  '카페': '#6F4518',
+  '음식점': '#B23A1E',
+  '베이커리': '#B23A1E',
+  '바': '#B23A1E',
+  '관광명소': '#4C3A8C',
+  '박물관': '#4C3A8C',
+  '미술관': '#4C3A8C',
+  '공원': '#4C3A8C',
+  '종교시설': '#4C3A8C',
+  '명소': '#4C3A8C',
+  '테마파크': '#B0308A',
+  '나이트라이프': '#B0308A',
+  '쇼핑': '#1F7A5C',
+  '숙소': '#1E4F91',
+  '공항': '#3E4C5E',
+};
+/** category가 없어 MOOD_ICON으로 대체될 때 짝지어 쓰는 핀 색 (위 CATEGORY_PIN_COLOR와 같은 팔레트) */
+const MOOD_PIN_COLOR: Record<string, string> = {
+  '가고싶어': '#4C3A8C',
+  '먹고싶어': '#B23A1E',
+  '하고싶어': '#B0308A',
+  '숙소': '#1E4F91',
+};
+
 interface Zone {
   id: string;
   name: string;
@@ -2033,15 +2064,22 @@ let placeInfoWindow: any = null;
 /** true면 클릭으로 "고정"된 상태 — hover로 다른 마커를 지나가도 안 바뀌고, mouseout으로도 안 닫힘 */
 let placeInfoWindowPinned = false;
 
-/* ── 장소 정보창 치수 — 여기 숫자만 바꾸면 Step1/2/3 정보창 크기가 한 번에 바뀜 ── */
-const INFO_WINDOW_MAX_WIDTH_PX = 220;
-const INFO_WINDOW_MAX_WIDTH_VW = 60; // 좁은 화면에서는 뷰포트 폭의 이 비율을 넘지 않음
-const INFO_WINDOW_PHOTO_MIN_H = 40;
-const INFO_WINDOW_PHOTO_MAX_H = 90;
+/* ── 장소 정보창 치수 — 여기 숫자만 바꾸면 Step1/2/3 정보창 크기가 한 번에 바뀜.
+ *    INFO_WINDOW_SCALE 하나만 바꿔도 폭·사진·글자·버튼이 전부 같은 비율로 같이 줄거나 늘어남
+ *    (호버 정보창이 너무 커 보인다는 피드백으로 기존 크기의 70%로 축소함) ── */
+const INFO_WINDOW_SCALE = 0.7;
+const INFO_WINDOW_MAX_WIDTH_PX = Math.round(220 * INFO_WINDOW_SCALE);
+const INFO_WINDOW_MAX_WIDTH_VW = Math.round(60 * INFO_WINDOW_SCALE); // 좁은 화면에서는 뷰포트 폭의 이 비율을 넘지 않음
+const INFO_WINDOW_PHOTO_MIN_H = Math.round(40 * INFO_WINDOW_SCALE);
+const INFO_WINDOW_PHOTO_MAX_H = Math.round(90 * INFO_WINDOW_SCALE);
 /** 사진 높이 = 지도 컨테이너 실제 높이 × 이 비율 (min/max 사이로 clamp) */
-const INFO_WINDOW_PHOTO_HEIGHT_RATIO = 0.22;
-const INFO_WINDOW_CLOSE_BTN_SIZE = 22;
+const INFO_WINDOW_PHOTO_HEIGHT_RATIO = 0.22 * INFO_WINDOW_SCALE;
+const INFO_WINDOW_CLOSE_BTN_SIZE = Math.round(22 * INFO_WINDOW_SCALE);
 const INFO_WINDOW_CLOSE_BTN_ID = 'sl-info-close-btn';
+const INFO_WINDOW_NAME_FONT_SIZE = +(13.5 * INFO_WINDOW_SCALE).toFixed(1);
+const INFO_WINDOW_TAG_FONT_SIZE = +(10 * INFO_WINDOW_SCALE).toFixed(1);
+const INFO_WINDOW_STAR_FONT_SIZE = +(11.5 * INFO_WINDOW_SCALE).toFixed(1);
+const INFO_WINDOW_LINK_FONT_SIZE = +(11.5 * INFO_WINDOW_SCALE).toFixed(1);
 
 /**
  * 마커에 마우스를 올리거나 클릭하면 이미 우리 DB에 저장돼 있는 장소 정보(이름/카테고리/평점/
@@ -2089,7 +2127,7 @@ function showPlaceInfoWindow(g: any, map: any, marker: any, place: Place, pin = 
     '<button type="button" id="' + INFO_WINDOW_CLOSE_BTN_ID + '" style="',
     'position:absolute;top:6px;right:6px;width:' + INFO_WINDOW_CLOSE_BTN_SIZE + 'px;height:' + INFO_WINDOW_CLOSE_BTN_SIZE + 'px;',
     'border:none;border-radius:50%;background:rgba(255,255,255,0.92);color:#334155;',
-    'font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;',
+    'font-size:' + Math.round(13 * INFO_WINDOW_SCALE) + 'px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;',
     'box-shadow:0 1px 4px rgba(11,42,92,0.35);padding:0;">✕</button>',
   ].join('');
 
@@ -2099,12 +2137,12 @@ function showPlaceInfoWindow(g: any, map: any, marker: any, place: Place, pin = 
     place.photo_url
       ? '<div style="width:100%;height:' + photoH + 'px;border-radius:8px;background-size:cover;background-position:center;background-image:url(\'' + place.photo_url + '\');margin-bottom:8px;"></div>'
       : '',
-    '<div style="font-size:13.5px;font-weight:700;color:#0B2A5C;margin-bottom:2px;">' + escapeHtml(place.name) + '</div>',
+    '<div style="font-size:' + INFO_WINDOW_NAME_FONT_SIZE + 'px;font-weight:700;color:#0B2A5C;margin-bottom:2px;">' + escapeHtml(place.name) + '</div>',
     moodLabel
-      ? '<span style="display:inline-block;font-size:10px;font-weight:700;color:' + MOOD_COLOR[place.mood ?? ''] + ';background:' + MOOD_COLOR[place.mood ?? ''] + '1A;padding:2px 7px;border-radius:999px;margin-bottom:4px;">' + moodLabel + '</span>'
+      ? '<span style="display:inline-block;font-size:' + INFO_WINDOW_TAG_FONT_SIZE + 'px;font-weight:700;color:' + MOOD_COLOR[place.mood ?? ''] + ';background:' + MOOD_COLOR[place.mood ?? ''] + '1A;padding:2px 7px;border-radius:999px;margin-bottom:4px;">' + moodLabel + '</span>'
       : '',
-    stars ? '<div style="font-size:11.5px;color:#F5A623;font-weight:700;margin-top:4px;">' + stars + '</div>' : '',
-    '<a href="' + mapsUrl + '" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-top:8px;font-size:11.5px;font-weight:700;color:#185FA5;text-decoration:none;">Google Maps에서 보기 →</a>',
+    stars ? '<div style="font-size:' + INFO_WINDOW_STAR_FONT_SIZE + 'px;color:#F5A623;font-weight:700;margin-top:4px;">' + stars + '</div>' : '',
+    '<a href="' + mapsUrl + '" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-top:8px;font-size:' + INFO_WINDOW_LINK_FONT_SIZE + 'px;font-weight:700;color:#185FA5;text-decoration:none;">Google Maps에서 보기 →</a>',
     '</div>',
   ].join('');
 
@@ -2133,7 +2171,7 @@ const CATEGORY_PIN_STROKE_WIDTH = 1.9;
 /** 같은 모양을 더 두꺼운 흰 선으로 뒤에 한 번 더 깔아, 지도 배경 위에서도 선이 묻히지 않게 함 */
 const CATEGORY_PIN_HALO_WIDTH = 4.6;
 const CATEGORY_PIN_HALO_COLOR = '#FFFFFF';
-/** mood가 없어 색을 정할 수 없는 장소의 핀 색 */
+/** category·mood 둘 다 없어 CATEGORY_PIN_COLOR/MOOD_PIN_COLOR로도 색을 정할 수 없는 장소의 핀 색 */
 const CATEGORY_PIN_FALLBACK_COLOR = '#64748B';
 
 /**
@@ -2155,8 +2193,11 @@ function splitIconSvg(icon: string): { attrs: string; inner: string } {
  * 어떤 카테고리든 선 굵기·끝 처리·색 규칙이 완전히 같게 나옴.
  */
 function buildCategoryIcon(g: any, mood: string | null, category?: string | null, name?: string | null): any {
-  const icon = isAirportPlace(name, category) ? IC_AIRPLANE : CATEGORY_ICON[category ?? ''] || MOOD_ICON[mood ?? ''] || IC_PIN;
-  const color = MOOD_COLOR[mood ?? ''] || CATEGORY_PIN_FALLBACK_COLOR;
+  const isAirport = isAirportPlace(name, category);
+  const icon = isAirport ? IC_AIRPLANE : CATEGORY_ICON[category ?? ''] || MOOD_ICON[mood ?? ''] || IC_PIN;
+  const color = isAirport
+    ? CATEGORY_PIN_COLOR['공항']
+    : CATEGORY_PIN_COLOR[category ?? ''] || MOOD_PIN_COLOR[mood ?? ''] || CATEGORY_PIN_FALLBACK_COLOR;
   const inner = splitIconSvg(icon).inner.replace(/currentColor/g, color);
 
   const canvas = CATEGORY_PIN_SIZE;
