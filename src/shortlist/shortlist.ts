@@ -281,9 +281,18 @@ function travelEfficiencyLabel(avgWalkMin: number | null): string {
   return '보통';
 }
 
+/** 가장 가까운 권역 중심조차 이보다 멀면 "그 도시 생활권 안"이 아니라고 보고 아예 배정하지
+ *  않음 — 공항처럼 도심 권역들과 뚝 떨어진 장소가 어중간하게 가까운 권역에 억지로 묶여
+ *  장소 수·평균 이동시간·추천 숙박일 같은 카드 통계를 왜곡하는 걸 막기 위함.
+ *  큐레이션 권역들은 보통 서로 몇 km 안쪽에 모여 있어서(권역 도형 계산용 outlier 기준도 4km),
+ *  10km면 실제 권역 소속 장소를 잘못 걸러낼 위험 없이 공항 같은 원거리 장소만 걸러짐 */
+const ZONE_ASSIGN_MAX_KM = 10;
+
 /**
  * 미리 받아온 "유명 지역" 목록에 브레인스토밍 장소들을 배정해서 Zone[]으로 만듦.
  * 각 장소는 가장 가까운 지역 중심점에 배정됨 (클라이언트에서 거리 계산만, API 호출 없음).
+ * 다만 가장 가까운 중심조차 ZONE_ASSIGN_MAX_KM보다 멀면 어느 권역에도 배정하지 않음
+ * (예: 도심 권역들과 멀리 떨어진 공항).
  * 장소가 하나도 배정되지 않은 지역은 화면에서 제외.
  */
 function assignPlacesToZones(seeds: ZoneSeed[], places: Place[]): Zone[] {
@@ -300,6 +309,7 @@ function assignPlacesToZones(seeds: ZoneSeed[], places: Place[]): Zone[] {
         nearestIdx = i;
       }
     });
+    if (nearestDist > ZONE_ASSIGN_MAX_KM) return;
     const bucket = buckets.get(nearestIdx) ?? [];
     bucket.push(p);
     buckets.set(nearestIdx, bucket);
