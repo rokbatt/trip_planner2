@@ -1304,6 +1304,13 @@
 .sl-step3-summary-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .sl-step3-summary-top { display: flex; align-items: baseline; gap: 12px; }
 .sl-step3-summary-name { font-size: 20px; font-weight: 700; color: var(--sl-navy); letter-spacing: -0.01em; }
+.sl-step3-summary-name-link {
+  display: inline-flex; align-items: center; gap: 5px;
+  text-decoration: none; cursor: pointer;
+}
+.sl-step3-summary-name-link svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--sl-muted); }
+.sl-step3-summary-name-link:hover { color: var(--sl-accent); }
+.sl-step3-summary-name-link:hover svg { color: var(--sl-accent); }
 .sl-step3-summary-stars { font-size: 13px; color: #F5A623; font-weight: 700; white-space: nowrap; }
 .sl-step3-summary-tags { display: flex; gap: 6px; margin-top: 9px; }
 .sl-step3-summary-address { font-size: 12.5px; color: #64748B; margin-top: 11px; line-height: 1.5; }
