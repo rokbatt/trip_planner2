@@ -2735,22 +2735,25 @@ const HOTEL_SITES: HotelSite[] = [
 ];
 
 /**
- * Step3에서 확정한 숙소 이름을 클릭하면 이동할 검색 URL.
+ * Step3에서 확정한 숙소 이름을 클릭하면 이동할 Booking.com 검색 URL.
  *
- * 시행착오 기록: Booking.com 직접 딥링크를 "숙소명 + 전체 주소", "숙소명 + 도시명(방콕)",
- * "권역명(시암 등) + 숙소명" 순서로 다 시도했지만 결국 안정적으로 되지 않아서(dest_id 없는
- * 순수 텍스트 검색이라 계속 홈으로 리다이렉트되는 경우가 있었음) Google Hotels로 교체함.
- * 권역명을 검색어 앞에 붙이면("시암 해피3") 오히려 엉뚱한 결과가 섞여서, 검색어는 숙소
- * 이름만 남기고 체크인/체크아웃 날짜를 checkin/checkout 파라미터로 붙임.
+ * 시행착오 기록: "숙소명 + 전체 주소", "권역명(시암 등) + 숙소명"은 Booking이 목적지를 못
+ * 찾고 홈으로 리다이렉트시킴을 확인함(한 번은 배포 반영 전 상태를 테스트한 결과였을 가능성도
+ * 있음). Google Hotels로도 시도했지만 checkin/checkout이 반영 안 되는 문제가 있었음.
+ * 최종적으로 "숙소명 + 도시명"(위 HOTEL_SITES의 Booking.com 지역 검색과 같은 형태, 다만
+ * 권역명 대신 숙소명을 앞자리에 씀) 조합으로 브라우저에서 직접 검색이 되는 걸 확인함.
  */
 function buildHotelSearchUrl(place: Place): string {
-  const url = new URL('https://www.google.com/travel/search');
-  url.searchParams.set('q', place.name);
+  const url = new URL('https://www.booking.com/searchresults.ko.html');
+  url.searchParams.set('ss', place.name + ' ' + getTripDestination());
   const dates = getTripDatesISO();
   if (dates) {
     url.searchParams.set('checkin', dates.checkin);
     url.searchParams.set('checkout', dates.checkout);
   }
+  url.searchParams.set('group_adults', String(getTripHeadcount()));
+  url.searchParams.set('no_rooms', '1');
+  url.searchParams.set('group_children', '0');
   return url.toString();
 }
 
@@ -3337,7 +3340,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '          <div class="sl-step3-summary-photo"' + (basecamp.photo_url ? ' style="background-image:url(\'' + basecamp.photo_url + '\')"' : '') + '>' + (basecamp.photo_url ? '' : IC_BED) + '</div>',
     '          <div class="sl-step3-summary-body">',
     '            <div class="sl-step3-summary-top">',
-    '              <a class="sl-step3-summary-name sl-step3-summary-name-link" href="' + buildHotelSearchUrl(basecamp) + '" target="_blank" rel="noopener noreferrer" title="Google Hotels에서 이 숙소 검색">' + escapeHtml(basecamp.name) + ' ' + IC_EXTLINK + '</a>',
+    '              <a class="sl-step3-summary-name sl-step3-summary-name-link" href="' + buildHotelSearchUrl(basecamp) + '" target="_blank" rel="noopener noreferrer" title="Booking.com에서 이 숙소 검색">' + escapeHtml(basecamp.name) + ' ' + IC_EXTLINK + '</a>',
     stars ? '              <div class="sl-step3-summary-stars">' + stars + '</div>' : '',
     '            </div>',
     '            <div class="sl-step3-summary-tags"><span class="sl-zone-tag">' + escapeHtml(categoryLabel) + '</span></div>',
