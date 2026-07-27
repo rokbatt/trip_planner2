@@ -2700,24 +2700,23 @@ const HOTEL_SITES: HotelSite[] = [
   },
 ];
 
-/** Step3에서 확정한 숙소 이름을 클릭하면 이동할 URL — 지역명이 아니라 숙소 이름 자체로
- *  검색해서 그 숙소가 검색 결과 필터에 걸린 채로 뜨게 함. 공식 딥링크 API 없이 가능한 최선이라
- *  일단 Booking.com만 지원(추후 다른 사이트로 확장 가능).
- *  숙소 이름 + 전체 주소(콤마 많은 긴 텍스트)를 그대로 검색어에 넣었더니 Booking이 목적지를
- *  못 알아듣고 홈으로 리다이렉트되는 문제가 있어서, 위 HOTEL_SITES의 지역 검색(filterSupport
- *  'confirmed')과 같은 패턴 — "이름 + 짧은 도시명" — 으로 통일 */
+/**
+ * Step3에서 확정한 숙소 이름을 클릭하면 이동할 URL.
+ *
+ * 원래는 Booking.com의 searchresults.html에 ss(검색어)로 숙소명을 직접 넣어 딥링크하려
+ * 했지만, 실제로 눌러보면 Booking이 errorc_searchstring_not_found=ss를 붙여 홈으로
+ * 리다이렉트시킴 — Booking은 자기 자동완성에서 고른 dest_id/dest_type이 없는 순수 텍스트로는
+ * "지역"은 곧잘 찾아도 "특정 숙소 하나"는 못 찾는 것으로 확인됨(공식 제휴 API로 dest_id를
+ * 조회해야 하는데, 그런 API 접근 권한이 없음).
+ *
+ * 그래서 Booking.com에 직접 검색 파라미터를 넣는 대신, "site:booking.com 숙소명 도시"로
+ * 구글 검색을 거쳐 그 숙소의 실제 Booking.com 페이지를 찾아가게 함 — 체크인/체크아웃 자동
+ * 입력은 못 넘기지만(구글 검색은 그런 파라미터가 없음), 정확한 숙소 페이지로는 훨씬 안정적으로
+ * 도착함.
+ */
 function buildBookingHotelSearchUrl(place: Place): string {
-  const url = new URL('https://www.booking.com/searchresults.ko.html');
-  url.searchParams.set('ss', place.name + ' ' + getTripDestination());
-  const dates = getTripDatesISO();
-  if (dates) {
-    url.searchParams.set('checkin', dates.checkin);
-    url.searchParams.set('checkout', dates.checkout);
-  }
-  url.searchParams.set('group_adults', String(getTripHeadcount()));
-  url.searchParams.set('no_rooms', '1');
-  url.searchParams.set('group_children', '0');
-  return url.toString();
+  const q = 'site:booking.com ' + place.name + ' ' + getTripDestination();
+  return 'https://www.google.com/search?q=' + encodeURIComponent(q);
 }
 
 function renderHotelSiteCards(body: HTMLElement, destination: string, zoneName: string): void {
