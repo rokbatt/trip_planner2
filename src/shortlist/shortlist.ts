@@ -2740,19 +2740,21 @@ const HOTEL_SITES: HotelSite[] = [
  * 있음). Google Hotels로도 시도했지만 checkin/checkout이 반영 안 되는 문제가 있었음.
  * 최종적으로 "숙소명 + 도시명"(위 HOTEL_SITES의 Booking.com 지역 검색과 같은 형태, 다만
  * 권역명 대신 숙소명을 앞자리에 씀) 조합으로 브라우저에서 직접 검색이 되는 걸 확인함.
+ *
+ * `URLSearchParams.set`으로 인코딩하면 문자열 안의 띄어쓰기가 전부 "+"로 바뀌어서
+ * "골든+포이어+스완나품+에어포트+호텔+방콕"처럼 숙소명 안에서도 단어마다 끊겨 검색됨.
+ * 숙소명은 하나의 구(phrase)로, 도시명과의 경계에만 "+" 하나가 오도록 ss 파라미터만
+ * 직접 조립함(숙소명 내부 띄어쓰기는 %20으로 인코딩되어 실제 공백으로 남음).
  */
 function buildHotelSearchUrl(place: Place): string {
-  const url = new URL('https://www.booking.com/searchresults.ko.html');
-  url.searchParams.set('ss', place.name + ' ' + getTripDestination());
+  const ss = encodeURIComponent(place.name) + '+' + encodeURIComponent(getTripDestination());
+  const params = ['ss=' + ss];
   const dates = getTripDatesISO();
   if (dates) {
-    url.searchParams.set('checkin', dates.checkin);
-    url.searchParams.set('checkout', dates.checkout);
+    params.push('checkin=' + dates.checkin, 'checkout=' + dates.checkout);
   }
-  url.searchParams.set('group_adults', String(getTripHeadcount()));
-  url.searchParams.set('no_rooms', '1');
-  url.searchParams.set('group_children', '0');
-  return url.toString();
+  params.push('group_adults=' + getTripHeadcount(), 'no_rooms=1', 'group_children=0');
+  return 'https://www.booking.com/searchresults.ko.html?' + params.join('&');
 }
 
 function renderHotelSiteCards(body: HTMLElement, destination: string, zoneName: string): void {
