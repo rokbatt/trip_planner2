@@ -2179,6 +2179,9 @@ async function initMap(body: HTMLElement): Promise<void> {
         title: p.name,
         icon: buildCategoryIcon(g, p.mood, 'compact', p.category, p.name),
       });
+      // 클릭 없이 마우스만 올려도 바로 정보가 뜨게(터치 기기는 hover가 없으니 click도 유지)
+      marker.addListener('mouseover', () => showPlaceInfoWindow(g, mapInstance, marker, p));
+      marker.addListener('mouseout', () => placeInfoWindow?.close());
       marker.addListener('click', () => {
         showPlaceInfoWindow(g, mapInstance, marker, p);
       });
@@ -2235,6 +2238,8 @@ async function initMap(body: HTMLElement): Promise<void> {
       title: p.name,
       icon: buildCategoryIcon(g, p.mood, 'compact', p.category, p.name),
     });
+    marker.addListener('mouseover', () => showPlaceInfoWindow(g, mapInstance, marker, p));
+    marker.addListener('mouseout', () => placeInfoWindow?.close());
     marker.addListener('click', () => {
       showPlaceInfoWindow(g, mapInstance, marker, p);
     });
