@@ -144,6 +144,9 @@ let slSegments: StaySegment[] = [];
 let slActiveSegment: StaySegment | null = null;
 let allPlaces: Place[] = [];
 let zones: Zone[] = [];
+/** ZONE_ASSIGN_MAX_KM보다 멀어 어느 권역에도 배정되지 않은 장소(예: 공항) — 권역 카드
+ *  통계에는 안 들어가지만, Step1 지도에는 계속 마커로 보여줌 */
+let unassignedPlaces: Place[] = [];
 let step: 1 | 2 | 3 = 1;
 let selectedZone: Zone | null = null;
 let zoneDataSource = 'curated';
@@ -176,6 +179,7 @@ export function teardownShortlist(): void {
   closeShortlistDestSwitcher();
   allPlaces = [];
   zones = [];
+  unassignedPlaces = [];
   slDestinations = [];
   slActiveDest = null;
   slSegments = [];
@@ -488,6 +492,8 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
 
   zoneDataSource = source;
   zones = assignPlacesToZones(seeds, allPlaces);
+  const assignedIds = new Set(zones.flatMap((z) => z.places.map((p) => p.id)));
+  unassignedPlaces = allPlaces.filter((p) => p.lat != null && p.lng != null && !assignedIds.has(p.id));
 
   // 활성 여행지의 숙소 구간들을 로드하고, 활성 구간의 저장 상태를 복원
   if (trip && slActiveDest) {
@@ -1377,7 +1383,7 @@ async function renderStep1(body: HTMLElement): Promise<void> {
     '      </div>',
     '    </div>',
     '    <div class="sl-zone-panel">',
-    '      <div class="sl-zone-panel-head"><span>AI 추천 지역</span><span class="sl-zone-panel-sort">추천 순</span></div>',
+    '      <div class="sl-zone-panel-head"><span class="sl-zone-panel-sort">추천 순</span></div>',
     '      <div class="sl-zone-search">',
     '        <span class="sl-zone-search-icon">' + IC_SEARCH2 + '</span>',
     '        <input type="text" id="sl-zone-search-input" class="sl-zone-search-input" placeholder="추천 목록에 없는 지역·장소 검색해서 추가 (예: 수완나품 공항)" autocomplete="off" />',
@@ -2187,6 +2193,23 @@ async function initMap(body: HTMLElement): Promise<void> {
     const overlay = createZoneLabelOverlay(g, zone, color, ringCentroid(hullPoints));
     overlay.setMap(mapInstance);
     zoneLabelOverlays.push(overlay);
+  });
+
+  // 어느 권역에도 배정되지 않은 장소(예: 공항)도 지도에는 계속 표시 — 권역 카드 통계에는
+  // 안 들어가지만 "권역 밖에 있다"는 걸 사용자가 지도에서 직접 확인할 수 있어야 하므로.
+  // 특정 권역 색과 엮이지 않는 장소라 markersByZone에는 안 넣어(하이라이트/흐림 대상 제외)
+  unassignedPlaces.forEach((p) => {
+    if (p.lat == null || p.lng == null) return;
+    const marker = new g.maps.Marker({
+      position: { lat: p.lat, lng: p.lng },
+      map: mapInstance,
+      title: p.name,
+      icon: buildCategoryIcon(g, p.mood, 'compact', p.category, p.name),
+    });
+    marker.addListener('click', () => {
+      showPlaceInfoWindow(g, mapInstance, marker, p);
+    });
+    mapMarkers.push(marker);
   });
 
   if (!bounds.isEmpty()) mapInstance.fitBounds(bounds, 40);
