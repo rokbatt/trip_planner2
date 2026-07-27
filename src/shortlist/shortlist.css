@@ -819,14 +819,16 @@
   transition: transform 150ms ease;
 }
 .sl-map-zone-label:hover { transform: translate(-50%, -50%) scale(1.05); }
+/* 작은 권역(도형이 좁은 경우)에서 라벨이 도형 폭을 거의 다 차지해 안에 있는 마커를
+   가려 보이던 문제 — 가독성 유지되는 선에서 폰트·패딩을 축소해 필 자체의 자리 차지를 줄임 */
 .sl-map-label-name {
   display: inline-block;
-  font-size: 12.5px;
+  font-size: 10.5px;
   font-weight: 700;
   color: var(--zone-color);
   white-space: nowrap;
   border-radius: 999px;
-  padding: 4px 11px;
+  padding: 3px 8px;
   background: color-mix(in srgb, var(--zone-color) var(--zone-pill-bg-tint), rgba(255, 255, 255, 0.74));
   border: 1px solid color-mix(in srgb, var(--zone-color) var(--zone-pill-border-tint), transparent);
   -webkit-backdrop-filter: blur(var(--zone-pill-blur)) saturate(1.4);
