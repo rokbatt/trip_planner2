@@ -69,12 +69,6 @@ const IC_HOSPITAL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 const IC_ATM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h2M12 15h5"/></svg>';
 const IC_CART = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.2 11.2a1.5 1.5 0 0 0 1.5 1.2h8.3a1.5 1.5 0 0 0 1.5-1.2L21 8H6"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg>';
 const IC_STAR = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.3 6.9.7-5.1 4.6 1.4 6.8L12 17.6 5.9 20.4l1.4-6.8L2.2 9l6.9-.7L12 2z"/></svg>';
-const IC_FORK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v5a2.5 2.5 0 0 0 5 0V3"/><path d="M8.5 10v11"/><path d="M18.5 3c-1.9 1.4-2.9 3.3-2.9 5.7 0 1.7 1 2.8 2.9 3.2V21"/></svg>';
-const IC_LANDMARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5H4L12 3z"/><path d="M6.5 11v6M10 11v6M14 11v6M17.5 11v6"/><path d="M4 20.5h16"/></svg>';
-const IC_TICKET = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4V7z"/><path d="M13.5 7.5v1.6M13.5 11.2v1.6M13.5 14.9v1.6"/></svg>';
-const IC_BAG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l1 12H5L6 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>';
-/** 공항 핀 전용 — IC_PLANE(종이비행기)은 "이동/여행" 장식용이라 공항으로는 안 읽혀서 따로 둠 */
-const IC_AIRPLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.2c1 0 1.7 1.4 1.7 3.3v3.6l7.3 4.3v2.2l-7.3-2.2v4.1l2.4 1.8v1.7L12 20.2l-4.1.8v-1.7l2.4-1.8v-4.1L3 15.6v-2.2l7.3-4.3V5.5c0-1.9.7-3.3 1.7-3.3z"/></svg>';
 
 const MOOD_LABEL: Record<string, string> = {
   '가고싶어': 'VISIT',
@@ -90,62 +84,28 @@ const MOOD_COLOR: Record<string, string> = {
 };
 /** place.category(구글 장소 세부 종류, 예: '카페'/'음식점')가 없을 때만 쓰는 대체 아이콘 — mood 4종 기준 */
 const MOOD_ICON: Record<string, string> = {
-  '가고싶어': IC_LANDMARK,
-  '먹고싶어': IC_FORK,
-  '하고싶어': IC_TICKET,
-  '숙소': IC_BED,
+  '가고싶어': '🗽',
+  '먹고싶어': '🍝',
+  '하고싶어': '🏄',
+  '숙소': '🛏️',
 };
-/** place.category → 핀 아이콘. 확실히 구분되는 것만 세분화하고(카페 vs 맛집), 애매한 건 맛집으로 통일.
- *  예전엔 이모지(☕/🍽️/🏛…)를 썼는데 폰트마다 모양·색·굵기가 제각각이라 지도 위에서 통일감이 없었음 —
- *  앱 전체 IC_* 아이콘 세트와 같은 아웃라인(선 굵기·둥근 끝 처리 통일)으로 교체함.
- *  선 굵기·색은 buildCategoryIcon이 CATEGORY_PIN_* 상수로 일괄 적용하므로 여기선 모양만 고르면 됨 */
+/** place.category → 핀 아이콘. 확실히 구분되는 것만 세분화하고(카페 vs 맛집), 애매한 건 맛집으로 통일 */
 const CATEGORY_ICON: Record<string, string> = {
-  '카페': IC_COFFEE,
-  '음식점': IC_FORK,
-  '베이커리': IC_FORK,
-  '바': IC_FORK,
-  '관광명소': IC_LANDMARK,
-  '박물관': IC_LANDMARK,
-  '미술관': IC_LANDMARK,
-  '공원': IC_LANDMARK,
-  '종교시설': IC_LANDMARK,
-  '명소': IC_LANDMARK,
-  '테마파크': IC_TICKET,
-  '나이트라이프': IC_TICKET,
-  '쇼핑': IC_BAG,
-  '숙소': IC_BED,
-  '공항': IC_AIRPLANE,
-};
-
-/**
- * 지도 핀 색 — 이제 아이콘 모양 자체가 카테고리를 구분해주므로, 핀 색은 mood(4종)가 아니라
- * "이 아이콘 모양에 제일 잘 어울리는 색"으로 고정. mood 색(MOOD_COLOR, ZONE_PALETTE)과 겹치면
- * 권역 폴리곤·라벨과 같은 색이 되어 핀이 묻혀 보이던 문제가 있어, 두 팔레트와 최대한 겹치지
- * 않는 색으로 새로 골랐다 — 지역 도형 위에서도 핀이 항상 도드라져 보이는 게 목적.
- */
-const CATEGORY_PIN_COLOR: Record<string, string> = {
-  '카페': '#6F4518',
-  '음식점': '#B23A1E',
-  '베이커리': '#B23A1E',
-  '바': '#B23A1E',
-  '관광명소': '#4C3A8C',
-  '박물관': '#4C3A8C',
-  '미술관': '#4C3A8C',
-  '공원': '#4C3A8C',
-  '종교시설': '#4C3A8C',
-  '명소': '#4C3A8C',
-  '테마파크': '#B0308A',
-  '나이트라이프': '#B0308A',
-  '쇼핑': '#1F7A5C',
-  '숙소': '#1E4F91',
-  '공항': '#3E4C5E',
-};
-/** category가 없어 MOOD_ICON으로 대체될 때 짝지어 쓰는 핀 색 (위 CATEGORY_PIN_COLOR와 같은 팔레트) */
-const MOOD_PIN_COLOR: Record<string, string> = {
-  '가고싶어': '#4C3A8C',
-  '먹고싶어': '#B23A1E',
-  '하고싶어': '#B0308A',
-  '숙소': '#1E4F91',
+  '카페': '🧋',
+  '음식점': '🍝',
+  '베이커리': '🍝',
+  '바': '🍝',
+  '관광명소': '🗽',
+  '박물관': '🗽',
+  '미술관': '🗽',
+  '공원': '🗽',
+  '종교시설': '🗽',
+  '명소': '🗽',
+  '테마파크': '🏄',
+  '나이트라이프': '🏄',
+  '쇼핑': '🛍️',
+  '숙소': '🛏️',
+  '공항': '✈️',
 };
 
 interface Zone {
@@ -2159,27 +2119,12 @@ function isAirportPlace(name: string | null | undefined, category: string | null
   return !!name && /공항|airport/i.test(name);
 }
 
-/* ── 지도 카테고리 핀 — 이 상수들만 바꾸면 Step1/2/3 지도 전체 핀이 한 번에 바뀜.
- *    Step2/Step3도 예전엔 흰 테두리 물방울 핀("detailed" 스타일)을 따로 썼지만,
- *    Step1의 배경 배지 없는 카테고리 아이콘 스타일로 전 단계 통일함 ── */
-/** 핀 전체 캔버스 크기(px) — 아이콘 + halo가 들어갈 정사각형 */
-const CATEGORY_PIN_SIZE = 26;
-/** 캔버스 안에서 아이콘이 실제로 차지하는 크기(px). 남는 여백은 halo가 번질 자리 */
-const CATEGORY_PIN_ICON_SIZE = 20;
-/** 아이콘 선 굵기 — 카테고리와 무관하게 전부 이 값으로 통일(24 뷰박스 기준) */
-const CATEGORY_PIN_STROKE_WIDTH = 1.9;
-/** 같은 모양을 더 두꺼운 흰 선으로 뒤에 한 번 더 깔아, 지도 배경 위에서도 선이 묻히지 않게 함 */
-const CATEGORY_PIN_HALO_WIDTH = 4.6;
-const CATEGORY_PIN_HALO_COLOR = '#FFFFFF';
-/** category·mood 둘 다 없어 CATEGORY_PIN_COLOR/MOOD_PIN_COLOR로도 색을 정할 수 없는 장소의 핀 색 */
-const CATEGORY_PIN_FALLBACK_COLOR = '#64748B';
-
 /**
- * IC_* 아이콘 문자열에서 <svg> 태그의 속성과 내부 마크업을 분리.
- * IC_* 는 fill="none"/stroke/stroke-width 등을 전부 최상위 <svg> 태그에만 걸고 내부
- * <path>/<rect>는 상속에 의존하기 때문에, 내부 마크업만 다른 SVG에 옮겨 심을 땐 이
- * 속성들도 같이 옮겨야 함 — 안 그러면 SVG 기본값(fill:black)이 적용돼 아이콘이 검은
- * 덩어리로 보임(실제로 겪었던 버그).
+ * IC_* 아이콘 문자열에서 <svg> 태그의 속성과 내부 마크업을 분리 (buildInfraMarkerIcon 전용 —
+ * 지도 카테고리 핀은 이모지라 필요 없음). IC_* 는 fill="none"/stroke/stroke-width 등을 전부
+ * 최상위 <svg> 태그에만 걸고 내부 <path>/<rect>는 상속에 의존하기 때문에, 내부 마크업만 다른
+ * SVG에 옮겨 심을 땐 이 속성들도 같이 옮겨야 함 — 안 그러면 SVG 기본값(fill:black)이 적용돼
+ * 아이콘이 검은 덩어리로 보임(실제로 겪었던 버그).
  */
 function splitIconSvg(icon: string): { attrs: string; inner: string } {
   const m = icon.match(/<svg([^>]*)>([\s\S]*)<\/svg>/);
@@ -2187,34 +2132,24 @@ function splitIconSvg(icon: string): { attrs: string; inner: string } {
   return { attrs: m[1].replace(/\bviewBox="[^"]*"/, '').trim(), inner: m[2] };
 }
 
-/**
- * 카테고리별(구글 장소 세부 종류 우선, 없으면 mood 4종) 아웃라인 아이콘 핀 — 배경 배지 없음.
- * 각 아이콘이 원래 갖고 있던 stroke/stroke-width는 무시하고 CATEGORY_PIN_* 값으로 덮어써서
- * 어떤 카테고리든 선 굵기·끝 처리·색 규칙이 완전히 같게 나옴.
- */
+/** 핀 크기·글자 크기 — 이 두 값만 바꾸면 Step1/2/3 지도 전체 핀이 한 번에 바뀜 */
+const CATEGORY_PIN_SIZE = 24;
+const CATEGORY_PIN_FONT_SIZE = 20;
+
+/** 카테고리별(구글 장소 세부 종류 우선, 없으면 mood 4종) 이모지 아이콘만 있는 핀 — 배경 배지 없음 */
 function buildCategoryIcon(g: any, mood: string | null, category?: string | null, name?: string | null): any {
-  const isAirport = isAirportPlace(name, category);
-  const icon = isAirport ? IC_AIRPLANE : CATEGORY_ICON[category ?? ''] || MOOD_ICON[mood ?? ''] || IC_PIN;
-  const color = isAirport
-    ? CATEGORY_PIN_COLOR['공항']
-    : CATEGORY_PIN_COLOR[category ?? ''] || MOOD_PIN_COLOR[mood ?? ''] || CATEGORY_PIN_FALLBACK_COLOR;
-  const inner = splitIconSvg(icon).inner.replace(/currentColor/g, color);
-
-  const canvas = CATEGORY_PIN_SIZE;
-  const scale = CATEGORY_PIN_ICON_SIZE / 24;
-  const offset = (canvas - CATEGORY_PIN_ICON_SIZE) / 2;
+  const icon = isAirportPlace(name, category) ? '✈️' : CATEGORY_ICON[category ?? ''] || MOOD_ICON[mood ?? ''] || '📍';
+  const size = CATEGORY_PIN_SIZE;
+  const r = size / 2;
   const svg = [
-    '<svg xmlns="http://www.w3.org/2000/svg" width="' + canvas + '" height="' + canvas + '" viewBox="0 0 ' + canvas + ' ' + canvas + '">',
-    '<g fill="none" stroke-linecap="round" stroke-linejoin="round" transform="translate(' + offset + ',' + offset + ') scale(' + scale + ')">',
-    '<g stroke="' + CATEGORY_PIN_HALO_COLOR + '" stroke-width="' + CATEGORY_PIN_HALO_WIDTH + '">' + inner + '</g>',
-    '<g stroke="' + color + '" stroke-width="' + CATEGORY_PIN_STROKE_WIDTH + '">' + inner + '</g>',
-    '</g></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">',
+    '<text x="' + r + '" y="' + r + '" font-size="' + CATEGORY_PIN_FONT_SIZE + '" text-anchor="middle" dominant-baseline="central">' + icon + '</text>',
+    '</svg>',
   ].join('');
-
   return {
     url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
-    scaledSize: new g.maps.Size(canvas, canvas),
-    anchor: new g.maps.Point(canvas / 2, canvas / 2),
+    scaledSize: new g.maps.Size(size, size),
+    anchor: new g.maps.Point(r, r),
   };
 }
 
