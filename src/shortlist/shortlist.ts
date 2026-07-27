@@ -1931,18 +1931,27 @@ function showPlaceInfoWindow(g: any, map: any, marker: any, place: Place): void 
   placeInfoWindow.open({ map, anchor: marker });
 }
 
+/** 구글이 매긴 category가 부정확하거나(예: 공항을 '관광명소'로 분류) 오래된 데이터라 아직
+ *  공항 매핑 전에 저장된 place.category를 그대로 갖고 있는 경우를 이름으로 한 번 더 보정.
+ *  DB의 category 값을 직접 고치지 않아도 지도 위 아이콘은 항상 최신 규칙을 따르게 됨 */
+function isAirportPlace(name: string | null | undefined, category: string | null | undefined): boolean {
+  if (category === '공항') return true;
+  return !!name && /공항|airport/i.test(name);
+}
+
 function buildCategoryIcon(
   g: any,
   mood: string | null,
   variant: 'compact' | 'detailed' | 'detailed-lg' = 'compact',
   category?: string | null,
+  name?: string | null,
 ): any {
   const color = MOOD_COLOR[mood ?? ''] || '#94A3B8';
 
   if (variant === 'compact') {
     // Step1의 추상화된 지도 위에서는 배경 배지 없이 카테고리 아이콘만 딱 보이게
     // (구글 장소 세부 종류가 있으면 그걸 우선 쓰고, 없으면 mood 4종 기준으로 대체)
-    const icon = CATEGORY_ICON[category ?? ''] || MOOD_ICON[mood ?? ''] || '📍';
+    const icon = isAirportPlace(name, category) ? '✈️' : CATEGORY_ICON[category ?? ''] || MOOD_ICON[mood ?? ''] || '📍';
     const size = 24;
     const r = size / 2;
     const svg = [
@@ -2123,7 +2132,7 @@ async function initMap(body: HTMLElement): Promise<void> {
         position: { lat: p.lat, lng: p.lng },
         map: mapInstance,
         title: p.name,
-        icon: buildCategoryIcon(g, p.mood, 'compact', p.category),
+        icon: buildCategoryIcon(g, p.mood, 'compact', p.category, p.name),
       });
       marker.addListener('click', () => {
         showPlaceInfoWindow(g, mapInstance, marker, p);
@@ -2884,7 +2893,7 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
       position: { lat: p.lat, lng: p.lng },
       map,
       title: p.name,
-      icon: buildCategoryIcon(g, p.mood, 'compact', p.category),
+      icon: buildCategoryIcon(g, p.mood, 'compact', p.category, p.name),
       zIndex: 0,
     });
     marker.addListener('click', () => {
@@ -4190,7 +4199,7 @@ async function initMapStep3(body: HTMLElement): Promise<void> {
       position: { lat: p.lat, lng: p.lng },
       map,
       title: p.name,
-      icon: buildCategoryIcon(g, p.mood, 'compact', p.category),
+      icon: buildCategoryIcon(g, p.mood, 'compact', p.category, p.name),
       opacity: 0.55,
       zIndex: 1,
     });
