@@ -2699,12 +2699,15 @@ const HOTEL_SITES: HotelSite[] = [
   },
 ];
 
-/** Step3에서 확정한 숙소 이름을 클릭하면 이동할 URL — 지역명이 아니라 숙소 이름(+주소) 자체로
+/** Step3에서 확정한 숙소 이름을 클릭하면 이동할 URL — 지역명이 아니라 숙소 이름 자체로
  *  검색해서 그 숙소가 검색 결과 필터에 걸린 채로 뜨게 함. 공식 딥링크 API 없이 가능한 최선이라
- *  일단 Booking.com만 지원(추후 다른 사이트로 확장 가능) */
+ *  일단 Booking.com만 지원(추후 다른 사이트로 확장 가능).
+ *  숙소 이름 + 전체 주소(콤마 많은 긴 텍스트)를 그대로 검색어에 넣었더니 Booking이 목적지를
+ *  못 알아듣고 홈으로 리다이렉트되는 문제가 있어서, 위 HOTEL_SITES의 지역 검색(filterSupport
+ *  'confirmed')과 같은 패턴 — "이름 + 짧은 도시명" — 으로 통일 */
 function buildBookingHotelSearchUrl(place: Place): string {
   const url = new URL('https://www.booking.com/searchresults.ko.html');
-  url.searchParams.set('ss', place.name + (place.address ? ' ' + place.address : ''));
+  url.searchParams.set('ss', place.name + ' ' + getTripDestination());
   const dates = getTripDatesISO();
   if (dates) {
     url.searchParams.set('checkin', dates.checkin);
