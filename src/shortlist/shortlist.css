@@ -801,7 +801,16 @@
 .sl-ai-reason-text { font-size: 11px; color: #0C447C; line-height: 1.4; }
 
 /* ── 지도 위 지역 정보 라벨 (OverlayView) ── */
+/* 권역 이름 배지 — 그림자 없는 "글래스 필".
+   흰 불투명 배지 + 그림자였을 땐 지도 위에 붕 떠 보이고 어느 권역 것인지도 색으로만 겨우
+   구분됐음. 지금은 배경·테두리 모두 그 권역 색을 옅게 섞어(color-mix) 도형과 같은 색 계열로
+   묶고, 그림자 대신 backdrop blur로 지도 위에 "얹힌" 느낌만 남김.
+   아래 3개 변수로 진하기/흐림 정도를 한 번에 조절할 수 있음 */
 .sl-map-zone-label {
+  --zone-pill-bg-tint: 12%;
+  --zone-pill-border-tint: 30%;
+  --zone-pill-blur: 6px;
+
   position: absolute;
   transform: translate(-50%, -50%);
   text-align: center;
@@ -810,17 +819,24 @@
   transition: transform 150ms ease;
 }
 .sl-map-zone-label:hover { transform: translate(-50%, -50%) scale(1.05); }
-.sl-map-zone-label.selected .sl-map-label-name { text-decoration: underline; text-underline-offset: 3px; }
 .sl-map-label-name {
   display: inline-block;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 700;
   color: var(--zone-color);
   white-space: nowrap;
-  background: #ffffff;
   border-radius: 999px;
-  padding: 5px 12px;
-  box-shadow: 0 2px 6px rgba(11,42,92,0.14);
+  padding: 4px 11px;
+  background: color-mix(in srgb, var(--zone-color) var(--zone-pill-bg-tint), rgba(255, 255, 255, 0.74));
+  border: 1px solid color-mix(in srgb, var(--zone-color) var(--zone-pill-border-tint), transparent);
+  -webkit-backdrop-filter: blur(var(--zone-pill-blur)) saturate(1.4);
+  backdrop-filter: blur(var(--zone-pill-blur)) saturate(1.4);
+  box-shadow: none;
+}
+/* 선택 상태 — 밑줄 대신 같은 권역 색을 더 진하게 (필 형태에는 밑줄이 어울리지 않음) */
+.sl-map-zone-label.selected {
+  --zone-pill-bg-tint: 22%;
+  --zone-pill-border-tint: 62%;
 }
 
 /* ── STEP 2: 숙소 후보 ── */
