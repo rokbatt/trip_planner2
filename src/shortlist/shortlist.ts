@@ -369,6 +369,23 @@ function assignPlacesToZones(seeds: ZoneSeed[], places: Place[]): Zone[] {
   return scored.map((s, i) => ({ ...s.zone, rank: i + 1 }));
 }
 
+/**
+ * Step2 숙소 후보 — zone.places(큐레이션 권역 배정 결과)에 기대지 않고, 이 권역 중심에서
+ * 실제 거리로 ZONE_ASSIGN_MAX_KM 이내인 "숙소" 무드 장소를 트립 전체에서 직접 찾음.
+ * 직접 검색해서 추가한 권역(공항 등, isCustom)은 zone.places가 항상 비어있어서
+ * (assignPlacesToZones를 거치지 않으니까) 이렇게 안 하면 근처에 담아둔 숙소가 있어도
+ * 후보가 하나도 안 뜸.
+ */
+function nearbyStayCandidates(zone: Zone): Place[] {
+  return allPlaces.filter(
+    (p) =>
+      p.mood === '숙소' &&
+      p.lat != null &&
+      p.lng != null &&
+      haversineKm(zone.centerLat, zone.centerLng, p.lat, p.lng) <= ZONE_ASSIGN_MAX_KM
+  );
+}
+
 /* ── 데이터 로드 ── */
 async function loadPlaces(tripId: string): Promise<Place[]> {
   const { data, error } = await supabase
@@ -2337,7 +2354,11 @@ async function renderStep2(body: HTMLElement): Promise<void> {
     return;
   }
 
-  const candidates = selectedZone.places.filter((p) => p.mood === '숙소');
+  // selectedZone.places만 보면 "직접 검색해서 추가한 권역"(공항 등)은 항상 비어있어
+  // (assignPlacesToZones를 거치지 않음) 근처에 담아둔 숙소가 있어도 후보가 하나도 안 뜸.
+  // 대신 이 지역 중심에서 실제 거리로 가까운 숙소를 찾음 — 큐레이션 권역이든 직접 추가한
+  // 권역이든 동일하게 동작.
+  const candidates = nearbyStayCandidates(selectedZone);
   const destination = getTripDestination();
   const dateRange = formatTripDateRange();
 
@@ -2929,7 +2950,10 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
 
   addCustomZoomControl(map, mapEl);
 
-  const inZoneIds = new Set(selectedZone.places.map((p) => p.id));
+  // candidates(거리 기반 숙소 후보)와 selectedZone.places(큐레이션 배정 결과) 둘 다
+  // "이 지역 안"으로 쳐서 강조 표시 대상에서 배경 마커 루프를 제외 — 안 그러면 candidates로
+  // 새로 잡힌 숙소가 배경에도, 강조 마커에도 중복으로 찍힘
+  const inZoneIds = new Set([...selectedZone.places.map((p) => p.id), ...candidates.map((p) => p.id)]);
 
   // 선택한 지역 밖 장소도 함께 찍어서, 사용자가 축소했을 때 트립 전체 장소를 파악할 수 있게 함
   allPlaces.forEach((p) => {
@@ -2948,32 +2972,40 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
     });
   });
 
-  selectedZone.places.forEach((p) => {
+  // 숙소 후보 — zone.places가 아니라 거리 기반 candidates 기준(직접 추가한 권역도 동작하도록)
+  candidates.forEach((p) => {
     if (p.lat == null || p.lng == null) return;
-    const isCandidate = p.mood === '숙소';
     const marker = new g.maps.Marker({
       position: { lat: p.lat, lng: p.lng },
       map,
       title: p.name,
       icon: buildCategoryIcon(g, p.mood, 'detailed'),
-      zIndex: isCandidate ? 20 : 1,
+      zIndex: 20,
     });
+    step2Markers.set(p.id, marker);
+    marker.addListener('click', () => {
+      pendingHotelId = p.id;
+      renderBasecampList(body, candidates);
+      renderSelectedHotelPreview(body, candidates);
+      highlightBasecampMarker(p.id);
+      showPlaceInfoWindow(g, map, marker, p);
+    });
+  });
 
-    if (isCandidate) {
-      step2Markers.set(p.id, marker);
-      marker.addListener('click', () => {
-        pendingHotelId = p.id;
-        renderBasecampList(body, candidates);
-        renderSelectedHotelPreview(body, candidates);
-        highlightBasecampMarker(p.id);
-        showPlaceInfoWindow(g, map, marker, p);
-      });
-    } else {
-      // 숙소 후보가 아닌 장소는 선택 동작 없이 정보만 표시 (이미 저장된 데이터, 추가 API 호출 없음)
-      marker.addListener('click', () => {
-        showPlaceInfoWindow(g, map, marker, p);
-      });
-    }
+  // 큐레이션 권역에 배정된 숙소 외 장소(관광/맛집/액티비티) — 직접 추가한 권역은 항상 비어있음
+  selectedZone.places.forEach((p) => {
+    if (p.mood === '숙소' || p.lat == null || p.lng == null) return; // 위에서 이미 처리
+    const marker = new g.maps.Marker({
+      position: { lat: p.lat, lng: p.lng },
+      map,
+      title: p.name,
+      icon: buildCategoryIcon(g, p.mood, 'detailed'),
+      zIndex: 1,
+    });
+    // 숙소 후보가 아닌 장소는 선택 동작 없이 정보만 표시 (이미 저장된 데이터, 추가 API 호출 없음)
+    marker.addListener('click', () => {
+      showPlaceInfoWindow(g, map, marker, p);
+    });
   });
 }
 
