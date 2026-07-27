@@ -159,10 +159,44 @@ function formatDateShort(d: string): string {
   return (dt.getMonth() + 1) + '.' + String(dt.getDate()).padStart(2, '0');
 }
 
+/**
+ * 이미 마운트된 워크스페이스 셸이 같은 tripId를 가리키고 있으면 반환 — 게이트만 바뀌는
+ * 이동은 사이드바/헤더/채팅 채널을 통째로 다시 그리지 않고 이 셸을 재사용해서 훨씬 빠르게
+ * 전환할 수 있음. 다른 트립이거나 셸 자체가 없으면 null → 호출부가 renderWorkspace로 새로 만듦
+ */
+export function findExistingWorkspace(tripId: string): HTMLElement | null {
+  const app = document.getElementById('app');
+  const page = app?.querySelector('.ws-page') as HTMLElement | null;
+  if (!page) return null;
+  return page.dataset.tripId === tripId ? page : null;
+}
+
+/**
+ * 이미 마운트된 워크스페이스 안에서 게이트만 갈아끼움 — 사이드바 활성 상태 갱신 +
+ * 헤더 eyebrow 텍스트 갱신 + body만 재렌더. 채팅/투표 채널/여행지 로드/멤버 아바타 등
+ * 트립 레벨 초기화는 그대로 두므로 ideas↔shortlist 같은 전환이 대폭 빨라짐.
+ */
+export async function switchGate(page: HTMLElement, tripId: string, gate: string): Promise<void> {
+  // 사이드바 활성 상태 갱신
+  page.querySelectorAll('.ws-nav-item').forEach((btn) => {
+    const el = btn as HTMLElement;
+    el.classList.toggle('active', el.dataset.gate === gate);
+  });
+
+  // 헤더 eyebrow(게이트 이름) 갱신 — 여행지/멤버 정보는 그대로
+  const eyebrow = page.querySelector('.ws-header-eyebrow');
+  if (eyebrow) eyebrow.textContent = GATE_TITLES[gate] || gate.toUpperCase();
+
+  // 본문만 재렌더
+  const body = page.querySelector('#ws-body') as HTMLElement;
+  if (body) await renderGate(body, tripId, gate);
+}
+
 /** 워크스페이스 셸 렌더 */
 export async function renderWorkspace(tripId: string, subPath?: string): Promise<HTMLElement> {
   const page = document.createElement('div');
   page.className = 'ws-page';
+  page.dataset.tripId = tripId; // 같은 트립 내 게이트 이동 시 셸을 재사용하는지 판단용(switchGate)
 
   const activeGate = subPath || 'ideas';
 
@@ -259,11 +293,11 @@ function buildSidebar(trip: Trip, activeGate: string): string {
 
   return [
     '<div class="ws-sidebar-header">',
-    '  <button class="ws-sidebar-back" id="ws-back">',
+    '  <button class="ws-sidebar-back" id="ws-back" title="여행 목록으로 (사이드바가 접혀있으면 다시 열기)">',
     '    ' + IC.back,
     '    <span class="ws-sidebar-back-label">몽실이</span>',
     '  </button>',
-    '  <button class="ws-sidebar-toggle" id="ws-toggle">' + IC.collapse + '</button>',
+    '  <button class="ws-sidebar-toggle" id="ws-toggle" title="사이드바 접기">' + IC.collapse + '</button>',
     '</div>',
     '<div class="ws-trip-info">',
     '  <div class="ws-trip-name">' + escapeHtml(trip.name) + '</div>',
@@ -430,7 +464,15 @@ async function renderGate(body: HTMLElement, tripId: string, gate: string): Prom
 }
 
 function bindEvents(page: HTMLElement, tripId: string): void {
+  const sidebar = page.querySelector('#ws-sidebar') as HTMLElement;
+
   page.querySelector('#ws-back')?.addEventListener('click', () => {
+    // 사이드바가 접혀있으면 뒤로가기 대신 사이드바를 다시 열기 — 접혔을 땐 재열기 버튼이 없어서
+    // 1/2/3 숫자 버튼을 눌러야만 열리던(그러면 원치 않게 게이트도 이동함) 불편 해소
+    if (sidebar?.classList.contains('collapsed')) {
+      sidebar.classList.remove('collapsed');
+      return;
+    }
     teardownChat();
     teardownHotelVoteChannel();
     boardModuleRef?.teardownBoard();
@@ -464,7 +506,6 @@ function bindEvents(page: HTMLElement, tripId: string): void {
   }) as unknown as EventListener;
   window.addEventListener('mongsil:openVoteTarget', openVoteTargetHandlerRef);
 
-  const sidebar = page.querySelector('#ws-sidebar') as HTMLElement;
   page.querySelector('#ws-toggle')?.addEventListener('click', () => {
     sidebar.classList.toggle('collapsed');
   });

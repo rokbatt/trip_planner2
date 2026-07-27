@@ -11,7 +11,7 @@ import { addRoute, setNotFound, startRouter, navigate, rerender, currentPath } f
 import { renderLogin } from './auth/auth';
 import { renderTripList } from './trips/trip-list';
 import { renderJoinPage, consumePendingInvite } from './trips/trip-join';
-import { renderWorkspace } from './workspace/workspace';
+import { renderWorkspace, findExistingWorkspace, switchGate } from './workspace/workspace';
 
 // ─── 인증이 필요 없는 라우트 ───
 // join은 초대코드를 들고 온 비로그인 사용자도 접근해야 해서 public 처리
@@ -30,9 +30,18 @@ addRoute('trips', async () => {
 });
 
 // 새 워크스페이스 라우트: #trip/:tripId/:gate
+// 같은 트립 안에서 게이트만 이동(ideas↔shortlist 등)하면 사이드바/헤더/채팅 채널을
+// 통째로 다시 그리지 않고 본문만 갈아끼워서 전환을 훨씬 빠르게 함.
 addRoute('trip', async (params) => {
   const app = document.getElementById('app')!;
-  const el = await renderWorkspace(params.tripId ?? '', params.subPath);
+  const tripId = params.tripId ?? '';
+  const gate = params.subPath || 'ideas';
+  const existing = findExistingWorkspace(tripId);
+  if (existing) {
+    await switchGate(existing, tripId, gate);
+    return;
+  }
+  const el = await renderWorkspace(tripId, params.subPath);
   app.replaceChildren(el);
 });
 
