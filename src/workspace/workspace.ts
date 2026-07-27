@@ -293,8 +293,8 @@ function buildSidebar(trip: Trip, activeGate: string): string {
 
   return [
     '<div class="ws-sidebar-header">',
-    '  <button class="ws-sidebar-back" id="ws-back" title="여행 목록으로 (사이드바가 접혀있으면 다시 열기)">',
-    '    ' + IC.back,
+    '  <button class="ws-sidebar-back" id="ws-back" title="여행 목록으로">',
+    '    <span class="ws-sidebar-back-icon" id="ws-back-icon">' + IC.back + '</span>',
     '    <span class="ws-sidebar-back-label">몽실이</span>',
     '  </button>',
     '  <button class="ws-sidebar-toggle" id="ws-toggle" title="사이드바 접기">' + IC.collapse + '</button>',
@@ -463,6 +463,18 @@ async function renderGate(body: HTMLElement, tripId: string, gate: string): Prom
   }
 }
 
+/** 뒤로가기 버튼 아이콘 — 펼쳐진 상태에선 "<"(여행 목록으로), 접힌 상태에선 사이드바
+ *  접기 아이콘("<<")을 좌우 반전한 ">>"(다시 펼치기)로 바꿔서 지금 눌렀을 때 무슨 동작이
+ *  일어날지 아이콘만 보고도 알 수 있게 함 */
+function updateBackIcon(page: HTMLElement, collapsed: boolean): void {
+  const iconEl = page.querySelector('#ws-back-icon') as HTMLElement | null;
+  const btn = page.querySelector('#ws-back') as HTMLElement | null;
+  if (!iconEl) return;
+  iconEl.innerHTML = collapsed ? IC.collapse : IC.back;
+  iconEl.classList.toggle('flipped', collapsed);
+  if (btn) btn.title = collapsed ? '사이드바 펼치기' : '여행 목록으로';
+}
+
 function bindEvents(page: HTMLElement, tripId: string): void {
   const sidebar = page.querySelector('#ws-sidebar') as HTMLElement;
 
@@ -471,6 +483,7 @@ function bindEvents(page: HTMLElement, tripId: string): void {
     // 1/2/3 숫자 버튼을 눌러야만 열리던(그러면 원치 않게 게이트도 이동함) 불편 해소
     if (sidebar?.classList.contains('collapsed')) {
       sidebar.classList.remove('collapsed');
+      updateBackIcon(page, false);
       return;
     }
     teardownChat();
@@ -508,6 +521,7 @@ function bindEvents(page: HTMLElement, tripId: string): void {
 
   page.querySelector('#ws-toggle')?.addEventListener('click', () => {
     sidebar.classList.toggle('collapsed');
+    updateBackIcon(page, sidebar.classList.contains('collapsed'));
   });
 
   const overlay = page.querySelector('#ws-overlay') as HTMLElement;
