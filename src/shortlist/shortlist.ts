@@ -2701,28 +2701,17 @@ const HOTEL_SITES: HotelSite[] = [
 ];
 
 /**
- * Step3에서 확정한 숙소 이름을 클릭하면 이동할 Booking.com 검색 URL.
+ * Step3에서 확정한 숙소 이름을 클릭하면 이동할 검색 URL.
  *
- * 시행착오 기록: ss(검색어)에 "숙소명 + 전체 주소"나 "숙소명 + 도시명(방콕)"을 넣으면
- * Booking이 errorc_searchstring_not_found=ss를 붙여 홈으로 리다이렉트시킴 — dest_id 없는
- * 순수 텍스트로는 도시 단위까지는 찾아도 숙소 하나는 특정 못 하는 것으로 보임.
- * 반면 "권역명(시암/수쿰빗 등) + 숙소명"은 실제로 검색이 되는 걸 확인함 — 아마 Booking의
- * 텍스트 매칭이 도시보다 더 좁은 지역명 + 업체명 조합에서는 자동완성 후보를 못 찾아도
- * 지역 검색 결과 안에서 이름으로 한 번 더 걸러주는 것으로 추정. 그래서 destination(도시) 대신
- * selectedZone.name(권역명)을 붙임.
+ * 시행착오 기록: Booking.com 직접 딥링크를 "숙소명 + 전체 주소", "숙소명 + 도시명(방콕)",
+ * "권역명(시암 등) + 숙소명" 순서로 다 시도했지만 결국 안정적으로 되지 않아서(dest_id 없는
+ * 순수 텍스트 검색이라 계속 홈으로 리다이렉트되는 경우가 있었음) Google Hotels로 교체함.
+ * Google Hotels는 자체 장소 데이터베이스로 이름을 훨씬 잘 찾아내고, 위 HOTEL_SITES의
+ * Google Hotels 카드와 같은 엔드포인트/패턴(zoneName + 검색어)이라 일관성도 있음.
  */
-function buildBookingHotelSearchUrl(place: Place, zoneName: string): string {
-  const url = new URL('https://www.booking.com/searchresults.ko.html');
-  url.searchParams.set('ss', zoneName + ' ' + place.name);
-  const dates = getTripDatesISO();
-  if (dates) {
-    url.searchParams.set('checkin', dates.checkin);
-    url.searchParams.set('checkout', dates.checkout);
-  }
-  url.searchParams.set('group_adults', String(getTripHeadcount()));
-  url.searchParams.set('no_rooms', '1');
-  url.searchParams.set('group_children', '0');
-  return url.toString();
+function buildHotelSearchUrl(place: Place, zoneName: string): string {
+  const q = zoneName + ' ' + place.name;
+  return 'https://www.google.com/travel/search?q=' + encodeURIComponent(q);
 }
 
 function renderHotelSiteCards(body: HTMLElement, destination: string, zoneName: string): void {
@@ -3308,7 +3297,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '          <div class="sl-step3-summary-photo"' + (basecamp.photo_url ? ' style="background-image:url(\'' + basecamp.photo_url + '\')"' : '') + '>' + (basecamp.photo_url ? '' : IC_BED) + '</div>',
     '          <div class="sl-step3-summary-body">',
     '            <div class="sl-step3-summary-top">',
-    '              <a class="sl-step3-summary-name sl-step3-summary-name-link" href="' + buildBookingHotelSearchUrl(basecamp, zone.name) + '" target="_blank" rel="noopener noreferrer" title="Booking.com에서 이 숙소 검색">' + escapeHtml(basecamp.name) + ' ' + IC_EXTLINK + '</a>',
+    '              <a class="sl-step3-summary-name sl-step3-summary-name-link" href="' + buildHotelSearchUrl(basecamp, zone.name) + '" target="_blank" rel="noopener noreferrer" title="Google Hotels에서 이 숙소 검색">' + escapeHtml(basecamp.name) + ' ' + IC_EXTLINK + '</a>',
     stars ? '              <div class="sl-step3-summary-stars">' + stars + '</div>' : '',
     '            </div>',
     '            <div class="sl-step3-summary-tags"><span class="sl-zone-tag">' + escapeHtml(categoryLabel) + '</span></div>',
