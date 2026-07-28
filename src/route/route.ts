@@ -19,8 +19,19 @@ import {
   resolveActiveDestination,
   loadStaySegments,
   resolveActiveSegment,
+  isSyntheticDestination,
 } from '../trips/destinations';
 import { loadGoogleMapsScript } from '../utils/googleMaps';
+import {
+  loadRoutePlan,
+  saveRouteDay,
+  clearRoutePlan,
+  subscribeRoutePlan,
+  unsubscribeRoutePlan,
+  isRouteStorageReady,
+  resetRouteStorageProbe,
+} from './routeStore';
+import type { StoredStop } from './routeStore';
 import type { Database } from '../types/database';
 import './route.css';
 
@@ -74,7 +85,20 @@ interface Leg {
   km: number;
   min: number;
   costTHB: number;
+  /** true면 Routes API 실측, false면 직선거리 기반 추정치 (원칙 3-1 — 화면에 구분 표기) */
+  real: boolean;
+  /** 실측 대중교통 요금이 있을 때만 (통화 포함) */
+  fare?: { units: number; currency: string };
 }
+
+/** /api/route-legs 응답의 모드별 실측값 */
+interface RealLeg {
+  meters: number;
+  seconds: number;
+  fare?: { units: number; currency: string };
+}
+
+interface Pt { lat: number; lng: number }
 
 interface MemberLite {
   id: string;
@@ -125,6 +149,13 @@ const memoStore = new Map<string, string>();
 const timeOverride = new Map<string, string>();
 const legModeOverride = new Map<string, Leg['mode']>();
 
+let activeDestId: string | null = null;
+/** 실제 길찾기 결과 — legKey → 모드별 {meters,seconds,fare}. 없으면 직선거리 추정치 사용 */
+let realLegs = new Map<string, Record<string, RealLeg>>();
+let realLegPending = false;
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let lastSavedSig = '';
+
 let mapInstance: any = null;
 let mapMarkers: any[] = [];
 let routePolylines: any[] = [];
@@ -137,6 +168,19 @@ let escHandler: ((e: KeyboardEvent) => void) | null = null;
 export function teardownRoute(): void {
   if (resizeHandler) { window.removeEventListener('resize', resizeHandler); resizeHandler = null; }
   if (escHandler) { document.removeEventListener('keydown', escHandler); escHandler = null; }
+  // 화면을 떠날 때 대기 중인 저장은 버리지 않고 커밋한다 (Claude.md 알려진 버그 패턴:
+  // 대기 타이머를 그냥 취소하면 "화면엔 반영됐는데 DB엔 없는" 상태가 됨).
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    void persistActiveDay();
+  }
+  unsubscribeRoutePlan();
+  resetRouteStorageProbe();
+  activeDestId = null;
+  realLegs = new Map();
+  realLegPending = false;
+  lastSavedSig = '';
   currentTrip = null;
   basecamp = null;
   candidatePlaces = [];
@@ -183,16 +227,59 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
 }
 
 function legForMode(km: number, mode: Leg['mode']): Leg {
-  if (mode === 'WALK') return { mode, km, min: Math.max(2, Math.round(km * 13)), costTHB: 0 };
-  if (mode === 'TRANSIT') return { mode, km, min: Math.max(6, Math.round((km / 18) * 60) + 6), costTHB: Math.min(62, 20 + Math.round(km) * 6) };
-  return { mode, km, min: Math.max(8, Math.round((km / 24) * 60)), costTHB: 35 + Math.round(km * 6.5) };
+  if (mode === 'WALK') return { mode, km, min: Math.max(2, Math.round(km * 13)), costTHB: 0, real: false };
+  if (mode === 'TRANSIT') return { mode, km, min: Math.max(6, Math.round((km / 18) * 60) + 6), costTHB: Math.min(62, 20 + Math.round(km) * 6), real: false };
+  return { mode, km, min: Math.max(8, Math.round((km / 24) * 60)), costTHB: 35 + Math.round(km * 6.5), real: false };
 }
 
-/** 두 지점 사이의 추정 이동 leg (거리에 따라 도보/대중교통/택시 자동 선택, 수동 오버라이드 가능) */
+/** 앱 내부 모드 ↔ Routes API travelMode */
+function toApiMode(mode: Leg['mode']): string {
+  return mode === 'TAXI' ? 'DRIVE' : mode;
+}
+
+/** 실측 데이터를 Leg로 변환. 택시 요금은 Routes API가 주지 않으므로 거리 기반 추정 유지 */
+function realToLeg(mode: Leg['mode'], r: RealLeg): Leg {
+  const km = r.meters / 1000;
+  const min = Math.max(1, Math.round(r.seconds / 60));
+  if (mode === 'TRANSIT') {
+    // 실측 요금이 있으면 그 값을, 없으면 거리 기반 추정치를 쓴다(추정 여부는 fare 유무로 구분).
+    const costTHB = r.fare ? Math.round(r.fare.units) : Math.min(62, 20 + Math.round(km) * 6);
+    return { mode, km, min, costTHB, real: true, fare: r.fare };
+  }
+  if (mode === 'WALK') return { mode, km, min, costTHB: 0, real: true };
+  return { mode, km, min, costTHB: 35 + Math.round(km * 6.5), real: true };
+}
+
+/**
+ * 두 지점 사이의 이동 leg.
+ * 실측 데이터(Routes API)가 도착해 있으면 그걸 쓰고, 없으면 직선거리 기반 추정치로 폴백한다.
+ * 모드는 수동 지정이 있으면 그것을, 없으면 실측 소요시간(없으면 거리)으로 자동 판단한다.
+ */
 function estimateLegWithOverride(a: Place, b: Place, override?: Leg['mode']): Leg {
-  const km = haversineKm(a.lat!, a.lng!, b.lat!, b.lng!) * 1.25; // 직선→실주행 보정
-  const mode: Leg['mode'] = override ?? (km <= 1.0 ? 'WALK' : km <= 6 ? 'TRANSIT' : 'TAXI');
-  return legForMode(km, mode);
+  const straightKm = haversineKm(a.lat!, a.lng!, b.lat!, b.lng!) * 1.25; // 직선→실주행 보정
+  const measured = realLegs.get(legKey(a.id, b.id));
+
+  const mode: Leg['mode'] = override ?? pickAutoMode(straightKm, measured);
+  const r = measured?.[toApiMode(mode)];
+  if (r) return realToLeg(mode, r);
+  return legForMode(straightKm, mode);
+}
+
+/**
+ * 이동수단 자동 선택. 실측이 있으면 "도보 15분 이내면 걷고, 아니면 대중교통이 택시보다
+ * 심하게 느리지 않은 한 대중교통"이라는 실제 여행자 기준으로 고른다.
+ */
+function pickAutoMode(straightKm: number, measured?: Record<string, RealLeg>): Leg['mode'] {
+  if (!measured) return straightKm <= 1.0 ? 'WALK' : straightKm <= 6 ? 'TRANSIT' : 'TAXI';
+  const walk = measured.WALK;
+  const transit = measured.TRANSIT;
+  const drive = measured.DRIVE;
+  if (walk && walk.seconds <= 15 * 60) return 'WALK';
+  if (transit && (!drive || transit.seconds <= drive.seconds * 1.6)) return 'TRANSIT';
+  if (drive) return 'TAXI';
+  if (transit) return 'TRANSIT';
+  if (walk) return 'WALK';
+  return straightKm <= 1.0 ? 'WALK' : straightKm <= 6 ? 'TRANSIT' : 'TAXI';
 }
 
 function modeIcon(mode: Leg['mode']): string {
@@ -264,6 +351,112 @@ function dayLegs(day: RouteDay): Leg[] {
     legs.push(estimateLegWithOverride(stops[i], stops[i + 1], override));
   }
   return legs;
+}
+
+/* ══════════════ 영속화 (supabase/route_plan.sql) ══════════════ */
+
+/** 현재 DAY 상태의 지문 — 실제로 바뀌었을 때만 저장하려고 비교용으로 쓴다 */
+function daySignature(day: RouteDay): string {
+  const stops = day.stopIds.map((id) => {
+    const p = placeById.get(id);
+    return [
+      id,
+      timeOverride.get(timeKey(day.id, id)) ?? '',
+      memoStore.get(id) ?? '',
+      p ? legModeOverrideForArrival(day, id) : '',
+    ].join('~');
+  });
+  return day.id + '|' + stops.join('|');
+}
+
+/** 이 정류지로 **오는** 구간의 수동 이동수단 (저장 스키마가 도착지 기준이라 맞춰줌) */
+function legModeOverrideForArrival(day: RouteDay, placeId: string): string {
+  const seq = orderedStops(day);
+  const idx = seq.findIndex((p) => p.id === placeId);
+  if (idx <= 0) return '';
+  return legModeOverride.get(legKey(seq[idx - 1].id, placeId)) ?? '';
+}
+
+/** 변경이 있으면 잠시 뒤 저장 (연속 조작을 한 번으로 묶음) */
+function scheduleSave(): void {
+  if (!isRouteStorageReady() || !activeDestId || !currentTripId) return;
+  const day = activeDay();
+  if (!day) return;
+  const sig = daySignature(day);
+  if (sig === lastSavedSig) return;
+
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    void persistActiveDay();
+  }, 600);
+}
+
+async function persistActiveDay(): Promise<void> {
+  if (!isRouteStorageReady() || !activeDestId || !currentTripId) return;
+  const day = activeDay();
+  if (!day) return;
+  const dayIndex = days.findIndex((d) => d.id === day.id);
+  if (dayIndex < 0) return;
+
+  const seq = orderedStops(day);
+  const stops: StoredStop[] = day.stopIds.map((id) => {
+    const p = placeById.get(id);
+    const idx = seq.findIndex((s) => s.id === id);
+    const prev = idx > 0 ? seq[idx - 1] : null;
+    const isAdhoc = id.startsWith('adhoc-');
+    return {
+      placeId: isAdhoc ? null : id,
+      customName: isAdhoc ? p?.name ?? '직접 추가한 장소' : null,
+      customLat: isAdhoc ? p?.lat ?? null : null,
+      customLng: isAdhoc ? p?.lng ?? null : null,
+      arriveTime: timeOverride.get(timeKey(day.id, id)) ?? null,
+      memo: memoStore.get(id) || null,
+      travelMode: prev ? legModeOverride.get(legKey(prev.id, id)) ?? null : null,
+    };
+  });
+
+  const sig = daySignature(day);
+  const ok = await saveRouteDay(currentTripId, activeDestId, dayIndex, stops);
+  if (ok) lastSavedSig = sig;
+}
+
+/** 저장된 동선을 모듈 상태로 복원. 저장된 DAY가 하나도 없으면 false */
+function applyStoredPlan(stored: Awaited<ReturnType<typeof loadRoutePlan>>): boolean {
+  if (!stored || stored.length === 0) return false;
+
+  let applied = false;
+  stored.forEach((sd) => {
+    const day = days[sd.dayIndex];
+    if (!day) return; // 저장된 DAY 수가 더 많으면(기간이 줄어든 경우) 남는 건 무시
+    const ids: string[] = [];
+    let prevId: string | null = basecamp?.id ?? null;
+
+    sd.stops.forEach((s) => {
+      let id: string | null = null;
+      if (s.placeId) {
+        if (placeById.has(s.placeId)) id = s.placeId;
+      } else if (s.customLat != null && s.customLng != null) {
+        // 지도에 직접 찍었던 지점 복원
+        const p = makeAdhocPlace(s.customName || '직접 추가한 장소', s.customLat, s.customLng);
+        placeById.set(p.id, p);
+        candidatePlaces.push(p);
+        id = p.id;
+      }
+      if (!id) return; // 원본 장소가 지워졌으면 조용히 건너뜀
+
+      ids.push(id);
+      if (s.arriveTime) timeOverride.set(timeKey(day.id, id), s.arriveTime);
+      if (s.memo) memoStore.set(id, s.memo);
+      if (s.travelMode && prevId) legModeOverride.set(legKey(prevId, id), s.travelMode as Leg['mode']);
+      prevId = id;
+    });
+
+    day.stopIds = ids;
+    applied = true;
+  });
+
+  return applied;
 }
 
 function removeStop(placeId: string): void {
@@ -403,6 +596,7 @@ async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
 
   const dests = await loadDestinations(trip);
   const activeDest = resolveActiveDestination(trip.id, dests);
+  activeDestId = activeDest && !isSyntheticDestination(activeDest.id) ? activeDest.id : null;
   const segments = activeDest ? await loadStaySegments(trip, activeDest) : [];
   const seg = activeDest ? resolveActiveSegment(activeDest.id, segments) : null;
 
@@ -438,9 +632,83 @@ async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
   days = Array.from({ length: dayCount }, (_, i) => ({
     id: 'day-' + (i + 1),
     label: 'DAY ' + (i + 1),
-    stopIds: i === 0 ? sorted.map((p) => p.id) : [],
+    stopIds: [],
   }));
   activeDayId = days[0].id;
+
+  // 저장된 동선이 있으면 그걸 복원(협업/새로고침), 없으면 1일차에 가까운 순으로 미리 채워둔다.
+  let restored = false;
+  if (activeDestId) {
+    const stored = await loadRoutePlan(activeDestId);
+    restored = applyStoredPlan(stored);
+  }
+  if (!restored) {
+    days[0].stopIds = sorted.map((p) => p.id);
+    // 첫 진입에 자동으로 채운 것도 저장해 두어야 다른 멤버에게 같은 화면이 보인다.
+    lastSavedSig = '';
+    scheduleSave();
+  } else {
+    lastSavedSig = daySignature(activeDay());
+  }
+}
+
+/* ══════════════ 실제 길찾기 (Routes API + DB 캐시) ══════════════ */
+
+/**
+ * 현재 DAY의 구간들을 실제 경로 데이터로 채운다(모드 3종 동시 조회 — 교통편 비교에도 그대로 사용).
+ * 실패하거나 키가 없으면 조용히 추정치를 유지한다(원칙 3-1대로 화면에 "추정"으로 표기됨).
+ */
+async function loadRealLegsForActiveDay(container: HTMLElement): Promise<void> {
+  const day = activeDay();
+  if (!day) return;
+  const stops = orderedStops(day).filter((p) => p.lat != null && p.lng != null);
+  if (stops.length < 2) return;
+
+  const pending: Array<{ id: string; from: Pt; to: Pt }> = [];
+  for (let i = 0; i < stops.length - 1; i++) {
+    const key = legKey(stops[i].id, stops[i + 1].id);
+    if (realLegs.has(key)) continue; // 이미 받아온 구간은 다시 묻지 않음
+    pending.push({
+      id: key,
+      from: { lat: stops[i].lat!, lng: stops[i].lng! },
+      to: { lat: stops[i + 1].lat!, lng: stops[i + 1].lng! },
+    });
+  }
+  if (!pending.length || realLegPending) return;
+
+  realLegPending = true;
+  setLegLoading(container, true);
+  try {
+    const res = await fetch('/api/route-legs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ legs: pending, modes: ['WALK', 'TRANSIT', 'DRIVE'] }),
+    });
+    if (!res.ok) return;
+    const json = await res.json();
+    const results: Array<{ id: string; modes: Record<string, RealLeg> }> = json?.results ?? [];
+    let got = false;
+    results.forEach((r) => {
+      if (r.modes && Object.keys(r.modes).length) {
+        realLegs.set(r.id, r.modes);
+        got = true;
+      }
+    });
+    if (got && rtContainer) {
+      renderRightPanel(rtContainer);
+      drawRouteOnMap(false);
+    }
+  } catch {
+    /* 네트워크 실패 → 추정치 유지 */
+  } finally {
+    realLegPending = false;
+    setLegLoading(container, false);
+  }
+}
+
+function setLegLoading(container: HTMLElement, on: boolean): void {
+  const el = container.querySelector('#rt-legs-loading') as HTMLElement | null;
+  if (el) el.style.display = on ? '' : 'none';
 }
 
 function dayDateLabel(dayIndex: number): string {
@@ -489,6 +757,23 @@ export async function renderRouteContent(container: HTMLElement, tripId: string)
   bindHeaderNav(container);
   bindPage(container);
   await initMap(container);
+
+  // 같은 트립을 보고 있는 다른 멤버의 변경을 실시간으로 반영
+  subscribeRoutePlan(tripId, () => { void reloadFromRemote(); });
+  void loadRealLegsForActiveDay(container);
+}
+
+/** 다른 멤버가 동선을 바꿨을 때 — 내 편집 중인 상태를 버리지 않도록 저장 예약을 먼저 비운다 */
+async function reloadFromRemote(): Promise<void> {
+  if (!activeDestId || !rtContainer) return;
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+
+  const stored = await loadRoutePlan(activeDestId);
+  if (!stored) return;
+  days.forEach((d) => { d.stopIds = []; });
+  applyStoredPlan(stored);
+  lastSavedSig = daySignature(activeDay());
+  refreshAll(rtContainer, { refit: false });
 }
 
 function bindHeaderNav(container: HTMLElement): void {
@@ -801,7 +1086,12 @@ function bindOptionsMenu(container: HTMLElement): void {
       if (!confirm('이 여행지의 모든 DAY 동선을 초기화할까요?')) { menu.remove(); return; }
       days.forEach((d) => pushHistory(d.id));
       days.forEach((d) => { d.stopIds = []; });
+      memoStore.clear();
+      timeOverride.clear();
+      legModeOverride.clear();
       menu.remove();
+      if (activeDestId) void clearRoutePlan(activeDestId);
+      lastSavedSig = '';
       refreshAll(container, { refit: true });
     });
     const dismiss = (ev: MouseEvent) => {
@@ -900,19 +1190,36 @@ function handleLegClick(fromId: string, toId: string, anchor?: HTMLElement): voi
 function openModeOverridePopover(key: string, anchor?: HTMLElement): void {
   document.querySelectorAll('.rt-mode-popover').forEach((el) => el.remove());
   const cur = legModeOverride.get(key);
+  const measured = realLegs.get(key);
+
+  /** 모드별 실제 소요시간·요금을 나란히 보여줘 사용자가 직접 비교해 고르게 한다 */
   const row = (mode: string, icon: string, label: string) => {
     const on = mode === 'AUTO' ? !cur : cur === mode;
+    let meta = '';
+    if (mode !== 'AUTO') {
+      const r = measured?.[toApiMode(mode as Leg['mode'])];
+      if (r) {
+        const min = Math.max(1, Math.round(r.seconds / 60));
+        const fare = r.fare ? ' · ' + Math.round(r.fare.units) + ' ' + r.fare.currency : '';
+        meta = '<span class="rt-mode-meta">' + fmtMin(min) + fare + '</span>';
+      } else if (measured) {
+        meta = '<span class="rt-mode-meta rt-mode-na">경로 없음</span>';
+      }
+    }
     return '<button type="button" data-mode="' + mode + '" class="' + (on ? 'selected' : '') + '">' +
-      icon + ' ' + label + (on ? '<span class="rt-mode-check">' + IC_CHECK + '</span>' : '') + '</button>';
+      icon + '<span class="rt-mode-name">' + label + '</span>' + meta +
+      (on ? '<span class="rt-mode-check">' + IC_CHECK + '</span>' : '') + '</button>';
   };
+
   const pop = document.createElement('div');
   pop.className = 'rt-mode-popover';
   pop.innerHTML = [
-    '<div class="rt-mode-popover-title">이동수단</div>',
+    '<div class="rt-mode-popover-title">이동수단' + (measured ? ' · 실제 경로 기준' : '') + '</div>',
     row('WALK', IC_WALK, '도보'),
     row('TRANSIT', IC_TRANSIT, '대중교통'),
     row('TAXI', IC_TAXI, '자동차'),
-    row('AUTO', IC_SPARK, '자동 추정'),
+    row('AUTO', IC_SPARK, '자동 선택'),
+    measured ? '' : '<div class="rt-mode-popover-note">실제 경로를 불러오는 중이거나<br>불러오지 못해 추정치를 쓰고 있어요</div>',
   ].join('');
   document.body.appendChild(pop);
   const r = anchor?.getBoundingClientRect();
@@ -939,6 +1246,40 @@ function openModeOverridePopover(key: string, anchor?: HTMLElement): void {
     }
   };
   setTimeout(() => document.addEventListener('mousedown', dismiss), 0);
+}
+
+/**
+ * 화면에 쓸 통화 코드. 실측 대중교통 요금이 오면 그 통화를 그대로 쓰고(여행지가 어디든 정확),
+ * 없으면 추정 로직이 방콕 기준이라 THB로 폴백한다.
+ */
+function currencyOf(legs: Leg[]): string {
+  const withFare = legs.find((l) => l.fare?.currency);
+  return withFare?.fare?.currency ?? 'THB';
+}
+
+function fmtCost(amount: number, currency: string): string {
+  return amount.toLocaleString() + ' ' + currency;
+}
+
+/**
+ * 요약 아래 안내문 — 원칙 3-1(데이터 진위)에 따라 실측/추정을 섞어 쓰는 현 상태를 정확히 알린다.
+ * 택시 요금은 Routes API가 주지 않으므로 항상 추정치임을 별도로 밝힌다.
+ */
+function estimateNoteHtml(legs: Leg[]): string {
+  if (!legs.length) return '';
+  const realCount = legs.filter((l) => l.real).length;
+  const hasTaxi = legs.some((l) => l.mode === 'TAXI');
+  const fareEstimated = legs.some((l) => l.mode === 'TRANSIT' && l.real && !l.fare);
+
+  if (realCount === 0) {
+    return '<span id="rt-legs-loading" style="display:none">실제 경로 확인 중… </span>* 직선거리 기반 추정치예요';
+  }
+  const base =
+    realCount === legs.length
+      ? '* 이동시간·거리는 실제 경로 기준'
+      : '* 이동시간·거리는 일부만 실제 경로 기준 (' + realCount + '/' + legs.length + '), 나머지는 추정치';
+  const costNote = hasTaxi || fareEstimated ? ', 요금은 추정치' : '';
+  return '<span id="rt-legs-loading" style="display:none">실제 경로 확인 중… </span>' + base + costNote + '예요';
 }
 
 /* ── 시간 계산 (수동 오버라이드가 있으면 그 시각을 기준으로 이어서 계산) ── */
@@ -1058,6 +1399,7 @@ function renderRightPanel(container: HTMLElement): void {
   const s = computeDaySummary(day);
   const totalKm = legs.reduce((sum, l) => sum + l.km, 0);
   const dayIndex = days.findIndex((d) => d.id === day.id);
+  const cur = currencyOf(legs);
 
   const rows: string[] = [];
   stops.forEach((p, i) => {
@@ -1097,13 +1439,14 @@ function renderRightPanel(container: HTMLElement): void {
       const key = legKey(p.id, stops[i + 1].id);
       const selected = selectedLegKey === key;
       const manual = legModeOverride.has(key);
-      const extra = leg.costTHB > 0 ? leg.costTHB + ' THB' : (leg.mode === 'WALK' ? fmtKm(leg.km) : '무료');
+      const extra = leg.costTHB > 0 ? fmtCost(leg.costTHB, cur) : (leg.mode === 'WALK' ? fmtKm(leg.km) : '무료');
       rows.push(
         [
           '<div class="rt-panel-connector ' + modeColorClass(leg.mode) + (selected ? ' rt-highlighted' : '') + '" data-leg-key="' + key + '"' +
             ' role="button" tabindex="0" title="눌러서 이 구간 강조 · 교통수단 툴에서는 이동수단 변경">',
           '  <span class="rt-panel-connector-icon">' + modeIcon(leg.mode) + '</span>',
           '  <span class="rt-panel-connector-label">' + modeLabel(leg.mode) + ' ' + fmtMin(leg.min) + ' <b>·</b> ' + extra + '</span>',
+          !leg.real ? '  <span class="rt-panel-connector-est" title="실제 경로를 못 받아 직선거리로 추정한 값이에요">추정</span>' : '',
           manual ? '  <span class="rt-panel-connector-manual" title="직접 지정한 이동수단"></span>' : '',
           '</div>',
         ].join('')
@@ -1138,10 +1481,10 @@ function renderRightPanel(container: HTMLElement): void {
     '<div class="rt-panel-summary">',
     '  <div class="rt-panel-summary-item"><div class="rt-panel-summary-label">총 이동시간</div><div class="rt-panel-summary-value">' + fmtMin(s.totalMin) + '</div></div>',
     '  <div class="rt-panel-summary-item"><div class="rt-panel-summary-label">총 이동거리</div><div class="rt-panel-summary-value">' + totalKm.toFixed(1) + 'km</div></div>',
-    '  <div class="rt-panel-summary-item"><div class="rt-panel-summary-label">예상 교통비</div><div class="rt-panel-summary-value">' + s.totalCost + ' THB</div></div>',
+    '  <div class="rt-panel-summary-item"><div class="rt-panel-summary-label">예상 교통비</div><div class="rt-panel-summary-value">' + fmtCost(s.totalCost, cur) + '</div></div>',
     '</div>',
-    // 원칙 3-1 — 실제 경로 API 연동 전까지는 추정치임을 반드시 표기
-    '<div class="rt-panel-estimate-note">* 직선거리 기반 추정치예요</div>',
+    // 원칙 3-1 — 실측/추정을 섞어 쓰므로 어느 쪽인지 반드시 구분해 표기
+    '<div class="rt-panel-estimate-note">' + estimateNoteHtml(legs) + '</div>',
     '<div class="rt-panel-actions">',
     '  <button type="button" class="rt-panel-action" id="rt-panel-add">' + IC_PLUS + ' 장소 추가</button>',
     '  <button type="button" class="rt-panel-action primary" id="rt-panel-optimize"' + (s.visitCount < 2 ? ' disabled' : '') +
@@ -1185,6 +1528,7 @@ function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
     input.addEventListener('input', (e) => {
       const id = (input as HTMLElement).dataset.placeId!;
       memoStore.set(id, (e.target as HTMLInputElement).value);
+      scheduleSave(); // 재렌더 없이 값만 바뀌므로 여기서 직접 저장 예약
     });
     input.addEventListener('click', (e) => e.stopPropagation());
   });
@@ -1301,6 +1645,9 @@ function refreshAll(container: HTMLElement, opts: { refit: boolean } = { refit: 
   renderRightPanel(container);
   renderMemberLegend(container);
   drawRouteOnMap(opts.refit);
+  // 변경이 실제로 있을 때만 저장되고(지문 비교), 새로 생긴 구간은 실측 데이터를 채운다.
+  scheduleSave();
+  void loadRealLegsForActiveDay(container);
 }
 
 /* ══════════════════ 지도 ══════════════════ */
@@ -1398,6 +1745,7 @@ function drawRouteOnMap(refit: boolean): void {
   const day = activeDay();
   const stops = orderedStops(day).filter((p) => p.lat != null && p.lng != null);
   const legs = dayLegs(day);
+  const mapCur = currencyOf(legs);
 
   // 아직 오늘 동선에 없는 확정 장소 — 카테고리 아이콘 배지(작게)
   candidatePlaces.forEach((p) => {
@@ -1433,7 +1781,7 @@ function drawRouteOnMap(refit: boolean): void {
     const cls = 'rt-map-capsule ' + modeColorClass(leg.mode) +
       (selected ? ' rt-leg-selected' : dimmed ? ' rt-leg-dimmed' : '') +
       (legModeOverride.has(key) ? ' rt-leg-manual' : '');
-    const capsule = new Ctor(new g.maps.LatLng(midLat, midLng), legCapsuleHtml(leg), cls, () =>
+    const capsule = new Ctor(new g.maps.LatLng(midLat, midLng), legCapsuleHtml(leg, mapCur), cls, () =>
       handleLegClick(stops[i].id, stops[i + 1].id, capsule.div ?? undefined)
     );
     capsule.setMap(mapInstance);
@@ -1443,8 +1791,8 @@ function drawRouteOnMap(refit: boolean): void {
   if (refit) fitRouteBounds();
 }
 
-function legCapsuleHtml(leg: Leg): string {
-  const extra = leg.mode === 'WALK' ? fmtKm(leg.km) : (leg.costTHB > 0 ? leg.costTHB + ' THB' : '무료');
+function legCapsuleHtml(leg: Leg, currency: string): string {
+  const extra = leg.mode === 'WALK' ? fmtKm(leg.km) : (leg.costTHB > 0 ? fmtCost(leg.costTHB, currency) : '무료');
   return modeIcon(leg.mode) + '<span>' + fmtMin(leg.min) + '</span><span class="rt-cap-dist">' + extra + '</span>';
 }
 

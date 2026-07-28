@@ -665,6 +665,26 @@
 .rt-mode-popover button svg { width: 13px; height: 13px; color: var(--rt-ink-2); flex-shrink: 0; }
 .rt-mode-popover button.selected svg { color: var(--rt-blue); }
 .rt-mode-popover button .rt-mode-check { margin-left: auto; width: 12px; height: 12px; color: var(--rt-blue); }
+.rt-mode-popover .rt-mode-name { flex-shrink: 0; }
+/* 모드별 실제 소요시간·요금 — 나란히 비교할 수 있게 우측 정렬 */
+.rt-mode-popover .rt-mode-meta {
+  margin-left: auto; font-size: 10.5px; font-weight: 700; color: var(--rt-ink-2);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.rt-mode-popover button.selected .rt-mode-meta { color: var(--rt-blue); }
+.rt-mode-popover .rt-mode-meta.rt-mode-na { color: var(--rt-ink-4); font-weight: 600; }
+.rt-mode-popover button .rt-mode-check + .rt-mode-meta,
+.rt-mode-popover button .rt-mode-meta + .rt-mode-check { margin-left: 6px; }
+.rt-mode-popover-note {
+  font-size: 10px; color: var(--rt-ink-4); line-height: 1.5;
+  padding: 6px 10px 3px; border-top: var(--rt-dash); margin-top: 4px;
+}
+
+/* 실측이 아닌 추정 구간임을 커넥터에 아주 작게 표시 (원칙 3-1) */
+.rt-panel-connector-est {
+  margin-left: 3px; font-size: 9px; font-weight: 700; color: var(--rt-ink-4);
+  border: 1px solid var(--rt-line); border-radius: 4px; padding: 0 3px; flex-shrink: 0;
+}
 
 /* ── 빈 상태 (숙소 미확정) ── */
 .rt-empty {

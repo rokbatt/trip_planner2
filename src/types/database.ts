@@ -223,6 +223,61 @@ export interface Database {
         ];
       };
 
+      /* ROUTE 게이트 — 하루 동선(supabase/route_plan.sql) */
+      route_days: {
+        Row: {
+          id: string;
+          trip_id: string;
+          destination_id: string | null;
+          day_index: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          trip_id: string;
+          destination_id?: string | null;
+          day_index: number;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['route_days']['Insert']>;
+        Relationships: [];
+      };
+
+      route_stops: {
+        Row: {
+          id: string;
+          route_day_id: string;
+          trip_id: string;
+          place_id: string | null;
+          sort_order: number;
+          arrive_time: string | null;
+          memo: string | null;
+          travel_mode: string | null;
+          custom_name: string | null;
+          custom_lat: number | null;
+          custom_lng: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          route_day_id: string;
+          trip_id: string;
+          place_id?: string | null;
+          sort_order?: number;
+          arrive_time?: string | null;
+          memo?: string | null;
+          travel_mode?: string | null;
+          custom_name?: string | null;
+          custom_lat?: number | null;
+          custom_lng?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['route_stops']['Insert']>;
+        Relationships: [];
+      };
+
       city_images: {
         Row: {
           id: string;
