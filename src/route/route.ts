@@ -20,6 +20,7 @@ import {
   loadStaySegments,
   resolveActiveSegment,
   isSyntheticDestination,
+  placeBelongsToDestination,
 } from '../trips/destinations';
 import { loadGoogleMapsScript } from '../utils/googleMaps';
 import {
@@ -605,10 +606,16 @@ async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
   const basecampId = seg?.basecamp_place_id ?? trip.shortlist_basecamp_place_id ?? null;
   basecamp = basecampId ? placeById.get(basecampId) ?? null : null;
 
-  const confirmedIds = seg?.confirmed_place_ids ?? trip.shortlist_confirmed_place_ids ?? [];
-  candidatePlaces = confirmedIds
-    .map((id) => placeById.get(id))
-    .filter((p): p is Place => !!p && p.id !== basecampId && p.lat != null && p.lng != null);
+  // SHORTLIST Step3의 "확정" 목록(숙소 4km 이내로 자동 필터링됨)이 아니라, 이 여행지에서
+  // Brainstorm으로 분류한 장소 전체를 후보로 쓴다 — 숙소 근처만 보이던 문제 수정.
+  // (loadPlaces가 이미 mood(VISIT/FOOD/ACTIVITY로 분류됨)가 있는 것만 불러온 상태)
+  candidatePlaces = [...placeById.values()].filter(
+    (p) =>
+      p.id !== basecampId &&
+      p.lat != null &&
+      p.lng != null &&
+      (!activeDest || placeBelongsToDestination(p, activeDest))
+  );
 
   // 체류 일수 = 여행지 전체 기간 기준(숙소 나누기로 구간이 쪼개져 있어도 DAY는 전체 기간을
   // 다 채워야 함 — 활성 구간의 날짜만 쓰면 그 구간의 좁혀진 기간만큼만 DAY가 생기는 버그가 있었음)
@@ -622,15 +629,6 @@ async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
   }
   const dayCount = Math.max(1, Math.min(nights, 10));
 
-  // 첫 진입: 확정 장소를 가까운 순으로 정렬해 1일차에 미리 채워둠(사용자가 조정 가능)
-  const sorted = basecamp
-    ? [...candidatePlaces].sort(
-        (a, b) =>
-          haversineKm(basecamp!.lat!, basecamp!.lng!, a.lat!, a.lng!) -
-          haversineKm(basecamp!.lat!, basecamp!.lng!, b.lat!, b.lng!)
-      )
-    : [...candidatePlaces];
-
   days = Array.from({ length: dayCount }, (_, i) => ({
     id: 'day-' + (i + 1),
     label: 'DAY ' + (i + 1),
@@ -638,20 +636,15 @@ async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
   }));
   activeDayId = days[0].id;
 
-  // 저장된 동선이 있으면 그걸 복원(협업/새로고침), 없으면 1일차에 가까운 순으로 미리 채워둔다.
+  // 저장된 동선이 있으면 그걸 복원(협업/새로고침). 없으면 전부 빈 DAY로 시작 —
+  // 후보가 이제 Brainstorm 전체(숙소 근처만이 아님)라 자동으로 채우면 오히려 어수선해짐.
+  // 사용자가 왼쪽 검색 패널·지도 클릭으로 직접 골라 담는다.
   let restored = false;
   if (activeDestId) {
     const stored = await loadRoutePlan(activeDestId);
     restored = applyStoredPlan(stored);
   }
-  if (!restored) {
-    days[0].stopIds = sorted.map((p) => p.id);
-    // 첫 진입에 자동으로 채운 것도 저장해 두어야 다른 멤버에게 같은 화면이 보인다.
-    lastSavedSig = '';
-    scheduleSave();
-  } else {
-    lastSavedSig = daySignature(activeDay());
-  }
+  lastSavedSig = restored ? daySignature(activeDay()) : '';
 }
 
 /* ══════════════ 실제 길찾기 (Routes API + DB 캐시) ══════════════ */
@@ -980,7 +973,7 @@ function renderLeftPanel(container: HTMLElement): void {
     // 검색 결과 없음 / 애초에 확정 장소 없음을 구분해서 안내
     listEl.innerHTML = placeSearchQuery.trim()
       ? '<div class="rt-float-empty">' + IC_SEARCH + '<div>\'' + escapeHtml(placeSearchQuery.trim()) + '\'와<br>일치하는 장소가 없어요</div></div>'
-      : '<div class="rt-float-empty">' + IC_PIN_PLUS + '<div>확정된 장소가 없어요<br>아래에서 직접 추가해보세요</div></div>';
+      : '<div class="rt-float-empty">' + IC_PIN_PLUS + '<div>Brainstorm에 분류된 장소가 없어요<br>아래에서 직접 추가해보세요</div></div>';
     return;
   }
 
