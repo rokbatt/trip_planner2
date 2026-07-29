@@ -202,6 +202,22 @@
 }
 .rt-float-search-input input::placeholder { color: var(--rt-ink-4); }
 
+.rt-float-search-toggle {
+  border: none; background: none; padding: 0; margin: 0; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 6px; color: var(--rt-ink-3); cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+.rt-float-search-toggle:hover { background: var(--rt-mist); color: var(--rt-blue); }
+.rt-float-search-toggle svg { width: 14px; height: 14px; }
+
+/* 접힌 상태 — 검색 아이콘 버튼만 남기고 목록/즉석추가는 숨김 */
+.rt-float-search.collapsed { width: auto; }
+.rt-float-search.collapsed .rt-float-search-input { border-bottom: none; padding: 10px; }
+.rt-float-search.collapsed .rt-float-search-input input,
+.rt-float-search.collapsed .rt-float-list,
+.rt-float-search.collapsed .rt-float-adhoc { display: none; }
+
 .rt-float-list { overflow-y: auto; padding: 6px; scrollbar-width: thin; }
 .rt-float-list::-webkit-scrollbar { width: 6px; }
 .rt-float-list::-webkit-scrollbar-thumb { background: rgba(130,150,170,0.3); border-radius: 3px; }

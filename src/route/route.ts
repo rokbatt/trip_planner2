@@ -135,6 +135,7 @@ let days: RouteDay[] = [];
 let activeDayId = '';
 let dayRangeStartDate: string | null = null;
 let panelCollapsed = false;
+let leftPanelCollapsed = false;
 let members: MemberLite[] = [];
 
 let activeTool: ToolKind = 'select';
@@ -189,6 +190,7 @@ export function teardownRoute(): void {
   activeDayId = '';
   dayRangeStartDate = null;
   panelCollapsed = false;
+  leftPanelCollapsed = false;
   members = [];
   activeTool = 'select';
   connectFromId = null;
@@ -806,7 +808,10 @@ function buildPageHtml(): string {
     '        <div id="rt-map" class="rt-map"></div>',
 
     '        <div class="rt-float-search" id="rt-float-search">',
-    '          <div class="rt-float-search-input">' + IC_SEARCH + '<input type="text" id="rt-float-search-input" placeholder="장소 검색" /></div>',
+    '          <div class="rt-float-search-input">',
+    '            <button type="button" class="rt-float-search-toggle" id="rt-float-toggle" title="장소 검색 패널 접기/펼치기" aria-label="장소 검색 패널 접기/펼치기">' + IC_SEARCH + '</button>',
+    '            <input type="text" id="rt-float-search-input" placeholder="장소 검색" />',
+    '          </div>',
     '          <div class="rt-float-list" id="rt-float-list"></div>',
     '          <button type="button" class="rt-float-adhoc" id="rt-float-adhoc">' + IC_PIN_PLUS + ' 지도에 직접 추가</button>',
     '        </div>',
@@ -857,6 +862,13 @@ function bindPage(container: HTMLElement): void {
   panelCol?.addEventListener('transitionend', (e) => {
     if ((e as TransitionEvent).propertyName !== 'width' && (e as TransitionEvent).propertyName !== 'transform') return;
     resizeMap();
+  });
+
+  const leftToggle = container.querySelector('#rt-float-toggle') as HTMLElement;
+  const leftPanel = container.querySelector('#rt-float-search') as HTMLElement;
+  leftToggle?.addEventListener('click', () => {
+    leftPanelCollapsed = !leftPanelCollapsed;
+    leftPanel.classList.toggle('collapsed', leftPanelCollapsed);
   });
 
   if (escHandler) document.removeEventListener('keydown', escHandler);
@@ -1680,10 +1692,8 @@ async function initMap(container: HTMLElement): Promise<void> {
     isFractionalZoomEnabled: true,
     styles: MAP_STYLE_LIGHT,
     clickableIcons: false,
-    // Google 기본 컨트롤 사용(커스텀 금지). 좌하단은 멤버 범례가 쓰므로 전부 우측으로 모아
-    // 겹침을 방지한다 — 좌상단은 장소 검색 패널, 하단 중앙은 편집 툴바가 차지.
-    zoomControl: true,
-    zoomControlOptions: { position: g.maps.ControlPosition.RIGHT_BOTTOM },
+    // 확대/축소는 마우스 휠·드래그(gestureHandling:'greedy')로 충분해 버튼은 아예 뺀다.
+    zoomControl: false,
     mapTypeControl: true,
     mapTypeControlOptions: { style: g.maps.MapTypeControlStyle.DEFAULT, position: g.maps.ControlPosition.RIGHT_TOP },
     streetViewControl: false,
