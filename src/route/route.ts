@@ -156,6 +156,8 @@ let highlightedPlaceId: string | null = null;
 /** 우측 타임라인에 마우스를 올렸을 때만 잠깐 강조되는 장소 (클릭 선택과 별개인 일시적 미리보기) */
 let hoveredPlaceId: string | null = null;
 let selectedLegKey: string | null = null;
+/** 구간(화살표)에 마우스를 올렸을 때만 잠깐 보이는 시간/비용 캡슐 — 클릭하면 selectedLegKey로 고정됨 */
+let hoveredLegKey: string | null = null;
 let adhocMode = false;
 let adhocSeq = 0;
 let placeSearchQuery = '';
@@ -215,6 +217,7 @@ export function teardownRoute(): void {
   highlightedPlaceId = null;
   hoveredPlaceId = null;
   selectedLegKey = null;
+  hoveredLegKey = null;
   adhocMode = false;
   placeSearchQuery = '';
   activeCatFilters = new Set();
@@ -1274,7 +1277,6 @@ function handlePinClick(g: any, p: Place): void {
   const alreadyIncluded = isBasecamp || activeDay().stopIds.includes(p.id);
   highlightedPlaceId = p.id;
   hoveredPlaceId = null;
-  focusMapOnPlace(p);
   if (g?.maps) {
     showRipple(g, p, ROUTE_NAVY);
     if (!alreadyIncluded) openPlaceCard(g, p);
@@ -1282,22 +1284,6 @@ function handlePinClick(g: any, p: Place): void {
   drawRouteOnMap(false);
   renderRightPanel(rtContainer!);
   scrollTimelineTo(p.id);
-}
-
-/**
- * 줌이 많이 빠진 상태에서 인접한 정류지를 클릭하면 번호 핀·모드 전환 노드·캡슐이
- * 화면상 좁은 영역에 겹쳐 보이던 문제 — 클릭한 장소로 지도를 부드럽게 이동시키고,
- * 이미 충분히 확대돼 있지 않으면 최소 확대 수준까지 당겨서 여백을 벌려준다.
- * (기존 확대 수준이 이미 더 가까우면 축소하지 않고 그대로 둔다)
- */
-const PLACE_FOCUS_MIN_ZOOM = 16;
-function focusMapOnPlace(p: Place): void {
-  if (!mapInstance || p.lat == null || p.lng == null) return;
-  mapInstance.panTo({ lat: p.lat, lng: p.lng });
-  const cur = mapInstance.getZoom();
-  if (typeof cur === 'number' && cur < PLACE_FOCUS_MIN_ZOOM) {
-    mapInstance.setZoom(PLACE_FOCUS_MIN_ZOOM);
-  }
 }
 
 /** 지도에서 핀을 클릭하면 우측 타임라인도 그 장소가 보이도록 스크롤 */
@@ -1540,7 +1526,6 @@ function renderRightPanel(container: HTMLElement): void {
   const rows: string[] = [];
   stops.forEach((p, i) => {
     const isBasecamp = !!basecamp && i === 0 && p.id === basecamp.id;
-    const meta = categoryMeta(p, isBasecamp);
     const memo = memoStore.get(p.id) ?? '';
     const highlighted = p.id === highlightedPlaceId;
 
@@ -1551,7 +1536,7 @@ function renderRightPanel(container: HTMLElement): void {
         isBasecamp
           ? '  <span class="rt-drag-handle locked" aria-hidden="true"></span>'
           : '  <span class="rt-drag-handle" title="드래그해서 순서 바꾸기" aria-hidden="true">' + IC_GRIP + '</span>',
-        '  <span class="rt-panel-badge" style="background:' + meta.color + '">' + (i + 1) + '</span>',
+        '  <span class="rt-panel-badge' + (isBasecamp ? ' rt-panel-badge-stay' : '') + '">' + (i + 1) + '</span>',
         '  <div class="rt-panel-name-col"><div class="rt-panel-name">' + escapeHtml(p.name) + '</div><div class="rt-panel-sub">' + escapeHtml(p.category || (isBasecamp ? '숙소' : '')) + '</div></div>',
         // native <input type="time">은 로케일에 따라 "오후 01:00"처럼 12시간제로 그려져
         // 좁은 패널에서 접두사가 잘리면 13:00이 01:00으로 보이는 오표시가 발생한다.
@@ -1982,13 +1967,12 @@ function drawRouteOnMap(refit: boolean): void {
     const overlapIndex = seenLegs.get(geomKey) ?? 0;
     seenLegs.set(geomKey, overlapIndex + 1);
 
-    // 강조 대상 = 명시적으로 고른 구간이거나, 강조된 지점에 붙어 있는 구간.
-    // 그 외에는 무언가 골라져 있을 때만 흐리게 (selected와 dimmed가 동시에 참이 되지 않도록
-    // 반드시 selected의 여집합으로 정의한다 — 예전엔 구간을 고른 뒤 먼 핀을 누르면
-    // 고른 구간이 selected이면서 dimmed가 되어 오히려 흐려지는 버그가 있었음)
-    const legFocused = focusIdx >= 0 && (i === focusIdx || i === focusIdx - 1);
-    const selected = selectedLegKey === key || legFocused;
-    const dimmed = !selected && (!!selectedLegKey || focusIdx >= 0);
+    // 강조 대상 = 이 구간(화살표) 자체를 클릭해 고정했거나, 지금 마우스를 올리고 있는 구간뿐.
+    // 장소 핀 클릭/호버는 더 이상 구간 강조에 영향을 주지 않는다(전엔 장소를 클릭하면 앞뒤
+    // 구간까지 캡슐이 떴는데, 장소가 붙어있을 때마다 캡슐이 튀어나와 어수선하다는 피드백으로 분리함).
+    // selected와 dimmed가 동시에 참이 되지 않도록 반드시 selected의 여집합으로 정의한다.
+    const selected = selectedLegKey === key || hoveredLegKey === key;
+    const dimmed = !selected && (!!selectedLegKey || !!hoveredLegKey);
 
     const line = buildLegPolyline(g, stops[i], stops[i + 1], leg, {
       selected,
@@ -1997,6 +1981,18 @@ function drawRouteOnMap(refit: boolean): void {
       overlapIndex,
     });
     line.addListener('click', () => handleLegClick(stops[i].id, stops[i + 1].id));
+    // 호버 = 일시적 미리보기(캡슐 잠깐 표시), 클릭 = 고정(selectedLegKey). 이미 클릭으로 고정된
+    // 구간이 있으면 다른 구간에 마우스를 올려도 그 고정을 덮어쓰지 않는다(원칙 3-3).
+    line.addListener('mouseover', () => {
+      if (selectedLegKey || hoveredLegKey === key) return;
+      hoveredLegKey = key;
+      drawRouteOnMap(false);
+    });
+    line.addListener('mouseout', () => {
+      if (hoveredLegKey !== key) return;
+      hoveredLegKey = null;
+      drawRouteOnMap(false);
+    });
     routePolylines.push(line);
 
     // 이동수단이 바뀌는 지점에 작은 노드 (첫 구간이거나 앞 구간과 모드가 다를 때)

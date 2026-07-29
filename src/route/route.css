@@ -599,12 +599,17 @@
 .rt-drag-handle svg { width: 11px; height: 11px; }
 .rt-drag-handle.locked { opacity: 0 !important; cursor: default; }
 
+/* 카테고리별 알록달록한 색 대신 차분한 블루 계열로 통일 — 지도 핀과 마찬가지로
+   방문 순서가 눈에 잘 들어와야 할 뿐, 카테고리 구분은 이미 아래 서브텍스트로 충분함.
+   숙소(출발점)만 네이비로 살짝 구분해 "여행의 중심"임을 표시한다. */
 .rt-panel-badge {
   grid-column: 2; width: 26px; height: 26px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   color: #fff; font-size: 11.5px; font-weight: 800; flex-shrink: 0;
+  background: var(--rt-blue);
   box-shadow: 0 1px 3px rgba(11,42,92,0.2);
 }
+.rt-panel-badge-stay { background: var(--rt-navy); }
 .rt-panel-badge svg { width: 12px; height: 12px; }
 .rt-panel-name-col { grid-column: 3; min-width: 0; }
 .rt-panel-name {
