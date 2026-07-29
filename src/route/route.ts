@@ -91,7 +91,7 @@ interface Leg {
   fare?: { units: number; currency: string };
 }
 
-/** /api/route-legs 응답의 모드별 실측값 */
+/** /api/route-matrix(구간 비교 모드) 응답의 모드별 실측값 */
 interface RealLeg {
   meters: number;
   seconds: number;
@@ -679,7 +679,9 @@ async function loadRealLegsForActiveDay(container: HTMLElement): Promise<void> {
   realLegPending = true;
   setLegLoading(container, true);
   try {
-    const res = await fetch('/api/route-legs', {
+    // route-legs.ts는 Vercel Hobby 플랜의 서버리스 함수 12개 한도를 넘겨 route-matrix.ts에
+    // 합쳐졌다(body에 legs가 있으면 이 경로로 분기됨) — api/route-matrix.ts 상단 설명 참고.
+    const res = await fetch('/api/route-matrix', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ legs: pending, modes: ['WALK', 'TRANSIT', 'DRIVE'] }),
