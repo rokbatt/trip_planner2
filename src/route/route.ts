@@ -47,6 +47,7 @@ const IC_CAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 const IC_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
 const IC_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
 const IC_CHEVRON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
+const IC_CHEVRON_UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>';
 const IC_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
 const IC_SPARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18"/></svg>';
 const IC_STAR = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.8 5.9 20.4 7.2 13.7 2.2 9l6.8-.8z"/></svg>';
@@ -73,6 +74,13 @@ const CAT_COLOR: Record<CatKey, string> = {
   VISIT: '#E24B4A', FOOD: '#1D9E75', ACTIVITY: '#7F77DD', SHOPPING: '#F5A623', STAY: '#0B2A5C',
 };
 const CAT_ICON: Record<CatKey, string> = { VISIT: IC_LANDMARK, FOOD: IC_FORK, ACTIVITY: IC_TARGET, SHOPPING: IC_BAG, STAY: IC_BED };
+/** 좌측 패널 카테고리 필터 칩 — 후보 목록에 실제로 나타나는 4개 게이트만(숙소 제외) */
+const CAT_FILTERS: Array<{ key: CatKey; label: string }> = [
+  { key: 'VISIT', label: '관광' },
+  { key: 'FOOD', label: '맛집' },
+  { key: 'ACTIVITY', label: '액티비티' },
+  { key: 'SHOPPING', label: '쇼핑' },
+];
 const SHOPPING_KEYWORDS = ['쇼핑', '마켓', '시장', '백화점', 'mall', 'market', 'shopping'];
 
 interface RouteDay {
@@ -146,6 +154,8 @@ let selectedLegKey: string | null = null;
 let adhocMode = false;
 let adhocSeq = 0;
 let placeSearchQuery = '';
+/** 좌측 패널 카테고리 필터 — 비어있으면 전체 표시 */
+let activeCatFilters = new Set<CatKey>();
 let historyByDay = new Map<string, HistoryState>();
 const memoStore = new Map<string, string>();
 const timeOverride = new Map<string, string>();
@@ -199,6 +209,7 @@ export function teardownRoute(): void {
   selectedLegKey = null;
   adhocMode = false;
   placeSearchQuery = '';
+  activeCatFilters = new Set();
   historyByDay = new Map();
   memoStore.clear();
   timeOverride.clear();
@@ -802,11 +813,13 @@ function buildPageHtml(): string {
 
     '        <div class="rt-float-search" id="rt-float-search">',
     '          <div class="rt-float-search-input">',
-    '            <button type="button" class="rt-float-search-toggle" id="rt-float-toggle" title="장소 검색 패널 접기/펼치기" aria-label="장소 검색 패널 접기/펼치기">' + IC_SEARCH + '</button>',
+    '            ' + IC_SEARCH,
     '            <input type="text" id="rt-float-search-input" placeholder="장소 검색" />',
+    '            <button type="button" class="rt-float-search-toggle" id="rt-float-toggle" title="패널 접기/펼치기" aria-label="장소 검색 패널 접기/펼치기">' + IC_CHEVRON_UP + '</button>',
     '          </div>',
+    '          <div class="rt-float-filters" id="rt-float-filters"></div>',
     '          <div class="rt-float-list" id="rt-float-list"></div>',
-    '          <button type="button" class="rt-float-adhoc" id="rt-float-adhoc">' + IC_PIN_PLUS + ' 지도에 직접 추가</button>',
+    '          <button type="button" class="rt-float-adhoc" id="rt-float-adhoc" title="지도를 클릭한 위치에 Brainstorm에 없는 장소(예: 특정 출입구, 뷰포인트)를 새로 추가해요">' + IC_PIN_PLUS + ' 지도에 직접 추가</button>',
     '        </div>',
 
     '        <div class="rt-memberlegend" id="rt-memberlegend"></div>',
@@ -836,6 +849,7 @@ function buildPageHtml(): string {
 
 function bindPage(container: HTMLElement): void {
   renderDayTabs(container);
+  renderCatFilters(container);
   renderLeftPanel(container);
   renderRightPanel(container);
   renderMemberLegend(container);
@@ -857,12 +871,7 @@ function bindPage(container: HTMLElement): void {
     resizeMap();
   });
 
-  const leftToggle = container.querySelector('#rt-float-toggle') as HTMLElement;
-  const leftPanel = container.querySelector('#rt-float-search') as HTMLElement;
-  leftToggle?.addEventListener('click', () => {
-    leftPanelCollapsed = !leftPanelCollapsed;
-    leftPanel.classList.toggle('collapsed', leftPanelCollapsed);
-  });
+  // 좌측 패널 접기/펼치기 토글은 bindSearchInputs가 함께 바인딩한다(검색창 옆에 붙어 있어서).
 
   if (escHandler) document.removeEventListener('keydown', escHandler);
   escHandler = (e: KeyboardEvent) => {
@@ -956,11 +965,48 @@ function bindSearchInputs(container: HTMLElement): void {
     if (floatInput && floatInput.value !== placeSearchQuery) floatInput.value = placeSearchQuery;
     renderLeftPanel(container);
   });
+
+  const toggle = container.querySelector('#rt-float-toggle') as HTMLElement;
+  const panel = container.querySelector('#rt-float-search') as HTMLElement;
+  toggle?.addEventListener('click', () => {
+    leftPanelCollapsed = !leftPanelCollapsed;
+    panel.classList.toggle('collapsed', leftPanelCollapsed);
+    toggle.classList.toggle('is-collapsed', leftPanelCollapsed);
+  });
 }
 
 function filteredCandidates(): Place[] {
   const q = placeSearchQuery.trim().toLowerCase();
-  return q ? candidatePlaces.filter((p) => p.name.toLowerCase().includes(q)) : candidatePlaces;
+  return candidatePlaces.filter((p) => {
+    if (q && !p.name.toLowerCase().includes(q)) return false;
+    if (activeCatFilters.size > 0 && !activeCatFilters.has(categoryMeta(p, false).key)) return false;
+    return true;
+  });
+}
+
+function renderCatFilters(container: HTMLElement): void {
+  const el = container.querySelector('#rt-float-filters') as HTMLElement;
+  if (!el) return;
+  el.innerHTML = CAT_FILTERS.map((f) => {
+    const on = activeCatFilters.has(f.key);
+    const color = CAT_COLOR[f.key];
+    return (
+      '<button type="button" class="rt-float-filter-chip' + (on ? ' active' : '') + '" data-cat="' + f.key + '"' +
+      (on ? ' style="--chip-color:' + color + '"' : '') + '>' +
+      '<span class="rt-float-filter-dot" style="background:' + color + '"></span>' + f.label +
+      '</button>'
+    );
+  }).join('');
+
+  el.querySelectorAll('.rt-float-filter-chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const cat = (btn as HTMLElement).dataset.cat as CatKey;
+      if (activeCatFilters.has(cat)) activeCatFilters.delete(cat);
+      else activeCatFilters.add(cat);
+      renderCatFilters(container);
+      renderLeftPanel(container);
+    });
+  });
 }
 
 function renderLeftPanel(container: HTMLElement): void {
@@ -970,9 +1016,10 @@ function renderLeftPanel(container: HTMLElement): void {
   const items = filteredCandidates();
 
   if (!items.length) {
-    // 검색 결과 없음 / 애초에 확정 장소 없음을 구분해서 안내
-    listEl.innerHTML = placeSearchQuery.trim()
-      ? '<div class="rt-float-empty">' + IC_SEARCH + '<div>\'' + escapeHtml(placeSearchQuery.trim()) + '\'와<br>일치하는 장소가 없어요</div></div>'
+    // 검색/필터 결과 없음 vs 애초에 분류된 장소가 없음을 구분해서 안내
+    const filtering = !!placeSearchQuery.trim() || activeCatFilters.size > 0;
+    listEl.innerHTML = filtering
+      ? '<div class="rt-float-empty">' + IC_SEARCH + '<div>조건에 맞는 장소가 없어요<br>검색어나 필터를 확인해보세요</div></div>'
       : '<div class="rt-float-empty">' + IC_PIN_PLUS + '<div>Brainstorm에 분류된 장소가 없어요<br>아래에서 직접 추가해보세요</div></div>';
     return;
   }
