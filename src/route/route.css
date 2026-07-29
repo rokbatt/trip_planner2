@@ -195,7 +195,12 @@
   display: flex; align-items: center; gap: 7px;
   padding: 12px 14px; border-bottom: var(--rt-dash); flex-shrink: 0;
 }
-.rt-float-search-input svg { width: 14px; height: 14px; color: var(--rt-ink-3); flex-shrink: 0; }
+.rt-float-search-icon {
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: none; padding: 0; margin: 0; cursor: default; flex-shrink: 0;
+  color: var(--rt-ink-3); border-radius: 7px;
+}
+.rt-float-search-icon svg { width: 14px; height: 14px; }
 .rt-float-search-input input {
   border: none; outline: none; font-size: 12.5px; color: var(--rt-ink); width: 100%;
   background: none; font-family: inherit;
@@ -214,10 +219,17 @@
 .rt-float-search-toggle svg { width: 12px; height: 12px; transition: transform 200ms ease; }
 .rt-float-search-toggle.is-collapsed svg { transform: rotate(180deg); }
 
-/* 접힌 상태 — 헤더 줄(검색 아이콘+토글)만 남기고 필터/목록/즉석추가는 숨김 */
+/* 접힌 상태 — 돋보기 아이콘 하나만 남기고(펼치기 버튼은 숨김) 필터/목록/즉석추가도 숨김.
+   이 아이콘을 누르면 펼쳐짐(아래 .collapsed .rt-float-search-icon 규칙에서 클릭 가능하게 함) */
 .rt-float-search.collapsed { width: auto; }
 .rt-float-search.collapsed .rt-float-search-input { border-bottom: none; }
 .rt-float-search.collapsed .rt-float-search-input input { width: 0; padding: 0; }
+.rt-float-search.collapsed .rt-float-search-toggle { display: none; }
+.rt-float-search.collapsed .rt-float-search-icon {
+  cursor: pointer; width: 22px; height: 22px;
+  border: 1px solid var(--rt-line); background: #fff; box-shadow: 0 1px 2px rgba(11,42,92,0.06);
+}
+.rt-float-search.collapsed .rt-float-search-icon:hover { background: var(--rt-ice); color: var(--rt-blue); border-color: var(--rt-sky); }
 .rt-float-search.collapsed .rt-float-filters,
 .rt-float-search.collapsed .rt-float-list,
 .rt-float-search.collapsed .rt-float-adhoc { display: none; }
@@ -393,6 +405,27 @@
   0% { width: 14px; height: 14px; opacity: 0.75; }
   100% { width: 62px; height: 62px; opacity: 0; }
 }
+
+/* 지도/위성 전환 — 구글 기본 버튼 대신 하단 툴바(.rt-tool)와 같은 글래스+네이비 언어로 통일 */
+.rt-maptype-control {
+  display: inline-flex; align-items: center; gap: 2px;
+  background: var(--rt-glass);
+  backdrop-filter: var(--rt-blur); -webkit-backdrop-filter: var(--rt-blur);
+  border: 1px solid var(--rt-line);
+  border-radius: 11px; padding: 3px;
+  box-shadow: var(--rt-shadow-md);
+  margin: 10px;
+  font-family: inherit;
+}
+.rt-maptype-btn {
+  border: none; background: none; cursor: pointer; font-family: inherit;
+  padding: 6px 12px; border-radius: 8px; font-size: 11.5px; font-weight: 700;
+  color: var(--rt-ink-2); white-space: nowrap;
+  transition: background var(--rt-ease), color var(--rt-ease);
+}
+.rt-maptype-btn:hover { background: rgba(255,255,255,0.8); color: var(--rt-ink); }
+.rt-maptype-btn.active { background: var(--rt-navy); color: #fff; }
+.rt-maptype-btn.active:hover { background: var(--rt-navy-hover); }
 
 /* ── 하단 플로팅 툴바 ── */
 .rt-toolfloat {

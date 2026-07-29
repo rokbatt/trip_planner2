@@ -857,7 +857,7 @@ function buildPageHtml(): string {
 
     '        <div class="rt-float-search" id="rt-float-search">',
     '          <div class="rt-float-search-input">',
-    '            ' + IC_SEARCH,
+    '            <button type="button" class="rt-float-search-icon" id="rt-float-search-icon" title="장소 검색 패널 펼치기" aria-label="장소 검색 패널 펼치기">' + IC_SEARCH + '</button>',
     '            <input type="text" id="rt-float-search-input" placeholder="장소 검색" />',
     '            <button type="button" class="rt-float-search-toggle" id="rt-float-toggle" title="패널 접기/펼치기" aria-label="장소 검색 패널 접기/펼치기">' + IC_CHEVRON_UP + '</button>',
     '          </div>',
@@ -1012,10 +1012,19 @@ function bindSearchInputs(container: HTMLElement): void {
 
   const toggle = container.querySelector('#rt-float-toggle') as HTMLElement;
   const panel = container.querySelector('#rt-float-search') as HTMLElement;
-  toggle?.addEventListener('click', () => {
-    leftPanelCollapsed = !leftPanelCollapsed;
-    panel.classList.toggle('collapsed', leftPanelCollapsed);
-    toggle.classList.toggle('is-collapsed', leftPanelCollapsed);
+  const setCollapsed = (collapsed: boolean) => {
+    leftPanelCollapsed = collapsed;
+    panel.classList.toggle('collapsed', collapsed);
+    toggle.classList.toggle('is-collapsed', collapsed);
+  };
+  toggle?.addEventListener('click', () => setCollapsed(!leftPanelCollapsed));
+
+  // 접힌 상태에선 돋보기 아이콘만 남기고(펼치기 버튼은 숨김) — 그 아이콘을 눌러서 펼침
+  const searchIcon = container.querySelector('#rt-float-search-icon') as HTMLElement | null;
+  searchIcon?.addEventListener('click', () => {
+    if (!leftPanelCollapsed) return; // 펼쳐진 상태에서는 장식용 아이콘일 뿐
+    setCollapsed(false);
+    requestAnimationFrame(() => floatInput?.focus());
   });
 }
 
@@ -1265,6 +1274,7 @@ function handlePinClick(g: any, p: Place): void {
   const alreadyIncluded = isBasecamp || activeDay().stopIds.includes(p.id);
   highlightedPlaceId = p.id;
   hoveredPlaceId = null;
+  focusMapOnPlace(p);
   if (g?.maps) {
     showRipple(g, p, ROUTE_NAVY);
     if (!alreadyIncluded) openPlaceCard(g, p);
@@ -1272,6 +1282,22 @@ function handlePinClick(g: any, p: Place): void {
   drawRouteOnMap(false);
   renderRightPanel(rtContainer!);
   scrollTimelineTo(p.id);
+}
+
+/**
+ * 줌이 많이 빠진 상태에서 인접한 정류지를 클릭하면 번호 핀·모드 전환 노드·캡슐이
+ * 화면상 좁은 영역에 겹쳐 보이던 문제 — 클릭한 장소로 지도를 부드럽게 이동시키고,
+ * 이미 충분히 확대돼 있지 않으면 최소 확대 수준까지 당겨서 여백을 벌려준다.
+ * (기존 확대 수준이 이미 더 가까우면 축소하지 않고 그대로 둔다)
+ */
+const PLACE_FOCUS_MIN_ZOOM = 16;
+function focusMapOnPlace(p: Place): void {
+  if (!mapInstance || p.lat == null || p.lng == null) return;
+  mapInstance.panTo({ lat: p.lat, lng: p.lng });
+  const cur = mapInstance.getZoom();
+  if (typeof cur === 'number' && cur < PLACE_FOCUS_MIN_ZOOM) {
+    mapInstance.setZoom(PLACE_FOCUS_MIN_ZOOM);
+  }
 }
 
 /** 지도에서 핀을 클릭하면 우측 타임라인도 그 장소가 보이도록 스크롤 */
@@ -1812,12 +1838,14 @@ async function initMap(container: HTMLElement): Promise<void> {
     clickableIcons: false,
     // 확대/축소는 마우스 휠·드래그(gestureHandling:'greedy')로 충분해 버튼은 아예 뺀다.
     zoomControl: false,
-    mapTypeControl: true,
-    mapTypeControlOptions: { style: g.maps.MapTypeControlStyle.DEFAULT, position: g.maps.ControlPosition.RIGHT_TOP },
+    // 구글 기본 지도/위성 버튼은 이 디자인 톤과 안 어울려서 끄고, 같은 자리에 커스텀 버튼을 넣는다.
+    mapTypeControl: false,
     streetViewControl: false,
     fullscreenControl: false,
     rotateControl: false,
   });
+
+  addMapTypeToggle(g, mapInstance);
 
   // 지도 빈 곳 클릭 = 장소 카드/강조 해제 (원칙 3-3 명시적 해제 수단)
   mapInstance.addListener('click', () => {
@@ -1858,6 +1886,26 @@ async function initMap(container: HTMLElement): Promise<void> {
 
   resizeHandler = () => resizeMap();
   window.addEventListener('resize', resizeHandler);
+}
+
+/**
+ * 구글 기본 "지도/위성" 버튼(딱딱한 회색 UI)을 끄고, 하단 툴바(.rt-tool)와 같은
+ * 언어(글래스 배경 + 네이비 active 필)로 만든 커스텀 세그먼트 버튼을 그 자리에 넣는다.
+ */
+function addMapTypeToggle(g: any, map: any): void {
+  const wrap = document.createElement('div');
+  wrap.className = 'rt-maptype-control';
+  wrap.innerHTML =
+    '<button type="button" class="rt-maptype-btn active" data-type="roadmap">지도</button>' +
+    '<button type="button" class="rt-maptype-btn" data-type="hybrid">위성</button>';
+  wrap.querySelectorAll('.rt-maptype-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const type = (btn as HTMLElement).dataset.type!;
+      map.setMapTypeId(type);
+      wrap.querySelectorAll('.rt-maptype-btn').forEach((b) => b.classList.toggle('active', b === btn));
+    });
+  });
+  map.controls[g.maps.ControlPosition.RIGHT_TOP].push(wrap);
 }
 
 function resizeMap(): void {
