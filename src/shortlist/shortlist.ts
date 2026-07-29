@@ -164,6 +164,7 @@ let step2FilterText = '';
 let confirmedIds = new Set<string>();
 let mapInstance: any = null;
 let mapMarkers: any[] = [];
+let zoneLabelZoomRedrawHandle: number | null = null;
 
 export function teardownShortlist(): void {
   if (shellResizeHandler) {
@@ -173,6 +174,10 @@ export function teardownShortlist(): void {
   if (voteTallyListenerRef) {
     window.removeEventListener('mongsil:voteTallyChanged', voteTallyListenerRef);
     voteTallyListenerRef = null;
+  }
+  if (zoneLabelZoomRedrawHandle != null) {
+    window.cancelAnimationFrame(zoneLabelZoomRedrawHandle);
+    zoneLabelZoomRedrawHandle = null;
   }
   if (placeInfoWindow) {
     placeInfoWindow.close();
@@ -2262,6 +2267,18 @@ async function initMap(body: HTMLElement): Promise<void> {
 
   addCustomZoomControl(mapInstance, body.querySelector('#sl-map') as HTMLElement);
 
+  // 지도를 축소하면 권역 이름 필(pill) 라벨이 화면 픽셀 기준으로는 그대로라 도형에 비해
+  // 점점 커 보임 — 줌 레벨에 맞춰 다시 계산. 스크롤 줌 중엔 자주 발생하므로 프레임당 한 번만.
+  mapInstance.addListener('zoom_changed', () => {
+    if (zoneLabelZoomRedrawHandle != null) return;
+    zoneLabelZoomRedrawHandle = window.requestAnimationFrame(() => {
+      zoneLabelZoomRedrawHandle = null;
+      zoneLabelOverlays.forEach((overlay) => {
+        if (typeof overlay.updateZoomScale === 'function') overlay.updateZoomScale();
+      });
+    });
+  });
+
   // 폴리곤/마커/라벨이 아닌 지도 빈 공간을 클릭하면 강조 해제 + 고정된 정보창도 닫음
   mapInstance.addListener('click', () => {
     pendingSelectedZoneId = null;
@@ -2377,6 +2394,19 @@ async function initMap(body: HTMLElement): Promise<void> {
 }
 
 /** 지도 위에 뜨는 지역 정보 카드 (Google Maps 커스텀 OverlayView, 실제 DOM 엘리먼트) */
+// 기본 진입 줌(12)에서의 라벨 크기가 "적절한" 기준 — 더 축소하면 화면 픽셀 크기가 고정된
+// 채로 남아 필(pill) 라벨이 도형에 비해 점점 커 보이므로, 축소한 만큼 함께 줄인다.
+const ZONE_LABEL_REFERENCE_ZOOM = 12;
+const ZONE_LABEL_MIN_ZOOM_SCALE = 0.6;
+function zoneLabelZoomScale(): number {
+  if (!mapInstance || typeof mapInstance.getZoom !== 'function') return 1;
+  const zoom = mapInstance.getZoom();
+  if (typeof zoom !== 'number' || !Number.isFinite(zoom)) return 1;
+  const diff = ZONE_LABEL_REFERENCE_ZOOM - zoom;
+  if (diff <= 0) return 1; // 기준 줌보다 확대한 상태는 기존 크기 그대로
+  return Math.max(ZONE_LABEL_MIN_ZOOM_SCALE, 1 - diff * 0.09);
+}
+
 function createZoneLabelOverlay(g: any, zone: Zone, color: string, labelPos: { lat: number; lng: number }): any {
   class ZoneLabelOverlay extends g.maps.OverlayView {
     div: HTMLDivElement | null = null;
@@ -2386,6 +2416,7 @@ function createZoneLabelOverlay(g: any, zone: Zone, color: string, labelPos: { l
       div.className = 'sl-map-zone-label';
       div.dataset.zoneId = zone.id;
       div.style.setProperty('--zone-color', color);
+      div.style.setProperty('--zone-zoom-scale', String(zoneLabelZoomScale()));
       div.innerHTML = '<span class="sl-map-label-name">' + escapeHtml(zone.name) + '</span>';
 
       div.addEventListener('click', () => {
@@ -2423,6 +2454,12 @@ function createZoneLabelOverlay(g: any, zone: Zone, color: string, labelPos: { l
     updateSelected(isSelected: boolean) {
       if (!this.div) return;
       this.div.classList.toggle('selected', isSelected);
+    }
+
+    /** 지도를 축소해도 라벨이 상대적으로 커 보이지 않게 줌 레벨에 맞춰 크기를 다시 계산 */
+    updateZoomScale() {
+      if (!this.div) return;
+      this.div.style.setProperty('--zone-zoom-scale', String(zoneLabelZoomScale()));
     }
   }
 

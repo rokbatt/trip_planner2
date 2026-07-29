@@ -810,15 +810,16 @@
   --zone-pill-bg-tint: 12%;
   --zone-pill-border-tint: 30%;
   --zone-pill-blur: 6px;
+  --zone-zoom-scale: 1;
 
   position: absolute;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) scale(var(--zone-zoom-scale));
   text-align: center;
   cursor: pointer;
   pointer-events: auto;
   transition: transform 150ms ease;
 }
-.sl-map-zone-label:hover { transform: translate(-50%, -50%) scale(1.05); }
+.sl-map-zone-label:hover { transform: translate(-50%, -50%) scale(calc(var(--zone-zoom-scale) * 1.05)); }
 /* 작은 권역(도형이 좁은 경우)에서 라벨이 도형 폭을 거의 다 차지해 안에 있는 마커를
    가려 보이던 문제 — 가독성 유지되는 선에서 폰트·패딩을 축소해 필 자체의 자리 차지를 줄임 */
 .sl-map-label-name {
