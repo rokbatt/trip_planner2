@@ -3824,10 +3824,13 @@ async function runReviewSummary(
 
   let result: ReviewSummaryResult | null = null;
   try {
-    const res = await fetch('/api/hotel-review-summary', {
+    // Gemini를 쓰는 엔드포인트들은 Vercel 함수 12개 한도(Claude.md 3-7) 때문에
+    // /api/ai 한 파일로 합쳐져 있고 body의 kind로 분기한다.
+    const res = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        kind: 'hotel-review',
         placeId: basecamp.google_place_id ?? undefined,
         hotelName: basecamp.name,
         address: basecamp.address ?? '',

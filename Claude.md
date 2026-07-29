@@ -188,8 +188,15 @@ api/                                  ← Vercel 서버리스 함수 (각각 완
   nearby-search.ts                   ← 숙소 근처 자유 검색어 (Text Search + Routes API + DB 캐싱)
   cleanup-search-cache.ts            ← Vercel Cron: 자유 입력 캐시 테이블 TTL 정리 (3-5 참고)
   hotel-score.ts                     ← 여행 효율 점수 (Gemini 정형 채점 + DB 캐싱)
-  hotel-review-summary.ts            ← AI 리뷰 요약 (Gemini + Google Search 그라운딩, 버튼 클릭 시에만 호출 + DB 캐싱)
+  ai.ts                              ← Gemini 기능 묶음. body의 kind로 분기 (3-7의 12개 한도 때문에 한 파일)
+                                        kind 생략|'hotel-review' → AI 리뷰 요약 (Google Search 그라운딩)
+                                        kind 'route-plan'        → ROUTE의 DAY별 일정 자동 배분
+                                        kind 'day-detail'        → 특정 DAY의 세부 일정·예산(참고용, 추후 프리미엄)
 ```
+
+> **Gemini 기능을 새로 추가할 땐 `api/ai.ts`에 `kind`를 하나 더 만든다.** 새 파일을 만들면
+> 12개 한도(3-7)에 걸려 배포가 실패한다. 반대로 함수 슬롯이 더 필요해지면
+> monthly-picks / destination-zones / hotel-score도 같은 방식으로 여기 합칠 수 있다.
 
 ---
 

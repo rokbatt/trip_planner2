@@ -107,6 +107,29 @@
 .rt-to-timeline-top:hover { border-color: var(--rt-sky); background: #fff; box-shadow: var(--rt-shadow-sm); }
 .rt-to-timeline-top svg { width: 13px; height: 13px; color: var(--rt-blue); }
 
+/* AI 일정 짜기 — 이 화면에서 가장 강한 액션이라 유일하게 네이비로 채운 버튼.
+   나머지 툴바 버튼은 전부 글래스 아웃라인이라 여기만 자연스럽게 시선이 먼저 간다. */
+.rt-ai-plan-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 10px;
+  border: 1px solid var(--rt-navy); background: var(--rt-navy);
+  color: #fff; font-size: 12.5px; font-weight: 700; cursor: pointer;
+  font-family: inherit; flex-shrink: 0; white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(11,42,92,0.18);
+  transition: background var(--rt-ease), box-shadow var(--rt-ease), opacity var(--rt-ease);
+}
+.rt-ai-plan-btn:hover:not(:disabled) { background: var(--rt-navy-hover); box-shadow: 0 4px 14px rgba(11,42,92,0.24); }
+.rt-ai-plan-btn:disabled { opacity: 0.62; cursor: default; box-shadow: none; }
+.rt-ai-plan-btn svg { width: 14px; height: 14px; }
+
+/* 로딩 스피너 — AI 버튼 안에서 아이콘 자리를 그대로 대체 */
+.rt-ai-spinner {
+  width: 13px; height: 13px; flex-shrink: 0; display: inline-block;
+  border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
+  opacity: 0.75; animation: rt-ai-spin 640ms linear infinite;
+}
+@keyframes rt-ai-spin { to { transform: rotate(360deg); } }
+
 .rt-searchbox {
   display: inline-flex; align-items: center; gap: 7px;
   padding: 8px 13px; border-radius: 10px;
@@ -720,6 +743,148 @@
 .rt-panel-action.primary { background: var(--rt-navy); border-color: var(--rt-navy); color: #fff; }
 .rt-panel-action.primary:hover:not(:disabled) { background: var(--rt-navy-hover); border-color: var(--rt-navy-hover); }
 .rt-panel-action:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* 이 DAY 세부 계획 — 동선을 바꾸지 않고 "읽을 거리"를 만들어주는 보조 액션이라
+   위의 편집 액션들과 한 줄로 섞지 않고 아래에 은은한 점선 버튼으로 구분해 둔다. */
+.rt-panel-detail {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: calc(100% - 24px); margin: 0 12px 14px; padding: 10px;
+  border-radius: 11px; border: 1px dashed var(--rt-line-strong);
+  background: none; color: var(--rt-ink-2); font-size: 11.5px; font-weight: 700;
+  cursor: pointer; font-family: inherit; flex-shrink: 0;
+  transition: border-color var(--rt-ease), background var(--rt-ease), color var(--rt-ease);
+}
+.rt-panel-detail:hover:not(:disabled) { border-color: var(--rt-sky); background: #F5FBFE; color: var(--rt-ink); }
+.rt-panel-detail:disabled { opacity: 0.42; cursor: not-allowed; }
+.rt-panel-detail svg { width: 13px; height: 13px; color: var(--rt-blue); }
+.rt-panel-detail-badge {
+  padding: 2px 6px; border-radius: 999px; background: var(--rt-ice);
+  color: var(--rt-blue); font-size: 9px; font-weight: 800; letter-spacing: 0.02em;
+}
+
+/* AI 추천 적용 직후 안내 배너 */
+.rt-ai-notice {
+  margin: 0 12px 10px; padding: 11px 12px; flex-shrink: 0;
+  border-radius: 12px; border: 1px solid rgba(11,124,196,0.22);
+  background: linear-gradient(180deg, #F5FBFE 0%, #FFFFFF 100%);
+}
+.rt-ai-notice-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rt-ai-notice-title {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; font-weight: 800; color: var(--rt-ink);
+}
+.rt-ai-notice-title svg { width: 13px; height: 13px; color: var(--rt-blue); }
+.rt-ai-notice-close {
+  border: none; background: none; cursor: pointer; padding: 2px;
+  color: var(--rt-ink-4); font-size: 12px; line-height: 1; font-family: inherit;
+}
+.rt-ai-notice-close:hover { color: var(--rt-ink-2); }
+.rt-ai-notice-meta { margin-top: 3px; font-size: 10.5px; font-weight: 700; color: var(--rt-blue); }
+.rt-ai-notice-body { margin-top: 7px; font-size: 11.5px; color: var(--rt-ink-2); line-height: 1.6; }
+.rt-ai-notice-foot { margin-top: 7px; font-size: 10.5px; color: var(--rt-ink-3); line-height: 1.55; }
+.rt-ai-notice-foot b { color: var(--rt-ink-2); font-weight: 800; }
+.rt-ai-notice-undo {
+  display: inline-flex; align-items: center; gap: 5px; margin-top: 9px;
+  padding: 6px 11px; border-radius: 8px;
+  border: 1px solid var(--rt-line); background: #fff;
+  color: var(--rt-ink-2); font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit;
+  transition: border-color var(--rt-ease), color var(--rt-ease);
+}
+.rt-ai-notice-undo:hover { border-color: var(--rt-sky); color: var(--rt-ink); }
+.rt-ai-notice-undo svg { width: 12px; height: 12px; }
+
+/* 빈 상태에서의 AI CTA — 처음 들어온 사용자가 기능을 발견하는 자리 */
+.rt-panel-empty-cta {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  margin-top: 12px; padding: 9px 15px; border-radius: 10px;
+  border: 1px solid var(--rt-navy); background: var(--rt-navy); color: #fff;
+  font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit;
+  transition: background var(--rt-ease), opacity var(--rt-ease);
+}
+.rt-panel-empty-cta:hover:not(:disabled) { background: var(--rt-navy-hover); }
+.rt-panel-empty-cta:disabled { opacity: 0.6; cursor: default; }
+.rt-panel-empty-cta svg { width: 13px; height: 13px; }
+
+/* ── DAY 세부 계획 모달 ── */
+.rt-ai-modal-backdrop {
+  position: fixed; inset: 0; z-index: 90;
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+  background: rgba(11,42,92,0.28);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  animation: rt-ai-fade 160ms ease;
+}
+@keyframes rt-ai-fade { from { opacity: 0; } to { opacity: 1; } }
+.rt-ai-modal {
+  width: min(520px, 100%); max-height: min(78vh, 760px);
+  display: flex; flex-direction: column;
+  background: #fff; border-radius: 18px; border: 1px solid var(--rt-line);
+  box-shadow: 0 24px 60px rgba(11,42,92,0.24);
+  overflow: hidden;
+}
+.rt-ai-modal-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 18px 20px 14px; border-bottom: var(--rt-dash); flex-shrink: 0;
+}
+.rt-ai-modal-eyebrow {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--rt-blue);
+}
+.rt-ai-modal-title { margin-top: 3px; font-size: 17px; font-weight: 800; color: var(--rt-ink); }
+.rt-ai-modal-close {
+  border: none; background: none; cursor: pointer; padding: 4px;
+  color: var(--rt-ink-3); font-size: 15px; line-height: 1; font-family: inherit; flex-shrink: 0;
+}
+.rt-ai-modal-close:hover { color: var(--rt-ink); }
+.rt-ai-modal-body { padding: 16px 20px 20px; overflow-y: auto; }
+.rt-ai-overview {
+  font-size: 12.5px; color: var(--rt-ink-2); line-height: 1.7;
+  padding-bottom: 14px; border-bottom: var(--rt-dash);
+}
+.rt-ai-section-title {
+  display: flex; align-items: center; gap: 6px;
+  margin: 18px 0 9px; font-size: 12px; font-weight: 800; color: var(--rt-ink);
+}
+.rt-ai-badge-est {
+  padding: 2px 6px; border-radius: 999px; background: var(--rt-mist);
+  color: var(--rt-ink-3); font-size: 9px; font-weight: 800;
+}
+.rt-ai-stop { padding: 13px 0; border-bottom: var(--rt-dash); }
+.rt-ai-stop-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rt-ai-stop-name { font-size: 13px; font-weight: 800; color: var(--rt-ink); }
+.rt-ai-chip {
+  padding: 3px 8px; border-radius: 999px; background: var(--rt-ice);
+  color: var(--rt-blue); font-size: 10px; font-weight: 700;
+}
+.rt-ai-list { margin: 8px 0 0; padding-left: 17px; }
+.rt-ai-list li { font-size: 11.5px; color: var(--rt-ink-2); line-height: 1.7; }
+.rt-ai-tip {
+  display: flex; align-items: flex-start; gap: 6px; margin-top: 8px;
+  padding: 8px 10px; border-radius: 9px; background: var(--rt-mist);
+  font-size: 11.5px; color: var(--rt-ink-2); line-height: 1.6;
+}
+.rt-ai-tip svg { width: 12px; height: 12px; flex-shrink: 0; margin-top: 2px; color: var(--rt-blue); }
+.rt-ai-extras { display: flex; flex-direction: column; gap: 9px; }
+.rt-ai-extra { display: flex; align-items: flex-start; gap: 10px; }
+.rt-ai-extra-time {
+  flex-shrink: 0; min-width: 42px; font-size: 11px; font-weight: 800;
+  color: var(--rt-blue); font-variant-numeric: tabular-nums;
+}
+.rt-ai-extra-title { font-size: 12px; font-weight: 700; color: var(--rt-ink); }
+.rt-ai-extra-detail { margin-top: 2px; font-size: 11.5px; color: var(--rt-ink-3); line-height: 1.6; }
+.rt-ai-budget { border: 1px solid var(--rt-line); border-radius: 11px; overflow: hidden; }
+.rt-ai-budget-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 12px; font-size: 11.5px; color: var(--rt-ink-2);
+  border-bottom: 1px solid var(--rt-line);
+}
+.rt-ai-budget-row:last-child { border-bottom: none; }
+.rt-ai-budget-row b { color: var(--rt-ink); font-weight: 800; font-variant-numeric: tabular-nums; }
+.rt-ai-budget-row.total { background: var(--rt-mist); }
+.rt-ai-disclaimer {
+  margin-top: 18px; padding: 10px 12px; border-radius: 10px;
+  background: var(--rt-mist); color: var(--rt-ink-3);
+  font-size: 10.5px; line-height: 1.65;
+}
 
 /* ── 이동수단 변경 팝오버 ── */
 .rt-mode-popover {

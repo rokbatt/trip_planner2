@@ -34,7 +34,13 @@ interface VercelResponse {
 }
 
 /** 캐시 키에 자유 입력(검색어 등)이 섞여 무한 증식 가능한 테이블만 여기 등록 */
-const CLEANUP_TARGETS: { table: string; retentionDays: number }[] = [{ table: 'hotel_search_cache', retentionDays: 90 }];
+const CLEANUP_TARGETS: { table: string; retentionDays: number }[] = [
+  { table: 'hotel_search_cache', retentionDays: 90 },
+  // AI 일정 추천 — 키에 "담은 장소 조합"이 들어가서 조합 수만큼 늘어날 수 있음.
+  // 30일이면 "장소를 안 바꾸는 한 계속 캐시가 살아있다"는 사용자 기대에는 충분히 길고,
+  // 오래된 추천(폐업/시즌 변화 반영 안 된)이 자연스럽게 갱신되는 효과도 있음.
+  { table: 'ai_plan_cache', retentionDays: 30 },
+];
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {

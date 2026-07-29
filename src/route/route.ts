@@ -33,6 +33,8 @@ import {
   resetRouteStorageProbe,
 } from './routeStore';
 import type { StoredStop } from './routeStore';
+import { requestRoutePlan, requestDayDetail } from './aiPlan';
+import type { AiPlanPlace, AiRoutePlanResult, AiDayDetailResult } from './aiPlan';
 import type { Database } from '../types/database';
 import './route.css';
 
@@ -169,6 +171,24 @@ const timeOverride = new Map<string, string>();
 const legModeOverride = new Map<string, Leg['mode']>();
 
 let activeDestId: string | null = null;
+let activeDestName = '';
+
+/* ── AI 일정 추천 상태 ── */
+let aiPlanBusy = false;
+/** 방금 만든 추천의 설명 — 적용 직후 우측 패널 위에 한 번 보여주고 닫을 수 있게 */
+let aiPlanNotice: { notes: string; usedCount: number; skippedCount: number; cached: boolean } | null = null;
+let dayDetailBusy = false;
+/**
+ * AI 적용 직전 상태의 전체 스냅샷.
+ * 기본 실행취소(Ctrl+Z)는 **활성 DAY의 stopIds만** 되돌리므로, 모든 DAY와 도착시각·이동수단까지
+ * 한 번에 바꾸는 AI 적용은 그걸로 원상복구가 안 된다. 그래서 별도 스냅샷을 잡아
+ * 안내 배너의 "되돌리기" 버튼 하나로 완전히 되돌릴 수 있게 한다.
+ */
+let aiPlanUndo: {
+  stopIdsByDay: Array<[string, string[]]>;
+  times: Array<[string, string]>;
+  modes: Array<[string, Leg['mode']]>;
+} | null = null;
 /** 실제 길찾기 결과 — legKey → 모드별 {meters,seconds,fare}. 없으면 직선거리 추정치 사용 */
 let realLegs = new Map<string, Record<string, RealLeg>>();
 let realLegPending = false;
@@ -198,7 +218,13 @@ export function teardownRoute(): void {
   }
   unsubscribeRoutePlan();
   resetRouteStorageProbe();
+  document.querySelector('.rt-ai-modal-backdrop')?.remove();
   activeDestId = null;
+  activeDestName = '';
+  aiPlanBusy = false;
+  aiPlanNotice = null;
+  aiPlanUndo = null;
+  dayDetailBusy = false;
   realLegs = new Map();
   realLegPending = false;
   lastSavedSig = '';
@@ -482,6 +508,26 @@ async function persistActiveDay(): Promise<void> {
   if (ok) lastSavedSig = sig;
 }
 
+/**
+ * 모든 DAY를 저장한다. 평소엔 활성 DAY만 저장하면 충분하지만(사용자는 한 번에 한 DAY만
+ * 편집하므로), AI 일정 추천처럼 여러 DAY를 한 번에 바꾸는 경우엔 전부 저장해야 한다.
+ */
+async function persistAllDays(): Promise<void> {
+  if (!isRouteStorageReady() || !activeDestId || !currentTripId) return;
+  const keepActive = activeDayId;
+  try {
+    for (const d of days) {
+      // persistActiveDay는 activeDay()를 기준으로 동작하므로 잠깐 활성 DAY를 옮겨가며 저장한다.
+      // (화면은 이 사이에 다시 그리지 않으므로 사용자에게는 보이지 않음)
+      activeDayId = d.id;
+      await persistActiveDay();
+    }
+  } finally {
+    activeDayId = keepActive;
+    lastSavedSig = daySignature(activeDay());
+  }
+}
+
 /** 저장된 동선을 모듈 상태로 복원. 저장된 DAY가 하나도 없으면 false */
 function applyStoredPlan(stored: Awaited<ReturnType<typeof loadRoutePlan>>): boolean {
   if (!stored || stored.length === 0) return false;
@@ -658,6 +704,7 @@ async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
   const dests = await loadDestinations(trip);
   const activeDest = resolveActiveDestination(trip.id, dests);
   activeDestId = activeDest && !isSyntheticDestination(activeDest.id) ? activeDest.id : null;
+  activeDestName = activeDest?.name ?? '';
   const segments = activeDest ? await loadStaySegments(trip, activeDest) : [];
   const seg = activeDest ? resolveActiveSegment(activeDest.id, segments) : null;
 
@@ -848,6 +895,8 @@ function buildPageHtml(): string {
     '    <div class="rt-daytabs" id="rt-daytabs"></div>',
     '    <div class="rt-toolbar-right">',
     '      <button type="button" class="rt-to-timeline-top" id="rt-to-timeline-top">' + IC_ARROW + ' 타임라인으로</button>',
+    // 모든 DAY를 한 번에 바꾸는 동작이라 DAY 탭과 같은 줄(여행지 전체 맥락)에 둔다
+    '      <button type="button" class="rt-ai-plan-btn" id="rt-ai-plan" title="Brainstorm에 담은 장소들을 영업시간·인기 동선·이동 효율 순으로 DAY별 일정으로 배분해요">' + IC_SPARK + '<span>AI 일정 짜기</span></button>',
     '      <div class="rt-searchbox">' + IC_SEARCH + '<input type="text" id="rt-search-top" placeholder="여행지 검색" /></div>',
     '      <button type="button" class="rt-optionsbtn" id="rt-options-btn">' + IC_DOTS + '<span>옵션</span>' + IC_CHEVRON + '</button>',
     '    </div>',
@@ -904,6 +953,7 @@ function bindPage(container: HTMLElement): void {
   bindToolbar(container);
   bindOptionsMenu(container);
   bindAdhocButton(container);
+  container.querySelector('#rt-ai-plan')?.addEventListener('click', () => void runAiRoutePlan(container));
 
   const toggle = container.querySelector('#rt-collapse-toggle') as HTMLElement;
   const mainEl = container.querySelector('#rt-main') as HTMLElement;
@@ -1510,6 +1560,334 @@ function optimizedOrder(day: RouteDay): { order: string[]; totalMin: number } {
   return { order: orderedIds, totalMin };
 }
 
+/* ══════════════ AI 일정 추천 (Gemini) ══════════════ */
+
+/**
+ * DAY 세부 계획은 나중에 유료로 돌릴 기능. 지금은 전원 사용 가능하되 UI에 예정임을 표시해 둔다.
+ * 결제 게이트를 붙일 땐 이 함수 하나만 바꾸면 되도록 판정을 한 곳에 모아둔다.
+ */
+function canUseDayDetail(): boolean {
+  return true;
+}
+
+/** places 행에서 AI에 보낼 "우리가 이미 아는 사실"만 뽑는다 (추측값은 보내지 않음) */
+function toAiPlace(p: Place, arriveTime?: string | null): AiPlanPlace {
+  const hours = Array.isArray(p.opening_hours)
+    ? (p.opening_hours as unknown[]).map((h) => String(h)).filter(Boolean)
+    : null;
+  return {
+    id: p.id,
+    name: p.name,
+    category: p.category,
+    mood: p.mood,
+    rating: p.google_rating,
+    lat: p.lat,
+    lng: p.lng,
+    hours: hours && hours.length ? hours : null,
+    ...(arriveTime ? { arriveTime } : {}),
+  };
+}
+
+/** AI 적용 직전 상태를 통째로 기억해 둔다(되돌리기용) */
+function snapshotBeforeAiPlan(): void {
+  aiPlanUndo = {
+    stopIdsByDay: days.map((d) => [d.id, [...d.stopIds]] as [string, string[]]),
+    times: [...timeOverride.entries()],
+    modes: [...legModeOverride.entries()],
+  };
+}
+
+/** 안내 배너의 "되돌리기" — AI 적용 전 상태로 완전히 복원하고 저장까지 되돌린다 */
+async function undoAiRoutePlan(container: HTMLElement): Promise<void> {
+  if (!aiPlanUndo) return;
+  const snap = aiPlanUndo;
+  const byId = new Map(snap.stopIdsByDay);
+  days.forEach((d) => { d.stopIds = [...(byId.get(d.id) ?? [])]; });
+  timeOverride.clear();
+  snap.times.forEach(([k, v]) => timeOverride.set(k, v));
+  legModeOverride.clear();
+  snap.modes.forEach(([k, v]) => legModeOverride.set(k, v));
+
+  aiPlanUndo = null;
+  aiPlanNotice = null;
+  lastSavedSig = '';
+  await persistAllDays();
+  refreshAll(container, { refit: true });
+}
+
+/** AI가 짠 일정을 모듈 상태에 반영. 반환값은 실제로 배치된 장소 수 */
+function applyAiRoutePlan(result: AiRoutePlanResult): number {
+  const basecampId = basecamp?.id ?? null;
+  const seen = new Set<string>();
+
+  // 전체 DAY를 새로 짜는 것이므로 기존 배치·도착시각·수동 이동수단은 비운다.
+  // (장소별 메모는 장소에 딸린 사용자 기록이라 그대로 둔다 — 그 장소가 새 일정에도 남으면 계속 보인다)
+  days.forEach((d) => { d.stopIds = []; });
+  timeOverride.clear();
+  legModeOverride.clear();
+
+  result.days.forEach((rd) => {
+    const day = days[rd.dayIndex];
+    if (!day) return;
+    rd.stops.forEach((s) => {
+      // 서버가 이미 걸렀지만, 그 사이 장소가 지워졌을 수도 있으니 화면 기준으로 한 번 더 확인
+      if (!placeById.has(s.placeId) || s.placeId === basecampId || seen.has(s.placeId)) return;
+      seen.add(s.placeId);
+      day.stopIds.push(s.placeId);
+      if (s.arriveTime) timeOverride.set(timeKey(day.id, s.placeId), s.arriveTime);
+    });
+  });
+
+  return seen.size;
+}
+
+async function runAiRoutePlan(container: HTMLElement): Promise<void> {
+  if (aiPlanBusy) return;
+  if (!activeDestId) {
+    window.alert('여행지를 먼저 선택해 주세요.');
+    return;
+  }
+  if (candidatePlaces.length < 2) {
+    window.alert('AI가 일정을 짜려면 Brainstorm에서 분류한 장소가 2곳 이상 필요해요.');
+    return;
+  }
+  // 이미 짜둔 동선이 있으면 덮어쓰기 전에 확인 (실행 취소로 되돌릴 수 있음을 함께 안내)
+  const hasExisting = days.some((d) => d.stopIds.length > 0);
+  if (hasExisting && !window.confirm('지금까지 담은 모든 DAY의 동선을 AI 추천으로 바꿀까요?\n도착 시각과 직접 지정한 이동수단도 함께 초기화돼요. (적용 후 "되돌리기"로 지금 상태로 복구할 수 있어요)')) {
+    return;
+  }
+
+  aiPlanBusy = true;
+  aiPlanNotice = null;
+  aiPlanUndo = null;
+  renderRightPanel(container);
+  updateAiPlanButton(container);
+
+  try {
+    const result = await requestRoutePlan({
+      destinationId: activeDestId,
+      destinationName: activeDestName || currentTrip?.name || '',
+      dayCount: days.length,
+      startDate: dayRangeStartDate,
+      basecamp: basecamp ? toAiPlace(basecamp) : null,
+      places: candidatePlaces.filter((p) => p.lat != null && p.lng != null).map((p) => toAiPlace(p)),
+    });
+
+    // 반영하기 **전에** 쓸 만한 결과인지 먼저 확인한다 — 먼저 지우고 나서 판단하면
+    // 결과가 비었을 때 기존 동선만 날아간다.
+    const basecampId = basecamp?.id ?? null;
+    const planned = result.days.reduce(
+      (n, d) => n + d.stops.filter((s) => placeById.has(s.placeId) && s.placeId !== basecampId).length,
+      0
+    );
+    if (planned === 0) {
+      window.alert('AI가 배치할 장소를 찾지 못했어요. 잠시 후 다시 시도해 주세요.');
+      return;
+    }
+
+    snapshotBeforeAiPlan();
+    days.forEach((d) => pushHistory(d.id));
+    const usedCount = applyAiRoutePlan(result);
+
+    aiPlanNotice = {
+      notes: result.notes,
+      usedCount,
+      skippedCount: Math.max(0, candidatePlaces.length - usedCount),
+      cached: result.cached,
+    };
+    lastSavedSig = '';
+    await persistAllDays();
+  } catch (e) {
+    window.alert((e as Error).message);
+  } finally {
+    aiPlanBusy = false;
+    refreshAll(container, { refit: true });
+    updateAiPlanButton(container);
+  }
+}
+
+/** 상단 툴바 버튼은 패널 재렌더 대상이 아니라 따로 상태를 갱신해준다 */
+function updateAiPlanButton(container: HTMLElement): void {
+  const btn = container.querySelector('#rt-ai-plan') as HTMLButtonElement | null;
+  if (!btn) return;
+  btn.disabled = aiPlanBusy;
+  btn.classList.toggle('is-busy', aiPlanBusy);
+  btn.innerHTML = aiPlanBusy
+    ? '<span class="rt-ai-spinner"></span><span>일정 짜는 중…</span>'
+    : IC_SPARK + '<span>AI 일정 짜기</span>';
+}
+
+async function runDayDetail(container: HTMLElement): Promise<void> {
+  if (dayDetailBusy) return;
+  if (!canUseDayDetail()) return;
+  if (!activeDestId) {
+    window.alert('여행지를 먼저 선택해 주세요.');
+    return;
+  }
+  const day = activeDay();
+  const dayIndex = days.findIndex((d) => d.id === day.id);
+  // 숙소는 매일 자동으로 붙는 출발지라 "이 DAY에 담은 장소"에서는 제외하고 판단한다
+  const stops = day.stopIds.map((id) => placeById.get(id)).filter((p): p is Place => !!p);
+  if (stops.length === 0) {
+    window.alert('이 DAY에 담은 장소가 없어요. 장소를 먼저 담아주세요.');
+    return;
+  }
+
+  dayDetailBusy = true;
+  renderRightPanel(container);
+
+  try {
+    const times = computeStopTimes(day, orderedStops(day).filter((p) => p.lat != null && p.lng != null), dayLegs(day));
+    const timeByPlace = new Map<string, string>();
+    orderedStops(day)
+      .filter((p) => p.lat != null && p.lng != null)
+      .forEach((p, i) => timeByPlace.set(p.id, times[i]));
+
+    const result = await requestDayDetail({
+      destinationId: activeDestId,
+      destinationName: activeDestName || currentTrip?.name || '',
+      dayIndex,
+      dayLabel: day.label,
+      date: dayDateLabel(dayIndex),
+      currency: currencyOf(dayLegs(day)),
+      headcount: currentTrip?.headcount ?? null,
+      stops: stops.map((p) => toAiPlace(p, timeByPlace.get(p.id) ?? null)),
+    });
+    openDayDetailModal(day.label, result);
+  } catch (e) {
+    window.alert((e as Error).message);
+  } finally {
+    dayDetailBusy = false;
+    renderRightPanel(container);
+  }
+}
+
+/** DAY 세부 계획 결과 — 읽기 전용 참고 자료라 모달로 띄운다(동선 상태는 건드리지 않음) */
+function openDayDetailModal(dayLabel: string, r: AiDayDetailResult): void {
+  document.querySelector('.rt-ai-modal-backdrop')?.remove();
+
+  const stopHtml = r.stops
+    .map((s) => {
+      const p = placeById.get(s.placeId);
+      if (!p) return '';
+      const meta = [
+        s.stayMinutes ? '<span class="rt-ai-chip">체류 ' + fmtMin(s.stayMinutes) + '</span>' : '',
+        s.costText ? '<span class="rt-ai-chip">' + escapeHtml(s.costText) + '</span>' : '',
+      ].join('');
+      const highlights = s.highlights.length
+        ? '<ul class="rt-ai-list">' + s.highlights.map((h) => '<li>' + escapeHtml(h) + '</li>').join('') + '</ul>'
+        : '';
+      const tip = s.tip ? '<div class="rt-ai-tip">' + IC_SPARK + '<span>' + escapeHtml(s.tip) + '</span></div>' : '';
+      return [
+        '<div class="rt-ai-stop">',
+        '  <div class="rt-ai-stop-head"><span class="rt-ai-stop-name">' + escapeHtml(p.name) + '</span>' + meta + '</div>',
+        highlights,
+        tip,
+        '</div>',
+      ].join('');
+    })
+    .join('');
+
+  const extrasHtml = r.extras.length
+    ? [
+        '<div class="rt-ai-section-title">사이사이 추천</div>',
+        '<div class="rt-ai-extras">',
+        r.extras
+          .map(
+            (e) =>
+              '<div class="rt-ai-extra">' +
+              (e.time ? '<span class="rt-ai-extra-time">' + escapeHtml(e.time) + '</span>' : '') +
+              '<div><div class="rt-ai-extra-title">' + escapeHtml(e.title) + '</div>' +
+              (e.detail ? '<div class="rt-ai-extra-detail">' + escapeHtml(e.detail) + '</div>' : '') +
+              '</div></div>'
+          )
+          .join(''),
+        '</div>',
+      ].join('')
+    : '';
+
+  const budgetHtml = r.budget.lines.length
+    ? [
+        '<div class="rt-ai-section-title">예상 예산 <span class="rt-ai-badge-est">추정</span></div>',
+        '<div class="rt-ai-budget">',
+        r.budget.lines
+          .map(
+            (l) =>
+              '<div class="rt-ai-budget-row"><span>' + escapeHtml(l.label) + '</span><b>' + escapeHtml(l.amountText) + '</b></div>'
+          )
+          .join(''),
+        r.budget.totalText
+          ? '<div class="rt-ai-budget-row total"><span>합계</span><b>' + escapeHtml(r.budget.totalText) + '</b></div>'
+          : '',
+        '</div>',
+      ].join('')
+    : '';
+
+  const cautionsHtml = r.cautions.length
+    ? [
+        '<div class="rt-ai-section-title">알아두면 좋은 점</div>',
+        '<ul class="rt-ai-list">' + r.cautions.map((c) => '<li>' + escapeHtml(c) + '</li>').join('') + '</ul>',
+      ].join('')
+    : '';
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'rt-ai-modal-backdrop';
+  backdrop.innerHTML = [
+    '<div class="rt-ai-modal" role="dialog" aria-modal="true" aria-label="' + escapeHtml(dayLabel) + ' 세부 계획">',
+    '  <div class="rt-ai-modal-head">',
+    '    <div><div class="rt-ai-modal-eyebrow">AI 세부 계획 · 참고용</div>',
+    '    <div class="rt-ai-modal-title">' + escapeHtml(dayLabel) + '</div></div>',
+    '    <button type="button" class="rt-ai-modal-close" id="rt-ai-close" aria-label="닫기">✕</button>',
+    '  </div>',
+    '  <div class="rt-ai-modal-body">',
+    r.overview ? '    <div class="rt-ai-overview">' + escapeHtml(r.overview) + '</div>' : '',
+    stopHtml,
+    extrasHtml,
+    budgetHtml,
+    cautionsHtml,
+    // 원칙 3-1 — 체류시간·비용은 AI 추정치라는 걸 결과 안에서 분명히 밝힌다
+    '    <div class="rt-ai-disclaimer">체류시간과 비용은 AI가 일반적인 수준으로 추정한 값이에요. 실제 요금·영업시간은 방문 전에 다시 확인해 주세요.</div>',
+    '  </div>',
+    '</div>',
+  ].join('\n');
+
+  const close = () => {
+    backdrop.remove();
+    document.removeEventListener('keydown', onKey);
+  };
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+
+  backdrop.querySelector('#rt-ai-close')?.addEventListener('click', close);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(backdrop);
+}
+
+/**
+ * AI가 방금 일정을 짠 직후 한 번 보여주는 안내. 무엇을 근거로 짰는지와 몇 곳이 빠졌는지를
+ * 알려줘야 사용자가 결과를 그대로 믿지 않고 검토하게 된다(원칙 3-1).
+ */
+function aiPlanNoticeHtml(): string {
+  if (!aiPlanNotice) return '';
+  const n = aiPlanNotice;
+  const skipped = n.skippedCount > 0 ? ' · 남은 장소 ' + n.skippedCount + '곳은 넣지 않았어요' : '';
+  return [
+    '<div class="rt-ai-notice">',
+    '  <div class="rt-ai-notice-head">',
+    '    <span class="rt-ai-notice-title">' + IC_SPARK + 'AI 추천 일정을 적용했어요</span>',
+    '    <button type="button" class="rt-ai-notice-close" id="rt-ai-notice-close" aria-label="안내 닫기">✕</button>',
+    '  </div>',
+    '  <div class="rt-ai-notice-meta">' + n.usedCount + '곳 배치' + skipped + (n.cached ? ' · 저장된 추천' : '') + '</div>',
+    n.notes ? '  <div class="rt-ai-notice-body">' + escapeHtml(n.notes) + '</div>' : '',
+    '  <div class="rt-ai-notice-foot">영업시간·인기 동선·이동 효율 순으로 배치한 <b>추천안</b>이에요. 직접 옮겨서 다듬어도 좋아요.</div>',
+    // 기본 Ctrl+Z는 활성 DAY만 되돌리므로, 전체를 한 번에 되돌리는 수단을 따로 준다
+    aiPlanUndo
+      ? '  <button type="button" class="rt-ai-notice-undo" id="rt-ai-notice-undo">' + IC_UNDO + ' 적용 전으로 되돌리기</button>'
+      : '',
+    '</div>',
+  ].join('');
+}
+
 /* ── 우측 정보 패널 ── */
 function renderRightPanel(container: HTMLElement): void {
   const el = container.querySelector('#rt-panel-inner') as HTMLElement;
@@ -1588,6 +1966,7 @@ function renderRightPanel(container: HTMLElement): void {
       '</div>',
     '  <button type="button" class="rt-panel-more" id="rt-panel-more" aria-label="이 DAY 메뉴">' + IC_DOTS + '</button>',
     '</div>',
+    aiPlanNoticeHtml(),
     '<div class="rt-panel-list" id="rt-panel-list">',
     stops.length
       ? rows.join('')
@@ -1596,6 +1975,13 @@ function renderRightPanel(container: HTMLElement): void {
           '  <span class="rt-panel-empty-icon">' + IC_ROUTEPATH + '</span>',
           '  <div class="rt-panel-empty-title">아직 담은 장소가 없어요</div>',
           '  <div class="rt-panel-empty-hint">지도의 핀을 누르거나<br>왼쪽 목록에서 담아보세요.</div>',
+          // 빈 화면이야말로 "AI가 대신 짜줄까요?"가 가장 자연스러운 자리 — 첫 사용자가
+          // 기능을 발견하는 경로를 여기 두고, 이후 재생성은 상단 툴바 버튼으로 한다.
+          candidatePlaces.length >= 2
+            ? '  <button type="button" class="rt-panel-empty-cta" id="rt-panel-empty-ai"' + (aiPlanBusy ? ' disabled' : '') + '>' +
+              (aiPlanBusy ? '<span class="rt-ai-spinner"></span> 일정 짜는 중…' : IC_SPARK + ' AI에게 일정 맡기기') +
+              '</button>'
+            : '',
           '</div>',
         ].join(''),
     '</div>',
@@ -1611,6 +1997,14 @@ function renderRightPanel(container: HTMLElement): void {
     '  <button type="button" class="rt-panel-action primary" id="rt-panel-optimize"' + (s.visitCount < 2 ? ' disabled' : '') +
       ' title="' + (s.visitCount < 2 ? '장소가 2곳 이상일 때 정렬할 수 있어요' : '가까운 순서로 다시 정렬해요') + '">' + IC_SPARK + ' 순서 정리</button>',
     '</div>',
+    // 이 DAY 하나에 대한 심화 기능이라 DAY 단위 액션(장소 추가/순서 정리) 바로 아래에 둔다.
+    '<button type="button" class="rt-panel-detail" id="rt-panel-daydetail"' +
+      (s.visitCount === 0 || dayDetailBusy ? ' disabled' : '') +
+      ' title="이 DAY의 동선을 보고 장소별 추천 체류시간·팁·예상 예산을 정리해요">' +
+      (dayDetailBusy
+        ? '<span class="rt-ai-spinner"></span><span>세부 계획 만드는 중…</span>'
+        : IC_NOTE + '<span>이 DAY 세부 계획</span><span class="rt-panel-detail-badge">PRO 예정</span>') +
+      '</button>',
   ].join('\n');
 
   bindRightPanelEvents(container, el);
@@ -1699,6 +2093,14 @@ function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
   el.querySelector('#rt-panel-add')?.addEventListener('click', () => {
     (container.querySelector('#rt-float-search-input') as HTMLElement | null)?.focus();
   });
+  el.querySelector('#rt-panel-empty-ai')?.addEventListener('click', () => void runAiRoutePlan(container));
+  el.querySelector('#rt-panel-daydetail')?.addEventListener('click', () => void runDayDetail(container));
+  el.querySelector('#rt-ai-notice-close')?.addEventListener('click', () => {
+    aiPlanNotice = null;
+    aiPlanUndo = null; // 배너를 닫으면 되돌리기 기회도 끝난다(상태를 오래 붙들고 있지 않도록)
+    renderRightPanel(container);
+  });
+  el.querySelector('#rt-ai-notice-undo')?.addEventListener('click', () => void undoAiRoutePlan(container));
   el.querySelector('#rt-panel-optimize')?.addEventListener('click', () => {
     const day = activeDay();
     const opt = optimizedOrder(day);
