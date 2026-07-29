@@ -1967,12 +1967,16 @@ function drawRouteOnMap(refit: boolean): void {
     const overlapIndex = seenLegs.get(geomKey) ?? 0;
     seenLegs.set(geomKey, overlapIndex + 1);
 
-    // 강조 대상 = 이 구간(화살표) 자체를 클릭해 고정했거나, 지금 마우스를 올리고 있는 구간뿐.
-    // 장소 핀 클릭/호버는 더 이상 구간 강조에 영향을 주지 않는다(전엔 장소를 클릭하면 앞뒤
-    // 구간까지 캡슐이 떴는데, 장소가 붙어있을 때마다 캡슐이 튀어나와 어수선하다는 피드백으로 분리함).
+    // 캡슐(시간/비용) 표시는 이 구간(화살표) 자체의 호버/클릭에만 반응한다 — 장소 핀을
+    // 클릭했다고 인접 구간 캡슐까지 튀어나오면 어수선하다는 피드백으로 분리했다.
+    const capsuleActive = selectedLegKey === key || hoveredLegKey === key;
+    // 하지만 "선의 강조 표시(진하기)"는 장소 핀 포커스와도 연동한다 — 어떤 장소를 클릭하면
+    // 그 장소로 들어오고 나가는 두 구간만 선명하게, 나머지는 옅게 흐려서 "여기서 어디로
+    // 가는지"가 한눈에 읽히게 한다. 캡슐 표시 여부와는 별개의 신호라 따로 둔다.
+    const legAdjacentToFocus = focusIdx >= 0 && (i === focusIdx || i === focusIdx - 1);
     // selected와 dimmed가 동시에 참이 되지 않도록 반드시 selected의 여집합으로 정의한다.
-    const selected = selectedLegKey === key || hoveredLegKey === key;
-    const dimmed = !selected && (!!selectedLegKey || !!hoveredLegKey);
+    const selected = capsuleActive || legAdjacentToFocus;
+    const dimmed = !selected && (!!selectedLegKey || !!hoveredLegKey || focusIdx >= 0);
 
     const line = buildLegPolyline(g, stops[i], stops[i + 1], leg, {
       selected,
@@ -2000,14 +2004,20 @@ function drawRouteOnMap(refit: boolean): void {
       mapMarkers.push(buildModeChangeNode(g, { lat: stops[i].lat!, lng: stops[i].lng! }));
     }
 
-    // 이동시간·비용 캡슐은 항상 떠 있으면 지도가 어수선해지므로 선택/강조된 구간만 표시.
-    if (selected) {
+    // 이동시간·비용 캡슐은 항상 떠 있으면 지도가 어수선해지므로 이 구간을 직접 호버/클릭했을 때만 표시.
+    if (capsuleActive) {
       const mid =
         leg.path && leg.path.length >= 2
           ? leg.path[Math.floor(leg.path.length / 2)]
           : { lat: (stops[i].lat! + stops[i + 1].lat!) / 2, lng: (stops[i].lng! + stops[i + 1].lng!) / 2 };
+      // 구간이 화면상 너무 짧으면 캡슐이 정중앙에 있을 때 양 끝 핀과 겹쳐 버리므로,
+      // 그럴 때만 예전처럼 선 위로 살짝 띄운다(그 외엔 화살표 정중앙에 그대로 얹는다).
+      const midLat = (stops[i].lat! + stops[i + 1].lat!) / 2;
+      const zoom = typeof mapInstance.getZoom === 'function' ? mapInstance.getZoom() : 13;
+      const short = legPixelLength(leg.km, midLat, zoom) < CAPSULE_SHORT_PX;
       const Ctor = getOverlayCtor(g);
       const cls = 'rt-map-capsule ' + modeColorClass(leg.mode) + ' rt-leg-selected' +
+        (short ? ' rt-cap-above' : '') +
         (legModeOverride.has(key) ? ' rt-leg-manual' : '');
       const capsule = new Ctor(new g.maps.LatLng(mid.lat, mid.lng), legCapsuleHtml(leg, mapCur), cls, () =>
         handleLegClick(stops[i].id, stops[i + 1].id, capsule.div ?? undefined)
@@ -2018,6 +2028,18 @@ function drawRouteOnMap(refit: boolean): void {
   }
 
   if (refit) fitRouteBounds();
+}
+
+// 캡슐 정중앙 배치가 양 끝 핀과 겹칠 만큼 짧은 구간인지 판단하는 기준(px). 캡슐 실제 폭(약
+// 100~130px)보다 살짝 좁게 잡아, 그보다 짧을 때만 "위로 띄우기"로 되돌아간다.
+const CAPSULE_SHORT_PX = 90;
+
+/** 구간의 실제 거리(km)가 현재 지도 확대 수준에서 화면상 몇 px로 보이는지 추정(Web Mercator 근사식) */
+function legPixelLength(km: number, lat: number, zoom: number): number {
+  if (!Number.isFinite(zoom)) zoom = 13;
+  const metersPerPixel = (156543.03392 * Math.cos((lat * Math.PI) / 180)) / Math.pow(2, zoom);
+  if (!Number.isFinite(metersPerPixel) || metersPerPixel <= 0) return Infinity;
+  return (km * 1000) / metersPerPixel;
 }
 
 function legCapsuleHtml(leg: Leg, currency: string): string {

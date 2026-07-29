@@ -366,9 +366,10 @@
 .rt-clickcard-action.remove:hover { background: #FDEEEC; color: #C0392B; }
 
 /* ── 구간 이동정보 캡슐 ──
-   선을 가리지 않도록 구간 중앙에서 위로 살짝 띄운다(translateY -150%). */
+   기본은 구간 화살표 정중앙에 얹는다. 구간이 화면상 너무 짧아 양 끝 핀과 겹칠 때만
+   (.rt-cap-above) 예전처럼 선 위로 살짝 띄운다. */
 .rt-map-capsule {
-  position: absolute; transform: translate(-50%, -150%);
+  position: absolute; transform: translate(-50%, -50%);
   display: inline-flex; align-items: center; gap: 6px;
   padding: 7px 12px; border-radius: 999px;
   background: #fff;
@@ -379,7 +380,9 @@
   font-variant-numeric: tabular-nums;
   transition: box-shadow 180ms ease, transform 180ms ease;
 }
-.rt-map-capsule:hover { transform: translate(-50%, -150%) scale(1.04); box-shadow: 0 4px 12px rgba(11,42,92,0.16); }
+.rt-map-capsule:hover { transform: translate(-50%, -50%) scale(1.04); box-shadow: 0 4px 12px rgba(11,42,92,0.16); }
+.rt-map-capsule.rt-cap-above { transform: translate(-50%, -150%); }
+.rt-map-capsule.rt-cap-above:hover { transform: translate(-50%, -150%) scale(1.04); box-shadow: 0 4px 12px rgba(11,42,92,0.16); }
 .rt-map-capsule svg { width: 13px; height: 13px; flex-shrink: 0; color: #243B78; }
 .rt-map-capsule .rt-cap-dist { color: var(--rt-ink-3); font-weight: 600; }
 /* 이동수단 구분은 선 색이 아니라 캡슐 아이콘이 담당 (선은 네이비 단일) */
