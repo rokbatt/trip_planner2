@@ -153,6 +153,8 @@ let members: MemberLite[] = [];
 let activeTool: ToolKind = 'select';
 let connectFromId: string | null = null;
 let highlightedPlaceId: string | null = null;
+/** 우측 타임라인에 마우스를 올렸을 때만 잠깐 강조되는 장소 (클릭 선택과 별개인 일시적 미리보기) */
+let hoveredPlaceId: string | null = null;
 let selectedLegKey: string | null = null;
 let adhocMode = false;
 let adhocSeq = 0;
@@ -209,6 +211,7 @@ export function teardownRoute(): void {
   activeTool = 'select';
   connectFromId = null;
   highlightedPlaceId = null;
+  hoveredPlaceId = null;
   selectedLegKey = null;
   adhocMode = false;
   placeSearchQuery = '';
@@ -1256,12 +1259,21 @@ function handlePinClick(g: any, p: Place): void {
 
   // 기본(선택) 툴: 장소 카드를 열어 정보를 보고 담을지 결정 — hover가 아니라 클릭으로만 반응
   highlightedPlaceId = p.id;
+  hoveredPlaceId = null;
   if (g?.maps) {
-    showRipple(g, p, categoryMeta(p, isBasecamp).color);
+    showRipple(g, p, ROUTE_NAVY);
     openPlaceCard(g, p);
   }
   drawRouteOnMap(false);
   renderRightPanel(rtContainer!);
+  scrollTimelineTo(p.id);
+}
+
+/** 지도에서 핀을 클릭하면 우측 타임라인도 그 장소가 보이도록 스크롤 */
+function scrollTimelineTo(placeId: string): void {
+  const row = rtContainer?.querySelector('.rt-panel-stop[data-place-id="' + placeId + '"]') as HTMLElement | null;
+  if (!row) return;
+  row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
 function focusMemoInput(placeId: string): void {
@@ -1647,6 +1659,19 @@ function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
       drawRouteOnMap(false);
       renderRightPanel(container);
     });
+    // 타임라인 ↔ 지도 연결감: 카드에 올리면 지도의 해당 핀·구간만 살짝 밝아진다.
+    // 선택(클릭) 상태는 건드리지 않는 "일시적 미리보기"라, 마우스를 떼면 원래대로 돌아온다.
+    card.addEventListener('mouseenter', () => {
+      const id = (card as HTMLElement).dataset.placeId!;
+      if (highlightedPlaceId || hoveredPlaceId === id) return; // 클릭 선택이 있으면 그게 우선
+      hoveredPlaceId = id;
+      drawRouteOnMap(false);
+    });
+    card.addEventListener('mouseleave', () => {
+      if (!hoveredPlaceId) return;
+      hoveredPlaceId = null;
+      drawRouteOnMap(false);
+    });
   });
 
   bindDragReorder(container, el);
@@ -1745,10 +1770,19 @@ function refreshAll(container: HTMLElement, opts: { refit: boolean } = { refit: 
 
 /* ══════════════════ 지도 ══════════════════ */
 
-const MODE_STYLE: Record<Leg['mode'], { color: string; weight: number; dashed: boolean }> = {
-  WALK: { color: '#1D9E75', weight: 2, dashed: true },
-  TRANSIT: { color: '#0B7CC4', weight: 3, dashed: false },
-  TAXI: { color: '#475569', weight: 3, dashed: false },
+/**
+ * 동선 선 스타일. 이전엔 이동수단마다 다른 색(초록/파랑/회색)을 썼지만, 지도에서 Route가
+ * 확실한 주인공이 되도록 **진한 네이비 단일 색**으로 통일했다. 이동수단 구분은 색이 아니라
+ * 캡슐 배지의 아이콘/라벨과 모드 전환 노드가 담당한다.
+ * 도보만 점선을 유지 — 실제 보행로가 도로와 다를 수 있다는 신호로 유용해서.
+ */
+const ROUTE_NAVY = '#243B78';
+const ROUTE_ORANGE = '#E8833A';
+const ROUTE_GRAY = '#9AA7B8';
+const MODE_STYLE: Record<Leg['mode'], { weight: number; dashed: boolean }> = {
+  WALK: { weight: 5, dashed: true },
+  TRANSIT: { weight: 6, dashed: false },
+  TAXI: { weight: 6, dashed: false },
 };
 
 async function initMap(container: HTMLElement): Promise<void> {
@@ -1838,36 +1872,76 @@ function drawRouteOnMap(refit: boolean): void {
   const legs = dayLegs(day);
   const mapCur = currencyOf(legs);
 
-  // 아직 오늘 동선에 없는 확정 장소 — 카테고리 아이콘 배지(작게)
+  // 강조 기준점: 클릭 선택이 우선, 없으면 타임라인 호버(일시적 미리보기)
+  const focusId = highlightedPlaceId ?? hoveredPlaceId;
+  const focusIdx = focusId ? stops.findIndex((s) => s.id === focusId) : -1;
+
+  // 아직 오늘 동선에 없는 후보 — 회색으로 물러나게 (Route가 주인공)
   candidatePlaces.forEach((p) => {
     if (p.lat == null || p.lng == null) return;
     if (day.stopIds.includes(p.id)) return;
-    const marker = buildMarkerV2(g, p, { isBasecamp: false, included: false, highlighted: p.id === highlightedPlaceId });
-    marker.addListener("click", () => handlePinClick(g, p));
+    const marker = buildMarkerV2(g, p, { isBasecamp: false, included: false, highlighted: p.id === focusId });
+    marker.addListener('click', () => handlePinClick(g, p));
     mapMarkers.push(marker);
   });
 
-  // 오늘 동선의 정류지(숙소 포함) — 순서 번호 배지(크게)
+  // 오늘 동선의 정류지 — 순서 번호 + 진행 상태 색
   stops.forEach((p, i) => {
     const isBasecamp = !!basecamp && i === 0 && p.id === basecamp.id;
-    const marker = buildMarkerV2(g, p, { isBasecamp, included: true, num: i + 1, highlighted: p.id === highlightedPlaceId });
-    marker.addListener("click", () => handlePinClick(g, p));
+    // 여행은 아직 미래라 실제 "완료"는 없다. 선택한 지점을 현재로 보고 앞/뒤를 나눠
+    // 진행 방향이 읽히게 한다. 아무것도 선택하지 않았으면 전부 기본 네이비.
+    let phase: StopPhase = 'plain';
+    if (focusIdx >= 0) {
+      if (i < focusIdx) phase = 'done';
+      else if (i === focusIdx) phase = 'current';
+      else if (i === focusIdx + 1) phase = 'next';
+      else phase = 'plain';
+    }
+    const marker = buildMarkerV2(g, p, {
+      isBasecamp,
+      included: true,
+      num: i + 1,
+      highlighted: p.id === focusId,
+      phase,
+    });
+    marker.addListener('click', () => handlePinClick(g, p));
     mapMarkers.push(marker);
   });
 
-  // 구간 폴리라인(모드별 스타일 + 화살표) + 이동 캡슐
+  // 같은 구간이 여러 번 등장하면(같은 길 왕복 등) 겹쳐 보이지 않게 회차를 센다
+  const seenLegs = new Map<string, number>();
+
   for (let i = 0; i < stops.length - 1; i++) {
     const leg = legs[i];
     const key = legKey(stops[i].id, stops[i + 1].id);
-    const selected = selectedLegKey === key;
-    const dimmed = !!selectedLegKey && selectedLegKey !== key;
+    // 방향이 반대여도 같은 선분이므로 정렬한 키로 겹침을 판단
+    const geomKey = [stops[i].id, stops[i + 1].id].sort().join('~');
+    const overlapIndex = seenLegs.get(geomKey) ?? 0;
+    seenLegs.set(geomKey, overlapIndex + 1);
 
-    const line = buildLegPolyline(g, stops[i], stops[i + 1], leg, { selected, dimmed });
+    // 강조 대상 = 명시적으로 고른 구간이거나, 강조된 지점에 붙어 있는 구간.
+    // 그 외에는 무언가 골라져 있을 때만 흐리게 (selected와 dimmed가 동시에 참이 되지 않도록
+    // 반드시 selected의 여집합으로 정의한다 — 예전엔 구간을 고른 뒤 먼 핀을 누르면
+    // 고른 구간이 selected이면서 dimmed가 되어 오히려 흐려지는 버그가 있었음)
+    const legFocused = focusIdx >= 0 && (i === focusIdx || i === focusIdx - 1);
+    const selected = selectedLegKey === key || legFocused;
+    const dimmed = !selected && (!!selectedLegKey || focusIdx >= 0);
+
+    const line = buildLegPolyline(g, stops[i], stops[i + 1], leg, {
+      selected,
+      dimmed,
+      passed: focusIdx < 0 ? true : i < focusIdx,
+      overlapIndex,
+    });
     line.addListener('click', () => handleLegClick(stops[i].id, stops[i + 1].id));
     routePolylines.push(line);
 
-    // 이동시간·비용 캡슐은 항상 떠 있으면 지도가 어수선해지므로, 그 구간을 클릭해
-    // 선택했을 때만 보여준다(원칙 3-3 — hover가 아니라 클릭으로 반응).
+    // 이동수단이 바뀌는 지점에 작은 노드 (첫 구간이거나 앞 구간과 모드가 다를 때)
+    if (i > 0 && legs[i - 1] && legs[i - 1].mode !== leg.mode) {
+      mapMarkers.push(buildModeChangeNode(g, { lat: stops[i].lat!, lng: stops[i].lng! }));
+    }
+
+    // 이동시간·비용 캡슐은 항상 떠 있으면 지도가 어수선해지므로 선택/강조된 구간만 표시.
     if (selected) {
       const mid =
         leg.path && leg.path.length >= 2
@@ -2036,26 +2110,60 @@ function iconInner(svg: string): string {
   return svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
 }
 
-/** 커스텀 원형 배지 마커 — 후보(카테고리 아이콘) / 동선 포함(순서 번호) */
-function buildMarkerV2(g: any, p: Place, opts: { isBasecamp: boolean; included: boolean; num?: number; highlighted?: boolean }): any {
-  const meta = categoryMeta(p, opts.isBasecamp);
-  const scale = opts.highlighted ? 1.15 : 1;
-  const r = (opts.included ? 15 : 10) * scale;
-  const size = Math.ceil(r * 2 + 10);
-  const c = size / 2;
+/** 동선 안에서의 위치에 따른 핀 상태 — 색은 이것만으로 결정한다(카테고리 색 아님) */
+type StopPhase = 'current' | 'next' | 'done' | 'plain';
 
-  const shadow = '<ellipse cx="' + c + '" cy="' + (c + r * 0.55) + '" rx="' + (r * 0.8) + '" ry="' + (r * 0.3) + '" fill="rgba(11,42,92,0.18)"/>';
-  const ring = opts.highlighted
-    ? '<circle cx="' + c + '" cy="' + c + '" r="' + (r + 4) + '" fill="none" stroke="#fff" stroke-width="3"/>'
+function phaseColor(phase: StopPhase): string {
+  if (phase === 'next') return ROUTE_ORANGE;
+  if (phase === 'done') return ROUTE_GRAY;
+  return ROUTE_NAVY; // current / plain
+}
+
+interface MarkerOpts {
+  isBasecamp: boolean;
+  included: boolean;
+  num?: number;
+  highlighted?: boolean;
+  phase?: StopPhase;
+}
+
+/**
+ * 커스텀 원형 배지 마커.
+ *  - 동선에 포함된 정류지: 순서 번호 + 진행 상태 색(네이비/오렌지/그레이)
+ *  - 아직 담지 않은 후보: 작고 흐린 회색 배지 + 카테고리 아이콘(배경으로 물러나게)
+ * 카테고리별 알록달록한 색을 쓰지 않는 이유 — 지도에서 Route가 가장 먼저 눈에 들어와야 해서.
+ */
+function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
+  const meta = categoryMeta(p, opts.isBasecamp);
+  const phase: StopPhase = opts.phase ?? 'plain';
+  const scale = opts.highlighted ? 1.18 : 1;
+  const r = (opts.included ? 15 : 9) * scale;
+  // halo/glow까지 담을 여유를 둔 캔버스
+  const pad = opts.highlighted ? 26 : 12;
+  const size = Math.ceil(r * 2 + pad);
+  const c = size / 2;
+  const fill = opts.included ? phaseColor(phase) : '#FFFFFF';
+
+  // 선택된 지점만 아주 옅은 네이비 halo로 강조 (지도 전체를 건드리지 않음)
+  const halo = opts.highlighted
+    ? '<circle cx="' + c + '" cy="' + c + '" r="' + (r + 9) + '" fill="' + ROUTE_NAVY + '" fill-opacity="0.09"/>' +
+      '<circle cx="' + c + '" cy="' + c + '" r="' + (r + 4.5) + '" fill="' + ROUTE_NAVY + '" fill-opacity="0.07"/>'
     : '';
+  const shadow =
+    '<ellipse cx="' + c + '" cy="' + (c + r * 0.62) + '" rx="' + r * 0.78 + '" ry="' + r * 0.26 + '" fill="rgba(11,42,92,0.16)"/>';
+
   const inner = opts.included
-    ? '<text x="' + c + '" y="' + (c + 4) + '" text-anchor="middle" font-family="Arial" font-size="' + Math.round(11 * scale) + '" font-weight="800" fill="#fff">' + (opts.num ?? '') + '</text>'
-    : '<g transform="translate(' + (c - 6) + ',' + (c - 6) + ') scale(0.5)" color="#fff" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + iconInner(meta.icon) + '</g>';
+    ? '<text x="' + c + '" y="' + (c + 4.2) + '" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="' +
+      Math.round(12 * scale) + '" font-weight="800" fill="#fff">' + (opts.num ?? '') + '</text>'
+    : '<g transform="translate(' + (c - 5.5) + ',' + (c - 5.5) + ') scale(0.46)" color="' + ROUTE_GRAY +
+      '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      iconInner(meta.icon) + '</g>';
 
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">' +
-    shadow + ring +
-    '<circle cx="' + c + '" cy="' + c + '" r="' + r + '" fill="' + meta.color + '" stroke="#fff" stroke-width="2.5"/>' +
+    halo + shadow +
+    '<circle cx="' + c + '" cy="' + c + '" r="' + r + '" fill="' + fill + '" stroke="' +
+      (opts.included ? '#FFFFFF' : 'rgba(154,167,184,0.9)') + '" stroke-width="' + (opts.included ? 2.6 : 1.8) + '"/>' +
     inner +
     '</svg>';
 
@@ -2063,7 +2171,27 @@ function buildMarkerV2(g: any, p: Place, opts: { isBasecamp: boolean; included: 
     position: { lat: p.lat!, lng: p.lng! },
     map: mapInstance,
     title: p.name,
-    zIndex: opts.included ? 100 + (opts.num ?? 0) : 10,
+    zIndex: opts.highlighted ? 400 : opts.included ? 100 + (opts.num ?? 0) : 10,
+    icon: {
+      url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+      scaledSize: new g.maps.Size(size, size),
+      anchor: new g.maps.Point(c, c),
+    },
+  });
+}
+
+/** 이동수단이 바뀌는 지점에 찍는 작은 원형 노드 */
+function buildModeChangeNode(g: any, at: LatLngLit): any {
+  const size = 14;
+  const c = size / 2;
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">' +
+    '<circle cx="' + c + '" cy="' + c + '" r="4.5" fill="#FFFFFF" stroke="' + ROUTE_NAVY + '" stroke-width="2.4"/></svg>';
+  return new g.maps.Marker({
+    position: at,
+    map: mapInstance,
+    clickable: false,
+    zIndex: 90,
     icon: {
       url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
       scaledSize: new g.maps.Size(size, size),
@@ -2073,47 +2201,144 @@ function buildMarkerV2(g: any, p: Place, opts: { isBasecamp: boolean; included: 
 }
 
 /** 구간 폴리라인 — 이동수단별 스타일(도보 점선/대중교통·자동차 실선) + 끝 화살표 */
-function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: { selected: boolean; dimmed: boolean }): any {
+type LatLngLit = { lat: number; lng: number };
+
+/**
+ * 추정 구간(실제 도로 경로가 없는 직선)을 부드러운 호로 바꾼다.
+ * ⚠️ 실측 경로(leg.path)에는 절대 적용하지 않는다 — 실제 도로 좌표를 곡선으로 다듬으면
+ * 존재하지 않는 길을 지나가는 것처럼 보여 데이터를 왜곡한다(원칙 3-1).
+ * 실측 구간은 도로를 따라가느라 이미 자연스러운 곡선이라 다듬을 필요도 없다.
+ *
+ * @param bend 곡률(구간 길이 대비 최대 부풀림 비율). 0이면 직선.
+ */
+function arcBetween(a: LatLngLit, b: LatLngLit, bend: number): LatLngLit[] {
+  const SEGMENTS = 24;
+  // 위경도 평면에서의 수직 방향(경도는 위도에 따라 좁아지므로 보정)
+  const latScale = Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180) || 1;
+  const dx = (b.lng - a.lng) * latScale;
+  const dy = b.lat - a.lat;
+  const len = Math.hypot(dx, dy);
+  if (len === 0) return [a, b];
+
+  // 제어점 = 중점에서 수직으로 살짝 밀어낸 지점 (2차 베지어)
+  const mx = (a.lng + b.lng) / 2;
+  const my = (a.lat + b.lat) / 2;
+  const nx = -dy / len;
+  const ny = dx / len;
+  const off = len * bend;
+  const cx = mx + (nx * off) / latScale;
+  const cy = my + ny * off;
+
+  const pts: LatLngLit[] = [];
+  for (let i = 0; i <= SEGMENTS; i++) {
+    const t = i / SEGMENTS;
+    const u = 1 - t;
+    pts.push({
+      lng: u * u * a.lng + 2 * u * t * cx + t * t * b.lng,
+      lat: u * u * a.lat + 2 * u * t * cy + t * t * b.lat,
+    });
+  }
+  return pts;
+}
+
+/** 경로 전체를 수직 방향으로 살짝 밀어낸다 — 같은 구간이 겹쳐 그려질 때 구분용 */
+function offsetPath(path: LatLngLit[], meters: number): LatLngLit[] {
+  if (path.length < 2 || meters === 0) return path;
+  const a = path[0];
+  const b = path[path.length - 1];
+  const latScale = Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180) || 1;
+  const dx = (b.lng - a.lng) * latScale;
+  const dy = b.lat - a.lat;
+  const len = Math.hypot(dx, dy);
+  if (len === 0) return path;
+  const degPerMeter = 1 / 111320;
+  const nx = (-dy / len) * meters * degPerMeter;
+  const ny = (dx / len) * meters * degPerMeter;
+  return path.map((p) => ({ lat: p.lat + ny, lng: p.lng + nx / latScale }));
+}
+
+interface LegDrawOpts {
+  selected: boolean;
+  dimmed: boolean;
+  /** 선택 지점 기준 "지나온" 구간이면 true → 완전 불투명, 이후 예정 구간은 살짝 투명 */
+  passed: boolean;
+  /** 같은 구간이 여러 번 그려질 때의 회차 (0이면 오프셋 없음) */
+  overlapIndex: number;
+}
+
+function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDrawOpts): any {
   const style = MODE_STYLE[leg.mode];
-  // 실제 도로 경로(leg.path)가 있으면 그걸 따라 그리고, 없으면(추정치) 두 지점을 잇는 직선.
-  const path =
-    leg.path && leg.path.length >= 2
-      ? leg.path
-      : [
-          { lat: from.lat!, lng: from.lng! },
-          { lat: to.lat!, lng: to.lng! },
-        ];
-  const lineOpacity = opts.dimmed ? 0.35 : opts.selected ? 1 : 0.85;
+
+  let path: LatLngLit[];
+  if (leg.path && leg.path.length >= 2) {
+    path = leg.path; // 실측 도로 경로 — 그대로(왜곡 금지)
+  } else {
+    // 추정 구간만 부드러운 호로. 선택된 구간은 조금 더 완만하게 펴서 강조.
+    path = arcBetween(
+      { lat: from.lat!, lng: from.lng! },
+      { lat: to.lat!, lng: to.lng! },
+      opts.selected ? 0.08 : 0.12
+    );
+  }
+  if (opts.overlapIndex > 0) path = offsetPath(path, opts.overlapIndex * 28);
+
+  // 진행 방향 읽기: 지나온 구간 100%, 예정 구간 80%. 다른 구간이 선택되면 흐리게.
+  const baseOpacity = opts.passed ? 1 : 0.8;
+  const lineOpacity = opts.dimmed ? 0.28 : opts.selected ? 1 : baseOpacity;
   const weight = opts.selected ? style.weight + 2 : style.weight;
 
   const icons: any[] = [];
   if (style.dashed) {
-    icons.push({ icon: { path: 'M 0,-1 0,1', strokeOpacity: lineOpacity, strokeColor: style.color, strokeWeight: weight, scale: 3 }, offset: '0', repeat: '13px' });
+    icons.push({
+      icon: { path: 'M 0,-1 0,1', strokeOpacity: lineOpacity, strokeColor: ROUTE_NAVY, strokeWeight: weight, scale: 3 },
+      offset: '0',
+      repeat: '15px',
+    });
   }
   icons.push({
-    icon: { path: g.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale: 3.2, strokeColor: style.color, strokeOpacity: lineOpacity, fillColor: style.color, fillOpacity: lineOpacity },
-    offset: '97%',
+    icon: {
+      path: g.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+      scale: 3.4,
+      strokeColor: ROUTE_NAVY,
+      strokeOpacity: lineOpacity,
+      fillColor: ROUTE_NAVY,
+      fillOpacity: lineOpacity,
+    },
+    offset: '96%',
   });
 
+  // 선택/호버된 구간은 아주 옅은 네이비 halo를 아래에 깔아 배경에서 확실히 떠오르게
   if (opts.selected) {
-    const glow = new g.maps.Polyline({
-      map: mapInstance,
-      path,
-      strokeColor: style.color,
-      strokeOpacity: style.dashed ? 0 : 0.22,
-      strokeWeight: weight + 8,
-      zIndex: 9,
-      icons: style.dashed
-        ? [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 0.22, strokeColor: style.color, strokeWeight: weight + 8, scale: 5 }, offset: '0', repeat: '18px' }]
-        : [],
-    });
-    routePolylines.push(glow);
+    routePolylines.push(
+      new g.maps.Polyline({
+        map: mapInstance,
+        path,
+        strokeColor: ROUTE_NAVY,
+        strokeOpacity: 0.14,
+        strokeWeight: weight + 10,
+        zIndex: 9,
+      })
+    );
+  }
+
+  // 흰 테두리를 깔아 지도 배경과 대비를 만든다(도로 위에서도 선이 또렷하게 보임)
+  if (!style.dashed) {
+    routePolylines.push(
+      new g.maps.Polyline({
+        map: mapInstance,
+        path,
+        strokeColor: '#FFFFFF',
+        strokeOpacity: opts.dimmed ? 0.3 : 0.9,
+        strokeWeight: weight + 3,
+        zIndex: opts.selected ? 18 : 8,
+      })
+    );
   }
 
   return new g.maps.Polyline({
     map: mapInstance,
     path,
-    strokeColor: style.color,
+    strokeColor: ROUTE_NAVY,
     strokeOpacity: style.dashed ? 0 : lineOpacity,
     strokeWeight: weight,
     icons,
@@ -2121,17 +2346,30 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: { sele
   });
 }
 
+/**
+ * 지도는 "배경", Route가 "주인공"이 되도록 채도를 낮춘 스타일.
+ * 길 찾을 때 필요한 도로망과 지명은 남기되(위치 감각에 꼭 필요), 색은 거의 무채색에 가깝게
+ * 눌러서 네이비 동선이 확실히 위로 떠오르게 한다. 업체 POI 아이콘/라벨은 전부 끈다.
+ */
 const MAP_STYLE_LIGHT = [
-  { elementType: 'geometry', stylers: [{ color: '#F8FBFE' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#94A3B8' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#F8FBFE' }] },
+  { elementType: 'geometry', stylers: [{ color: '#F7F9FC' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#A9B4C2' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#FFFFFF' }, { weight: 2 }] },
   { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+  // POI는 전부 숨기고 공원 지형만 아주 옅게 남겨 위치 감각을 돕는다
   { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
-  { featureType: 'poi.attraction', elementType: 'labels', stylers: [{ visibility: 'on' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#E7EEF5' }] },
-  { featureType: 'road', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#EFF4EF' }, { visibility: 'on' }] },
+  { featureType: 'administrative', elementType: 'geometry', stylers: [{ visibility: 'off' }] },
+  { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#94A3B8' }] },
+  // 도로는 유지하되 흰색~아주 연한 회색으로 (동선 네이비와 최대 대비)
+  { featureType: 'road', elementType: 'geometry.fill', stylers: [{ color: '#FFFFFF' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#EDF1F6' }] },
+  { featureType: 'road.highway', elementType: 'geometry.fill', stylers: [{ color: '#FAFBFD' }] },
+  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#E6EBF2' }] },
+  { featureType: 'road.local', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+  { featureType: 'road.arterial', elementType: 'labels.text.fill', stylers: [{ color: '#B7C1CD' }] },
   { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#D5EEFB' }] },
-  { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#F1F6FB' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#DEEAF4' }] },
+  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#A9BACB' }] },
+  { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#F4F7FA' }] },
 ];
