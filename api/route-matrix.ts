@@ -146,7 +146,7 @@ const MAX_LEGS = 25;
 
 interface Pt { lat: number; lng: number }
 interface LegReq { id: string; from: Pt; to: Pt }
-interface LegResult { meters: number; seconds: number; fare?: { units: number; currency: string } }
+interface LegResult { meters: number; seconds: number; fare?: { units: number; currency: string }; polyline?: string }
 
 /** 좌표를 5자리로 반올림해 캐시 키를 만든다 (트립과 무관한 전역 키) */
 function cacheKey(from: Pt, to: Pt, mode: Mode): string {
@@ -172,10 +172,13 @@ async function fetchLeg(key: string, from: Pt, to: Pt, mode: Mode): Promise<LegR
     body.routingPreference = 'TRAFFIC_UNAWARE'; // 미래 시점 교통량은 의미가 없어 비용만 늘어남
   }
 
+  // polyline.encodedPolyline로 실제 도로를 따라가는 경로 좌표까지 받는다 — 이게 없으면
+  // 지도에는 항상 출발지-도착지를 잇는 직선만 그려지고, 실측치는 숫자(시간·거리·요금)로만
+  // 반영돼 "실측인데 지도 위 선은 직선"인 불일치가 생긴다.
   const fieldMask =
     mode === 'TRANSIT'
-      ? 'routes.duration,routes.distanceMeters,routes.travelAdvisory.transitFare'
-      : 'routes.duration,routes.distanceMeters';
+      ? 'routes.duration,routes.distanceMeters,routes.travelAdvisory.transitFare,routes.polyline.encodedPolyline'
+      : 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline';
 
   let apiRes: Response;
   try {
@@ -222,6 +225,10 @@ async function fetchLeg(key: string, from: Pt, to: Pt, mode: Mode): Promise<LegR
       out.fare = { units, currency: fare.currencyCode };
     }
   }
+
+  const encoded = route?.polyline?.encodedPolyline;
+  if (typeof encoded === 'string' && encoded) out.polyline = encoded;
+
   return out;
 }
 
@@ -271,6 +278,7 @@ async function handleLegCompare(req: VercelRequest, res: VercelResponse) {
         if (row.fare_units != null && row.fare_currency) {
           r.fare = { units: Number(row.fare_units), currency: row.fare_currency };
         }
+        if (row.polyline) r.polyline = row.polyline;
         cache.set(row.cache_key, r);
       });
     }
@@ -298,6 +306,7 @@ async function handleLegCompare(req: VercelRequest, res: VercelResponse) {
       seconds: e.result.seconds,
       fare_units: e.result.fare?.units ?? null,
       fare_currency: e.result.fare?.currency ?? null,
+      polyline: e.result.polyline ?? null,
     });
   });
 

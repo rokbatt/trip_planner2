@@ -376,7 +376,6 @@
   border-color: var(--rt-blue);
   box-shadow: 0 0 0 3px rgba(143,216,248,0.4), 0 4px 12px rgba(11,42,92,0.18);
 }
-.rt-map-capsule.rt-leg-dimmed { opacity: 0.5; }
 /* 수동으로 이동수단을 바꾼 구간 표시 */
 .rt-map-capsule.rt-leg-manual::after {
   content: ''; width: 4px; height: 4px; border-radius: 50%;

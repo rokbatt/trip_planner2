@@ -129,9 +129,14 @@ create table if not exists route_leg_cache (
   seconds     int  not null,
   fare_units  numeric,            -- 대중교통 요금(있을 때만) — Routes API가 주는 경우만
   fare_currency text,
+  polyline    text,               -- 실제 도로를 따라가는 인코딩된 경로(없으면 지도에 직선으로 대체)
   created_at  timestamptz not null default now()
 );
 create index if not exists route_leg_cache_created_idx on route_leg_cache(created_at);
+
+-- 이미 만들어진 테이블에도 polyline 컬럼을 추가(이 스크립트를 이전에 돌려서 테이블이
+-- 이미 있는 경우를 위한 보정 — create table if not exists는 기존 테이블을 건드리지 않으므로 필요)
+alter table if exists route_leg_cache add column if not exists polyline text;
 
 -- 캐시는 서버(service_role)만 읽고 쓰므로 RLS를 켜고 정책은 두지 않는다
 -- (service_role 키는 RLS를 우회하므로 서버리스 함수는 정상 동작, 브라우저는 접근 불가).

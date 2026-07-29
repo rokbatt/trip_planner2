@@ -98,6 +98,8 @@ interface Leg {
   real: boolean;
   /** 실측 대중교통 요금이 있을 때만 (통화 포함) */
   fare?: { units: number; currency: string };
+  /** 실제 도로를 따라가는 좌표(있을 때만) — 없으면 지도에 두 지점을 잇는 직선으로 대체 */
+  path?: Array<{ lat: number; lng: number }>;
 }
 
 /** /api/route-matrix(구간 비교 모드) 응답의 모드별 실측값 */
@@ -105,6 +107,7 @@ interface RealLeg {
   meters: number;
   seconds: number;
   fare?: { units: number; currency: string };
+  polyline?: string;
 }
 
 interface Pt { lat: number; lng: number }
@@ -252,16 +255,52 @@ function toApiMode(mode: Leg['mode']): string {
 }
 
 /** 실측 데이터를 Leg로 변환. 택시 요금은 Routes API가 주지 않으므로 거리 기반 추정 유지 */
+/**
+ * Google 인코딩 폴리라인(base64 유사 가변길이 인코딩) 디코딩 — 표준 알고리즘.
+ * google.maps의 geometry 라이브러리를 추가로 로드하지 않기 위해 직접 구현.
+ */
+function decodePolyline(encoded: string): Array<{ lat: number; lng: number }> {
+  const points: Array<{ lat: number; lng: number }> = [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+
+  while (index < encoded.length) {
+    let shift = 0;
+    let result = 0;
+    let byte: number;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    lat += result & 1 ? ~(result >> 1) : result >> 1;
+
+    shift = 0;
+    result = 0;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    lng += result & 1 ? ~(result >> 1) : result >> 1;
+
+    points.push({ lat: lat / 1e5, lng: lng / 1e5 });
+  }
+  return points;
+}
+
 function realToLeg(mode: Leg['mode'], r: RealLeg): Leg {
   const km = r.meters / 1000;
   const min = Math.max(1, Math.round(r.seconds / 60));
+  const path = r.polyline ? decodePolyline(r.polyline) : undefined;
   if (mode === 'TRANSIT') {
     // 실측 요금이 있으면 그 값을, 없으면 거리 기반 추정치를 쓴다(추정 여부는 fare 유무로 구분).
     const costTHB = r.fare ? Math.round(r.fare.units) : Math.min(62, 20 + Math.round(km) * 6);
-    return { mode, km, min, costTHB, real: true, fare: r.fare };
+    return { mode, km, min, costTHB, real: true, fare: r.fare, path };
   }
-  if (mode === 'WALK') return { mode, km, min, costTHB: 0, real: true };
-  return { mode, km, min, costTHB: 35 + Math.round(km * 6.5), real: true };
+  if (mode === 'WALK') return { mode, km, min, costTHB: 0, real: true, path };
+  return { mode, km, min, costTHB: 35 + Math.round(km * 6.5), real: true, path };
 }
 
 /**
@@ -1827,17 +1866,22 @@ function drawRouteOnMap(refit: boolean): void {
     line.addListener('click', () => handleLegClick(stops[i].id, stops[i + 1].id));
     routePolylines.push(line);
 
-    const midLat = (stops[i].lat! + stops[i + 1].lat!) / 2;
-    const midLng = (stops[i].lng! + stops[i + 1].lng!) / 2;
-    const Ctor = getOverlayCtor(g);
-    const cls = 'rt-map-capsule ' + modeColorClass(leg.mode) +
-      (selected ? ' rt-leg-selected' : dimmed ? ' rt-leg-dimmed' : '') +
-      (legModeOverride.has(key) ? ' rt-leg-manual' : '');
-    const capsule = new Ctor(new g.maps.LatLng(midLat, midLng), legCapsuleHtml(leg, mapCur), cls, () =>
-      handleLegClick(stops[i].id, stops[i + 1].id, capsule.div ?? undefined)
-    );
-    capsule.setMap(mapInstance);
-    mapOverlays.push(capsule);
+    // 이동시간·비용 캡슐은 항상 떠 있으면 지도가 어수선해지므로, 그 구간을 클릭해
+    // 선택했을 때만 보여준다(원칙 3-3 — hover가 아니라 클릭으로 반응).
+    if (selected) {
+      const mid =
+        leg.path && leg.path.length >= 2
+          ? leg.path[Math.floor(leg.path.length / 2)]
+          : { lat: (stops[i].lat! + stops[i + 1].lat!) / 2, lng: (stops[i].lng! + stops[i + 1].lng!) / 2 };
+      const Ctor = getOverlayCtor(g);
+      const cls = 'rt-map-capsule ' + modeColorClass(leg.mode) + ' rt-leg-selected' +
+        (legModeOverride.has(key) ? ' rt-leg-manual' : '');
+      const capsule = new Ctor(new g.maps.LatLng(mid.lat, mid.lng), legCapsuleHtml(leg, mapCur), cls, () =>
+        handleLegClick(stops[i].id, stops[i + 1].id, capsule.div ?? undefined)
+      );
+      capsule.setMap(mapInstance);
+      mapOverlays.push(capsule);
+    }
   }
 
   if (refit) fitRouteBounds();
@@ -2031,10 +2075,14 @@ function buildMarkerV2(g: any, p: Place, opts: { isBasecamp: boolean; included: 
 /** 구간 폴리라인 — 이동수단별 스타일(도보 점선/대중교통·자동차 실선) + 끝 화살표 */
 function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: { selected: boolean; dimmed: boolean }): any {
   const style = MODE_STYLE[leg.mode];
-  const path = [
-    { lat: from.lat!, lng: from.lng! },
-    { lat: to.lat!, lng: to.lng! },
-  ];
+  // 실제 도로 경로(leg.path)가 있으면 그걸 따라 그리고, 없으면(추정치) 두 지점을 잇는 직선.
+  const path =
+    leg.path && leg.path.length >= 2
+      ? leg.path
+      : [
+          { lat: from.lat!, lng: from.lng! },
+          { lat: to.lat!, lng: to.lng! },
+        ];
   const lineOpacity = opts.dimmed ? 0.35 : opts.selected ? 1 : 0.85;
   const weight = opts.selected ? style.weight + 2 : style.weight;
 
