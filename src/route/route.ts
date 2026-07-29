@@ -181,10 +181,12 @@ let placeCardOverlay: any = null;
 let placeCardPlaceId: string | null = null;
 let resizeHandler: (() => void) | null = null;
 let escHandler: ((e: KeyboardEvent) => void) | null = null;
+let zoomRedrawHandle: number | null = null;
 
 export function teardownRoute(): void {
   if (resizeHandler) { window.removeEventListener('resize', resizeHandler); resizeHandler = null; }
   if (escHandler) { document.removeEventListener('keydown', escHandler); escHandler = null; }
+  if (zoomRedrawHandle != null) { window.cancelAnimationFrame(zoomRedrawHandle); zoomRedrawHandle = null; }
   // 화면을 떠날 때 대기 중인 저장은 버리지 않고 커밋한다 (Claude.md 알려진 버그 패턴:
   // 대기 타이머를 그냥 취소하면 "화면엔 반영됐는데 DB엔 없는" 상태가 됨).
   if (saveTimer) {
@@ -1257,12 +1259,15 @@ function handlePinClick(g: any, p: Place): void {
     return;
   }
 
-  // 기본(선택) 툴: 장소 카드를 열어 정보를 보고 담을지 결정 — hover가 아니라 클릭으로만 반응
+  // 기본(선택) 툴: 아직 담지 않은 후보는 정보 카드(사진/평점/담기 버튼)를 보여줘 담을지 결정하게 하고,
+  // 이미 오늘 동선에 들어간 정류지는 같은 정보가 우측 타임라인에 이미 떠 있으므로 카드 없이
+  // 강조 + 타임라인 스크롤만 한다(안 그러면 클릭할 때마다 지도 위에 카드가 겹쳐 어수선해짐).
+  const alreadyIncluded = isBasecamp || activeDay().stopIds.includes(p.id);
   highlightedPlaceId = p.id;
   hoveredPlaceId = null;
   if (g?.maps) {
     showRipple(g, p, ROUTE_NAVY);
-    openPlaceCard(g, p);
+    if (!alreadyIncluded) openPlaceCard(g, p);
   }
   drawRouteOnMap(false);
   renderRightPanel(rtContainer!);
@@ -1839,6 +1844,16 @@ async function initMap(container: HTMLElement): Promise<void> {
     refreshAll(rtContainer, { refit: true });
   });
 
+  // 축소할수록 번호 핀이 상대적으로 너무 커 보이는 문제 — 줌 레벨에 따라 핀 크기를 다시 계산.
+  // 스크롤 줌 중엔 zoom_changed가 매우 자주 발생하므로 프레임당 한 번만 다시 그린다.
+  mapInstance.addListener('zoom_changed', () => {
+    if (zoomRedrawHandle != null) return;
+    zoomRedrawHandle = window.requestAnimationFrame(() => {
+      zoomRedrawHandle = null;
+      drawRouteOnMap(false);
+    });
+  });
+
   drawRouteOnMap(true);
 
   resizeHandler = () => resizeMap();
@@ -2127,6 +2142,19 @@ interface MarkerOpts {
   phase?: StopPhase;
 }
 
+// 확대했을 때(REFERENCE_ZOOM 이상)의 핀 크기가 "적절한" 기준 — 그보다 축소하면 화면 픽셀
+// 상 크기가 고정된 채로 남아 핀이 점점 더 존재감이 커 보이므로, 축소한 만큼 배지를 함께 줄인다.
+const PIN_REFERENCE_ZOOM = 14;
+const PIN_MIN_ZOOM_SCALE = 0.55;
+function pinZoomScale(): number {
+  if (!mapInstance || typeof mapInstance.getZoom !== 'function') return 1;
+  const zoom = mapInstance.getZoom();
+  if (typeof zoom !== 'number' || !Number.isFinite(zoom)) return 1;
+  const diff = PIN_REFERENCE_ZOOM - zoom;
+  if (diff <= 0) return 1; // 확대 상태는 기존 크기 그대로(사용자가 "적절하다"고 확인한 크기)
+  return Math.max(PIN_MIN_ZOOM_SCALE, 1 - diff * 0.09);
+}
+
 /**
  * 커스텀 원형 배지 마커.
  *  - 동선에 포함된 정류지: 순서 번호 + 진행 상태 색(네이비/오렌지/그레이)
@@ -2136,7 +2164,7 @@ interface MarkerOpts {
 function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
   const meta = categoryMeta(p, opts.isBasecamp);
   const phase: StopPhase = opts.phase ?? 'plain';
-  const scale = opts.highlighted ? 1.18 : 1;
+  const scale = (opts.highlighted ? 1.18 : 1) * pinZoomScale();
   const r = (opts.included ? 15 : 9) * scale;
   // halo/glow까지 담을 여유를 둔 캔버스
   const pad = opts.highlighted ? 26 : 12;
@@ -2360,16 +2388,20 @@ const MAP_STYLE_LIGHT = [
   { featureType: 'poi', stylers: [{ visibility: 'off' }] },
   { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#EFF4EF' }, { visibility: 'on' }] },
   { featureType: 'administrative', elementType: 'geometry', stylers: [{ visibility: 'off' }] },
-  { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#94A3B8' }] },
+  // 동네/지역 이름은 지도를 채우는 가장 큰 글자 소음이라 완전히 끈다(위치 감각은 도로망으로 충분)
+  { featureType: 'administrative.locality', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+  { featureType: 'administrative.neighborhood', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   // 도로는 유지하되 흰색~아주 연한 회색으로 (동선 네이비와 최대 대비)
   { featureType: 'road', elementType: 'geometry.fill', stylers: [{ color: '#FFFFFF' }] },
   { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#EDF1F6' }] },
   { featureType: 'road.highway', elementType: 'geometry.fill', stylers: [{ color: '#FAFBFD' }] },
   { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#E6EBF2' }] },
+  { featureType: 'road.highway', elementType: 'labels.text.fill', stylers: [{ color: '#B7C1CD' }] },
   { featureType: 'road.local', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-  { featureType: 'road.arterial', elementType: 'labels.text.fill', stylers: [{ color: '#B7C1CD' }] },
+  // 잔도로 이름까지는 필요 없음 — 주요 도로(고속도로)만 이름을 남긴다
+  { featureType: 'road.arterial', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   { featureType: 'transit', stylers: [{ visibility: 'off' }] },
   { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#DEEAF4' }] },
-  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#A9BACB' }] },
+  { featureType: 'water', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#F4F7FA' }] },
 ];
