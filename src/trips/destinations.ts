@@ -50,10 +50,14 @@ function syntheticDestination(trip: Trip): TripDestination {
     arrival_time: null,
     arrival_lat: null,
     arrival_lng: null,
+    arrival_photo_url: null,
+    arrival_rating: null,
     departure_airport: null,
     departure_time: null,
     departure_lat: null,
     departure_lng: null,
+    departure_photo_url: null,
+    departure_rating: null,
   };
 }
 
@@ -314,10 +318,14 @@ export async function updateDestination(
       | 'arrival_time'
       | 'arrival_lat'
       | 'arrival_lng'
+      | 'arrival_photo_url'
+      | 'arrival_rating'
       | 'departure_airport'
       | 'departure_time'
       | 'departure_lat'
       | 'departure_lng'
+      | 'departure_photo_url'
+      | 'departure_rating'
     >
   >
 ): Promise<boolean> {

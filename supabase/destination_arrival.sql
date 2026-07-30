@@ -19,10 +19,16 @@ alter table if exists trip_destinations add column if not exists arrival_airport
 alter table if exists trip_destinations add column if not exists arrival_time text; -- 'HH:MM', 24시간
 alter table if exists trip_destinations add column if not exists arrival_lat double precision;
 alter table if exists trip_destinations add column if not exists arrival_lng double precision;
+-- getPlaceDetails로 받아온 실제 사진/평점(자동완성에서 실제로 고른 경우에만 채워짐).
+-- 이게 없으면 도착 공항 핀을 눌러도 이름만 저장된 값이라 사진/평점이 안 뜬다.
+alter table if exists trip_destinations add column if not exists arrival_photo_url text;
+alter table if exists trip_destinations add column if not exists arrival_rating double precision;
 
 alter table if exists trip_destinations add column if not exists departure_airport text;
 alter table if exists trip_destinations add column if not exists departure_time text; -- 'HH:MM', 24시간
 alter table if exists trip_destinations add column if not exists departure_lat double precision;
 alter table if exists trip_destinations add column if not exists departure_lng double precision;
+alter table if exists trip_destinations add column if not exists departure_photo_url text;
+alter table if exists trip_destinations add column if not exists departure_rating double precision;
 
 -- 완료.

@@ -23,7 +23,7 @@ import {
   placeBelongsToDestination,
   updateDestination,
 } from '../trips/destinations';
-import { loadGoogleMapsScript, getAirportPredictions, getPlaceDetails } from '../utils/googleMaps';
+import { loadGoogleMapsScript, getAirportPredictions, getPlaceDetails, extractPlaceResult } from '../utils/googleMaps';
 import type { PlacePrediction } from '../utils/googleMaps';
 import {
   loadRoutePlan,
@@ -183,10 +183,14 @@ let activeDestArrivalAirport: string | null = null;
 let activeDestArrivalTime: string | null = null;
 let activeDestArrivalLat: number | null = null;
 let activeDestArrivalLng: number | null = null;
+let activeDestArrivalPhoto: string | null = null;
+let activeDestArrivalRating: number | null = null;
 let activeDestDepartureAirport: string | null = null;
 let activeDestDepartureTime: string | null = null;
 let activeDestDepartureLat: number | null = null;
 let activeDestDepartureLng: number | null = null;
+let activeDestDeparturePhoto: string | null = null;
+let activeDestDepartureRating: number | null = null;
 let candidatePlaces: Place[] = []; // 확정 장소들(숙소 제외)
 let placeById = new Map<string, Place>();
 let days: RouteDay[] = [];
@@ -278,10 +282,14 @@ export function teardownRoute(): void {
   activeDestArrivalTime = null;
   activeDestArrivalLat = null;
   activeDestArrivalLng = null;
+  activeDestArrivalPhoto = null;
+  activeDestArrivalRating = null;
   activeDestDepartureAirport = null;
   activeDestDepartureTime = null;
   activeDestDepartureLat = null;
   activeDestDepartureLng = null;
+  activeDestDeparturePhoto = null;
+  activeDestDepartureRating = null;
   candidatePlaces = [];
   placeById = new Map();
   days = [];
@@ -782,10 +790,14 @@ async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
   activeDestArrivalTime = activeDest?.arrival_time ?? null;
   activeDestArrivalLat = activeDest?.arrival_lat ?? null;
   activeDestArrivalLng = activeDest?.arrival_lng ?? null;
+  activeDestArrivalPhoto = activeDest?.arrival_photo_url ?? null;
+  activeDestArrivalRating = activeDest?.arrival_rating ?? null;
   activeDestDepartureAirport = activeDest?.departure_airport ?? null;
   activeDestDepartureTime = activeDest?.departure_time ?? null;
   activeDestDepartureLat = activeDest?.departure_lat ?? null;
   activeDestDepartureLng = activeDest?.departure_lng ?? null;
+  activeDestDeparturePhoto = activeDest?.departure_photo_url ?? null;
+  activeDestDepartureRating = activeDest?.departure_rating ?? null;
   const segments = activeDest ? await loadStaySegments(trip, activeDest) : [];
   const seg = activeDest ? resolveActiveSegment(activeDest.id, segments) : null;
   // 날짜 순으로 정렬해 둬야 basecampForDay()가 dayIndex 순서와 맞게 구간을 찾는다
@@ -937,11 +949,39 @@ function basecampForDay(dayIndex: number): Place | null {
   return placeById.get(id) ?? basecamp;
 }
 
+/**
+ * 이 DAY를 "시작하는" 숙소 — basecampForDay(그 밤을 보낼 숙소)와는 다른 개념이다.
+ * 숙소를 나눈 여행에서 체크아웃하는 날은, 그날 시작은 전날 밤 묵었던 숙소이고 끝은
+ * 새로 옮긴 숙소라야 한다(예: A[26~27), B[27~29)일 때 27일은 시작=A, 끝=B).
+ * 오늘 날짜에 end_date가 걸리는 구간(=오늘 체크아웃하는 구간)이 있으면 그 숙소가 "시작"이고,
+ * 없으면(체크아웃이 없는 보통의 날) 오늘 묵는 숙소와 동일하다.
+ */
+function startHotelForDay(dayIndex: number): Place | null {
+  if (staySegments.length <= 1) return basecamp;
+  const dateISO = dayDateISO(dayIndex);
+  if (dateISO) {
+    const checkoutSeg = staySegments.find((s) => s.end_date === dateISO);
+    if (checkoutSeg?.basecamp_place_id) {
+      return placeById.get(checkoutSeg.basecamp_place_id) ?? basecamp;
+    }
+  }
+  return basecampForDay(dayIndex);
+}
+
 /* ══════════════ 공항 정류지(DAY 1 도착 / 마지막 DAY 출발) ══════════════ */
 
 /** 공항 이름/좌표로 실제 Place 객체를 만든다 — 지도에 그리고 이동시간을 계산할 수 있도록
- * makeAdhocPlace와 같은 모양이지만, id가 destination당 고정이라 매 렌더마다 새로 생기지 않는다. */
-function makeAnchorPlace(id: string, name: string, lat: number, lng: number): Place {
+ * makeAdhocPlace와 같은 모양이지만, id가 destination당 고정이라 매 렌더마다 새로 생기지 않는다.
+ * 사진/평점은 자동완성에서 실제로 고른 뒤 getPlaceDetails로 받아온 값을 그대로 넘겨받는다
+ * (원칙 3-1 — 실측 없이 지어내지 않고, 없으면 그냥 null로 둔다). */
+function makeAnchorPlace(
+  id: string,
+  name: string,
+  lat: number,
+  lng: number,
+  photoUrl: string | null = null,
+  rating: number | null = null
+): Place {
   return {
     id,
     trip_id: currentTripId,
@@ -949,14 +989,14 @@ function makeAnchorPlace(id: string, name: string, lat: number, lng: number): Pl
     lat,
     lng,
     address: null,
-    photo_url: null,
+    photo_url: photoUrl,
     category: '공항',
     notes: null,
     added_by: null,
     created_at: new Date().toISOString(),
     likes_count: 0,
     google_place_id: null,
-    google_rating: null,
+    google_rating: rating,
     photo_ref: null,
     opening_hours: null,
     mood: null,
@@ -980,7 +1020,7 @@ function arrivalAirportPlace(): Place | null {
   if (!id || !activeDestArrivalAirport || activeDestArrivalLat == null || activeDestArrivalLng == null) return null;
   const cur = placeById.get(id);
   if (cur && cur.name === activeDestArrivalAirport && cur.lat === activeDestArrivalLat && cur.lng === activeDestArrivalLng) return cur;
-  const p = makeAnchorPlace(id, activeDestArrivalAirport, activeDestArrivalLat, activeDestArrivalLng);
+  const p = makeAnchorPlace(id, activeDestArrivalAirport, activeDestArrivalLat, activeDestArrivalLng, activeDestArrivalPhoto, activeDestArrivalRating);
   placeById.set(id, p);
   return p;
 }
@@ -990,19 +1030,22 @@ function departureAirportPlace(): Place | null {
   if (!id || !activeDestDepartureAirport || activeDestDepartureLat == null || activeDestDepartureLng == null) return null;
   const cur = placeById.get(id);
   if (cur && cur.name === activeDestDepartureAirport && cur.lat === activeDestDepartureLat && cur.lng === activeDestDepartureLng) return cur;
-  const p = makeAnchorPlace(id, activeDestDepartureAirport, activeDestDepartureLat, activeDestDepartureLng);
+  const p = makeAnchorPlace(id, activeDestDepartureAirport, activeDestDepartureLat, activeDestDepartureLng, activeDestDeparturePhoto, activeDestDepartureRating);
   placeById.set(id, p);
   return p;
 }
 
-/** 이 DAY(dayIndex, 0-based)의 시작/끝 정류지 id — DAY1 시작은 공항(있으면)·아니면 숙소,
- * 마지막 DAY 끝은 출발 공항(있으면)·아니면 숙소, 그 사이 DAY는 시작/끝 모두 그날의 숙소. */
+/** 이 DAY(dayIndex, 0-based)의 시작/끝 정류지 id — DAY1 시작은 공항(있으면)·아니면 그날 시작
+ * 숙소, 마지막 DAY 끝은 출발 공항(있으면)·아니면 그날 묵는 숙소. 숙소를 나눈 여행에서 그날
+ * 체크아웃/체크인이 겹치면(예: 26~27 A호텔, 27~29 B호텔일 때 27일) 시작=A, 끝=B로 서로
+ * 다르게 나온다 — startHotelForDay/basecampForDay 참고. */
 function dayAnchorIds(dayIndex: number): { startId: string | null; endId: string | null } {
   const isFirstDay = dayIndex === 0;
   const isLastDay = dayIndex === days.length - 1;
-  const bc = basecampForDay(dayIndex);
-  const startPlace = isFirstDay ? arrivalAirportPlace() ?? bc : bc;
-  const endPlace = isLastDay ? departureAirportPlace() ?? bc : bc;
+  const startHotel = startHotelForDay(dayIndex);
+  const endHotel = basecampForDay(dayIndex);
+  const startPlace = isFirstDay ? arrivalAirportPlace() ?? startHotel : startHotel;
+  const endPlace = isLastDay ? departureAirportPlace() ?? endHotel : endHotel;
   return { startId: startPlace?.id ?? null, endId: endPlace?.id ?? null };
 }
 
@@ -1037,10 +1080,13 @@ function ensureDayAnchors(day: RouteDay): void {
   }
 }
 
-/** p가 이 dayIndex 기준 "숙소(시작/끝 앵커)"인지 — 위치와 무관하게 정체성으로 판단 */
+/** p가 이 dayIndex 기준 "숙소(시작/끝 앵커)"인지 — 위치와 무관하게 정체성으로 판단.
+ * 체크아웃/체크인이 겹치는 날은 시작 숙소와 끝 숙소가 서로 다를 수 있어 둘 다 확인한다. */
 function isBasecampPlace(p: Place, dayIndex: number): boolean {
-  const bc = basecampForDay(dayIndex);
-  return !!bc && p.id === bc.id;
+  const endBc = basecampForDay(dayIndex);
+  if (endBc && p.id === endBc.id) return true;
+  const startBc = startHotelForDay(dayIndex);
+  return !!startBc && p.id === startBc.id;
 }
 /** p가 공항 앵커(도착/출발 어느 쪽이든)인지 */
 function isAirportAnchorPlace(p: Place): boolean {
@@ -2278,19 +2324,29 @@ function bindAirportInfo(container: HTMLElement, kind: AirportKind): void {
 
     let lat: number | null = null;
     let lng: number | null = null;
+    let photo: string | null = null;
+    let rating: number | null = null;
     try {
       const details = await getPlaceDetails(p.placeId);
-      lat = details?.location ? details.location.lat() : null;
-      lng = details?.location ? details.location.lng() : null;
+      const extracted = extractPlaceResult(details);
+      lat = extracted?.lat ?? null;
+      lng = extracted?.lng ?? null;
+      photo = extracted?.photoUrl ?? null;
+      rating = extracted?.rating ?? null;
     } catch (e) {
-      console.error('[ROUTE] 공항 좌표 조회 실패(이름만 저장):', (e as Error).message);
+      console.error('[ROUTE] 공항 정보 조회 실패(이름만 저장):', (e as Error).message);
     }
-    if (kind === 'arrival') { activeDestArrivalLat = lat; activeDestArrivalLng = lng; }
-    else { activeDestDepartureLat = lat; activeDestDepartureLng = lng; }
+    if (kind === 'arrival') {
+      activeDestArrivalLat = lat; activeDestArrivalLng = lng;
+      activeDestArrivalPhoto = photo; activeDestArrivalRating = rating;
+    } else {
+      activeDestDepartureLat = lat; activeDestDepartureLng = lng;
+      activeDestDeparturePhoto = photo; activeDestDepartureRating = rating;
+    }
     patchDest(
       kind === 'arrival'
-        ? { arrival_airport: p.mainText, arrival_lat: lat, arrival_lng: lng }
-        : { departure_airport: p.mainText, departure_lat: lat, departure_lng: lng }
+        ? { arrival_airport: p.mainText, arrival_lat: lat, arrival_lng: lng, arrival_photo_url: photo, arrival_rating: rating }
+        : { departure_airport: p.mainText, departure_lat: lat, departure_lng: lng, departure_photo_url: photo, departure_rating: rating }
     );
     refreshAll(container, { refit: true }); // 좌표가 생겼으면 이 칸 대신 실제 정류지 행이 나타남
   };
@@ -2369,13 +2425,27 @@ function clearAirportAnchor(id: string, container: HTMLElement): void {
     activeDestArrivalTime = null;
     activeDestArrivalLat = null;
     activeDestArrivalLng = null;
-    if (activeDestId) void updateDestination(activeDestId, { arrival_airport: null, arrival_time: null, arrival_lat: null, arrival_lng: null });
+    activeDestArrivalPhoto = null;
+    activeDestArrivalRating = null;
+    if (activeDestId) {
+      void updateDestination(activeDestId, {
+        arrival_airport: null, arrival_time: null, arrival_lat: null, arrival_lng: null,
+        arrival_photo_url: null, arrival_rating: null,
+      });
+    }
   } else {
     activeDestDepartureAirport = null;
     activeDestDepartureTime = null;
     activeDestDepartureLat = null;
     activeDestDepartureLng = null;
-    if (activeDestId) void updateDestination(activeDestId, { departure_airport: null, departure_time: null, departure_lat: null, departure_lng: null });
+    activeDestDeparturePhoto = null;
+    activeDestDepartureRating = null;
+    if (activeDestId) {
+      void updateDestination(activeDestId, {
+        departure_airport: null, departure_time: null, departure_lat: null, departure_lng: null,
+        departure_photo_url: null, departure_rating: null,
+      });
+    }
   }
   refreshAll(container, { refit: true });
 }

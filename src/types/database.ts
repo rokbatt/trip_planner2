@@ -156,11 +156,16 @@ export interface Database {
           /** 자동완성에서 실제로 고른 공항의 좌표 — 있어야 지도 위 진짜 정류지로 취급됨 */
           arrival_lat: number | null;
           arrival_lng: number | null;
+          /** getPlaceDetails로 받아온 실제 사진/평점 — 자동완성에서 실제로 고른 경우에만 채워짐 */
+          arrival_photo_url: string | null;
+          arrival_rating: number | null;
           /** 마지막 DAY의 종료점 — 출국 공항 (arrival_*와 동일한 구조) */
           departure_airport: string | null;
           departure_time: string | null;
           departure_lat: number | null;
           departure_lng: number | null;
+          departure_photo_url: string | null;
+          departure_rating: number | null;
         };
         Insert: {
           id?: string;
@@ -176,10 +181,14 @@ export interface Database {
           arrival_time?: string | null;
           arrival_lat?: number | null;
           arrival_lng?: number | null;
+          arrival_photo_url?: string | null;
+          arrival_rating?: number | null;
           departure_airport?: string | null;
           departure_time?: string | null;
           departure_lat?: number | null;
           departure_lng?: number | null;
+          departure_photo_url?: string | null;
+          departure_rating?: number | null;
         };
         Update: Partial<Database['public']['Tables']['trip_destinations']['Insert']>;
         Relationships: [
