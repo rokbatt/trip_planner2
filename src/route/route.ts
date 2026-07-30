@@ -201,9 +201,9 @@ let connectFromId: string | null = null;
 let highlightedPlaceId: string | null = null;
 /** 우측 타임라인에 마우스를 올렸을 때만 잠깐 강조되는 장소 (클릭 선택과 별개인 일시적 미리보기) */
 let hoveredPlaceId: string | null = null;
-let selectedLegKey: string | null = null;
-/** 구간 클릭 시 뜨는 이동시간/비용 정보 — 선 위에 얹지 않고 지도 빈 여백(우하단)에 반투명 패널로 고정 */
-let legInfoPanelEl: HTMLElement | null = null;
+/** 확정된(동선에 담긴) 장소를 클릭하면 뜨는 정보 패널 — 장소 정보 + 앞/뒤로 이어지는 두 구간의
+ *  이동시간/비용을 한 번에 보여준다. 지도 위에 얹지 않고 우상단에 반투명 패널로 고정. */
+let stopInfoPanelEl: HTMLElement | null = null;
 let adhocMode = false;
 let adhocSeq = 0;
 let placeSearchQuery = '';
@@ -294,7 +294,6 @@ export function teardownRoute(): void {
   connectFromId = null;
   highlightedPlaceId = null;
   hoveredPlaceId = null;
-  selectedLegKey = null;
   adhocMode = false;
   placeSearchQuery = '';
   activeCatFilters = new Set();
@@ -305,7 +304,7 @@ export function teardownRoute(): void {
   mapInstance = null;
   mapMarkers = [];
   routePolylines = [];
-  legInfoPanelEl = null;
+  stopInfoPanelEl = null;
   placeCardOverlay = null;
   placeCardPlaceId = null;
   rtContainer = null;
@@ -924,8 +923,14 @@ function dayDateLabel(dayIndex: number): string {
 function basecampForDay(dayIndex: number): Place | null {
   if (staySegments.length <= 1) return basecamp;
   const dateISO = dayDateISO(dayIndex);
+  // ⚠️ end_date는 "체크아웃 날짜"라 다음 구간의 start_date와 같은 값을 공유한다(숙소 나누기가
+  // 그렇게 저장함 — shortlist.ts의 splitSegmentToRange 참고). 그래서 end_date를 <=로 포함시키면
+  // 두 구간이 그 경계일 하루를 동시에 "내 날짜"라고 주장하게 되고, 날짜순 정렬된 배열에서
+  // find()는 항상 앞(체크아웃하는 쪽) 구간을 먼저 찾아버려 — 실제로는 그날 밤 새 숙소로
+  // 옮겼는데도 전날 숙소가 계속 뜨는 버그가 났었다. end_date는 그 날짜를 포함하지 않는(<)
+  // 것으로 봐야 경계일이 "체크인하는 새 구간" 쪽으로 정확히 붙는다.
   const seg = dateISO
-    ? staySegments.find((s) => s.start_date && s.end_date && dateISO >= s.start_date && dateISO <= s.end_date)
+    ? staySegments.find((s) => s.start_date && s.end_date && dateISO >= s.start_date && dateISO < s.end_date)
     : null;
   const id = (seg ?? staySegments[0])?.basecamp_place_id ?? null;
   if (!id) return basecamp;
@@ -1206,9 +1211,8 @@ function bindPage(container: HTMLElement): void {
       if (placeCardOverlay) { closePlaceCard(); return; }
       if (adhocMode) { setAdhocMode(container, false); return; }
       if (activeTool !== 'select') { setActiveTool(container, 'select'); return; }
-      if (highlightedPlaceId || selectedLegKey) {
+      if (highlightedPlaceId) {
         highlightedPlaceId = null;
-        selectedLegKey = null;
         drawRouteOnMap(false);
         renderRightPanel(container);
       }
@@ -1268,7 +1272,6 @@ function renderDayTabs(container: HTMLElement): void {
     btn.addEventListener('click', () => {
       activeDayId = (btn as HTMLElement).dataset.day!;
       highlightedPlaceId = null;
-      selectedLegKey = null;
       refreshAll(container, { refit: true });
     });
   });
@@ -1555,9 +1558,10 @@ function handlePinClick(g: any, p: Place): void {
     return;
   }
 
-  // 기본(선택) 툴: 아직 담지 않은 후보는 정보 카드(사진/평점/담기 버튼)를 보여줘 담을지 결정하게 하고,
-  // 이미 오늘 동선에 들어간 정류지는 같은 정보가 우측 타임라인에 이미 떠 있으므로 카드 없이
-  // 강조 + 타임라인 스크롤만 한다(안 그러면 클릭할 때마다 지도 위에 카드가 겹쳐 어수선해짐).
+  // 기본(선택) 툴: 아직 담지 않은 후보는 핀 옆 정보 카드(사진/평점/담기 버튼)를 보여줘 담을지
+  // 결정하게 하고, 이미 오늘 동선에 들어간(확정된) 정류지는 핀 옆 카드 대신 우상단 고정
+  // 패널에 같은 정보 + 앞뒤로 이어지는 두 구간의 이동시간/비용을 함께 보여준다
+  // (drawRouteOnMap이 highlightedPlaceId를 보고 채워 넣음 — updateStopInfoPanel 참고).
   const alreadyIncluded = isAnchor || activeDay().stopIds.includes(p.id);
   highlightedPlaceId = p.id;
   hoveredPlaceId = null;
@@ -1582,15 +1586,12 @@ function focusMemoInput(placeId: string): void {
   input?.focus();
 }
 
+// 구간(화살표/커넥터) 클릭은 이제 정보 패널을 띄우지 않는다 — 이동시간/비용 확인은 장소를
+// 클릭하는 쪽으로 옮겨갔다(장소를 누르면 그 장소와 이어지는 두 구간이 함께 뜬다). 다만
+// 교통수단 변경 툴에서는 여전히 구간을 직접 눌러 모드를 바꾼다.
 function handleLegClick(fromId: string, toId: string, anchor?: HTMLElement): void {
-  const key = legKey(fromId, toId);
-  if (activeTool === 'transport') {
-    openModeOverridePopover(key, anchor);
-    return;
-  }
-  selectedLegKey = selectedLegKey === key ? null : key;
-  drawRouteOnMap(false);
-  renderRightPanel(rtContainer!);
+  if (activeTool !== 'transport') return;
+  openModeOverridePopover(legKey(fromId, toId), anchor);
 }
 
 function openModeOverridePopover(key: string, anchor?: HTMLElement): void {
@@ -2438,13 +2439,14 @@ function renderRightPanel(container: HTMLElement): void {
     if (i < legs.length) {
       const leg = legs[i];
       const key = legKey(p.id, stops[i + 1].id);
-      const selected = selectedLegKey === key;
+      // 지도에서 장소를 클릭하면 그 장소와 이어지는 두 구간이 강조되는 것과 같은 기준으로 맞춘다.
+      const selected = highlightedPlaceId === p.id || highlightedPlaceId === stops[i + 1].id;
       const manual = legModeOverride.has(key);
       const extra = leg.costTHB > 0 ? fmtCost(leg.costTHB, cur) : (leg.mode === 'WALK' ? fmtKm(leg.km) : '무료');
       rows.push(
         [
           '<div class="rt-panel-connector ' + modeColorClass(leg.mode) + (selected ? ' rt-highlighted' : '') + '" data-leg-key="' + key + '"' +
-            ' role="button" tabindex="0" title="눌러서 이 구간 강조 · 교통수단 툴에서는 이동수단 변경">',
+            ' role="button" tabindex="0" title="교통수단 툴에서 눌러 이동수단 변경">',
           '  <span class="rt-panel-connector-icon">' + modeIcon(leg.mode) + '</span>',
           '  <span class="rt-panel-connector-label">' + modeLabel(leg.mode) + ' ' + fmtMin(leg.min) + ' <b>·</b> ' + extra + '</span>',
           !leg.real ? '  <span class="rt-panel-connector-est" title="실제 경로를 못 받아 직선거리로 추정한 값이에요">추정</span>' : '',
@@ -2745,14 +2747,13 @@ async function initMap(container: HTMLElement): Promise<void> {
   });
 
   addMapTypeToggle(g, mapInstance);
-  addLegInfoPanel(g, mapInstance);
+  addStopInfoPanel(g, mapInstance);
 
   // 지도 빈 곳 클릭 = 장소 카드/강조 해제 (원칙 3-3 명시적 해제 수단)
   mapInstance.addListener('click', () => {
     if (placeCardOverlay) { closePlaceCard(); return; }
-    if (highlightedPlaceId || selectedLegKey) {
+    if (highlightedPlaceId) {
       highlightedPlaceId = null;
-      selectedLegKey = null;
       connectFromId = null;
       drawRouteOnMap(false);
       renderRightPanel(container);
@@ -2809,16 +2810,16 @@ function addMapTypeToggle(g: any, map: any): void {
 }
 
 /**
- * 구간(화살표)을 클릭했을 때의 이동시간/비용 안내 — 예전엔 그 구간 위에 캡슐로 얹었지만,
- * 지도 위에 박스가 떠 있으면 어수선해서 지도의 완전히 빈 여백인 우하단에 반투명 패널로
- * 고정하고 내용만 바꿔 끼운다(구간이 바뀌어도 패널 위치는 그대로).
+ * 확정된(동선에 담긴) 장소를 클릭했을 때의 정보 안내 — 장소 사진/이름/평점/카테고리와,
+ * 그 장소로 들어오고 나가는 두 구간의 이동시간/비용을 한 번에 보여준다. 지도 위 특정 지점에
+ * 얹지 않고 우상단(지도/위성 버튼 아래)에 반투명 패널로 고정하고 내용만 바꿔 끼운다.
  */
-function addLegInfoPanel(g: any, map: any): void {
+function addStopInfoPanel(g: any, map: any): void {
   const wrap = document.createElement('div');
-  wrap.className = 'rt-leginfo';
+  wrap.className = 'rt-stopinfo';
   wrap.style.display = 'none';
-  map.controls[g.maps.ControlPosition.RIGHT_BOTTOM].push(wrap);
-  legInfoPanelEl = wrap;
+  map.controls[g.maps.ControlPosition.RIGHT_TOP].push(wrap);
+  stopInfoPanelEl = wrap;
 }
 
 function resizeMap(): void {
@@ -2860,6 +2861,9 @@ function drawRouteOnMap(refit: boolean): void {
     mapMarkers.push(marker);
   });
 
+  // 확정된(동선에 담긴) 장소를 클릭하면 정보 패널(사진/평점 + 앞뒤 두 구간)을 채운다.
+  let stopInfoShown = false;
+
   // 오늘 동선의 정류지 — 순서 번호 + 진행 상태 색
   stops.forEach((p, i) => {
     const isBasecamp = isBasecampPlace(p, dayIndex);
@@ -2881,31 +2885,31 @@ function drawRouteOnMap(refit: boolean): void {
     });
     marker.addListener('click', () => handlePinClick(g, p));
     mapMarkers.push(marker);
+
+    // 정보 패널은 반드시 클릭(highlightedPlaceId)에만 반응한다 — 호버(hoveredPlaceId)까지
+    // 반응하면 타임라인 위에서 마우스를 움직일 때마다 패널이 깜빡여 예전에 겪은 문제가 재발한다.
+    if (p.id === highlightedPlaceId) {
+      stopInfoShown = true;
+      updateStopInfoPanel(p, isBasecamp, legs[i - 1] ?? null, stops[i - 1] ?? null, legs[i] ?? null, stops[i + 1] ?? null, mapCur);
+    }
   });
+  if (!stopInfoShown && stopInfoPanelEl) stopInfoPanelEl.style.display = 'none';
 
   // 같은 구간이 여러 번 등장하면(같은 길 왕복 등) 겹쳐 보이지 않게 회차를 센다
   const seenLegs = new Map<string, number>();
 
   for (let i = 0; i < stops.length - 1; i++) {
     const leg = legs[i];
-    const key = legKey(stops[i].id, stops[i + 1].id);
     // 방향이 반대여도 같은 선분이므로 정렬한 키로 겹침을 판단
     const geomKey = [stops[i].id, stops[i + 1].id].sort().join('~');
     const overlapIndex = seenLegs.get(geomKey) ?? 0;
     seenLegs.set(geomKey, overlapIndex + 1);
 
-    // 캡슐(시간/비용) 표시는 이 구간(화살표)을 **클릭**했을 때만 반응한다. 호버로도 띄워봤지만
-    // 호버가 지도 전체를 다시 그리다 보니(drawRouteOnMap) 마우스가 올라간 폴리라인 자체가
-    // 매번 새로 생성돼 mouseover/mouseout이 짧은 간격으로 서로를 취소시키며 깜빡이는
-    // 문제가 있었음 — 클릭 한 번으로 고정/해제하는 편이 안정적이고 예측 가능해서 되돌림.
-    const capsuleActive = selectedLegKey === key;
     // "선의 강조 표시(진하기)"는 장소 핀 포커스와 연동한다 — 어떤 장소를 클릭하면 그 장소로
     // 들어오고 나가는 두 구간만 선명하게, 나머지는 옅게 흐려서 "여기서 어디로 가는지"가
-    // 한눈에 읽히게 한다. 캡슐 표시 여부와는 별개의 신호라 따로 둔다.
-    const legAdjacentToFocus = focusIdx >= 0 && (i === focusIdx || i === focusIdx - 1);
-    // selected와 dimmed가 동시에 참이 되지 않도록 반드시 selected의 여집합으로 정의한다.
-    const selected = capsuleActive || legAdjacentToFocus;
-    const dimmed = !selected && (!!selectedLegKey || focusIdx >= 0);
+    // 한눈에 읽히게 한다(이동시간/비용 정보 자체는 이제 그 장소 클릭 시 패널에 함께 뜬다).
+    const selected = focusIdx >= 0 && (i === focusIdx || i === focusIdx - 1);
+    const dimmed = !selected && focusIdx >= 0;
 
     const line = buildLegPolyline(g, stops[i], stops[i + 1], leg, {
       selected,
@@ -2920,35 +2924,67 @@ function drawRouteOnMap(refit: boolean): void {
     if (i > 0 && legs[i - 1] && legs[i - 1].mode !== leg.mode) {
       mapMarkers.push(buildModeChangeNode(g, { lat: stops[i].lat!, lng: stops[i].lng! }));
     }
-
-    // 이동시간·비용은 선 위에 얹지 않고 지도 우하단의 고정 패널에 표시 — 구간을 클릭했을 때만 채워 넣는다.
-    if (capsuleActive) {
-      updateLegInfoPanel(leg, mapCur, legModeOverride.has(key), stops[i].id, stops[i + 1].id);
-    }
   }
-  if (!selectedLegKey && legInfoPanelEl) legInfoPanelEl.style.display = 'none';
 
   if (refit) fitRouteBounds();
 }
 
-/** 우하단 고정 패널에 구간 이동시간/비용을 채워 넣는다(지도 위 박스 대신 반투명 패널 하나만 씀) */
-function updateLegInfoPanel(leg: Leg, currency: string, manual: boolean, fromId: string, toId: string): void {
-  if (!legInfoPanelEl) return;
-  const extra = leg.mode === 'WALK' ? fmtKm(leg.km) : (leg.costTHB > 0 ? fmtCost(leg.costTHB, currency) : '무료');
-  legInfoPanelEl.innerHTML = [
-    '<span class="rt-leginfo-icon ' + modeColorClass(leg.mode) + '">' + modeIcon(leg.mode) + '</span>',
-    '<span class="rt-leginfo-main">',
-    '  <span class="rt-leginfo-mode">' + modeLabel(leg.mode) + '</span>',
-    '  <span class="rt-leginfo-time">' + fmtMin(leg.min) + ' <b>·</b> ' + extra + '</span>',
-    '</span>',
-    !leg.real ? '<span class="rt-leginfo-est" title="실제 경로를 못 받아 직선거리로 추정한 값이에요">추정</span>' : '',
-    manual ? '<span class="rt-leginfo-manual" title="직접 지정한 이동수단"></span>' : '',
-    '<button type="button" class="rt-leginfo-close" aria-label="이동 정보 닫기">✕</button>',
+/**
+ * 우상단 고정 패널에 "확정된 장소" 정보를 채워 넣는다 — 장소 사진/평점/카테고리 +
+ * 그 장소로 들어오고(prev) 나가는(next) 두 구간의 이동시간/비용을 함께 보여준다.
+ */
+function updateStopInfoPanel(
+  p: Place,
+  isBasecamp: boolean,
+  prevLeg: Leg | null,
+  prevPlace: Place | null,
+  nextLeg: Leg | null,
+  nextPlace: Place | null,
+  currency: string
+): void {
+  if (!stopInfoPanelEl) return;
+  const meta = categoryMeta(p, isBasecamp);
+
+  const legRow = (arrow: string, leg: Leg | null, place: Place | null, manual: boolean): string => {
+    if (!leg || !place) return '';
+    const extra = leg.mode === 'WALK' ? fmtKm(leg.km) : (leg.costTHB > 0 ? fmtCost(leg.costTHB, currency) : '무료');
+    return [
+      '<div class="rt-stopinfo-leg">',
+      '  <span class="rt-stopinfo-leg-arrow">' + arrow + '</span>',
+      '  <span class="rt-stopinfo-leg-name">' + escapeHtml(place.name) + '</span>',
+      '  <span class="rt-stopinfo-leg-mode">' + modeIcon(leg.mode) + '</span>',
+      '  <span class="rt-stopinfo-leg-time">' + fmtMin(leg.min) + ' <b>·</b> ' + extra + '</span>',
+      !leg.real ? '  <span class="rt-stopinfo-leg-est" title="실제 경로를 못 받아 직선거리로 추정한 값이에요">추정</span>' : '',
+      manual ? '  <span class="rt-stopinfo-leg-manual" title="직접 지정한 이동수단"></span>' : '',
+      '</div>',
+    ].join('');
+  };
+  const prevManual = prevPlace ? legModeOverride.has(legKey(prevPlace.id, p.id)) : false;
+  const nextManual = nextPlace ? legModeOverride.has(legKey(p.id, nextPlace.id)) : false;
+  const legsHtml = legRow('←', prevLeg, prevPlace, prevManual) + legRow('→', nextLeg, nextPlace, nextManual);
+
+  stopInfoPanelEl.innerHTML = [
+    '<div class="rt-stopinfo-head">',
+    p.photo_url
+      ? '  <div class="rt-stopinfo-photo" style="background-image:url(\'' + p.photo_url + '\')"></div>'
+      : '  <div class="rt-stopinfo-photo rt-stopinfo-photo-icon">' + meta.icon + '</div>',
+    '  <div class="rt-stopinfo-headtext">',
+    '    <div class="rt-stopinfo-name">' + escapeHtml(p.name) + '</div>',
+    '    <div class="rt-stopinfo-meta">',
+    p.google_rating ? '      <span class="rt-stopinfo-rate">' + IC_STAR + ' ' + p.google_rating.toFixed(1) + '</span>' : '',
+    p.category || isBasecamp ? '      <span class="rt-stopinfo-cat">' + escapeHtml(p.category || '숙소') + '</span>' : '',
+    '    </div>',
+    '  </div>',
+    '  <button type="button" class="rt-stopinfo-close" aria-label="정보 닫기">✕</button>',
+    '</div>',
+    legsHtml ? '<div class="rt-stopinfo-legs">' + legsHtml + '</div>' : '',
   ].join('');
-  legInfoPanelEl.style.display = 'flex';
-  legInfoPanelEl.querySelector('.rt-leginfo-close')?.addEventListener('click', (e) => {
+  stopInfoPanelEl.style.display = 'flex';
+  stopInfoPanelEl.querySelector('.rt-stopinfo-close')?.addEventListener('click', (e) => {
     e.stopPropagation();
-    handleLegClick(fromId, toId);
+    highlightedPlaceId = null;
+    drawRouteOnMap(false);
+    renderRightPanel(rtContainer!);
   });
 }
 
