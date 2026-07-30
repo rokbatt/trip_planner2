@@ -130,3 +130,86 @@
 .chat-send-btn:hover { background: #0E3676; }
 .chat-send-btn:disabled { background: #A8B7C7; cursor: not-allowed; }
 .chat-send-btn svg { width: 16px; height: 16px; }
+
+/* ============================================================
+   채팅 링크 공유 — "이동할까요?" 토스트
+   ============================================================ */
+
+.clt-toast-layer {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.clt-toast {
+  pointer-events: auto;
+  display: flex;
+  gap: 12px;
+  width: 300px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(130, 150, 170, 0.18);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 12px 32px rgba(11, 42, 92, 0.16);
+  animation: clt-toast-in 220ms ease;
+}
+
+@keyframes clt-toast-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.clt-toast-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #EAF2FA;
+  color: #0B2A5C;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.clt-toast-icon svg { width: 18px; height: 18px; }
+
+.clt-toast-body { flex: 1; min-width: 0; }
+
+.clt-toast-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0B2A5C;
+  margin-bottom: 2px;
+}
+
+.clt-toast-url {
+  font-size: 12px;
+  color: #46536B;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.clt-toast-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.clt-toast-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.clt-toast-go { background: #0B2A5C; color: #fff; }
+.clt-toast-go:hover { background: #143a78; }
+.clt-toast-dismiss { background: #F1F6FB; color: #697586; }
+.clt-toast-dismiss:hover { background: #E1EAF2; }

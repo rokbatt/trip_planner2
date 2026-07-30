@@ -17,6 +17,58 @@ function escapeHtml(str: string): string {
   return div.innerHTML;
 }
 
+/* ── 채팅에 링크가 오면 "이동할까요?" 토스트를 띄우는 기능 ──
+ * 별도 브로드캐스트 채널 없이 이미 구독 중인 chat_messages INSERT 이벤트를 그대로 활용한다.
+ * 투표 요청(hotelVote.ts)과 달리 응답을 집계할 필요가 없어(각자 이동 여부만 결정) 훨씬 단순하다. */
+const URL_RE = /https?:\/\/[^\s<>"']+/i;
+let linkToastLayer: HTMLElement | null = null;
+
+function extractFirstUrl(text: string): string | null {
+  const m = text.match(URL_RE);
+  return m ? m[0] : null;
+}
+
+function ensureLinkToastLayer(): HTMLElement {
+  if (linkToastLayer && document.body.contains(linkToastLayer)) return linkToastLayer;
+  linkToastLayer = document.createElement('div');
+  linkToastLayer.className = 'clt-toast-layer';
+  document.body.appendChild(linkToastLayer);
+  return linkToastLayer;
+}
+
+function showLinkShareToast(msg: ChatMessage, url: string): void {
+  const layer = ensureLinkToastLayer();
+  const card = document.createElement('div');
+  card.className = 'clt-toast';
+  card.innerHTML = [
+    '<div class="clt-toast-icon">',
+    '  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
+    '</div>',
+    '<div class="clt-toast-body">',
+    '  <div class="clt-toast-title">' + escapeHtml(msg.display_name || '익명') + '님이 링크를 보냈어요</div>',
+    '  <div class="clt-toast-url">' + escapeHtml(url) + '</div>',
+    '  <div class="clt-toast-actions">',
+    '    <button type="button" class="clt-toast-btn clt-toast-go">이동하기</button>',
+    '    <button type="button" class="clt-toast-btn clt-toast-dismiss">닫기</button>',
+    '  </div>',
+    '</div>',
+  ].join('');
+  layer.appendChild(card);
+
+  const remove = () => card.remove();
+  const autoRemove = setTimeout(remove, 20000);
+
+  card.querySelector('.clt-toast-dismiss')?.addEventListener('click', () => {
+    clearTimeout(autoRemove);
+    remove();
+  });
+  card.querySelector('.clt-toast-go')?.addEventListener('click', () => {
+    clearTimeout(autoRemove);
+    remove();
+    window.open(url, '_blank', 'noopener,noreferrer');
+  });
+}
+
 function readStorageKey(tripId: string): string {
   return 'mongsil_chat_read_' + tripId;
 }
@@ -60,6 +112,14 @@ export async function initChat(tripId: string): Promise<void> {
         messages.push(msg);
         panelListeners.forEach((fn) => fn(msg));
         if (badgeListener) badgeListener(msg);
+
+        // 다른 멤버가 보낸 메시지에 링크가 있으면, 채팅 패널을 열어보지 않아도
+        // 바로 "이동할까요?" 토스트로 물어본다.
+        const user = store.get('user');
+        if (msg.user_id !== user?.id) {
+          const url = extractFirstUrl(msg.message);
+          if (url) showLinkShareToast(msg, url);
+        }
       }
     )
     .subscribe();
@@ -74,6 +134,8 @@ export function teardownChat(): void {
   badgeListener = null;
   messages = [];
   currentTripId = null;
+  linkToastLayer?.remove();
+  linkToastLayer = null;
 }
 
 export function getMessages(): ChatMessage[] {
