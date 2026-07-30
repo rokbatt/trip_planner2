@@ -3365,10 +3365,14 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
   const lineOpacity = opts.dimmed ? 0.28 : opts.selected ? 1 : baseOpacity;
   const weight = opts.selected ? style.weight + 2 : style.weight;
 
+  // 화살표/점선 아이콘의 scale은 구글맵 심볼 스펙상 "화면 픽셀" 고정값이라, 지도를 축소해도
+  // 저절로 작아지지 않고 상대적으로 점점 커 보인다 — 핀 크기를 줄일 때 쓰는 것과 같은 줌
+  // 기반 배율을 곱해 지도 축소에 맞춰 자연스럽게 함께 작아지게 한다.
+  const iconZoomScale = pinZoomScale();
   const icons: any[] = [];
   if (style.dashed) {
     icons.push({
-      icon: { path: 'M 0,-1 0,1', strokeOpacity: lineOpacity, strokeColor: ROUTE_NAVY, strokeWeight: weight, scale: 3 },
+      icon: { path: 'M 0,-1 0,1', strokeOpacity: lineOpacity, strokeColor: ROUTE_NAVY, strokeWeight: weight, scale: 3 * iconZoomScale },
       offset: '0',
       repeat: '15px',
     });
@@ -3376,7 +3380,7 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
   icons.push({
     icon: {
       path: g.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-      scale: 3.4,
+      scale: 3.4 * iconZoomScale,
       strokeColor: ROUTE_NAVY,
       strokeOpacity: lineOpacity,
       fillColor: ROUTE_NAVY,

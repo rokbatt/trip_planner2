@@ -243,29 +243,38 @@
 .rt-float-search-toggle.is-collapsed svg { transform: rotate(180deg); }
 
 /* 접힌 상태 — 돋보기 아이콘 하나만 남기고(펼치기 버튼은 숨김) 필터/목록/즉석추가도 숨김.
+   글래스 패널 박스 자체를 없애서 돋보기 아이콘만 지도 위에 떠 있게 하고, 아이콘은 그만큼
+   더 크고 진하게 키워 존재감을 확실히 준다(대신 박스 배경 없이 살짝 그림자만).
    이 아이콘을 누르면 펼쳐짐(아래 .collapsed .rt-float-search-icon 규칙에서 클릭 가능하게 함) */
-.rt-float-search.collapsed { width: auto; }
-.rt-float-search.collapsed .rt-float-search-input { border-bottom: none; }
+.rt-float-search.collapsed {
+  width: auto; background: none; border: none; box-shadow: none; border-radius: 0;
+}
+.rt-float-search.collapsed .rt-float-search-input { padding: 0; border-bottom: none; }
 .rt-float-search.collapsed .rt-float-search-input input { width: 0; padding: 0; }
 .rt-float-search.collapsed .rt-float-search-toggle { display: none; }
 .rt-float-search.collapsed .rt-float-search-icon {
-  cursor: pointer; width: 22px; height: 22px;
-  border: 1px solid var(--rt-line); background: #fff; box-shadow: 0 1px 2px rgba(11,42,92,0.06);
+  cursor: pointer; width: 34px; height: 34px;
+  border: none; background: none; box-shadow: none;
+  color: var(--rt-navy);
+  filter: drop-shadow(0 1px 3px rgba(11,42,92,0.35));
+  transition: color 150ms ease, transform 150ms ease;
 }
-.rt-float-search.collapsed .rt-float-search-icon:hover { background: var(--rt-ice); color: var(--rt-blue); border-color: var(--rt-sky); }
+.rt-float-search.collapsed .rt-float-search-icon svg { width: 20px; height: 20px; }
+.rt-float-search.collapsed .rt-float-search-icon:hover { color: var(--rt-blue); transform: scale(1.06); }
 .rt-float-search.collapsed .rt-float-filters,
 .rt-float-search.collapsed .rt-float-list,
 .rt-float-search.collapsed .rt-float-adhoc { display: none; }
 
-/* 카테고리 필터 칩 */
+/* 카테고리 필터 칩 — 한 줄에 다 들어가도록(가로로 안 밀려 접히도록) 여백을 좁게 잡는다 */
 .rt-float-filters {
-  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
-  padding: 8px 10px; border-bottom: var(--rt-dash); flex-shrink: 0;
+  display: flex; align-items: center; gap: 4px; flex-wrap: nowrap;
+  padding: 6px 8px; border-bottom: var(--rt-dash); flex-shrink: 0;
 }
 .rt-float-filter-chip {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 8px; border-radius: 999px; border: 1px solid var(--rt-line);
-  background: #fff; color: var(--rt-ink-2); font-size: 10.5px; font-weight: 700; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 3px 6px; border-radius: 999px; border: 1px solid var(--rt-line);
+  background: #fff; color: var(--rt-ink-2); font-size: 9.5px; font-weight: 700; cursor: pointer;
+  white-space: nowrap;
   transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
 }
 .rt-float-filter-chip:hover { border-color: var(--rt-sky); }
@@ -273,7 +282,7 @@
   border-color: var(--chip-color); background: color-mix(in srgb, var(--chip-color) 12%, white);
   color: var(--chip-color);
 }
-.rt-float-filter-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.rt-float-filter-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
 
 .rt-float-list { overflow-y: auto; padding: 6px; scrollbar-width: thin; }
 .rt-float-list::-webkit-scrollbar { width: 6px; }
