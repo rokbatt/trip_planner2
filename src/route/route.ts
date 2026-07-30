@@ -85,6 +85,28 @@ const CAT_FILTERS: Array<{ key: CatKey; label: string }> = [
 ];
 const SHOPPING_KEYWORDS = ['쇼핑', '마켓', '시장', '백화점', 'mall', 'market', 'shopping'];
 
+/**
+ * DAY마다 다른 블루 계열 색조를 줘서(전부 같은 파랑이 아니라) 우측 패널·DAY 탭에서 "지금 몇
+ * 째 날을 보고 있나"가 색으로도 구분되게 한다. 카테고리 색(CAT_COLOR)과 달리 채도를 낮춘
+ * 남색~하늘~청보라 사이에서만 오가 alarm 전체 톤(Airport Lounge Premium Light)을 벗어나지 않는다.
+ * DAY 수가 배열보다 많아지면(최대 10개라 실제로는 안 모자람) 순환한다.
+ */
+const DAY_COLOR_PALETTE = [
+  '#0B2A5C', // DAY1 — 남색(navy, 여행의 시작)
+  '#0B7CC4', // DAY2 — 파랑
+  '#1FA6C9', // DAY3 — 하늘
+  '#6366C9', // DAY4 — 파랑보라
+  '#3D4F91', // DAY5 — 인디고
+  '#2E8FB0', // DAY6 — 청록빛 파랑
+  '#7C6FDE', // DAY7 — 보라빛 파랑
+  '#274472', // DAY8 — 짙은 슬레이트 남색
+  '#4A90D9', // DAY9 — 파랑
+  '#5A7FE0', // DAY10 — 페리윙클 블루
+];
+function dayColorFor(dayIndex: number): string {
+  return DAY_COLOR_PALETTE[((dayIndex % DAY_COLOR_PALETTE.length) + DAY_COLOR_PALETTE.length) % DAY_COLOR_PALETTE.length];
+}
+
 interface RouteDay {
   id: string;
   label: string;
@@ -158,8 +180,6 @@ let highlightedPlaceId: string | null = null;
 /** 우측 타임라인에 마우스를 올렸을 때만 잠깐 강조되는 장소 (클릭 선택과 별개인 일시적 미리보기) */
 let hoveredPlaceId: string | null = null;
 let selectedLegKey: string | null = null;
-/** 구간(화살표)에 마우스를 올렸을 때만 잠깐 보이는 시간/비용 캡슐 — 클릭하면 selectedLegKey로 고정됨 */
-let hoveredLegKey: string | null = null;
 let adhocMode = false;
 let adhocSeq = 0;
 let placeSearchQuery = '';
@@ -243,7 +263,6 @@ export function teardownRoute(): void {
   highlightedPlaceId = null;
   hoveredPlaceId = null;
   selectedLegKey = null;
-  hoveredLegKey = null;
   adhocMode = false;
   placeSearchQuery = '';
   activeCatFilters = new Set();
@@ -1018,14 +1037,16 @@ function renderDayTabs(container: HTMLElement): void {
       .map((d, i) => {
         const active = d.id === activeDayId;
         const filled = d.stopIds.length > 0;
+        const color = dayColorFor(i);
         return [
           i > 0 ? '<span class="rt-daytab-line" aria-hidden="true"></span>' : '',
           '<button type="button" class="rt-daytab' + (active ? ' active' : '') + '" data-day="' + d.id + '"' +
             ' aria-current="' + (active ? 'true' : 'false') + '"' +
+            (active ? ' style="border-color:' + color + '"' : '') +
             ' title="' + escapeHtml(d.label) + (filled ? ' · 장소 ' + d.stopIds.length + '곳' : ' · 비어 있음') + '">',
-          filled ? '  <span class="rt-daytab-filled" aria-hidden="true"></span>' : '',
+          filled ? '  <span class="rt-daytab-filled" style="background:' + color + '" aria-hidden="true"></span>' : '',
           '  <span class="rt-daytab-label">' + escapeHtml(d.label) + '</span>',
-          '  <span class="rt-daytab-date">' + dayDateLabel(i) + '</span>',
+          '  <span class="rt-daytab-date"' + (active ? ' style="color:' + color + '"' : '') + '>' + dayDateLabel(i) + '</span>',
           '</button>',
         ].join('');
       })
@@ -1900,6 +1921,7 @@ function renderRightPanel(container: HTMLElement): void {
   const totalKm = legs.reduce((sum, l) => sum + l.km, 0);
   const dayIndex = days.findIndex((d) => d.id === day.id);
   const cur = currencyOf(legs);
+  const dColor = dayColorFor(Math.max(0, dayIndex));
 
   const rows: string[] = [];
   stops.forEach((p, i) => {
@@ -1914,7 +1936,8 @@ function renderRightPanel(container: HTMLElement): void {
         isBasecamp
           ? '  <span class="rt-drag-handle locked" aria-hidden="true"></span>'
           : '  <span class="rt-drag-handle" title="드래그해서 순서 바꾸기" aria-hidden="true">' + IC_GRIP + '</span>',
-        '  <span class="rt-panel-badge' + (isBasecamp ? ' rt-panel-badge-stay' : '') + '">' + (i + 1) + '</span>',
+        '  <span class="rt-panel-badge' + (isBasecamp ? ' rt-panel-badge-stay' : '') + '"' +
+          (isBasecamp ? '' : ' style="background:' + dColor + '"') + '>' + (i + 1) + '</span>',
         '  <div class="rt-panel-name-col"><div class="rt-panel-name">' + escapeHtml(p.name) + '</div><div class="rt-panel-sub">' + escapeHtml(p.category || (isBasecamp ? '숙소' : '')) + '</div></div>',
         // native <input type="time">은 로케일에 따라 "오후 01:00"처럼 12시간제로 그려져
         // 좁은 패널에서 접두사가 잘리면 13:00이 01:00으로 보이는 오표시가 발생한다.
@@ -1955,7 +1978,7 @@ function renderRightPanel(container: HTMLElement): void {
 
   el.innerHTML = [
     '<div class="rt-panel-header">',
-    '  <span class="rt-panel-dot"></span>',
+    '  <span class="rt-panel-dot" style="background:' + dColor + '"></span>',
     '  <span class="rt-panel-daylabel">' + escapeHtml(day.label) + '</span>',
     '  <span class="rt-panel-daydate">' + dayDateLabel(dayIndex) + '</span>',
     '  <div class="rt-panel-header-avatars">' +
@@ -2369,16 +2392,18 @@ function drawRouteOnMap(refit: boolean): void {
     const overlapIndex = seenLegs.get(geomKey) ?? 0;
     seenLegs.set(geomKey, overlapIndex + 1);
 
-    // 캡슐(시간/비용) 표시는 이 구간(화살표) 자체의 호버/클릭에만 반응한다 — 장소 핀을
-    // 클릭했다고 인접 구간 캡슐까지 튀어나오면 어수선하다는 피드백으로 분리했다.
-    const capsuleActive = selectedLegKey === key || hoveredLegKey === key;
-    // 하지만 "선의 강조 표시(진하기)"는 장소 핀 포커스와도 연동한다 — 어떤 장소를 클릭하면
-    // 그 장소로 들어오고 나가는 두 구간만 선명하게, 나머지는 옅게 흐려서 "여기서 어디로
-    // 가는지"가 한눈에 읽히게 한다. 캡슐 표시 여부와는 별개의 신호라 따로 둔다.
+    // 캡슐(시간/비용) 표시는 이 구간(화살표)을 **클릭**했을 때만 반응한다. 호버로도 띄워봤지만
+    // 호버가 지도 전체를 다시 그리다 보니(drawRouteOnMap) 마우스가 올라간 폴리라인 자체가
+    // 매번 새로 생성돼 mouseover/mouseout이 짧은 간격으로 서로를 취소시키며 깜빡이는
+    // 문제가 있었음 — 클릭 한 번으로 고정/해제하는 편이 안정적이고 예측 가능해서 되돌림.
+    const capsuleActive = selectedLegKey === key;
+    // "선의 강조 표시(진하기)"는 장소 핀 포커스와 연동한다 — 어떤 장소를 클릭하면 그 장소로
+    // 들어오고 나가는 두 구간만 선명하게, 나머지는 옅게 흐려서 "여기서 어디로 가는지"가
+    // 한눈에 읽히게 한다. 캡슐 표시 여부와는 별개의 신호라 따로 둔다.
     const legAdjacentToFocus = focusIdx >= 0 && (i === focusIdx || i === focusIdx - 1);
     // selected와 dimmed가 동시에 참이 되지 않도록 반드시 selected의 여집합으로 정의한다.
     const selected = capsuleActive || legAdjacentToFocus;
-    const dimmed = !selected && (!!selectedLegKey || !!hoveredLegKey || focusIdx >= 0);
+    const dimmed = !selected && (!!selectedLegKey || focusIdx >= 0);
 
     const line = buildLegPolyline(g, stops[i], stops[i + 1], leg, {
       selected,
@@ -2387,18 +2412,6 @@ function drawRouteOnMap(refit: boolean): void {
       overlapIndex,
     });
     line.addListener('click', () => handleLegClick(stops[i].id, stops[i + 1].id));
-    // 호버 = 일시적 미리보기(캡슐 잠깐 표시), 클릭 = 고정(selectedLegKey). 이미 클릭으로 고정된
-    // 구간이 있으면 다른 구간에 마우스를 올려도 그 고정을 덮어쓰지 않는다(원칙 3-3).
-    line.addListener('mouseover', () => {
-      if (selectedLegKey || hoveredLegKey === key) return;
-      hoveredLegKey = key;
-      drawRouteOnMap(false);
-    });
-    line.addListener('mouseout', () => {
-      if (hoveredLegKey !== key) return;
-      hoveredLegKey = null;
-      drawRouteOnMap(false);
-    });
     routePolylines.push(line);
 
     // 이동수단이 바뀌는 지점에 작은 노드 (첫 구간이거나 앞 구간과 모드가 다를 때)

@@ -456,7 +456,7 @@ async function handleRoutePlan(req: VercelRequest, res: VercelResponse) {
     .filter(Boolean)
     .join('\n');
 
-  const { data, error } = await callGeminiJson('gemini-2.5-flash', geminiKey, prompt, ROUTE_PLAN_SCHEMA);
+  const { data, error } = await callGeminiJson('gemini-2.5-flash-lite', geminiKey, prompt, ROUTE_PLAN_SCHEMA);
   if (error) {
     res.status(502).json({ error });
     return;
@@ -617,7 +617,7 @@ async function handleDayDetail(req: VercelRequest, res: VercelResponse) {
     .filter(Boolean)
     .join('\n');
 
-  const { data, error } = await callGeminiJson('gemini-2.5-flash', geminiKey, prompt, DAY_DETAIL_SCHEMA);
+  const { data, error } = await callGeminiJson('gemini-2.5-flash-lite', geminiKey, prompt, DAY_DETAIL_SCHEMA);
   if (error) {
     res.status(502).json({ error });
     return;
