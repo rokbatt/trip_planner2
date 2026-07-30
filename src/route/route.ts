@@ -3165,21 +3165,37 @@ function pinZoomScale(): number {
   return Math.max(PIN_MIN_ZOOM_SCALE, 1 - diff * 0.09);
 }
 
-// 핀 모양 기준 좌표(24x24 기준 좌표계) — 머리(원)는 중심(12,9) 반지름 7, 끝은 (12,22)의 뾰족한 점.
-// 구글 Material의 표준 "location pin" 외곽선과 같은 비례라 어색함 없이 바로 지도 핀처럼 읽힌다.
-const PIN_OUTLINE = 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z';
-const PIN_REF_R = 7;
-const PIN_REF_CX = 12;
-const PIN_REF_HEAD_CY = 9;
-const PIN_REF_TOP_Y = 2;
-const PIN_REF_TIP_Y = 22;
 // 후보(아직 안 담은 곳)도 완전히 배경에 묻히지 않도록 아이콘 톤을 한 단계 진하게(ROUTE_GRAY보다 어두운 slate)
 const CANDIDATE_TONE = '#6B7A93';
+// 머리 중심에서 끝(뾰족한 점)까지의 거리 / 머리 반지름. 작을수록 짧고 통통한(덜 길쭉한) 핀이 된다.
+const PIN_TAIL_RATIO = 1.5;
+
+/** 반지름 r인 원(중심 cx,cy)에 외부 접선 두 개를 그어 tip에서 만나는 "물방울(핀)" 윤곽 경로.
+ *  원 위쪽은 완전한 원으로, 아래쪽만 매끄럽게(꺾임 없이) 한 점으로 좁아진다. */
+function pinTearPath(cx: number, cy: number, r: number, tipY: number): string {
+  const d = tipY - cy; // 중심→끝 거리
+  const phi = Math.acos(r / d); // 접선이 원과 만나는 각(라디안) — "아래로 곧장"에서 좌우로 벌어진 정도
+  const a1 = Math.PI / 2 - phi;
+  const a2 = Math.PI / 2 + phi;
+  const t1x = cx + r * Math.cos(a1);
+  const t1y = cy + r * Math.sin(a1);
+  const t2x = cx + r * Math.cos(a2);
+  const t2y = cy + r * Math.sin(a2);
+  return (
+    'M' + t1x + ' ' + t1y +
+    ' A' + r + ' ' + r + ' 0 1 0 ' + t2x + ' ' + t2y +
+    ' L' + cx + ' ' + tipY +
+    ' Z'
+  );
+}
 
 /**
- * 지도 핀 — 흰 배경 + 진행 상태 색 테두리·숫자로 위계를 낮추고(예전엔 진한 네이비로 꽉 채워
- * 다른 네이비 요소들과 뒤섞였음), 동그라미 배지가 아니라 끝이 뾰족한 실제 지도 핀 모양으로.
- *  - 동선에 포함된 정류지: 순서 번호 + 진행 상태 색(네이비/오렌지/그레이) 테두리·숫자
+ * 지도 핀 — 흰 배경 원 + 진행 상태 색(네이비/오렌지/그레이) 테두리·숫자로 위계를 낮추고
+ * (예전엔 진한 네이비로 꽉 채워 다른 네이비 요소들과 뒤섞였음), 동그라미 배지가 아니라 끝이
+ * 뾰족한 실제 지도 핀 모양으로. 테두리 색은 얇은 링이 아니라 원 아래로 이어지는 뾰족한
+ * 부분 전체를 채운다 — 뒤에 색깔 핀 실루엣을 통째로 깔고, 그 위에 살짝 작은 흰 원을 얹어
+ * 위쪽만 링처럼 보이고 아래 꼬리는 그대로 색이 드러나는 방식.
+ *  - 동선에 포함된 정류지: 순서 번호 + 진행 상태 색 테두리·숫자
  *  - 아직 담지 않은 후보: 더 옅은 톤 테두리 + 카테고리 아이콘(배경으로 물러나게)
  */
 function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
@@ -3187,23 +3203,22 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
   const phase: StopPhase = opts.phase ?? 'plain';
   const scale = (opts.highlighted ? 1.18 : 1) * pinZoomScale();
   const r = (opts.included ? 15 : 10) * scale; // 머리(원) 반지름 — 기존 크기 기준 유지
-  const pinScale = r / PIN_REF_R;
 
-  // halo/그림자까지 담을 여유를 둔 캔버스. 핀은 원보다 세로로 길어서(끝이 뾰족) 폭/높이를 따로 잰다.
+  // halo/그림자까지 담을 여유를 둔 캔버스. 핀은 원보다 세로로 조금 길어서 폭/높이를 따로 잰다.
   const pad = opts.highlighted ? 26 : 12;
+  const tail = r * PIN_TAIL_RATIO;
   const w = Math.ceil(r * 2 + pad);
-  const totalH = (PIN_REF_TIP_Y - PIN_REF_TOP_Y) * pinScale;
-  const h = Math.ceil(totalH + pad);
+  const h = Math.ceil(r + tail + pad);
   const cx = w / 2;
   // 실제 지도 좌표는 핀의 뾰족한 끝이 가리켜야 하므로, 끝점을 anchor로 쓴다(그림자 여유로 살짝 위).
   const tipY = h - pad / 2;
-  const headCy = tipY - (PIN_REF_TIP_Y - PIN_REF_HEAD_CY) * pinScale;
-  const tx = cx - PIN_REF_CX * pinScale;
-  const ty = tipY - PIN_REF_TIP_Y * pinScale;
+  const headCy = tipY - tail;
 
   const borderColor = opts.included ? phaseColor(phase) : 'rgba(107,122,147,0.85)';
-  const numberColor = opts.included ? phaseColor(phase) : CANDIDATE_TONE;
-  const strokeWidthPx = opts.included ? 2.6 : 2.2;
+  const numberColor = borderColor;
+  // 위쪽에서만 링처럼 보이도록, 흰 원은 머리 반지름보다 살짝 작게(그 차이만큼이 링 두께)
+  const ringWidth = r * 0.24;
+  const whiteR = r - ringWidth;
 
   // 선택된 지점만 아주 옅은 네이비 halo로 강조 — 핀의 머리 부분을 중심으로
   const halo = opts.highlighted
@@ -3225,8 +3240,8 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
     '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
     halo +
     shadow +
-    '<path d="' + PIN_OUTLINE + '" transform="translate(' + tx + ',' + ty + ') scale(' + pinScale + ')"' +
-      ' fill="#FFFFFF" stroke="' + borderColor + '" stroke-width="' + (strokeWidthPx / pinScale) + '"/>' +
+    '<path d="' + pinTearPath(cx, headCy, r, tipY) + '" fill="' + borderColor + '"/>' +
+    '<circle cx="' + cx + '" cy="' + headCy + '" r="' + whiteR + '" fill="#FFFFFF"/>' +
     inner +
     '</svg>';
 
