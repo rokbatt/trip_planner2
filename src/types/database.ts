@@ -149,11 +149,18 @@ export interface Database {
           end_date: string | null;
           sort_order: number;
           created_at: string;
-          /** 이 여행지로 들어오는 공항(자유 입력, 예: "수완나품(BKK)") — DAY 1이 숙소가 아니라
-           *  공항에서 시작함을 AI 일정 짜기에 알려주기 위함 */
+          /** DAY 1의 시작점 — 공항 이름(자동완성에서 고른 실제 공항, 예: "수완나품 국제공항") */
           arrival_airport: string | null;
-          /** 공항 도착 예정 시각 'HH:MM' (24시간) — 없으면 DAY 1도 기존처럼 09:00부터 시작 */
+          /** 공항 도착 예정 시각 'HH:MM' (24시간) */
           arrival_time: string | null;
+          /** 자동완성에서 실제로 고른 공항의 좌표 — 있어야 지도 위 진짜 정류지로 취급됨 */
+          arrival_lat: number | null;
+          arrival_lng: number | null;
+          /** 마지막 DAY의 종료점 — 출국 공항 (arrival_*와 동일한 구조) */
+          departure_airport: string | null;
+          departure_time: string | null;
+          departure_lat: number | null;
+          departure_lng: number | null;
         };
         Insert: {
           id?: string;
@@ -167,6 +174,12 @@ export interface Database {
           created_at?: string;
           arrival_airport?: string | null;
           arrival_time?: string | null;
+          arrival_lat?: number | null;
+          arrival_lng?: number | null;
+          departure_airport?: string | null;
+          departure_time?: string | null;
+          departure_lat?: number | null;
+          departure_lng?: number | null;
         };
         Update: Partial<Database['public']['Tables']['trip_destinations']['Insert']>;
         Relationships: [

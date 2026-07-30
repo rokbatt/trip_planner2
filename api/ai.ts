@@ -379,6 +379,8 @@ async function handleRoutePlan(req: VercelRequest, res: VercelResponse) {
   const rawSegments: StaySegmentIn[] = Array.isArray(body.staySegments) ? body.staySegments : [];
   const arrivalAirport = body.arrivalAirport ? String(body.arrivalAirport).trim() : '';
   const arrivalTime = body.arrivalTime ? String(body.arrivalTime).trim() : '';
+  const departureAirport = body.departureAirport ? String(body.departureAirport).trim() : '';
+  const departureTime = body.departureTime ? String(body.departureTime).trim() : '';
   const rawPlaces: PlanPlaceIn[] = Array.isArray(body.places) ? body.places : [];
 
   if (!destinationId || !Number.isFinite(dayCount) || dayCount < 1) {
@@ -405,6 +407,8 @@ async function handleRoutePlan(req: VercelRequest, res: VercelResponse) {
     dayCount,
     arrivalAirport,
     arrivalTime,
+    departureAirport,
+    departureTime,
     segments.map((s) => s.startDayIndex + '-' + s.endDayIndex + ':' + (s.basecamp?.id ?? 'none')).join(','),
     places.map((p) => p.id).sort().join(','),
   ].join('|');
@@ -463,6 +467,13 @@ async function handleRoutePlan(req: VercelRequest, res: VercelResponse) {
         (arrivalTime ? ' 비행기 도착 예정 시각: ' + arrivalTime + '.' : '') +
         ' 입국심사·수하물 수취·공항에서 숙소까지 이동 시간을 감안해 도착 시각보다 최소 1시간 30분 이후부터' +
         ' 일정을 시작해. DAY 1 첫 stop은 공항에서 숙소로 가는 동선에서 크게 벗어나지 않는 곳으로 골라.'
+      : '',
+    departureTime || departureAirport
+      ? '⚠️ 마지막 DAY는 숙소가 아니라 공항에서 끝난다(출국).' +
+        (departureAirport ? ' 출발 공항: ' + departureAirport + '.' : '') +
+        (departureTime ? ' 비행기 출발 예정 시각: ' + departureTime + '.' : '') +
+        ' 체크아웃·공항 이동·탑승수속 시간을 감안해 출발 시각보다 최소 3시간 전에는 마지막 일정이' +
+        ' 끝나도록 짜. 마지막 DAY의 마지막 stop은 공항으로 가는 동선에서 크게 벗어나지 않는 곳으로 골라.'
       : '',
     '',
     '후보 장소 목록 (반드시 아래 대괄호 앞의 태그 P숫자로만 지칭할 것):',

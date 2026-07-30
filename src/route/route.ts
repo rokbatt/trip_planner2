@@ -23,7 +23,7 @@ import {
   placeBelongsToDestination,
   updateDestination,
 } from '../trips/destinations';
-import { loadGoogleMapsScript, getAirportPredictions } from '../utils/googleMaps';
+import { loadGoogleMapsScript, getAirportPredictions, getPlaceDetails } from '../utils/googleMaps';
 import type { PlacePrediction } from '../utils/googleMaps';
 import {
   loadRoutePlan,
@@ -74,11 +74,11 @@ const IC_GRIP = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy=
 const IC_ALERT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>';
 const IC_ROUTEPATH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H14a3.5 3.5 0 0 0 0-7h-4a3.5 3.5 0 0 1 0-7h5.5"/></svg>';
 
-type CatKey = 'VISIT' | 'FOOD' | 'ACTIVITY' | 'SHOPPING' | 'STAY';
+type CatKey = 'VISIT' | 'FOOD' | 'ACTIVITY' | 'SHOPPING' | 'STAY' | 'AIRPORT';
 const CAT_COLOR: Record<CatKey, string> = {
-  VISIT: '#E24B4A', FOOD: '#1D9E75', ACTIVITY: '#7F77DD', SHOPPING: '#F5A623', STAY: '#0B2A5C',
+  VISIT: '#E24B4A', FOOD: '#1D9E75', ACTIVITY: '#7F77DD', SHOPPING: '#F5A623', STAY: '#0B2A5C', AIRPORT: '#2E86C1',
 };
-const CAT_ICON: Record<CatKey, string> = { VISIT: IC_LANDMARK, FOOD: IC_FORK, ACTIVITY: IC_TARGET, SHOPPING: IC_BAG, STAY: IC_BED };
+const CAT_ICON: Record<CatKey, string> = { VISIT: IC_LANDMARK, FOOD: IC_FORK, ACTIVITY: IC_TARGET, SHOPPING: IC_BAG, STAY: IC_BED, AIRPORT: IC_PLANE };
 /** 좌측 패널 카테고리 필터 칩 — 후보 목록에 실제로 나타나는 4개 게이트만(숙소 제외) */
 const CAT_FILTERS: Array<{ key: CatKey; label: string }> = [
   { key: 'VISIT', label: '관광' },
@@ -172,11 +172,21 @@ let rtContainer: HTMLElement | null = null;
 let basecamp: Place | null = null;
 /** 이 여행지의 모든 숙소 구간(날짜 범위 + 숙소) — DAY별로 어느 숙소에 묵는지 판단하는 근거 */
 let staySegments: StaySegment[] = [];
-/** DAY 1의 진짜 시작점 — 공항 이름(자유 입력)과 도착 시각('HH:MM'). 둘 다 없으면 기존처럼
- * DAY 1도 숙소에서 09:00 시작으로 취급한다. trip_destinations.arrival_* 컬럼에 저장됨 */
+/**
+ * DAY 1의 진짜 시작점(공항)과 마지막 DAY의 진짜 종료점(공항).
+ * 좌표(lat/lng)는 사용자가 자동완성 드롭다운에서 실제 공항을 선택했을 때만 채워지고,
+ * 그때만 지도 위의 진짜 정류지(anchorAirportPlace)로 취급된다 — 이름만 직접 타이핑하고
+ * 목록에서 고르지 않으면 좌표가 없어 정류지로 만들 수 없다(원칙 3-1, 좌표를 지어내지 않음).
+ * trip_destinations의 arrival_ 및 departure_ 접두사 컬럼에 저장됨.
+ */
 let activeDestArrivalAirport: string | null = null;
 let activeDestArrivalTime: string | null = null;
-const ARRIVAL_TO_HOTEL_BUFFER_MIN = 90; // 입국심사·수하물·공항→숙소 이동 여유(추정)
+let activeDestArrivalLat: number | null = null;
+let activeDestArrivalLng: number | null = null;
+let activeDestDepartureAirport: string | null = null;
+let activeDestDepartureTime: string | null = null;
+let activeDestDepartureLat: number | null = null;
+let activeDestDepartureLng: number | null = null;
 let candidatePlaces: Place[] = []; // 확정 장소들(숙소 제외)
 let placeById = new Map<string, Place>();
 let days: RouteDay[] = [];
@@ -265,6 +275,12 @@ export function teardownRoute(): void {
   staySegments = [];
   activeDestArrivalAirport = null;
   activeDestArrivalTime = null;
+  activeDestArrivalLat = null;
+  activeDestArrivalLng = null;
+  activeDestDepartureAirport = null;
+  activeDestDepartureTime = null;
+  activeDestDepartureLat = null;
+  activeDestDepartureLng = null;
   candidatePlaces = [];
   placeById = new Map();
   days = [];
@@ -430,6 +446,9 @@ function legKey(fromId: string, toId: string): string {
 /* ── 카테고리(방문 유형) → 색상·아이콘 ── */
 function categoryMeta(p: Place, isBasecamp: boolean): { key: CatKey; color: string; icon: string } {
   if (isBasecamp) return { key: 'STAY', color: CAT_COLOR.STAY, icon: CAT_ICON.STAY };
+  if (p.id === arrivalAirportId() || p.id === departureAirportId()) {
+    return { key: 'AIRPORT', color: CAT_COLOR.AIRPORT, icon: CAT_ICON.AIRPORT };
+  }
   const cat = (p.category || '').toLowerCase();
   if (SHOPPING_KEYWORDS.some((k) => cat.includes(k))) return { key: 'SHOPPING', color: CAT_COLOR.SHOPPING, icon: CAT_ICON.SHOPPING };
   if (p.mood === '먹고싶어') return { key: 'FOOD', color: CAT_COLOR.FOOD, icon: CAT_ICON.FOOD };
@@ -443,6 +462,8 @@ function dwellMinutes(key: CatKey): number {
     case 'ACTIVITY': return 120;
     case 'SHOPPING': return 60;
     case 'STAY': return 0;
+    // 입국심사·수하물 수취(도착) 또는 체크인·보안검색(출발) 여유 — 추정치
+    case 'AIRPORT': return 60;
     default: return 60;
   }
 }
@@ -454,15 +475,8 @@ function activeDay(): RouteDay {
 
 /** 출발 숙소 + 그날 방문 장소들을 순서대로 (지도 마커/leg 계산의 기준) */
 function orderedStops(day: RouteDay): Place[] {
-  const stops: Place[] = [];
-  const dayIndex = days.findIndex((d) => d.id === day.id);
-  const dayBasecamp = basecampForDay(dayIndex >= 0 ? dayIndex : 0);
-  if (dayBasecamp) stops.push(dayBasecamp);
-  day.stopIds.forEach((id) => {
-    const p = placeById.get(id);
-    if (p) stops.push(p);
-  });
-  return stops;
+  ensureDayAnchors(day);
+  return day.stopIds.map((id) => placeById.get(id)).filter((p): p is Place => !!p);
 }
 
 /** 순서대로의 leg들 (stops.length - 1개), 수동 이동수단 오버라이드 반영 */
@@ -523,11 +537,15 @@ async function persistActiveDay(): Promise<void> {
   if (dayIndex < 0) return;
 
   const seq = orderedStops(day);
+  const arrivalId = arrivalAirportId();
+  const departureId = departureAirportId();
   const stops: StoredStop[] = day.stopIds.map((id) => {
     const p = placeById.get(id);
     const idx = seq.findIndex((s) => s.id === id);
     const prev = idx > 0 ? seq[idx - 1] : null;
-    const isAdhoc = id.startsWith('adhoc-');
+    // 공항 앵커도 실제 places 테이블 행이 없는 합성 Place라 adhoc과 같은 방식(customName/lat/lng)으로
+    // 저장한다 — 그래야 place_id FK 없이도 route_stops에 들어갈 수 있다.
+    const isAdhoc = id.startsWith('adhoc-') || id === arrivalId || id === departureId;
     return {
       placeId: isAdhoc ? null : id,
       customName: isAdhoc ? p?.name ?? '직접 추가한 장소' : null,
@@ -573,18 +591,40 @@ function applyStoredPlan(stored: Awaited<ReturnType<typeof loadRoutePlan>>): boo
     const day = days[sd.dayIndex];
     if (!day) return; // 저장된 DAY 수가 더 많으면(기간이 줄어든 경우) 남는 건 무시
     const ids: string[] = [];
-    let prevId: string | null = basecampForDay(sd.dayIndex)?.id ?? null;
+    // 앵커(숙소/공항)도 이제 sd.stops 안에 실제 위치 그대로 저장돼 있으므로, 예전처럼
+    // basecamp로 prevId를 미리 부트스트랩할 필요 없이 저장된 순서를 그대로 따라가면 된다.
+    let prevId: string | null = null;
 
     sd.stops.forEach((s) => {
       let id: string | null = null;
       if (s.placeId) {
         if (placeById.has(s.placeId)) id = s.placeId;
       } else if (s.customLat != null && s.customLng != null) {
-        // 지도에 직접 찍었던 지점 복원
-        const p = makeAdhocPlace(s.customName || '직접 추가한 장소', s.customLat, s.customLng);
-        placeById.set(p.id, p);
-        candidatePlaces.push(p);
-        id = p.id;
+        // 도착 공항(DAY 0의 첫 정류지) / 출발 공항(마지막 DAY의 끝 정류지)인지 이름+좌표로
+        // 확인 — 맞으면 고정 id의 앵커 Place로 복원(일반 adhoc 핀처럼 취급하면 안 됨: 좌측
+        // 후보 목록에 뜨거나, 다음 렌더에서 ensureDayAnchors가 중복으로 또 만들어 버림).
+        const isArrivalMatch =
+          sd.dayIndex === 0 &&
+          s.customName === activeDestArrivalAirport &&
+          s.customLat === activeDestArrivalLat &&
+          s.customLng === activeDestArrivalLng;
+        const isDepartureMatch =
+          sd.dayIndex === days.length - 1 &&
+          s.customName === activeDestDepartureAirport &&
+          s.customLat === activeDestDepartureLat &&
+          s.customLng === activeDestDepartureLng;
+
+        if (isArrivalMatch && arrivalAirportPlace()) {
+          id = arrivalAirportId();
+        } else if (isDepartureMatch && departureAirportPlace()) {
+          id = departureAirportId();
+        } else {
+          // 지도에 직접 찍었던 일반 지점 복원
+          const p = makeAdhocPlace(s.customName || '직접 추가한 장소', s.customLat, s.customLng);
+          placeById.set(p.id, p);
+          candidatePlaces.push(p);
+          id = p.id;
+        }
       }
       if (!id) return; // 원본 장소가 지워졌으면 조용히 건너뜀
 
@@ -616,15 +656,11 @@ function toggleStop(placeId: string): void {
   }
 }
 
-/** placeId를 afterId 바로 뒤로 옮긴다(연결 툴). afterId가 숙소면 맨 앞으로. */
+/** placeId를 afterId 바로 뒤로 옮긴다(연결 툴). 숙소/공항 앵커도 이제 stopIds 안의 평범한
+ * 항목이라(자유롭게 재배치 가능) 별도 특수 처리 없이 그대로 찾아서 뒤에 꽂으면 된다. */
 function moveStopAfter(placeId: string, afterId: string): void {
   const day = activeDay();
-  const dayBasecamp = basecampForDay(days.findIndex((d) => d.id === day.id));
   day.stopIds = day.stopIds.filter((id) => id !== placeId);
-  if (dayBasecamp && afterId === dayBasecamp.id) {
-    day.stopIds.unshift(placeId);
-    return;
-  }
   const idx = day.stopIds.indexOf(afterId);
   if (idx === -1) { day.stopIds.push(placeId); return; }
   day.stopIds.splice(idx + 1, 0, placeId);
@@ -744,6 +780,12 @@ async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
   activeDestName = activeDest?.name ?? '';
   activeDestArrivalAirport = activeDest?.arrival_airport ?? null;
   activeDestArrivalTime = activeDest?.arrival_time ?? null;
+  activeDestArrivalLat = activeDest?.arrival_lat ?? null;
+  activeDestArrivalLng = activeDest?.arrival_lng ?? null;
+  activeDestDepartureAirport = activeDest?.departure_airport ?? null;
+  activeDestDepartureTime = activeDest?.departure_time ?? null;
+  activeDestDepartureLat = activeDest?.departure_lat ?? null;
+  activeDestDepartureLng = activeDest?.departure_lng ?? null;
   const segments = activeDest ? await loadStaySegments(trip, activeDest) : [];
   const seg = activeDest ? resolveActiveSegment(activeDest.id, segments) : null;
   // 날짜 순으로 정렬해 둬야 basecampForDay()가 dayIndex 순서와 맞게 구간을 찾는다
@@ -887,6 +929,120 @@ function basecampForDay(dayIndex: number): Place | null {
   const id = (seg ?? staySegments[0])?.basecamp_place_id ?? null;
   if (!id) return basecamp;
   return placeById.get(id) ?? basecamp;
+}
+
+/* ══════════════ 공항 정류지(DAY 1 도착 / 마지막 DAY 출발) ══════════════ */
+
+/** 공항 이름/좌표로 실제 Place 객체를 만든다 — 지도에 그리고 이동시간을 계산할 수 있도록
+ * makeAdhocPlace와 같은 모양이지만, id가 destination당 고정이라 매 렌더마다 새로 생기지 않는다. */
+function makeAnchorPlace(id: string, name: string, lat: number, lng: number): Place {
+  return {
+    id,
+    trip_id: currentTripId,
+    name,
+    lat,
+    lng,
+    address: null,
+    photo_url: null,
+    category: '공항',
+    notes: null,
+    added_by: null,
+    created_at: new Date().toISOString(),
+    likes_count: 0,
+    google_place_id: null,
+    google_rating: null,
+    photo_ref: null,
+    opening_hours: null,
+    mood: null,
+    status: 'idea',
+    is_idea: false,
+    sort_order: 0,
+    destination_id: null,
+  };
+}
+
+function arrivalAirportId(): string | null {
+  return activeDestId ? 'arrival-airport:' + activeDestId : null;
+}
+function departureAirportId(): string | null {
+  return activeDestId ? 'departure-airport:' + activeDestId : null;
+}
+
+/** 좌표까지 있어야(=자동완성에서 실제로 골랐어야) 진짜 정류지로 취급한다 */
+function arrivalAirportPlace(): Place | null {
+  const id = arrivalAirportId();
+  if (!id || !activeDestArrivalAirport || activeDestArrivalLat == null || activeDestArrivalLng == null) return null;
+  const cur = placeById.get(id);
+  if (cur && cur.name === activeDestArrivalAirport && cur.lat === activeDestArrivalLat && cur.lng === activeDestArrivalLng) return cur;
+  const p = makeAnchorPlace(id, activeDestArrivalAirport, activeDestArrivalLat, activeDestArrivalLng);
+  placeById.set(id, p);
+  return p;
+}
+
+function departureAirportPlace(): Place | null {
+  const id = departureAirportId();
+  if (!id || !activeDestDepartureAirport || activeDestDepartureLat == null || activeDestDepartureLng == null) return null;
+  const cur = placeById.get(id);
+  if (cur && cur.name === activeDestDepartureAirport && cur.lat === activeDestDepartureLat && cur.lng === activeDestDepartureLng) return cur;
+  const p = makeAnchorPlace(id, activeDestDepartureAirport, activeDestDepartureLat, activeDestDepartureLng);
+  placeById.set(id, p);
+  return p;
+}
+
+/** 이 DAY(dayIndex, 0-based)의 시작/끝 정류지 id — DAY1 시작은 공항(있으면)·아니면 숙소,
+ * 마지막 DAY 끝은 출발 공항(있으면)·아니면 숙소, 그 사이 DAY는 시작/끝 모두 그날의 숙소. */
+function dayAnchorIds(dayIndex: number): { startId: string | null; endId: string | null } {
+  const isFirstDay = dayIndex === 0;
+  const isLastDay = dayIndex === days.length - 1;
+  const bc = basecampForDay(dayIndex);
+  const startPlace = isFirstDay ? arrivalAirportPlace() ?? bc : bc;
+  const endPlace = isLastDay ? departureAirportPlace() ?? bc : bc;
+  return { startId: startPlace?.id ?? null, endId: endPlace?.id ?? null };
+}
+
+/**
+ * day.stopIds에 그 DAY의 시작/끝 정류지가 없으면 채워 넣는다. 이미 있으면(사용자가 순서를
+ * 옮겨놨어도) 손대지 않는다 — "고정은 아니고 자유롭게 재배치 가능"이라는 요구사항 때문에,
+ * 매번 강제로 맨 앞/맨 뒤로 되돌리지 않고 "빠져 있을 때만" 채워 넣는 최소 개입만 한다.
+ * 순서를 다시 양 끝으로 고정하고 싶을 땐 optimizedOrder()(순서 정리 버튼)를 쓴다.
+ */
+function ensureDayAnchors(day: RouteDay): void {
+  const dayIndex = days.findIndex((d) => d.id === day.id);
+  if (dayIndex < 0) return;
+  const { startId, endId } = dayAnchorIds(dayIndex);
+
+  if (startId && !day.stopIds.includes(startId)) day.stopIds.unshift(startId);
+
+  // 끝 지점은 시작과 "다른 곳"일 때만 따로 넣는다(DAY1: 공항→숙소, 마지막 DAY: 숙소→공항).
+  // 시작=끝이 같은 숙소인 보통의 DAY는 방문지가 몇 곳이든 굳이 두 번 보여줄 필요가 없다
+  // — 어차피 "그 숙소에서 하루를 보낸다"는 의미는 한 번만 있어도 충분히 전달된다.
+  if (endId && endId !== startId && !day.stopIds.includes(endId)) {
+    day.stopIds.push(endId);
+  }
+
+  // DAY1 공항의 초기 도착 시각을 한 번 심어둔다(이미 사용자가 손으로 바꿔놨으면 덮어쓰지 않음)
+  if (dayIndex === 0 && startId && startId === arrivalAirportId() && activeDestArrivalTime) {
+    const key = timeKey(day.id, startId);
+    if (!timeOverride.has(key)) timeOverride.set(key, activeDestArrivalTime);
+  }
+  if (dayIndex === days.length - 1 && endId && endId === departureAirportId() && activeDestDepartureTime) {
+    const key = timeKey(day.id, endId);
+    if (!timeOverride.has(key)) timeOverride.set(key, activeDestDepartureTime);
+  }
+}
+
+/** p가 이 dayIndex 기준 "숙소(시작/끝 앵커)"인지 — 위치와 무관하게 정체성으로 판단 */
+function isBasecampPlace(p: Place, dayIndex: number): boolean {
+  const bc = basecampForDay(dayIndex);
+  return !!bc && p.id === bc.id;
+}
+/** p가 공항 앵커(도착/출발 어느 쪽이든)인지 */
+function isAirportAnchorPlace(p: Place): boolean {
+  return p.id === arrivalAirportId() || p.id === departureAirportId();
+}
+/** p가 이 DAY의 시작/끝 앵커(숙소든 공항이든) 중 하나인지 — 삭제 금지 판정에 사용 */
+function isAnyAnchor(p: Place, dayIndex: number): boolean {
+  return isBasecampPlace(p, dayIndex) || isAirportAnchorPlace(p);
 }
 
 /* ══════════════════ 메인 렌더 ══════════════════ */
@@ -1085,14 +1241,19 @@ function renderDayTabs(container: HTMLElement): void {
     days
       .map((d, i) => {
         const active = d.id === activeDayId;
-        const filled = d.stopIds.length > 0;
+        // 숙소/공항 앵커는 매일 자동으로 채워지므로 "채워짐" 표시엔 실제로 담은 곳만 센다
+        const realCount = d.stopIds.filter((id) => {
+          const p = placeById.get(id);
+          return p && !isAnyAnchor(p, i);
+        }).length;
+        const filled = realCount > 0;
         const color = dayColorFor(i);
         return [
           i > 0 ? '<span class="rt-daytab-line" aria-hidden="true"></span>' : '',
           '<button type="button" class="rt-daytab' + (active ? ' active' : '') + '" data-day="' + d.id + '"' +
             ' aria-current="' + (active ? 'true' : 'false') + '"' +
             (active ? ' style="border-color:' + color + '"' : '') +
-            ' title="' + escapeHtml(d.label) + (filled ? ' · 장소 ' + d.stopIds.length + '곳' : ' · 비어 있음') + '">',
+            ' title="' + escapeHtml(d.label) + (filled ? ' · 장소 ' + realCount + '곳' : ' · 비어 있음') + '">',
           filled ? '  <span class="rt-daytab-filled" style="background:' + color + '" aria-hidden="true"></span>' : '',
           '  <span class="rt-daytab-label">' + escapeHtml(d.label) + '</span>',
           '  <span class="rt-daytab-date"' + (active ? ' style="color:' + color + '"' : '') + '>' + dayDateLabel(i) + '</span>',
@@ -1343,12 +1504,13 @@ function toggleSatellite(): void {
 
 /* ── 지도 위 핀 클릭 — 활성 툴에 따라 다르게 동작 ── */
 function handlePinClick(g: any, p: Place): void {
-  const activeBasecamp = basecampForDay(days.findIndex((d) => d.id === activeDayId));
-  const isBasecamp = !!activeBasecamp && p.id === activeBasecamp.id;
+  const activeDayIndex = days.findIndex((d) => d.id === activeDayId);
+  const isBasecamp = isBasecampPlace(p, activeDayIndex);
+  const isAnchor = isAnyAnchor(p, activeDayIndex); // 숙소 또는 공항(도착/출발) — 삭제 금지 대상
   closePlaceCard();
 
   if (activeTool === 'delete') {
-    if (isBasecamp) return;
+    if (isAnchor) return;
     pushHistory();
     removeStop(p.id);
     if (highlightedPlaceId === p.id) highlightedPlaceId = null;
@@ -1358,7 +1520,7 @@ function handlePinClick(g: any, p: Place): void {
 
   if (activeTool === 'connect') {
     const day = activeDay();
-    const needsAdd = !isBasecamp && !day.stopIds.includes(p.id);
+    const needsAdd = !isAnchor && !day.stopIds.includes(p.id);
     const needsMove = !!connectFromId && connectFromId !== p.id;
     if (needsAdd || needsMove) pushHistory();
     if (needsAdd) day.stopIds.push(p.id);
@@ -1371,7 +1533,7 @@ function handlePinClick(g: any, p: Place): void {
   }
 
   if (activeTool === 'memo') {
-    const wasIncluded = isBasecamp || activeDay().stopIds.includes(p.id);
+    const wasIncluded = isAnchor || activeDay().stopIds.includes(p.id);
     if (!wasIncluded) { pushHistory(); activeDay().stopIds.push(p.id); }
     highlightedPlaceId = p.id;
     refreshAll(rtContainer!, { refit: false });
@@ -1383,7 +1545,7 @@ function handlePinClick(g: any, p: Place): void {
 
   if (activeTool === 'add') {
     // "장소 추가" 툴: 클릭 한 번으로 바로 담기/빼기
-    if (isBasecamp) return;
+    if (isAnchor) return;
     pushHistory();
     toggleStop(p.id);
     highlightedPlaceId = p.id;
@@ -1395,7 +1557,7 @@ function handlePinClick(g: any, p: Place): void {
   // 기본(선택) 툴: 아직 담지 않은 후보는 정보 카드(사진/평점/담기 버튼)를 보여줘 담을지 결정하게 하고,
   // 이미 오늘 동선에 들어간 정류지는 같은 정보가 우측 타임라인에 이미 떠 있으므로 카드 없이
   // 강조 + 타임라인 스크롤만 한다(안 그러면 클릭할 때마다 지도 위에 카드가 겹쳐 어수선해짐).
-  const alreadyIncluded = isBasecamp || activeDay().stopIds.includes(p.id);
+  const alreadyIncluded = isAnchor || activeDay().stopIds.includes(p.id);
   highlightedPlaceId = p.id;
   hoveredPlaceId = null;
   if (g?.maps) {
@@ -1572,16 +1734,12 @@ function minToHHMM(min: number): string {
 function computeStopTimes(day: RouteDay, stops: Place[], legs: Leg[]): string[] {
   const times: string[] = [];
   const dayIndex = days.findIndex((d) => d.id === day.id);
-  // DAY 1은 숙소가 아니라 공항에서 시작 — 도착 시각을 입력해 뒀으면 입국심사·수하물·공항→
-  // 숙소 이동 여유를 더한 시각부터, 안 입력했으면 기존처럼 09:00부터로 취급한다.
+  // 공항이 이 DAY의 시작 정류지면 ensureDayAnchors()가 이미 도착 시각을 그 정류지의
+  // timeOverride로 심어뒀으므로, 여기서는 특별 취급 없이 09:00 기본값 + 아래 override
+  // 루프만으로 자연스럽게 처리된다(공항→숙소 구간도 일반 leg 계산을 그대로 탐).
   let clockMin = 9 * 60;
-  if (dayIndex === 0 && activeDestArrivalTime) {
-    const [ah, am] = activeDestArrivalTime.split(':').map(Number);
-    if (Number.isFinite(ah) && Number.isFinite(am)) clockMin = ah * 60 + am + ARRIVAL_TO_HOTEL_BUFFER_MIN;
-  }
-  const dayBasecamp = basecampForDay(dayIndex);
   stops.forEach((p, i) => {
-    const isBasecamp = !!dayBasecamp && i === 0 && p.id === dayBasecamp.id;
+    const isBasecamp = isBasecampPlace(p, dayIndex);
     const override = timeOverride.get(timeKey(day.id, p.id));
     if (override) {
       const [h, m] = override.split(':').map(Number);
@@ -1604,39 +1762,62 @@ function computeDaySummary(day: RouteDay): { totalMin: number; totalCost: number
     totalMin += l.min;
     totalCost += l.costTHB;
   });
-  return { totalMin, totalCost, legCount: legs.length, visitCount: day.stopIds.length };
+  // 숙소/공항 앵커는 매일 자동으로 붙는 출발·도착점이라 "몇 곳을 방문하는지"엔 세지 않는다
+  // (안 그러면 실제로는 아무 데도 안 담았는데 앵커 때문에 1곳으로 잡혀 버튼들이 잘못 활성화됨)
+  const dayIndex = days.findIndex((d) => d.id === day.id);
+  const visitCount = day.stopIds.filter((id) => {
+    const p = placeById.get(id);
+    return p && !isAnyAnchor(p, dayIndex);
+  }).length;
+  return { totalMin, totalCost, legCount: legs.length, visitCount };
 }
 
 /** 최근접 이웃 재정렬로 총 이동시간을 얼마나 줄일 수 있는지 계산 */
+/**
+ * "순서 정리" — 이 DAY의 시작/끝 정류지(숙소 또는 공항)는 그대로 양 끝에 고정하고,
+ * 그 사이의 실제 방문지들만 최근접 이웃 방식으로 재배열한다. 평소엔 앵커도 자유롭게
+ * 재배치할 수 있지만(ensureDayAnchors는 "빠져 있을 때만" 채워 넣음), 이 버튼을 누른
+ * 순간만은 명시적으로 다시 양 끝으로 고정한다.
+ */
 function optimizedOrder(day: RouteDay): { order: string[]; totalMin: number } {
+  const dayIndex = days.findIndex((d) => d.id === day.id);
+  const { startId, endId } = dayAnchorIds(dayIndex);
   const pts = orderedStops(day).filter((p) => p.lat != null && p.lng != null);
   if (pts.length <= 2) {
     return { order: [...day.stopIds], totalMin: computeDaySummary(day).totalMin };
   }
-  const start = pts[0];
-  const rest = pts.slice(1);
+
+  const startPt = (startId ? placeById.get(startId) : null) ?? pts[0];
+  const endPt = endId && endId !== startPt.id ? placeById.get(endId) ?? null : null;
+  const middle = pts.filter((p) => p.id !== startPt.id && (!endPt || p.id !== endPt.id));
+
   const used = new Set<number>();
-  const orderedIds: string[] = [];
-  let cur = start;
+  const orderedMiddleIds: string[] = [];
+  let cur = startPt;
   let totalMin = 0;
-  for (let k = 0; k < rest.length; k++) {
+  for (let k = 0; k < middle.length; k++) {
     let best = -1;
     let bestKm = Infinity;
-    for (let i = 0; i < rest.length; i++) {
+    for (let i = 0; i < middle.length; i++) {
       if (used.has(i)) continue;
-      const km = haversineKm(cur.lat!, cur.lng!, rest[i].lat!, rest[i].lng!);
+      const km = haversineKm(cur.lat!, cur.lng!, middle[i].lat!, middle[i].lng!);
       if (km < bestKm) {
         bestKm = km;
         best = i;
       }
     }
     used.add(best);
-    const leg = estimateLegWithOverride(cur, rest[best]);
+    const leg = estimateLegWithOverride(cur, middle[best]);
     totalMin += leg.min;
-    orderedIds.push(rest[best].id);
-    cur = rest[best];
+    orderedMiddleIds.push(middle[best].id);
+    cur = middle[best];
   }
-  return { order: orderedIds, totalMin };
+  if (endPt) {
+    totalMin += estimateLegWithOverride(cur, endPt).min;
+  }
+
+  const order = [startPt.id, ...orderedMiddleIds, ...(endPt ? [endPt.id] : [])];
+  return { order, totalMin };
 }
 
 /* ══════════════ AI 일정 추천 (Gemini) ══════════════ */
@@ -1731,7 +1912,8 @@ function applyAiRoutePlan(result: AiRoutePlanResult): number {
   result.days.forEach((rd) => {
     const day = days[rd.dayIndex];
     if (!day) return;
-    // 숙소를 나눈 여행은 DAY마다 기준 숙소가 다를 수 있어(basecampForDay), "그날의" 숙소만 걸러낸다
+    // 숙소를 나눈 여행은 DAY마다 기준 숙소가 다를 수 있어(basecampForDay), "그날의" 숙소만 걸러낸다.
+    // 공항은 애초에 AI에게 태그(P숫자)로 주어지지 않으므로 s.placeId로 나올 일이 없다.
     const dayBasecampId = basecampForDay(rd.dayIndex)?.id ?? null;
     rd.stops.forEach((s) => {
       // 서버가 이미 걸렀지만, 그 사이 장소가 지워졌을 수도 있으니 화면 기준으로 한 번 더 확인
@@ -1741,6 +1923,10 @@ function applyAiRoutePlan(result: AiRoutePlanResult): number {
       if (s.arriveTime) timeOverride.set(timeKey(day.id, s.placeId), s.arriveTime);
     });
   });
+
+  // AI는 이 DAY의 시작/끝 앵커(숙소/공항)를 모르므로, 여기서 다시 채워 넣는다
+  // (도착 공항의 초기 도착시각도 ensureDayAnchors가 이 시점에 함께 심어준다).
+  days.forEach((d) => ensureDayAnchors(d));
 
   return seen.size;
 }
@@ -1756,7 +1942,12 @@ async function runAiRoutePlan(container: HTMLElement): Promise<void> {
     return;
   }
   // 이미 짜둔 동선이 있으면 덮어쓰기 전에 확인 (실행 취소로 되돌릴 수 있음을 함께 안내)
-  const hasExisting = days.some((d) => d.stopIds.length > 0);
+  // 숙소/공항 앵커만 있고 실제로 담은 곳이 하나도 없으면 "이미 짜둔 동선"으로 치지 않는다
+  // (안 그러면 완전히 빈 트립에서도 앵커 때문에 항상 확인창이 떠서 불필요하게 성가심)
+  const hasExisting = days.some((d, i) => d.stopIds.some((id) => {
+    const p = placeById.get(id);
+    return p && !isAnyAnchor(p, i);
+  }));
   if (hasExisting && !window.confirm('지금까지 담은 모든 DAY의 동선을 AI 추천으로 바꿀까요?\n도착 시각과 직접 지정한 이동수단도 함께 초기화돼요. (적용 후 "되돌리기"로 지금 상태로 복구할 수 있어요)')) {
     return;
   }
@@ -1776,6 +1967,8 @@ async function runAiRoutePlan(container: HTMLElement): Promise<void> {
       staySegments: buildAiStaySegments(),
       arrivalAirport: activeDestArrivalAirport,
       arrivalTime: activeDestArrivalTime,
+      departureAirport: activeDestDepartureAirport,
+      departureTime: activeDestDepartureTime,
       places: candidatePlaces.filter((p) => p.lat != null && p.lng != null).map((p) => toAiPlace(p)),
     });
 
@@ -1831,8 +2024,10 @@ async function runDayDetail(container: HTMLElement): Promise<void> {
   }
   const day = activeDay();
   const dayIndex = days.findIndex((d) => d.id === day.id);
-  // 숙소는 매일 자동으로 붙는 출발지라 "이 DAY에 담은 장소"에서는 제외하고 판단한다
-  const stops = day.stopIds.map((id) => placeById.get(id)).filter((p): p is Place => !!p);
+  // 숙소/공항 앵커는 매일 자동으로 붙는 출발·도착점이라 "이 DAY에 담은 장소"에서는 제외하고 판단한다
+  const stops = day.stopIds
+    .map((id) => placeById.get(id))
+    .filter((p): p is Place => !!p && !isAnyAnchor(p, dayIndex));
   if (stops.length === 0) {
     window.alert('이 DAY에 담은 장소가 없어요. 장소를 먼저 담아주세요.');
     return;
@@ -1994,56 +2189,108 @@ function aiPlanNoticeHtml(): string {
 }
 
 /**
- * DAY 1 전용 — 이 여행지는 숙소가 아니라 공항에서 시작한다는 걸 명시적으로 입력해 두는 칸.
- * 여기 적은 도착 시각은 computeStopTimes()가 DAY 1의 시작 시각(입국심사 등 여유 포함)으로
- * 쓰고, AI 일정 짜기도 이 시각 이전엔 아무것도 배치하지 않도록 프롬프트에 그대로 전달한다.
- * 공항 좌표는 저장하지 않는다(원칙 3-1 — 실측 안 된 좌표를 지도에 지어내지 않음).
+ * 숙소/공항 앵커는 항상 카드로 보이지만, 그 사이에 실제로 담은 곳이 하나도 없을 때
+ * 목록 맨 아래 붙는 작은 안내 — 예전의 "전체를 덮는 빈 화면"과 달리 앵커 카드를 가리지
+ * 않는다. 처음 쓰는 사용자가 "AI에게 맡기기"를 발견하는 자리이기도 하다.
  */
-function arrivalInfoHtml(): string {
+function emptyDayHintHtml(): string {
   return [
-    '<div class="rt-arrival">',
-    '  <span class="rt-arrival-icon">' + IC_PLANE + '</span>',
-    '  <input type="text" class="rt-arrival-airport" id="rt-arrival-airport" placeholder="도착 공항 (예: 수완나품 BKK)"' +
-      ' value="' + escapeHtml(activeDestArrivalAirport ?? '') + '" aria-label="DAY 1 도착 공항" />',
-    '  <input type="text" class="rt-arrival-time" id="rt-arrival-time" placeholder="HH:MM"' +
-      ' value="' + escapeHtml(activeDestArrivalTime ?? '') + '" inputmode="numeric" maxlength="5" spellcheck="false"' +
-      ' aria-label="DAY 1 도착 시각 (24시간 HH:MM)" />',
+    '<div class="rt-panel-empty-inline">',
+    '  <span class="rt-panel-empty-inline-text">아직 담은 장소가 없어요 · 지도의 핀을 누르거나 왼쪽 목록에서 담아보세요</span>',
+    candidatePlaces.length >= 2
+      ? '  <button type="button" class="rt-panel-empty-cta" id="rt-panel-empty-ai"' + (aiPlanBusy ? ' disabled' : '') + '>' +
+        (aiPlanBusy ? '<span class="rt-ai-spinner"></span> 일정 짜는 중…' : IC_SPARK + ' AI에게 일정 맡기기') +
+        '</button>'
+      : '',
     '</div>',
   ].join('');
 }
 
-/** arrivalInfoHtml 입력의 변경을 저장하고 DAY 1 시각 계산에 즉시 반영 */
-function bindArrivalInfo(container: HTMLElement): void {
-  const airportInput = container.querySelector('#rt-arrival-airport') as HTMLInputElement | null;
-  const timeInput = container.querySelector('#rt-arrival-time') as HTMLInputElement | null;
+type AirportKind = 'arrival' | 'departure';
+
+/**
+ * DAY 1의 도착 공항 / 마지막 DAY의 출발 공항을 검색해서 넣는 칸 — 자동완성에서 실제로
+ * 골라 좌표까지 받아오면(getPlaceDetails) 그 즉시 지도/타임라인의 진짜 정류지가 되고,
+ * 이 칸은 사라진다(아래 rows에 정류지 카드로 나타남). 아직 안 골랐으면(이름만 타이핑)
+ * 좌표가 없어 정류지로 못 만들므로 이 칸이 계속 남아있는다(원칙 3-1 — 좌표를 지어내지 않음).
+ */
+function airportInfoHtml(kind: AirportKind): string {
+  const name = kind === 'arrival' ? activeDestArrivalAirport : activeDestDepartureAirport;
+  const time = kind === 'arrival' ? activeDestArrivalTime : activeDestDepartureTime;
+  const label = kind === 'arrival' ? '도착' : '출발';
+  return [
+    '<div class="rt-arrival" data-kind="' + kind + '">',
+    '  <span class="rt-arrival-icon">' + IC_PLANE + '</span>',
+    '  <input type="text" class="rt-arrival-airport" id="rt-' + kind + '-airport" placeholder="' + label + ' 공항 (예: 수완나품 BKK)"' +
+      ' value="' + escapeHtml(name ?? '') + '" aria-label="' + label + ' 공항" />',
+    '  <input type="text" class="rt-arrival-time" id="rt-' + kind + '-time" placeholder="HH:MM"' +
+      ' value="' + escapeHtml(time ?? '') + '" inputmode="numeric" maxlength="5" spellcheck="false"' +
+      ' aria-label="' + label + ' 시각 (24시간 HH:MM)" />',
+    '</div>',
+  ].join('');
+}
+
+/** airportInfoHtml 입력의 변경을 저장 + 자동완성 처리. arrival/departure 둘 다 이 함수로 처리 */
+function bindAirportInfo(container: HTMLElement, kind: AirportKind): void {
+  const airportInput = container.querySelector('#rt-' + kind + '-airport') as HTMLInputElement | null;
+  const timeInput = container.querySelector('#rt-' + kind + '-time') as HTMLInputElement | null;
   if (!airportInput || !timeInput) return;
 
-  const commitAirport = (value?: string) => {
-    const v = (value ?? airportInput.value).trim();
-    if (v === (activeDestArrivalAirport ?? '')) return;
-    activeDestArrivalAirport = v || null;
-    if (activeDestId) void updateDestination(activeDestId, { arrival_airport: activeDestArrivalAirport });
+  const patchDest = (patch: Record<string, unknown>) => {
+    if (activeDestId) void updateDestination(activeDestId, patch);
+  };
+
+  // 좌표 없이 이름만 직접 타이핑해서 blur한 경우 — 정류지로는 못 만들고 이름만 저장
+  const commitNameOnly = () => {
+    const v = airportInput.value.trim();
+    const cur = kind === 'arrival' ? activeDestArrivalAirport : activeDestDepartureAirport;
+    if (v === (cur ?? '')) return;
+    if (kind === 'arrival') activeDestArrivalAirport = v || null;
+    else activeDestDepartureAirport = v || null;
+    patchDest(kind === 'arrival' ? { arrival_airport: activeDestArrivalAirport } : { departure_airport: activeDestDepartureAirport });
   };
   const commitTime = () => {
     const parsed = parseTimeInput(timeInput.value);
-    if (parsed === (activeDestArrivalTime ?? null) && timeInput.value.trim() !== '') return;
-    activeDestArrivalTime = timeInput.value.trim() ? parsed : null;
-    if (activeDestId) void updateDestination(activeDestId, { arrival_time: activeDestArrivalTime });
-    renderRightPanel(container); // DAY 1 시작 시각이 바뀌므로 전체 시각을 다시 계산
+    const cur = kind === 'arrival' ? activeDestArrivalTime : activeDestDepartureTime;
+    if (parsed === (cur ?? null) && timeInput.value.trim() !== '') return;
+    const next = timeInput.value.trim() ? parsed : null;
+    if (kind === 'arrival') activeDestArrivalTime = next;
+    else activeDestDepartureTime = next;
+    patchDest(kind === 'arrival' ? { arrival_time: next } : { departure_time: next });
+    renderRightPanel(container); // 이 시각이 그 정류지의 초기 도착시각으로 다시 반영되도록
   };
 
   // ── 공항 이름 자동완성(스카이스캐너 스타일) — Google Places를 airport 타입으로만 좁혀 검색.
-  // 좌표는 안 받아온다(원칙 3-1) — 이름 문자열만 자유 입력 칸에 채워 넣는다.
   let acTimer: ReturnType<typeof setTimeout> | null = null;
   let acPredictions: PlacePrediction[] = [];
   const closeAc = () => {
     (airportInput.closest('.rt-arrival') as HTMLElement | null)?.querySelector('.rt-arrival-ac')?.remove();
     acPredictions = [];
   };
-  const selectAirport = (p: PlacePrediction) => {
+  // 드롭다운에서 실제로 골랐을 때만 좌표를 받아와 "진짜 정류지"로 승격시킨다
+  const selectAirport = async (p: PlacePrediction) => {
     airportInput.value = p.mainText;
     closeAc();
-    commitAirport(p.mainText);
+    if (kind === 'arrival') activeDestArrivalAirport = p.mainText;
+    else activeDestDepartureAirport = p.mainText;
+
+    let lat: number | null = null;
+    let lng: number | null = null;
+    try {
+      const details = await getPlaceDetails(p.placeId);
+      lat = details?.location ? details.location.lat() : null;
+      lng = details?.location ? details.location.lng() : null;
+    } catch (e) {
+      console.error('[ROUTE] 공항 좌표 조회 실패(이름만 저장):', (e as Error).message);
+    }
+    if (kind === 'arrival') { activeDestArrivalLat = lat; activeDestArrivalLng = lng; }
+    else { activeDestDepartureLat = lat; activeDestDepartureLng = lng; }
+    patchDest(
+      kind === 'arrival'
+        ? { arrival_airport: p.mainText, arrival_lat: lat, arrival_lng: lng }
+        : { departure_airport: p.mainText, departure_lat: lat, departure_lng: lng }
+    );
+    refreshAll(container, { refit: true }); // 좌표가 생겼으면 이 칸 대신 실제 정류지 행이 나타남
   };
   const renderAc = () => {
     const wrap = airportInput.closest('.rt-arrival') as HTMLElement | null;
@@ -2066,7 +2313,7 @@ function bindArrivalInfo(container: HTMLElement): void {
       btn.addEventListener('mousedown', (e) => {
         e.preventDefault();
         const idx = Number((btn as HTMLElement).dataset.idx);
-        selectAirport(acPredictions[idx]);
+        void selectAirport(acPredictions[idx]);
       });
     });
     wrap.appendChild(dd);
@@ -2082,7 +2329,7 @@ function bindArrivalInfo(container: HTMLElement): void {
     }, 300);
   });
   airportInput.addEventListener('blur', () => {
-    commitAirport();
+    commitNameOnly();
     setTimeout(closeAc, 120); // mousedown 선택이 먼저 처리될 시간을 준 뒤 닫음
   });
   airportInput.addEventListener('keydown', (e) => {
@@ -2095,6 +2342,40 @@ function bindArrivalInfo(container: HTMLElement): void {
     if ((e as KeyboardEvent).key === 'Enter') { e.preventDefault(); timeInput.blur(); }
   });
   timeInput.addEventListener('click', (e) => e.stopPropagation());
+}
+
+/**
+ * 정류지가 된 공항의 ✕ 버튼 — 일반 삭제와 달리 stopIds에서 빼는 것만으론 부족하다(안 지우면
+ * ensureDayAnchors가 다음 렌더에서 바로 다시 채워 넣음). 원본 도착/출발 정보 자체를 지워서
+ * "공항 검색 칸"이 다시 나타나게 한다.
+ */
+function clearAirportAnchor(id: string, container: HTMLElement): void {
+  const isArrival = id === arrivalAirportId();
+  const isDeparture = id === departureAirportId();
+  if (!isArrival && !isDeparture) return;
+
+  pushHistory();
+  days.forEach((d) => {
+    d.stopIds = d.stopIds.filter((sid) => sid !== id);
+    timeOverride.delete(timeKey(d.id, id));
+  });
+  memoStore.delete(id);
+  placeById.delete(id);
+
+  if (isArrival) {
+    activeDestArrivalAirport = null;
+    activeDestArrivalTime = null;
+    activeDestArrivalLat = null;
+    activeDestArrivalLng = null;
+    if (activeDestId) void updateDestination(activeDestId, { arrival_airport: null, arrival_time: null, arrival_lat: null, arrival_lng: null });
+  } else {
+    activeDestDepartureAirport = null;
+    activeDestDepartureTime = null;
+    activeDestDepartureLat = null;
+    activeDestDepartureLng = null;
+    if (activeDestId) void updateDestination(activeDestId, { departure_airport: null, departure_time: null, departure_lat: null, departure_lng: null });
+  }
+  refreshAll(container, { refit: true });
 }
 
 /* ── 우측 정보 패널 ── */
@@ -2110,23 +2391,25 @@ function renderRightPanel(container: HTMLElement): void {
   const dayIndex = days.findIndex((d) => d.id === day.id);
   const cur = currencyOf(legs);
   const dColor = dayColorFor(Math.max(0, dayIndex));
-  const dayBasecamp = basecampForDay(dayIndex);
 
   const rows: string[] = [];
   stops.forEach((p, i) => {
-    const isBasecamp = !!dayBasecamp && i === 0 && p.id === dayBasecamp.id;
+    const isBasecamp = isBasecampPlace(p, dayIndex);
+    const isAirport = isAirportAnchorPlace(p);
+    const isAnchor = isBasecamp || isAirport; // 삭제는 금지하되, 순서는 자유롭게 바꿀 수 있음
     const memo = memoStore.get(p.id) ?? '';
     const highlighted = p.id === highlightedPlaceId;
 
+    const badgeClass = isBasecamp ? ' rt-panel-badge-stay' : isAirport ? ' rt-panel-badge-airport' : '';
     const manualTime = timeOverride.has(timeKey(day.id, p.id));
     rows.push(
       [
-        '<div class="rt-panel-stop' + (highlighted ? ' rt-highlighted' : '') + '" draggable="' + (isBasecamp ? 'false' : 'true') + '" data-place-id="' + p.id + '">',
-        isBasecamp
-          ? '  <span class="rt-drag-handle locked" aria-hidden="true"></span>'
-          : '  <span class="rt-drag-handle" title="드래그해서 순서 바꾸기" aria-hidden="true">' + IC_GRIP + '</span>',
-        '  <span class="rt-panel-badge' + (isBasecamp ? ' rt-panel-badge-stay' : '') + '"' +
-          (isBasecamp ? '' : ' style="background:' + dColor + '"') + '>' + (i + 1) + '</span>',
+        // 앵커(숙소/공항)도 이제 순서를 자유롭게 바꿀 수 있다 — draggable="false"였던 고정을 풂.
+        // "순서 정리" 버튼(optimizedOrder)을 누르면 그때만 다시 양 끝으로 고정된다.
+        '<div class="rt-panel-stop' + (highlighted ? ' rt-highlighted' : '') + '" draggable="true" data-place-id="' + p.id + '">',
+        '  <span class="rt-drag-handle" title="드래그해서 순서 바꾸기" aria-hidden="true">' + IC_GRIP + '</span>',
+        '  <span class="rt-panel-badge' + badgeClass + '"' +
+          (isAnchor ? '' : ' style="background:' + dColor + '"') + '>' + (i + 1) + '</span>',
         '  <div class="rt-panel-name-col"><div class="rt-panel-name">' + escapeHtml(p.name) + '</div><div class="rt-panel-sub">' + escapeHtml(p.category || (isBasecamp ? '숙소' : '')) + '</div></div>',
         // native <input type="time">은 로케일에 따라 "오후 01:00"처럼 12시간제로 그려져
         // 좁은 패널에서 접두사가 잘리면 13:00이 01:00으로 보이는 오표시가 발생한다.
@@ -2134,8 +2417,10 @@ function renderRightPanel(container: HTMLElement): void {
         '  <input type="text" class="rt-panel-time' + (manualTime ? ' is-manual' : '') + '" value="' + times[i] + '"' +
           ' data-place-id="' + p.id + '" inputmode="numeric" maxlength="5" spellcheck="false"' +
           ' aria-label="' + escapeHtml(p.name) + ' 도착 시각 (24시간 HH:MM)" />',
-        !isBasecamp
+        !isAnchor
           ? '  <button type="button" class="rt-panel-remove" data-place-id="' + p.id + '" title="동선에서 빼기" aria-label="' + escapeHtml(p.name) + ' 동선에서 빼기">✕</button>'
+          : isAirport
+          ? '  <button type="button" class="rt-panel-remove" data-place-id="' + p.id + '" data-clear-airport="true" title="공항 정보 지우기" aria-label="' + escapeHtml(p.name) + ' 공항 정보 지우기">✕</button>'
           : '  <span class="rt-panel-remove-spacer"></span>',
         '  <div class="rt-panel-memo-row">',
         '    <input type="text" class="rt-panel-memo" placeholder="메모 추가" value="' + escapeHtml(memo) + '" data-place-id="' + p.id + '" aria-label="' + escapeHtml(p.name) + ' 메모" />',
@@ -2179,22 +2464,20 @@ function renderRightPanel(container: HTMLElement): void {
     '  <button type="button" class="rt-panel-more" id="rt-panel-more" aria-label="이 DAY 메뉴">' + IC_DOTS + '</button>',
     '</div>',
     aiPlanNoticeHtml(),
-    dayIndex === 0 ? arrivalInfoHtml() : '',
+    // 좌표까지 받아온 진짜 정류지가 되면 이 검색 칸 대신 목록 안에 카드로 나타나므로,
+    // 아직 좌표가 없을 때만(=자동완성에서 실제로 고르기 전) 이 칸을 보여준다.
+    dayIndex === 0 && !arrivalAirportPlace() ? airportInfoHtml('arrival') : '',
+    dayIndex === days.length - 1 && !departureAirportPlace() ? airportInfoHtml('departure') : '',
     '<div class="rt-panel-list" id="rt-panel-list">',
     stops.length
-      ? rows.join('')
+      // 숙소/공항 앵커는 이제 항상 실제 정류지 카드로 보이므로(비어 있어도), "담은 곳이 0곳"인
+      // 경우엔 그 카드들 아래에 작은 안내만 덧붙인다(예전처럼 전체를 덮는 빈 화면으로 가리지 않음).
+      ? rows.join('') + (s.visitCount === 0 ? emptyDayHintHtml() : '')
       : [
           '<div class="rt-panel-empty">',
           '  <span class="rt-panel-empty-icon">' + IC_ROUTEPATH + '</span>',
-          '  <div class="rt-panel-empty-title">아직 담은 장소가 없어요</div>',
-          '  <div class="rt-panel-empty-hint">지도의 핀을 누르거나<br>왼쪽 목록에서 담아보세요.</div>',
-          // 빈 화면이야말로 "AI가 대신 짜줄까요?"가 가장 자연스러운 자리 — 첫 사용자가
-          // 기능을 발견하는 경로를 여기 두고, 이후 재생성은 상단 툴바 버튼으로 한다.
-          candidatePlaces.length >= 2
-            ? '  <button type="button" class="rt-panel-empty-cta" id="rt-panel-empty-ai"' + (aiPlanBusy ? ' disabled' : '') + '>' +
-              (aiPlanBusy ? '<span class="rt-ai-spinner"></span> 일정 짜는 중…' : IC_SPARK + ' AI에게 일정 맡기기') +
-              '</button>'
-            : '',
+          '  <div class="rt-panel-empty-title">아직 숙소가 확정되지 않았어요</div>',
+          '  <div class="rt-panel-empty-hint">숙소를 먼저 정하면<br>이 DAY의 동선을 시작할 수 있어요.</div>',
           '</div>',
         ].join(''),
     '</div>',
@@ -2225,11 +2508,19 @@ function renderRightPanel(container: HTMLElement): void {
 }
 
 function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
-  bindArrivalInfo(container);
+  bindAirportInfo(container, 'arrival');
+  bindAirportInfo(container, 'departure');
   el.querySelectorAll('.rt-panel-remove').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const id = (btn as HTMLElement).dataset.placeId!;
+      const clearAirport = (btn as HTMLElement).dataset.clearAirport === 'true';
+      if (clearAirport) {
+        // 일반 정류지 삭제가 아니라 "공항 정보 자체를 지우기" — 안 지우면 ensureDayAnchors가
+        // 다음 렌더에서 바로 다시 채워 넣으므로, 원본 도착/출발 정보부터 비워야 한다.
+        clearAirportAnchor(id, container);
+        return;
+      }
       pushHistory();
       removeStop(id);
       if (highlightedPlaceId === id) highlightedPlaceId = null;
@@ -2352,15 +2643,12 @@ function bindDragReorder(container: HTMLElement, el: HTMLElement): void {
       if (!dragStopId || dragStopId === targetId) { dragStopId = null; return; }
       pushHistory();
       const day = activeDay();
-      const dayBasecamp = basecampForDay(days.findIndex((d) => d.id === day.id));
       const dragged = dragStopId;
       day.stopIds = day.stopIds.filter((id) => id !== dragged);
-      if (dayBasecamp && targetId === dayBasecamp.id) {
-        day.stopIds.unshift(dragged);
-      } else {
-        const idx = day.stopIds.indexOf(targetId);
-        day.stopIds.splice(idx === -1 ? day.stopIds.length : idx, 0, dragged);
-      }
+      // 숙소/공항 앵커도 이제 stopIds 안의 평범한 항목이라(자유 재배치 가능),
+      // 어디에 있든 그 위치를 그대로 찾아서 앞에 꽂으면 된다 — 별도 특수 처리 불필요.
+      const idx = day.stopIds.indexOf(targetId);
+      day.stopIds.splice(idx === -1 ? day.stopIds.length : idx, 0, dragged);
       dragStopId = null;
       refreshAll(container, { refit: false });
     });
@@ -2539,7 +2827,7 @@ function drawRouteOnMap(refit: boolean): void {
   const stops = orderedStops(day).filter((p) => p.lat != null && p.lng != null);
   const legs = dayLegs(day);
   const mapCur = currencyOf(legs);
-  const dayBasecamp = basecampForDay(days.findIndex((d) => d.id === day.id));
+  const dayIndex = days.findIndex((d) => d.id === day.id);
 
   // 강조 기준점: 클릭 선택이 우선, 없으면 타임라인 호버(일시적 미리보기)
   const focusId = highlightedPlaceId ?? hoveredPlaceId;
@@ -2556,7 +2844,7 @@ function drawRouteOnMap(refit: boolean): void {
 
   // 오늘 동선의 정류지 — 순서 번호 + 진행 상태 색
   stops.forEach((p, i) => {
-    const isBasecamp = !!dayBasecamp && i === 0 && p.id === dayBasecamp.id;
+    const isBasecamp = isBasecampPlace(p, dayIndex);
     // 여행은 아직 미래라 실제 "완료"는 없다. 선택한 지점을 현재로 보고 앞/뒤를 나눠
     // 진행 방향이 읽히게 한다. 아무것도 선택하지 않았으면 전부 기본 네이비.
     let phase: StopPhase = 'plain';
@@ -2692,9 +2980,10 @@ function closePlaceCard(): void {
 
 function openPlaceCard(g: any, p: Place): void {
   closePlaceCard();
-  const activeBasecamp = basecampForDay(days.findIndex((d) => d.id === activeDayId));
-  const isBasecamp = !!activeBasecamp && p.id === activeBasecamp.id;
-  const included = isBasecamp || activeDay().stopIds.includes(p.id);
+  const activeDayIndex = days.findIndex((d) => d.id === activeDayId);
+  const isBasecamp = isBasecampPlace(p, activeDayIndex);
+  const isAnchor = isAnyAnchor(p, activeDayIndex);
+  const included = isAnchor || activeDay().stopIds.includes(p.id);
   const meta = categoryMeta(p, isBasecamp);
 
   const html = [
@@ -2708,7 +2997,7 @@ function openPlaceCard(g: any, p: Place): void {
     p.google_rating ? '    <span class="rt-clickcard-rate">' + IC_STAR + ' ' + p.google_rating.toFixed(1) + '</span>' : '',
     p.category ? '    <span class="rt-clickcard-cat">' + escapeHtml(p.category) + '</span>' : '',
     '  </div>',
-    isBasecamp
+    isAnchor
       ? ''
       : included
         ? '  <button type="button" class="rt-clickcard-action remove" data-card-act="remove">' + IC_TRASH + ' 동선에서 빼기</button>'

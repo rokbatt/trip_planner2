@@ -48,6 +48,12 @@ function syntheticDestination(trip: Trip): TripDestination {
     created_at: trip.created_at,
     arrival_airport: null,
     arrival_time: null,
+    arrival_lat: null,
+    arrival_lng: null,
+    departure_airport: null,
+    departure_time: null,
+    departure_lat: null,
+    departure_lng: null,
   };
 }
 
@@ -296,7 +302,23 @@ export async function createDestination(
 export async function updateDestination(
   id: string,
   patch: Partial<
-    Pick<TripDestination, 'name' | 'lat' | 'lng' | 'start_date' | 'end_date' | 'sort_order' | 'arrival_airport' | 'arrival_time'>
+    Pick<
+      TripDestination,
+      | 'name'
+      | 'lat'
+      | 'lng'
+      | 'start_date'
+      | 'end_date'
+      | 'sort_order'
+      | 'arrival_airport'
+      | 'arrival_time'
+      | 'arrival_lat'
+      | 'arrival_lng'
+      | 'departure_airport'
+      | 'departure_time'
+      | 'departure_lat'
+      | 'departure_lng'
+    >
   >
 ): Promise<boolean> {
   const { error } = await supabase.from('trip_destinations').update(patch).eq('id', id);

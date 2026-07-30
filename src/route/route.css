@@ -601,6 +601,15 @@
 .rt-panel-empty-title { font-size: 12.5px; font-weight: 700; color: var(--rt-ink); }
 .rt-panel-empty-hint { font-size: 11px; color: var(--rt-ink-3); line-height: 1.65; }
 
+/* 앵커(숙소/공항) 카드는 항상 보이므로, 실제 방문지가 0곳일 때는 이 작은 안내만 그 아래
+   덧붙인다(예전의 전체 화면을 덮는 빈 상태와 달리 앵커 카드를 가리지 않음). */
+.rt-panel-empty-inline {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  text-align: center; padding: 18px 16px; margin: 4px 12px;
+  border: 1px dashed var(--rt-line-strong); border-radius: 12px;
+}
+.rt-panel-empty-inline-text { font-size: 11px; color: var(--rt-ink-3); line-height: 1.6; }
+
 .rt-panel-stop {
   position: relative;
   display: grid; grid-template-columns: 12px 26px 1fr auto auto; align-items: center;
@@ -623,7 +632,6 @@
 .rt-drag-handle:hover { color: var(--rt-ink-2); }
 .rt-drag-handle:active { cursor: grabbing; }
 .rt-drag-handle svg { width: 11px; height: 11px; }
-.rt-drag-handle.locked { opacity: 0 !important; cursor: default; }
 
 /* 카테고리별 알록달록한 색 대신 차분한 블루 계열로 통일 — 지도 핀과 마찬가지로
    방문 순서가 눈에 잘 들어와야 할 뿐, 카테고리 구분은 이미 아래 서브텍스트로 충분함.
@@ -636,6 +644,8 @@
   box-shadow: 0 1px 3px rgba(11,42,92,0.2);
 }
 .rt-panel-badge-stay { background: var(--rt-navy); }
+/* 공항(도착/출발) 앵커 — 숙소(네이비)와 구분되는 별도 블루 톤. CAT_COLOR.AIRPORT와 값 동일 */
+.rt-panel-badge-airport { background: #2E86C1; }
 .rt-panel-badge svg { width: 12px; height: 12px; }
 .rt-panel-name-col { grid-column: 3; min-width: 0; }
 .rt-panel-name {

@@ -99,6 +99,9 @@ export interface RoutePlanRequest {
   /** DAY 1의 진짜 시작점(공항) — 없으면 DAY 1도 기존처럼 숙소에서 시작하는 것으로 취급 */
   arrivalAirport: string | null;
   arrivalTime: string | null;
+  /** 마지막 DAY의 진짜 종료점(공항) — 있으면 그 시각 전에 여유 있게 일정을 마무리하도록 함 */
+  departureAirport: string | null;
+  departureTime: string | null;
   places: AiPlanPlace[];
 }
 
