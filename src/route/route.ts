@@ -676,12 +676,31 @@ function removeStop(placeId: string): void {
   day.stopIds = day.stopIds.filter((id) => id !== placeId);
 }
 
+/** 새 장소를 추가할 때 무조건 맨 끝에 붙이지 않고, 그 DAY의 "끝 정류지"(숙소/공항 앵커)
+ * 바로 앞에 끼워 넣는다 — 앵커 위치는 고정이 아니라 사용자가 드래그하면 자유롭게 옮길 수
+ * 있지만, 그냥 장소를 추가하는 것만으로 이미 자리잡은 끝 앵커를 마지막 자리에서 밀어내는
+ * 건 자연스럽지 않다는 피드백 반영("장소를 추가하면 자연스럽게 첫 숙소와 끝 숙소 사이에
+ * 들어가고, 수동으로 옮길 때만 옮겨지게"). 끝 앵커가 아직 stopIds에 없으면(처음 추가하는
+ * 경우 등) 그냥 끝에 붙인다. */
+function appendStopBeforeEndAnchor(day: RouteDay, placeId: string): void {
+  const dayIndex = days.findIndex((d) => d.id === day.id);
+  const { startId, endId } = dayAnchorIds(dayIndex);
+  // 시작=끝이 같은 앵커(전환 없는 보통 날)면 그 하나뿐인 앵커 자체가 "끝" 자리를 겸하므로,
+  // 굳이 앞에 끼울 필요 없이 그냥 맨 끝에 붙이면 이미 앵커 뒤(=시작과 끝 사이)에 놓인다.
+  // 앵커가 시작/끝으로 서로 다른 두 개일 때만(DAY1의 공항→숙소, 전환일의 숙소A→숙소B 등)
+  // 뒤쪽 앵커 바로 앞에 끼워 넣어야 한다.
+  if (!endId || endId === startId) { day.stopIds.push(placeId); return; }
+  const endIdx = day.stopIds.indexOf(endId);
+  if (endIdx === -1) { day.stopIds.push(placeId); return; }
+  day.stopIds.splice(endIdx, 0, placeId);
+}
+
 function toggleStop(placeId: string): void {
   const day = activeDay();
   if (day.stopIds.includes(placeId)) {
     day.stopIds = day.stopIds.filter((id) => id !== placeId);
   } else {
-    day.stopIds.push(placeId);
+    appendStopBeforeEndAnchor(day, placeId);
   }
 }
 
@@ -848,7 +867,10 @@ async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
     const d = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000);
     nights = Math.max(1, d);
   }
-  const dayCount = Math.max(1, Math.min(nights, 10));
+  // DAY 개수 = 숙박 일수 + 1 — 마지막 날(체크아웃/출국하는 날)도 "시작 숙소 → 마지막 공항"으로
+  // 이동하는 실제 하루라 그 자체가 DAY여야 한다. nights만 쓰면 그 마지막 날이 통째로 빠져서
+  // (예: 26~30일, 4박인데 DAY1~4까지만 생기고 30일이 아예 안 잡히는) 버그가 있었다.
+  const dayCount = Math.max(2, Math.min(nights, 10) + 1);
 
   days = Array.from({ length: dayCount }, (_, i) => ({
     id: 'day-' + (i + 1),
@@ -965,7 +987,10 @@ function basecampForDay(dayIndex: number): Place | null {
   const seg = dateISO
     ? staySegments.find((s) => s.start_date && s.end_date && dateISO >= s.start_date && dateISO < s.end_date)
     : null;
-  const id = (seg ?? staySegments[0])?.basecamp_place_id ?? null;
+  // 어느 구간에도 안 걸리는 날짜는(=마지막 구간의 end_date, 즉 짐 싸서 나가는 출국일 자체)
+  // "그 전날 밤을 보낸 마지막 숙소"로 보는 게 맞다 — staySegments[0](첫 구간)으로 폴백하면
+  // 출국일에 엉뚱하게 여행 첫 숙소가 나와버린다.
+  const id = (seg ?? staySegments[staySegments.length - 1])?.basecamp_place_id ?? null;
   if (!id) return basecamp;
   return placeById.get(id) ?? basecamp;
 }
@@ -1453,7 +1478,7 @@ function renderLeftPanel(container: HTMLElement): void {
       const d = activeDay();
       if (d.stopIds.includes(id)) return;
       pushHistory();
-      d.stopIds.push(id);
+      appendStopBeforeEndAnchor(d, id);
       refreshAll(container, { refit: true });
     });
   });
@@ -1594,7 +1619,7 @@ function handlePinClick(g: any, p: Place): void {
     const needsAdd = !isAnchor && !day.stopIds.includes(p.id);
     const needsMove = !!connectFromId && connectFromId !== p.id;
     if (needsAdd || needsMove) pushHistory();
-    if (needsAdd) day.stopIds.push(p.id);
+    if (needsAdd) appendStopBeforeEndAnchor(day, p.id);
     if (needsMove) moveStopAfter(p.id, connectFromId!);
     connectFromId = p.id;
     highlightedPlaceId = p.id;
@@ -1605,7 +1630,7 @@ function handlePinClick(g: any, p: Place): void {
 
   if (activeTool === 'memo') {
     const wasIncluded = isAnchor || activeDay().stopIds.includes(p.id);
-    if (!wasIncluded) { pushHistory(); activeDay().stopIds.push(p.id); }
+    if (!wasIncluded) { pushHistory(); appendStopBeforeEndAnchor(activeDay(), p.id); }
     highlightedPlaceId = p.id;
     refreshAll(rtContainer!, { refit: false });
     requestAnimationFrame(() => focusMemoInput(p.id));
@@ -2864,7 +2889,7 @@ async function initMap(container: HTMLElement): Promise<void> {
     placeById.set(p.id, p);
     candidatePlaces.push(p);
     pushHistory();
-    activeDay().stopIds.push(p.id);
+    appendStopBeforeEndAnchor(activeDay(), p.id);
     refreshAll(rtContainer, { refit: true });
   });
 
@@ -3159,7 +3184,7 @@ function openPlaceCard(g: any, p: Place): void {
       e.stopPropagation();
       const act = (e.currentTarget as HTMLElement).dataset.cardAct;
       pushHistory();
-      if (act === 'add') activeDay().stopIds.push(p.id);
+      if (act === 'add') appendStopBeforeEndAnchor(activeDay(), p.id);
       else removeStop(p.id);
       closePlaceCard();
       refreshAll(rtContainer!, { refit: false });
