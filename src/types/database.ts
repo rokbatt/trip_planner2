@@ -149,6 +149,11 @@ export interface Database {
           end_date: string | null;
           sort_order: number;
           created_at: string;
+          /** 이 여행지로 들어오는 공항(자유 입력, 예: "수완나품(BKK)") — DAY 1이 숙소가 아니라
+           *  공항에서 시작함을 AI 일정 짜기에 알려주기 위함 */
+          arrival_airport: string | null;
+          /** 공항 도착 예정 시각 'HH:MM' (24시간) — 없으면 DAY 1도 기존처럼 09:00부터 시작 */
+          arrival_time: string | null;
         };
         Insert: {
           id?: string;
@@ -160,6 +165,8 @@ export interface Database {
           end_date?: string | null;
           sort_order?: number;
           created_at?: string;
+          arrival_airport?: string | null;
+          arrival_time?: string | null;
         };
         Update: Partial<Database['public']['Tables']['trip_destinations']['Insert']>;
         Relationships: [

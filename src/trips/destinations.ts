@@ -46,6 +46,8 @@ function syntheticDestination(trip: Trip): TripDestination {
     end_date: trip.end_date,
     sort_order: 0,
     created_at: trip.created_at,
+    arrival_airport: null,
+    arrival_time: null,
   };
 }
 
@@ -293,7 +295,9 @@ export async function createDestination(
 
 export async function updateDestination(
   id: string,
-  patch: Partial<Pick<TripDestination, 'name' | 'lat' | 'lng' | 'start_date' | 'end_date' | 'sort_order'>>
+  patch: Partial<
+    Pick<TripDestination, 'name' | 'lat' | 'lng' | 'start_date' | 'end_date' | 'sort_order' | 'arrival_airport' | 'arrival_time'>
+  >
 ): Promise<boolean> {
   const { error } = await supabase.from('trip_destinations').update(patch).eq('id', id);
   if (error) console.error('[destinations] 여행지 수정 실패:', error.message);

@@ -21,6 +21,7 @@ import {
   resolveActiveSegment,
   isSyntheticDestination,
   placeBelongsToDestination,
+  updateDestination,
 } from '../trips/destinations';
 import { loadGoogleMapsScript } from '../utils/googleMaps';
 import {
@@ -34,8 +35,8 @@ import {
 } from './routeStore';
 import type { StoredStop } from './routeStore';
 import { requestRoutePlan, requestDayDetail } from './aiPlan';
-import type { AiPlanPlace, AiRoutePlanResult, AiDayDetailResult } from './aiPlan';
-import type { Database } from '../types/database';
+import type { AiPlanPlace, AiRoutePlanResult, AiDayDetailResult, AiStaySegment } from './aiPlan';
+import type { Database, StaySegment } from '../types/database';
 import './route.css';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -54,6 +55,7 @@ const IC_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const IC_SPARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18"/></svg>';
 const IC_STAR = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.8 5.9 20.4 7.2 13.7 2.2 9l6.8-.8z"/></svg>';
 const IC_BED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6M3 18v2M21 18v2M3 12V8a2 2 0 0 1 2-2h4v6"/></svg>';
+const IC_PLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
 const IC_LANDMARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M4 21V10M20 21V10M2 10l10-6 10 6M6 10v7M10 10v7M14 10v7M18 10v7"/></svg>';
 const IC_FORK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v7a2 2 0 0 0 2 2v11M7 2v7M9 2v7M11 2v7M16 2c-1.5 0-3 1.5-3 4s1.5 4 3 4v10"/></svg>';
 const IC_TARGET = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/></svg>';
@@ -164,7 +166,16 @@ const TOOLS: Array<{ key: ToolKind; label: string; icon: string; tip: string; sh
 let currentTripId = '';
 let currentTrip: Trip | null = null;
 let rtContainer: HTMLElement | null = null;
+/** 여행지 전체 기준 "대표" 숙소 — 구간이 하나뿐이거나 날짜로 못 찾을 때의 안전망(폴백)으로만 쓴다.
+ * 실제 각 DAY의 숙소는 반드시 basecampForDay()로 구해야 한다(구간별로 다를 수 있으므로). */
 let basecamp: Place | null = null;
+/** 이 여행지의 모든 숙소 구간(날짜 범위 + 숙소) — DAY별로 어느 숙소에 묵는지 판단하는 근거 */
+let staySegments: StaySegment[] = [];
+/** DAY 1의 진짜 시작점 — 공항 이름(자유 입력)과 도착 시각('HH:MM'). 둘 다 없으면 기존처럼
+ * DAY 1도 숙소에서 09:00 시작으로 취급한다. trip_destinations.arrival_* 컬럼에 저장됨 */
+let activeDestArrivalAirport: string | null = null;
+let activeDestArrivalTime: string | null = null;
+const ARRIVAL_TO_HOTEL_BUFFER_MIN = 90; // 입국심사·수하물·공항→숙소 이동 여유(추정)
 let candidatePlaces: Place[] = []; // 확정 장소들(숙소 제외)
 let placeById = new Map<string, Place>();
 let days: RouteDay[] = [];
@@ -250,6 +261,9 @@ export function teardownRoute(): void {
   lastSavedSig = '';
   currentTrip = null;
   basecamp = null;
+  staySegments = [];
+  activeDestArrivalAirport = null;
+  activeDestArrivalTime = null;
   candidatePlaces = [];
   placeById = new Map();
   days = [];
@@ -440,7 +454,9 @@ function activeDay(): RouteDay {
 /** 출발 숙소 + 그날 방문 장소들을 순서대로 (지도 마커/leg 계산의 기준) */
 function orderedStops(day: RouteDay): Place[] {
   const stops: Place[] = [];
-  if (basecamp) stops.push(basecamp);
+  const dayIndex = days.findIndex((d) => d.id === day.id);
+  const dayBasecamp = basecampForDay(dayIndex >= 0 ? dayIndex : 0);
+  if (dayBasecamp) stops.push(dayBasecamp);
   day.stopIds.forEach((id) => {
     const p = placeById.get(id);
     if (p) stops.push(p);
@@ -556,7 +572,7 @@ function applyStoredPlan(stored: Awaited<ReturnType<typeof loadRoutePlan>>): boo
     const day = days[sd.dayIndex];
     if (!day) return; // 저장된 DAY 수가 더 많으면(기간이 줄어든 경우) 남는 건 무시
     const ids: string[] = [];
-    let prevId: string | null = basecamp?.id ?? null;
+    let prevId: string | null = basecampForDay(sd.dayIndex)?.id ?? null;
 
     sd.stops.forEach((s) => {
       let id: string | null = null;
@@ -602,8 +618,9 @@ function toggleStop(placeId: string): void {
 /** placeId를 afterId 바로 뒤로 옮긴다(연결 툴). afterId가 숙소면 맨 앞으로. */
 function moveStopAfter(placeId: string, afterId: string): void {
   const day = activeDay();
+  const dayBasecamp = basecampForDay(days.findIndex((d) => d.id === day.id));
   day.stopIds = day.stopIds.filter((id) => id !== placeId);
-  if (basecamp && afterId === basecamp.id) {
+  if (dayBasecamp && afterId === dayBasecamp.id) {
     day.stopIds.unshift(placeId);
     return;
   }
@@ -724,8 +741,12 @@ async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
   const activeDest = resolveActiveDestination(trip.id, dests);
   activeDestId = activeDest && !isSyntheticDestination(activeDest.id) ? activeDest.id : null;
   activeDestName = activeDest?.name ?? '';
+  activeDestArrivalAirport = activeDest?.arrival_airport ?? null;
+  activeDestArrivalTime = activeDest?.arrival_time ?? null;
   const segments = activeDest ? await loadStaySegments(trip, activeDest) : [];
   const seg = activeDest ? resolveActiveSegment(activeDest.id, segments) : null;
+  // 날짜 순으로 정렬해 둬야 basecampForDay()가 dayIndex 순서와 맞게 구간을 찾는다
+  staySegments = [...segments].sort((a, b) => (a.start_date ?? '').localeCompare(b.start_date ?? ''));
 
   const basecampId = seg?.basecamp_place_id ?? trip.shortlist_basecamp_place_id ?? null;
   basecamp = basecampId ? placeById.get(basecampId) ?? null : null;
@@ -832,12 +853,39 @@ function setLegLoading(container: HTMLElement, on: boolean): void {
   if (el) el.style.display = on ? '' : 'none';
 }
 
+/** dayIndex(0-based)의 실제 캘린더 날짜(YYYY-MM-DD). 시작일을 모르면 null */
+function dayDateISO(dayIndex: number): string | null {
+  if (!dayRangeStartDate) return null;
+  const d = new Date(dayRangeStartDate);
+  d.setDate(d.getDate() + dayIndex);
+  return d.toISOString().slice(0, 10);
+}
+
 function dayDateLabel(dayIndex: number): string {
   if (!dayRangeStartDate) return '';
   const d = new Date(dayRangeStartDate);
   d.setDate(d.getDate() + dayIndex);
   const week = ['일', '월', '화', '수', '목', '금', '토'][d.getDay()];
   return (d.getMonth() + 1) + '.' + String(d.getDate()).padStart(2, '0') + ' (' + week + ')';
+}
+
+/**
+ * 이 DAY(dayIndex, 0-based)에 실제로 묵는 숙소 — 숙소를 여러 구간으로 나눈 여행이면
+ * (예: 앞 3박은 A호텔, 뒤 2박은 B호텔) 구간마다 다른 숙소를 반환한다.
+ * 구간이 하나뿐이거나 날짜를 못 찾으면 대표 basecamp로 안전하게 폴백한다.
+ * ⚠️ ROUTE 화면과 AI 일정 짜기 양쪽 다 "그날의 출발지"를 구할 땐 반드시 이 함수를 써야
+ *    한다 — 예전엔 global `basecamp` 하나만 써서 숙소를 나눠도 첫 구간 호텔에 계속
+ *    머무는 것처럼 동선이 짜였던 버그가 있었다.
+ */
+function basecampForDay(dayIndex: number): Place | null {
+  if (staySegments.length <= 1) return basecamp;
+  const dateISO = dayDateISO(dayIndex);
+  const seg = dateISO
+    ? staySegments.find((s) => s.start_date && s.end_date && dateISO >= s.start_date && dateISO <= s.end_date)
+    : null;
+  const id = (seg ?? staySegments[0])?.basecamp_place_id ?? null;
+  if (!id) return basecamp;
+  return placeById.get(id) ?? basecamp;
 }
 
 /* ══════════════════ 메인 렌더 ══════════════════ */
@@ -1294,7 +1342,8 @@ function toggleSatellite(): void {
 
 /* ── 지도 위 핀 클릭 — 활성 툴에 따라 다르게 동작 ── */
 function handlePinClick(g: any, p: Place): void {
-  const isBasecamp = !!basecamp && p.id === basecamp.id;
+  const activeBasecamp = basecampForDay(days.findIndex((d) => d.id === activeDayId));
+  const isBasecamp = !!activeBasecamp && p.id === activeBasecamp.id;
   closePlaceCard();
 
   if (activeTool === 'delete') {
@@ -1521,9 +1570,17 @@ function minToHHMM(min: number): string {
 
 function computeStopTimes(day: RouteDay, stops: Place[], legs: Leg[]): string[] {
   const times: string[] = [];
-  let clockMin = 9 * 60; // 09:00 시작
+  const dayIndex = days.findIndex((d) => d.id === day.id);
+  // DAY 1은 숙소가 아니라 공항에서 시작 — 도착 시각을 입력해 뒀으면 입국심사·수하물·공항→
+  // 숙소 이동 여유를 더한 시각부터, 안 입력했으면 기존처럼 09:00부터로 취급한다.
+  let clockMin = 9 * 60;
+  if (dayIndex === 0 && activeDestArrivalTime) {
+    const [ah, am] = activeDestArrivalTime.split(':').map(Number);
+    if (Number.isFinite(ah) && Number.isFinite(am)) clockMin = ah * 60 + am + ARRIVAL_TO_HOTEL_BUFFER_MIN;
+  }
+  const dayBasecamp = basecampForDay(dayIndex);
   stops.forEach((p, i) => {
-    const isBasecamp = !!basecamp && i === 0 && p.id === basecamp.id;
+    const isBasecamp = !!dayBasecamp && i === 0 && p.id === dayBasecamp.id;
     const override = timeOverride.get(timeKey(day.id, p.id));
     if (override) {
       const [h, m] = override.split(':').map(Number);
@@ -1636,9 +1693,32 @@ async function undoAiRoutePlan(container: HTMLElement): Promise<void> {
   refreshAll(container, { refit: true });
 }
 
+/**
+ * 이 여행지의 숙소 구간을 dayIndex 기준으로 압축한다 — 숙소가 안 나뉘어 있으면 구간 1개,
+ * 나뉘어 있으면(예: DAY1~3은 A호텔, DAY4~6은 B호텔) 바뀌는 지점마다 구간을 새로 끊는다.
+ * AI에게 "언제 어느 숙소에 묵는지"를 알려줘야 그 구간에 맞는 동선을 짜고, 숙소를 옮기는
+ * 날 무리하게 첫 숙소 쪽으로 되돌아가는 동선을 안 짠다.
+ */
+function buildAiStaySegments(): AiStaySegment[] {
+  const segs: Array<{ startDayIndex: number; endDayIndex: number; place: Place | null }> = [];
+  for (let i = 0; i < days.length; i++) {
+    const place = basecampForDay(i);
+    const last = segs[segs.length - 1];
+    if (last && (last.place?.id ?? null) === (place?.id ?? null)) {
+      last.endDayIndex = i;
+    } else {
+      segs.push({ startDayIndex: i, endDayIndex: i, place });
+    }
+  }
+  return segs.map((s) => ({
+    startDayIndex: s.startDayIndex,
+    endDayIndex: s.endDayIndex,
+    basecamp: s.place ? toAiPlace(s.place) : null,
+  }));
+}
+
 /** AI가 짠 일정을 모듈 상태에 반영. 반환값은 실제로 배치된 장소 수 */
 function applyAiRoutePlan(result: AiRoutePlanResult): number {
-  const basecampId = basecamp?.id ?? null;
   const seen = new Set<string>();
 
   // 전체 DAY를 새로 짜는 것이므로 기존 배치·도착시각·수동 이동수단은 비운다.
@@ -1650,9 +1730,11 @@ function applyAiRoutePlan(result: AiRoutePlanResult): number {
   result.days.forEach((rd) => {
     const day = days[rd.dayIndex];
     if (!day) return;
+    // 숙소를 나눈 여행은 DAY마다 기준 숙소가 다를 수 있어(basecampForDay), "그날의" 숙소만 걸러낸다
+    const dayBasecampId = basecampForDay(rd.dayIndex)?.id ?? null;
     rd.stops.forEach((s) => {
       // 서버가 이미 걸렀지만, 그 사이 장소가 지워졌을 수도 있으니 화면 기준으로 한 번 더 확인
-      if (!placeById.has(s.placeId) || s.placeId === basecampId || seen.has(s.placeId)) return;
+      if (!placeById.has(s.placeId) || s.placeId === dayBasecampId || seen.has(s.placeId)) return;
       seen.add(s.placeId);
       day.stopIds.push(s.placeId);
       if (s.arriveTime) timeOverride.set(timeKey(day.id, s.placeId), s.arriveTime);
@@ -1690,17 +1772,18 @@ async function runAiRoutePlan(container: HTMLElement): Promise<void> {
       destinationName: activeDestName || currentTrip?.name || '',
       dayCount: days.length,
       startDate: dayRangeStartDate,
-      basecamp: basecamp ? toAiPlace(basecamp) : null,
+      staySegments: buildAiStaySegments(),
+      arrivalAirport: activeDestArrivalAirport,
+      arrivalTime: activeDestArrivalTime,
       places: candidatePlaces.filter((p) => p.lat != null && p.lng != null).map((p) => toAiPlace(p)),
     });
 
     // 반영하기 **전에** 쓸 만한 결과인지 먼저 확인한다 — 먼저 지우고 나서 판단하면
-    // 결과가 비었을 때 기존 동선만 날아간다.
-    const basecampId = basecamp?.id ?? null;
-    const planned = result.days.reduce(
-      (n, d) => n + d.stops.filter((s) => placeById.has(s.placeId) && s.placeId !== basecampId).length,
-      0
-    );
+    // 결과가 비었을 때 기존 동선만 날아간다. (DAY마다 숙소가 다를 수 있어 그날 기준으로 판단)
+    const planned = result.days.reduce((n, d) => {
+      const dayBasecampId = basecampForDay(d.dayIndex)?.id ?? null;
+      return n + d.stops.filter((s) => placeById.has(s.placeId) && s.placeId !== dayBasecampId).length;
+    }, 0);
     if (planned === 0) {
       window.alert('AI가 배치할 장소를 찾지 못했어요. 잠시 후 다시 시도해 주세요.');
       return;
@@ -1909,6 +1992,54 @@ function aiPlanNoticeHtml(): string {
   ].join('');
 }
 
+/**
+ * DAY 1 전용 — 이 여행지는 숙소가 아니라 공항에서 시작한다는 걸 명시적으로 입력해 두는 칸.
+ * 여기 적은 도착 시각은 computeStopTimes()가 DAY 1의 시작 시각(입국심사 등 여유 포함)으로
+ * 쓰고, AI 일정 짜기도 이 시각 이전엔 아무것도 배치하지 않도록 프롬프트에 그대로 전달한다.
+ * 공항 좌표는 저장하지 않는다(원칙 3-1 — 실측 안 된 좌표를 지도에 지어내지 않음).
+ */
+function arrivalInfoHtml(): string {
+  return [
+    '<div class="rt-arrival">',
+    '  <span class="rt-arrival-icon">' + IC_PLANE + '</span>',
+    '  <input type="text" class="rt-arrival-airport" id="rt-arrival-airport" placeholder="도착 공항 (예: 수완나품 BKK)"' +
+      ' value="' + escapeHtml(activeDestArrivalAirport ?? '') + '" aria-label="DAY 1 도착 공항" />',
+    '  <input type="text" class="rt-arrival-time" id="rt-arrival-time" placeholder="HH:MM"' +
+      ' value="' + escapeHtml(activeDestArrivalTime ?? '') + '" inputmode="numeric" maxlength="5" spellcheck="false"' +
+      ' aria-label="DAY 1 도착 시각 (24시간 HH:MM)" />',
+    '</div>',
+  ].join('');
+}
+
+/** arrivalInfoHtml 입력의 변경을 저장하고 DAY 1 시각 계산에 즉시 반영 */
+function bindArrivalInfo(container: HTMLElement): void {
+  const airportInput = container.querySelector('#rt-arrival-airport') as HTMLInputElement | null;
+  const timeInput = container.querySelector('#rt-arrival-time') as HTMLInputElement | null;
+  if (!airportInput || !timeInput) return;
+
+  const commitAirport = () => {
+    const v = airportInput.value.trim();
+    if (v === (activeDestArrivalAirport ?? '')) return;
+    activeDestArrivalAirport = v || null;
+    if (activeDestId) void updateDestination(activeDestId, { arrival_airport: activeDestArrivalAirport });
+  };
+  const commitTime = () => {
+    const parsed = parseTimeInput(timeInput.value);
+    if (parsed === (activeDestArrivalTime ?? null) && timeInput.value.trim() !== '') return;
+    activeDestArrivalTime = timeInput.value.trim() ? parsed : null;
+    if (activeDestId) void updateDestination(activeDestId, { arrival_time: activeDestArrivalTime });
+    renderRightPanel(container); // DAY 1 시작 시각이 바뀌므로 전체 시각을 다시 계산
+  };
+
+  airportInput.addEventListener('change', commitAirport);
+  airportInput.addEventListener('click', (e) => e.stopPropagation());
+  timeInput.addEventListener('change', commitTime);
+  timeInput.addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key === 'Enter') { e.preventDefault(); timeInput.blur(); }
+  });
+  timeInput.addEventListener('click', (e) => e.stopPropagation());
+}
+
 /* ── 우측 정보 패널 ── */
 function renderRightPanel(container: HTMLElement): void {
   const el = container.querySelector('#rt-panel-inner') as HTMLElement;
@@ -1922,10 +2053,11 @@ function renderRightPanel(container: HTMLElement): void {
   const dayIndex = days.findIndex((d) => d.id === day.id);
   const cur = currencyOf(legs);
   const dColor = dayColorFor(Math.max(0, dayIndex));
+  const dayBasecamp = basecampForDay(dayIndex);
 
   const rows: string[] = [];
   stops.forEach((p, i) => {
-    const isBasecamp = !!basecamp && i === 0 && p.id === basecamp.id;
+    const isBasecamp = !!dayBasecamp && i === 0 && p.id === dayBasecamp.id;
     const memo = memoStore.get(p.id) ?? '';
     const highlighted = p.id === highlightedPlaceId;
 
@@ -1990,6 +2122,7 @@ function renderRightPanel(container: HTMLElement): void {
     '  <button type="button" class="rt-panel-more" id="rt-panel-more" aria-label="이 DAY 메뉴">' + IC_DOTS + '</button>',
     '</div>',
     aiPlanNoticeHtml(),
+    dayIndex === 0 ? arrivalInfoHtml() : '',
     '<div class="rt-panel-list" id="rt-panel-list">',
     stops.length
       ? rows.join('')
@@ -2035,6 +2168,7 @@ function renderRightPanel(container: HTMLElement): void {
 }
 
 function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
+  bindArrivalInfo(container);
   el.querySelectorAll('.rt-panel-remove').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -2161,9 +2295,10 @@ function bindDragReorder(container: HTMLElement, el: HTMLElement): void {
       if (!dragStopId || dragStopId === targetId) { dragStopId = null; return; }
       pushHistory();
       const day = activeDay();
+      const dayBasecamp = basecampForDay(days.findIndex((d) => d.id === day.id));
       const dragged = dragStopId;
       day.stopIds = day.stopIds.filter((id) => id !== dragged);
-      if (basecamp && targetId === basecamp.id) {
+      if (dayBasecamp && targetId === dayBasecamp.id) {
         day.stopIds.unshift(dragged);
       } else {
         const idx = day.stopIds.indexOf(targetId);
@@ -2238,7 +2373,10 @@ async function initMap(container: HTMLElement): Promise<void> {
   const g = (window as any).google;
   if (!g?.maps) return;
 
-  const center = basecamp && basecamp.lat != null ? { lat: basecamp.lat, lng: basecamp.lng! } : { lat: 13.74, lng: 100.53 };
+  const initialBasecamp = basecampForDay(Math.max(0, days.findIndex((d) => d.id === activeDayId)));
+  const center = initialBasecamp && initialBasecamp.lat != null
+    ? { lat: initialBasecamp.lat, lng: initialBasecamp.lng! }
+    : { lat: 13.74, lng: 100.53 };
   mapInstance = new g.maps.Map(mapEl, {
     center,
     zoom: 13,
@@ -2344,6 +2482,7 @@ function drawRouteOnMap(refit: boolean): void {
   const stops = orderedStops(day).filter((p) => p.lat != null && p.lng != null);
   const legs = dayLegs(day);
   const mapCur = currencyOf(legs);
+  const dayBasecamp = basecampForDay(days.findIndex((d) => d.id === day.id));
 
   // 강조 기준점: 클릭 선택이 우선, 없으면 타임라인 호버(일시적 미리보기)
   const focusId = highlightedPlaceId ?? hoveredPlaceId;
@@ -2360,7 +2499,7 @@ function drawRouteOnMap(refit: boolean): void {
 
   // 오늘 동선의 정류지 — 순서 번호 + 진행 상태 색
   stops.forEach((p, i) => {
-    const isBasecamp = !!basecamp && i === 0 && p.id === basecamp.id;
+    const isBasecamp = !!dayBasecamp && i === 0 && p.id === dayBasecamp.id;
     // 여행은 아직 미래라 실제 "완료"는 없다. 선택한 지점을 현재로 보고 앞/뒤를 나눠
     // 진행 방향이 읽히게 한다. 아무것도 선택하지 않았으면 전부 기본 네이비.
     let phase: StopPhase = 'plain';
@@ -2466,8 +2605,9 @@ function fitRouteBounds(): void {
   const g = (window as any).google;
   if (!g?.maps || !mapInstance) return;
   const day = activeDay();
+  const dayBasecamp = basecampForDay(days.findIndex((d) => d.id === day.id));
   const pts: Place[] = [];
-  if (basecamp) pts.push(basecamp);
+  if (dayBasecamp) pts.push(dayBasecamp);
   candidatePlaces.forEach((p) => pts.push(p));
   const withCoords = pts.filter((p) => p.lat != null && p.lng != null);
   if (withCoords.length === 0) return;
@@ -2495,7 +2635,8 @@ function closePlaceCard(): void {
 
 function openPlaceCard(g: any, p: Place): void {
   closePlaceCard();
-  const isBasecamp = !!basecamp && p.id === basecamp.id;
+  const activeBasecamp = basecampForDay(days.findIndex((d) => d.id === activeDayId));
+  const isBasecamp = !!activeBasecamp && p.id === activeBasecamp.id;
   const included = isBasecamp || activeDay().stopIds.includes(p.id);
   const meta = categoryMeta(p, isBasecamp);
 

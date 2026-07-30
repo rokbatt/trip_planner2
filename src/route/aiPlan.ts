@@ -82,12 +82,23 @@ async function postAi<T>(body: Record<string, unknown>): Promise<T> {
   return json as T;
 }
 
+/** 숙소를 나눈 여행 — 어느 DAY 구간(0-based, inclusive)에 어느 숙소를 쓰는지 */
+export interface AiStaySegment {
+  startDayIndex: number;
+  endDayIndex: number;
+  basecamp: AiPlanPlace | null;
+}
+
 export interface RoutePlanRequest {
   destinationId: string;
   destinationName: string;
   dayCount: number;
   startDate: string | null;
-  basecamp: AiPlanPlace | null;
+  /** DAY별 숙소 — 숙소를 안 나눴으면 구간 1개. 반드시 dayIndex 오름차순, 빈틈/중복 없이 이어져야 함 */
+  staySegments: AiStaySegment[];
+  /** DAY 1의 진짜 시작점(공항) — 없으면 DAY 1도 기존처럼 숙소에서 시작하는 것으로 취급 */
+  arrivalAirport: string | null;
+  arrivalTime: string | null;
   places: AiPlanPlace[];
 }
 

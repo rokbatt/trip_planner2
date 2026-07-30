@@ -364,13 +364,21 @@ const ROUTE_PLAN_SCHEMA = {
   required: ['days'],
 };
 
+interface StaySegmentIn {
+  startDayIndex: number;
+  endDayIndex: number;
+  basecamp: PlanPlaceIn | null;
+}
+
 async function handleRoutePlan(req: VercelRequest, res: VercelResponse) {
   const body = (req.body ?? {}) as Record<string, any>;
   const destinationId = String(body.destinationId ?? '');
   const destinationName = String(body.destinationName ?? '');
   const dayCount = Number(body.dayCount);
   const startDate = body.startDate ? String(body.startDate) : '';
-  const basecamp = body.basecamp as PlanPlaceIn | null | undefined;
+  const rawSegments: StaySegmentIn[] = Array.isArray(body.staySegments) ? body.staySegments : [];
+  const arrivalAirport = body.arrivalAirport ? String(body.arrivalAirport).trim() : '';
+  const arrivalTime = body.arrivalTime ? String(body.arrivalTime).trim() : '';
   const rawPlaces: PlanPlaceIn[] = Array.isArray(body.places) ? body.places : [];
 
   if (!destinationId || !Number.isFinite(dayCount) || dayCount < 1) {
@@ -382,16 +390,22 @@ async function handleRoutePlan(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
+  // 구간이 하나도 없이 오면(옛 클라이언트 방어) 숙소 없음 구간 1개로 취급
+  const segments: StaySegmentIn[] =
+    rawSegments.length > 0 ? rawSegments : [{ startDayIndex: 0, endDayIndex: dayCount - 1, basecamp: null }];
+
   // 상한을 넘으면 평점 높은 순으로 자른다(자르는 기준이 매번 같아야 캐시 키도 안정적)
   const places = [...rawPlaces]
     .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0) || a.id.localeCompare(b.id))
     .slice(0, MAX_PLAN_PLACES);
 
-  // 캐시 키 — 장소 목록/숙소/DAY 수가 그대로면 몇 번을 눌러도 Gemini 호출 0회.
-  // (장소 id를 정렬해서 넣으므로 담은 순서가 달라도 같은 조합이면 같은 키)
+  // 캐시 키 — 장소 목록/숙소 구간/DAY 수/도착 정보가 그대로면 몇 번을 눌러도 Gemini 호출 0회.
+  // 숙소를 나눈 여행은 "어느 구간에 어느 숙소인지"까지 키에 들어가야 숙소를 바꿨을 때 새로 생성된다.
   const signature = [
     dayCount,
-    basecamp?.id ?? 'no-basecamp',
+    arrivalAirport,
+    arrivalTime,
+    segments.map((s) => s.startDayIndex + '-' + s.endDayIndex + ':' + (s.basecamp?.id ?? 'none')).join(','),
     places.map((p) => p.id).sort().join(','),
   ].join('|');
   const cacheKey = 'route-plan:' + destinationId + ':' + stableHash(signature);
@@ -418,18 +432,38 @@ async function handleRoutePlan(req: VercelRequest, res: VercelResponse) {
     return planPlaceLine(tag, p);
   });
 
+  // 숙소 구간 안내 — 나뉘어 있으면 "이 DAY 범위엔 이 숙소" 형태로 전부 나열해서, 하루하루
+  // 어디서 출발해 어디로 돌아가는지 Gemini가 명확히 알게 한다. 매일 첫 stop을 이 숙소 근처로
+  // 시작해 이 숙소 근처로 마무리하는 게 자연스럽다는 점도 규칙에서 다시 강조한다.
+  const segmentLines = segments.map((s) => {
+    const dayLabel = s.startDayIndex === s.endDayIndex ? 'DAY ' + (s.startDayIndex + 1) : 'DAY ' + (s.startDayIndex + 1) + '~' + (s.endDayIndex + 1);
+    if (!s.basecamp) return dayLabel + ': 숙소 정보 없음';
+    const coord = s.basecamp.lat != null && s.basecamp.lng != null ? ' (좌표:' + s.basecamp.lat.toFixed(4) + ',' + s.basecamp.lng.toFixed(4) + ')' : '';
+    return dayLabel + ': ' + s.basecamp.name + coord;
+  });
+  const hasMultipleSegments = segments.length > 1;
+
   const prompt = [
     '너는 여행 동선 설계 전문가야. 아래 정보를 보고 ' + dayCount + '일치 일정을 짜줘.',
     '',
     destinationName ? '여행지: ' + destinationName : '',
     startDate ? '첫날 날짜: ' + startDate : '',
     '일수: ' + dayCount + '일 (dayIndex는 0부터 시작. 0 = 첫째 날)',
-    basecamp
-      ? '숙소(매일 여기서 출발): ' + basecamp.name +
-        (basecamp.lat != null && basecamp.lng != null
-          ? ' (좌표:' + basecamp.lat.toFixed(4) + ',' + basecamp.lng.toFixed(4) + ')'
-          : '')
-      : '숙소 정보 없음',
+    '',
+    hasMultipleSegments ? '숙소 — 여행 중 숙소를 옮긴다(구간별로 다름):' : '숙소(매일 여기서 출발/도착):',
+    ...segmentLines,
+    hasMultipleSegments
+      ? '⚠️ 숙소를 옮기는 마지막 날(각 구간의 마지막 DAY)에는 밤 늦게 그 숙소에서 멀리 떨어진 곳에 있지 않도록,' +
+        ' 다음 숙소 방향이나 이동이 편한 동선으로 마무리해. 숙소가 바뀌었는데 이전 숙소 근처로 계속 도는 일정은 안 된다.'
+      : '',
+    '',
+    arrivalTime || arrivalAirport
+      ? '⚠️ DAY 1은 숙소가 아니라 공항에서 시작한다.' +
+        (arrivalAirport ? ' 도착 공항: ' + arrivalAirport + '.' : '') +
+        (arrivalTime ? ' 비행기 도착 예정 시각: ' + arrivalTime + '.' : '') +
+        ' 입국심사·수하물 수취·공항에서 숙소까지 이동 시간을 감안해 도착 시각보다 최소 1시간 30분 이후부터' +
+        ' 일정을 시작해. DAY 1 첫 stop은 공항에서 숙소로 가는 동선에서 크게 벗어나지 않는 곳으로 골라.'
+      : '',
     '',
     '후보 장소 목록 (반드시 아래 대괄호 앞의 태그 P숫자로만 지칭할 것):',
     ...lines,
@@ -440,17 +474,18 @@ async function handleRoutePlan(req: VercelRequest, res: VercelResponse) {
     '   운영시간을 상식선에서 가정하되, 확실하지 않으면 시간대에 유연한 위치에 배치해.',
     '2순위 — 실제 여행객이 많이 택하는 동선: 실제로 그 도시를 여행할 때 자연스럽게 묶어서 도는',
     '   조합(같은 지역/같은 테마/야경은 저녁 등)을 우선해. 교과서적 최단거리보다 현실적인 흐름이 중요해.',
-    '3순위 — 이동 효율: 같은 날 안에서는 좌표상 가까운 곳끼리 묶고, 하루 안에서 왔다 갔다',
-    '   되돌아가는 동선이 생기지 않게 순서를 정해.',
+    '3순위 — 이동 효율: 같은 날 안에서는 그날의 숙소를 기준으로 좌표상 가까운 곳끼리 묶고,',
+    '   하루 안에서 왔다 갔다 되돌아가는 동선이 생기지 않게 순서를 정해.',
     '',
     '규칙:',
     '- 하루에 3~5곳 정도가 적당해. 무리하게 다 넣지 말고, 남는 장소는 빼도 돼.',
     '- 같은 장소를 두 번 넣지 마. 각 태그는 전체 일정에서 최대 한 번만 쓴다.',
     '- 끼니때(점심 12시 전후, 저녁 18시 전후)에는 가능하면 음식점 성격의 장소를 배치해.',
     '- arriveTime은 24시간 "HH:MM" 형식으로, 그 장소에 도착하는 시각을 적어.',
-    '  숙소에서 출발하는 시간과 장소 간 이동시간을 현실적으로 감안해.',
+    '  그날의 숙소(또는 DAY 1은 공항)에서 출발하는 시간과 장소 간 이동시간을 현실적으로 감안해.',
     '- summary는 그날 동선을 한 문장(40자 이내)으로 설명해.',
-    '- notes에는 일정을 짤 때 사용자가 알아두면 좋은 주의사항을 2~3문장으로 적어.',
+    '- notes에는 일정을 짤 때 사용자가 알아두면 좋은 주의사항을 2~3문장으로 적어',
+    (hasMultipleSegments ? '(숙소를 옮기는 날이 있다면 그것도 짚어줘)' : '') + '.',
     '- 숙소는 stops에 넣지 마. 화면에서 자동으로 매일 출발지로 붙는다.',
   ]
     .filter(Boolean)

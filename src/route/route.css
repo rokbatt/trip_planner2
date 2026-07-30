@@ -793,6 +793,27 @@
 .rt-ai-notice-undo:hover { border-color: var(--rt-sky); color: var(--rt-ink); }
 .rt-ai-notice-undo svg { width: 12px; height: 12px; }
 
+/* DAY 1 전용 — 공항 도착 정보. 첫 정류지(숙소) 카드 위에 얇게 붙여서 "이 DAY는 여기서부터
+   시작"임을 자연스럽게 알려준다(숙소와 헷갈리지 않게 카드 형태는 다르게). */
+.rt-arrival {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 12px 10px; padding: 8px 10px; flex-shrink: 0;
+  border-radius: 10px; border: 1px dashed var(--rt-line-strong);
+  background: var(--rt-mist);
+}
+.rt-arrival-icon {
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 22px; height: 22px; border-radius: 7px; background: #fff; color: var(--rt-blue);
+}
+.rt-arrival-icon svg { width: 12px; height: 12px; }
+.rt-arrival-airport, .rt-arrival-time {
+  border: none; background: none; outline: none; font-family: inherit;
+  font-size: 11.5px; color: var(--rt-ink); font-weight: 600;
+}
+.rt-arrival-airport { flex: 1; min-width: 0; }
+.rt-arrival-airport::placeholder, .rt-arrival-time::placeholder { color: var(--rt-ink-4); font-weight: 500; }
+.rt-arrival-time { width: 50px; text-align: right; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+
 /* 빈 상태에서의 AI CTA — 처음 들어온 사용자가 기능을 발견하는 자리 */
 .rt-panel-empty-cta {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
