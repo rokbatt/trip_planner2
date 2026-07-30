@@ -2,6 +2,7 @@ import { supabase } from '../supabase';
 import { store } from '../store';
 import type { ChatMessage } from '../types/database';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { saveTripLinkFromChatMessage } from '../trips/addLink';
 import './chat.css';
 
 /* ── 모듈 내부 상태 (워크스페이스 페이지 하나당 하나의 채팅 세션) ── */
@@ -168,18 +169,29 @@ export async function sendMessage(tripId: string, text: string): Promise<boolean
   if (!user) return false;
 
   const meta = user.user_metadata ?? {};
-  const { error } = await supabase.from('chat_messages').insert({
-    trip_id: tripId,
-    user_id: user.id,
-    display_name: meta.full_name ?? meta.name ?? user.email ?? '익명',
-    avatar_url: meta.avatar_url ?? meta.picture ?? null,
-    message: trimmed,
-  });
+  const { data, error } = await supabase
+    .from('chat_messages')
+    .insert({
+      trip_id: tripId,
+      user_id: user.id,
+      display_name: meta.full_name ?? meta.name ?? user.email ?? '익명',
+      avatar_url: meta.avatar_url ?? meta.picture ?? null,
+      message: trimmed,
+    })
+    .select()
+    .single();
 
   if (error) {
     console.error('Chat send error:', error.message);
     return false;
   }
+
+  // 메시지에 링크가 있으면 "보낸 사람"의 클라이언트에서 딱 한 번만 LINKS 탭에 저장한다.
+  // 접속 중인 모든 멤버가 각자 realtime 이벤트를 받고 저장하면 중복 저장되므로,
+  // 받는 쪽이 아니라 보내는 쪽에서 저장하는 게 맞다.
+  const url = extractFirstUrl(trimmed);
+  if (url) saveTripLinkFromChatMessage(data, url).catch(() => {});
+
   return true;
 }
 
