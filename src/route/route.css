@@ -394,6 +394,13 @@
 .rt-clickcard-close:hover { background: #fff; color: var(--rt-ink); }
 .rt-clickcard-body { padding: 9px 11px 10px; }
 .rt-clickcard-name { font-size: 12px; font-weight: 700; color: var(--rt-ink); line-height: 1.35; }
+/* 검색결과 카드 — 장소명을 누르면 구글맵으로 이동(shortlist Step3 숙소명 링크와 같은 언어) */
+.rt-clickcard-name-link {
+  display: inline-flex; align-items: center; gap: 4px; text-decoration: none;
+  transition: color var(--rt-ease);
+}
+.rt-clickcard-name-link:hover { color: var(--rt-blue); }
+.rt-clickcard-name-link svg { width: 11px; height: 11px; flex-shrink: 0; opacity: 0.6; }
 .rt-clickcard-meta {
   display: flex; align-items: center; gap: 8px; margin-top: 5px;
 }

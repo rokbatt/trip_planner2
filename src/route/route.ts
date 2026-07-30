@@ -71,6 +71,7 @@ const IC_FORK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const IC_TARGET = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/></svg>';
 const IC_BAG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l1 12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L6 8Z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>';
 const IC_SEARCH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
+const IC_EXTLINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>';
 const IC_DOTS = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
 const IC_CURSOR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3l6.5 17 2-7 7-2L5 3Z"/></svg>';
 const IC_PIN_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21C12 21 19 14.5 19 9.5C19 5.9 15.9 3 12 3C8.1 3 5 5.9 5 9.5C5 14.5 12 21 12 21Z"/><path d="M12 6.5v6M9 9.5h6"/></svg>';
@@ -3364,9 +3365,18 @@ function openPlaceCard(g: any, p: Place): void {
   });
 }
 
+/** 구글맵에서 이 장소를 바로 여는 링크 — google_place_id가 있으면 그 장소를 정확히
+ * 짚어주고, 없으면 이름으로 검색(shortlist.ts/workspace.ts와 같은 URL 패턴). */
+function googleMapsUrl(p: Place): string {
+  return p.google_place_id
+    ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(p.name) + '&query_place_id=' + p.google_place_id
+    : 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(p.name);
+}
+
 /** 지도 검색/근처 검색 결과 핀 클릭 시 뜨는 카드 — 아직 Brainstorm에도 없는 "진짜 구글
  * 장소"라 openPlaceCard와 달리 담기 버튼 하나뿐이고(동선에서 빼기 개념이 없음), 눌렀을 때
- * insertGooglePlace를 거쳐 실제 places 행으로 저장한다. */
+ * insertGooglePlace를 거쳐 실제 places 행으로 저장한다. 장소명은 구글맵 링크로 열어서
+ * 리뷰·영업시간 등 여기서 안 보여주는 정보를 바로 확인할 수 있게 한다. */
 function openSearchResultCard(g: any, p: Place, cacheSource: string): void {
   closePlaceCard();
   const html = [
@@ -3375,7 +3385,7 @@ function openSearchResultCard(g: any, p: Place, cacheSource: string): void {
       : '<div class="rt-clickcard-photo">' + IC_SEARCH + '</div>',
     '<button type="button" class="rt-clickcard-close" aria-label="닫기">✕</button>',
     '<div class="rt-clickcard-body">',
-    '  <div class="rt-clickcard-name">' + escapeHtml(p.name) + '</div>',
+    '  <a class="rt-clickcard-name rt-clickcard-name-link" href="' + googleMapsUrl(p) + '" target="_blank" rel="noopener noreferrer" title="구글맵에서 보기">' + escapeHtml(p.name) + ' ' + IC_EXTLINK + '</a>',
     '  <div class="rt-clickcard-meta">',
     p.google_rating ? '    <span class="rt-clickcard-rate">' + IC_STAR + ' ' + p.google_rating.toFixed(1) + '</span>' : '',
     p.category ? '    <span class="rt-clickcard-cat">' + escapeHtml(p.category) + '</span>' : '',
