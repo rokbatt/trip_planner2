@@ -796,11 +796,28 @@
 /* DAY 1 전용 — 공항 도착 정보. 첫 정류지(숙소) 카드 위에 얇게 붙여서 "이 DAY는 여기서부터
    시작"임을 자연스럽게 알려준다(숙소와 헷갈리지 않게 카드 형태는 다르게). */
 .rt-arrival {
+  position: relative;
   display: flex; align-items: center; gap: 8px;
   margin: 0 12px 10px; padding: 8px 10px; flex-shrink: 0;
   border-radius: 10px; border: 1px dashed var(--rt-line-strong);
   background: var(--rt-mist);
 }
+/* 공항 이름 자동완성 드롭다운(스카이스캐너 스타일) */
+.rt-arrival-ac {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
+  max-height: 220px; overflow-y: auto;
+  background: #fff; border: 1px solid var(--rt-line); border-radius: 10px;
+  box-shadow: var(--rt-shadow-lg); padding: 4px;
+}
+.rt-arrival-ac-item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  width: 100%; padding: 7px 9px; border: none; background: none; border-radius: 7px;
+  cursor: pointer; text-align: left; font-family: inherit;
+  transition: background var(--rt-ease);
+}
+.rt-arrival-ac-item:hover { background: var(--rt-ice); }
+.rt-arrival-ac-main { font-size: 11.5px; font-weight: 700; color: var(--rt-ink); }
+.rt-arrival-ac-sub { font-size: 10px; color: var(--rt-ink-3); }
 .rt-arrival-icon {
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
   width: 22px; height: 22px; border-radius: 7px; background: #fff; color: var(--rt-blue);

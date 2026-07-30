@@ -23,7 +23,8 @@ import {
   placeBelongsToDestination,
   updateDestination,
 } from '../trips/destinations';
-import { loadGoogleMapsScript } from '../utils/googleMaps';
+import { loadGoogleMapsScript, getAirportPredictions } from '../utils/googleMaps';
+import type { PlacePrediction } from '../utils/googleMaps';
 import {
   loadRoutePlan,
   saveRouteDay,
@@ -2017,8 +2018,8 @@ function bindArrivalInfo(container: HTMLElement): void {
   const timeInput = container.querySelector('#rt-arrival-time') as HTMLInputElement | null;
   if (!airportInput || !timeInput) return;
 
-  const commitAirport = () => {
-    const v = airportInput.value.trim();
+  const commitAirport = (value?: string) => {
+    const v = (value ?? airportInput.value).trim();
     if (v === (activeDestArrivalAirport ?? '')) return;
     activeDestArrivalAirport = v || null;
     if (activeDestId) void updateDestination(activeDestId, { arrival_airport: activeDestArrivalAirport });
@@ -2031,8 +2032,64 @@ function bindArrivalInfo(container: HTMLElement): void {
     renderRightPanel(container); // DAY 1 시작 시각이 바뀌므로 전체 시각을 다시 계산
   };
 
-  airportInput.addEventListener('change', commitAirport);
+  // ── 공항 이름 자동완성(스카이스캐너 스타일) — Google Places를 airport 타입으로만 좁혀 검색.
+  // 좌표는 안 받아온다(원칙 3-1) — 이름 문자열만 자유 입력 칸에 채워 넣는다.
+  let acTimer: ReturnType<typeof setTimeout> | null = null;
+  let acPredictions: PlacePrediction[] = [];
+  const closeAc = () => {
+    (airportInput.closest('.rt-arrival') as HTMLElement | null)?.querySelector('.rt-arrival-ac')?.remove();
+    acPredictions = [];
+  };
+  const selectAirport = (p: PlacePrediction) => {
+    airportInput.value = p.mainText;
+    closeAc();
+    commitAirport(p.mainText);
+  };
+  const renderAc = () => {
+    const wrap = airportInput.closest('.rt-arrival') as HTMLElement | null;
+    if (!wrap) return;
+    wrap.querySelector('.rt-arrival-ac')?.remove();
+    if (acPredictions.length === 0) return;
+    const dd = document.createElement('div');
+    dd.className = 'rt-arrival-ac';
+    dd.innerHTML = acPredictions
+      .map(
+        (p, i) =>
+          '<button type="button" class="rt-arrival-ac-item" data-idx="' + i + '">' +
+          '<span class="rt-arrival-ac-main">' + escapeHtml(p.mainText) + '</span>' +
+          (p.secondaryText ? '<span class="rt-arrival-ac-sub">' + escapeHtml(p.secondaryText) + '</span>' : '') +
+          '</button>'
+      )
+      .join('');
+    dd.querySelectorAll('.rt-arrival-ac-item').forEach((btn) => {
+      // mousedown을 써야 input의 blur(그로 인한 드롭다운 닫힘)보다 먼저 선택이 처리된다
+      btn.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const idx = Number((btn as HTMLElement).dataset.idx);
+        selectAirport(acPredictions[idx]);
+      });
+    });
+    wrap.appendChild(dd);
+  };
+
+  airportInput.addEventListener('input', () => {
+    const q = airportInput.value.trim();
+    if (acTimer) clearTimeout(acTimer);
+    if (q.length < 2) { closeAc(); return; }
+    acTimer = setTimeout(async () => {
+      acPredictions = await getAirportPredictions(q);
+      renderAc();
+    }, 300);
+  });
+  airportInput.addEventListener('blur', () => {
+    commitAirport();
+    setTimeout(closeAc, 120); // mousedown 선택이 먼저 처리될 시간을 준 뒤 닫음
+  });
+  airportInput.addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key === 'Escape') closeAc();
+  });
   airportInput.addEventListener('click', (e) => e.stopPropagation());
+
   timeInput.addEventListener('change', commitTime);
   timeInput.addEventListener('keydown', (e) => {
     if ((e as KeyboardEvent).key === 'Enter') { e.preventDefault(); timeInput.blur(); }

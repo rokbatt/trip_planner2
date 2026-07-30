@@ -186,10 +186,11 @@ export interface PlacePrediction {
   types: string[];
 }
 
-/** 입력 텍스트로 예측 목록 요청 (텍스트만, 추가 과금 없음)
+/** 입력 텍스트로 예측 목록 요청 (텍스트만, 추가 과금 없음). includedPrimaryTypes를 주면
+ *  그 타입으로만 좁혀서 요청한다(예: ['airport']) — Google 공식 Table A 타입 목록 기준.
  *  2025년 3월부터 신규 발급 키는 레거시 AutocompleteService를 쓸 수 없어서
  *  Google 권장 신규 API(AutocompleteSuggestion)로 구현 */
-export async function getPlacePredictions(input: string): Promise<PlacePrediction[]> {
+async function fetchPredictions(input: string, includedPrimaryTypes?: string[]): Promise<PlacePrediction[]> {
   const g = window.google;
   if (!g?.maps?.places || !input.trim()) return [];
 
@@ -200,6 +201,7 @@ export async function getPlacePredictions(input: string): Promise<PlacePredictio
     const { suggestions } = await AutocompleteSuggestion.fetchAutocompleteSuggestions({
       input,
       sessionToken,
+      ...(includedPrimaryTypes ? { includedPrimaryTypes } : {}),
     });
 
     return (suggestions ?? [])
@@ -217,6 +219,17 @@ export async function getPlacePredictions(input: string): Promise<PlacePredictio
     console.error('[GoogleMaps] 예측 요청 실패:', (e as Error).message);
     return [];
   }
+}
+
+export function getPlacePredictions(input: string): Promise<PlacePrediction[]> {
+  return fetchPredictions(input);
+}
+
+/** 공항만 골라 예측 — ROUTE의 "DAY 1 도착 공항" 자동완성(스카이스캐너 스타일)에서 사용.
+ *  좌표는 안 받아온다(원칙 3-1 — 실측 없이 공항 좌표를 지도에 지어내지 않기 위해),
+ *  이름만 받아 자유 입력 칸에 채워 넣는 용도로만 쓴다. */
+export function getAirportPredictions(input: string): Promise<PlacePrediction[]> {
+  return fetchPredictions(input, ['airport']);
 }
 
 /** 사용자가 선택한 1곳만 상세정보 요청 (사진/평점 포함, 세션 토큰으로 할인 요금 적용)
