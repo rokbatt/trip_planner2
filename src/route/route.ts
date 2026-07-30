@@ -3165,45 +3165,68 @@ function pinZoomScale(): number {
   return Math.max(PIN_MIN_ZOOM_SCALE, 1 - diff * 0.09);
 }
 
+// 핀 모양 기준 좌표(24x24 기준 좌표계) — 머리(원)는 중심(12,9) 반지름 7, 끝은 (12,22)의 뾰족한 점.
+// 구글 Material의 표준 "location pin" 외곽선과 같은 비례라 어색함 없이 바로 지도 핀처럼 읽힌다.
+const PIN_OUTLINE = 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z';
+const PIN_REF_R = 7;
+const PIN_REF_CX = 12;
+const PIN_REF_HEAD_CY = 9;
+const PIN_REF_TOP_Y = 2;
+const PIN_REF_TIP_Y = 22;
+// 후보(아직 안 담은 곳)도 완전히 배경에 묻히지 않도록 아이콘 톤을 한 단계 진하게(ROUTE_GRAY보다 어두운 slate)
+const CANDIDATE_TONE = '#6B7A93';
+
 /**
- * 커스텀 원형 배지 마커.
- *  - 동선에 포함된 정류지: 순서 번호 + 진행 상태 색(네이비/오렌지/그레이)
- *  - 아직 담지 않은 후보: 작고 흐린 회색 배지 + 카테고리 아이콘(배경으로 물러나게)
- * 카테고리별 알록달록한 색을 쓰지 않는 이유 — 지도에서 Route가 가장 먼저 눈에 들어와야 해서.
+ * 지도 핀 — 흰 배경 + 진행 상태 색 테두리·숫자로 위계를 낮추고(예전엔 진한 네이비로 꽉 채워
+ * 다른 네이비 요소들과 뒤섞였음), 동그라미 배지가 아니라 끝이 뾰족한 실제 지도 핀 모양으로.
+ *  - 동선에 포함된 정류지: 순서 번호 + 진행 상태 색(네이비/오렌지/그레이) 테두리·숫자
+ *  - 아직 담지 않은 후보: 더 옅은 톤 테두리 + 카테고리 아이콘(배경으로 물러나게)
  */
 function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
   const meta = categoryMeta(p, opts.isBasecamp);
   const phase: StopPhase = opts.phase ?? 'plain';
   const scale = (opts.highlighted ? 1.18 : 1) * pinZoomScale();
-  const r = (opts.included ? 15 : 10) * scale;
-  // halo/glow까지 담을 여유를 둔 캔버스
+  const r = (opts.included ? 15 : 10) * scale; // 머리(원) 반지름 — 기존 크기 기준 유지
+  const pinScale = r / PIN_REF_R;
+
+  // halo/그림자까지 담을 여유를 둔 캔버스. 핀은 원보다 세로로 길어서(끝이 뾰족) 폭/높이를 따로 잰다.
   const pad = opts.highlighted ? 26 : 12;
-  const size = Math.ceil(r * 2 + pad);
-  const c = size / 2;
-  const fill = opts.included ? phaseColor(phase) : '#FFFFFF';
+  const w = Math.ceil(r * 2 + pad);
+  const totalH = (PIN_REF_TIP_Y - PIN_REF_TOP_Y) * pinScale;
+  const h = Math.ceil(totalH + pad);
+  const cx = w / 2;
+  // 실제 지도 좌표는 핀의 뾰족한 끝이 가리켜야 하므로, 끝점을 anchor로 쓴다(그림자 여유로 살짝 위).
+  const tipY = h - pad / 2;
+  const headCy = tipY - (PIN_REF_TIP_Y - PIN_REF_HEAD_CY) * pinScale;
+  const tx = cx - PIN_REF_CX * pinScale;
+  const ty = tipY - PIN_REF_TIP_Y * pinScale;
 
-  // 선택된 지점만 아주 옅은 네이비 halo로 강조 (지도 전체를 건드리지 않음)
+  const borderColor = opts.included ? phaseColor(phase) : 'rgba(107,122,147,0.85)';
+  const numberColor = opts.included ? phaseColor(phase) : CANDIDATE_TONE;
+  const strokeWidthPx = opts.included ? 2.6 : 2.2;
+
+  // 선택된 지점만 아주 옅은 네이비 halo로 강조 — 핀의 머리 부분을 중심으로
   const halo = opts.highlighted
-    ? '<circle cx="' + c + '" cy="' + c + '" r="' + (r + 9) + '" fill="' + ROUTE_NAVY + '" fill-opacity="0.09"/>' +
-      '<circle cx="' + c + '" cy="' + c + '" r="' + (r + 4.5) + '" fill="' + ROUTE_NAVY + '" fill-opacity="0.07"/>'
+    ? '<circle cx="' + cx + '" cy="' + headCy + '" r="' + (r + 9) + '" fill="' + ROUTE_NAVY + '" fill-opacity="0.09"/>' +
+      '<circle cx="' + cx + '" cy="' + headCy + '" r="' + (r + 4.5) + '" fill="' + ROUTE_NAVY + '" fill-opacity="0.07"/>'
     : '';
+  // 그림자는 핀이 실제로 딛고 선 지점(끝)에 얕게
   const shadow =
-    '<ellipse cx="' + c + '" cy="' + (c + r * 0.62) + '" rx="' + r * 0.78 + '" ry="' + r * 0.26 + '" fill="rgba(11,42,92,0.16)"/>';
+    '<ellipse cx="' + cx + '" cy="' + (tipY + r * 0.1) + '" rx="' + r * 0.42 + '" ry="' + r * 0.15 + '" fill="rgba(11,42,92,0.18)"/>';
 
-  // 후보(아직 안 담은 곳)도 완전히 배경에 묻히지 않도록 아이콘 톤을 한 단계 진하게(ROUTE_GRAY보다 어두운 slate)
-  const CANDIDATE_ICON = '#6B7A93';
   const inner = opts.included
-    ? '<text x="' + c + '" y="' + (c + 4.2) + '" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="' +
-      Math.round(12 * scale) + '" font-weight="800" fill="#fff">' + (opts.num ?? '') + '</text>'
-    : '<g transform="translate(' + (c - 5.5) + ',' + (c - 5.5) + ') scale(0.46)" color="' + CANDIDATE_ICON +
+    ? '<text x="' + cx + '" y="' + (headCy + 4.2) + '" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="' +
+      Math.round(12 * scale) + '" font-weight="800" fill="' + numberColor + '">' + (opts.num ?? '') + '</text>'
+    : '<g transform="translate(' + (cx - 5.5) + ',' + (headCy - 5.5) + ') scale(0.46)" color="' + numberColor +
       '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
       iconInner(meta.icon) + '</g>';
 
   const svg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">' +
-    halo + shadow +
-    '<circle cx="' + c + '" cy="' + c + '" r="' + r + '" fill="' + fill + '" stroke="' +
-      (opts.included ? '#FFFFFF' : 'rgba(107,122,147,0.85)') + '" stroke-width="' + (opts.included ? 2.6 : 2.2) + '"/>' +
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+    halo +
+    shadow +
+    '<path d="' + PIN_OUTLINE + '" transform="translate(' + tx + ',' + ty + ') scale(' + pinScale + ')"' +
+      ' fill="#FFFFFF" stroke="' + borderColor + '" stroke-width="' + (strokeWidthPx / pinScale) + '"/>' +
     inner +
     '</svg>';
 
@@ -3214,8 +3237,8 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
     zIndex: opts.highlighted ? 400 : opts.included ? 100 + (opts.num ?? 0) : 10,
     icon: {
       url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
-      scaledSize: new g.maps.Size(size, size),
-      anchor: new g.maps.Point(c, c),
+      scaledSize: new g.maps.Size(w, h),
+      anchor: new g.maps.Point(cx, tipY),
     },
   });
 }
