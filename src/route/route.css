@@ -388,36 +388,45 @@
 .rt-clickcard-action.remove { background: var(--rt-mist); color: var(--rt-ink-2); }
 .rt-clickcard-action.remove:hover { background: #FDEEEC; color: #C0392B; }
 
-/* ── 구간 이동정보 캡슐 ──
-   기본은 구간 화살표 정중앙에 얹는다. 구간이 화면상 너무 짧아 양 끝 핀과 겹칠 때만
-   (.rt-cap-above) 예전처럼 선 위로 살짝 띄운다. */
-.rt-map-capsule {
-  position: absolute; transform: translate(-50%, -50%);
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 12px; border-radius: 999px;
-  background: #fff;
-  border: 1px solid rgba(36,59,120,0.10);
-  box-shadow: 0 2px 6px rgba(11,42,92,0.10);
+/* ── 구간 이동정보 패널 ──
+   예전엔 구간(화살표) 위에 캡슐로 얹었지만 지도가 어수선해진다는 피드백으로,
+   지도의 완전히 빈 여백인 우하단에 반투명 패널 하나로 고정하고 내용만 바꿔 끼운다. */
+.rt-leginfo {
+  display: none; align-items: center; gap: 8px;
+  padding: 9px 14px; border-radius: 13px; margin: 10px;
+  background: var(--rt-glass);
+  backdrop-filter: var(--rt-blur); -webkit-backdrop-filter: var(--rt-blur);
+  border: 1px solid var(--rt-line);
+  box-shadow: var(--rt-shadow-md);
   font-size: 12px; font-weight: 700; color: var(--rt-ink); white-space: nowrap;
-  cursor: pointer; z-index: 3;
   font-variant-numeric: tabular-nums;
-  transition: box-shadow 180ms ease, transform 180ms ease;
+  font-family: inherit;
 }
-.rt-map-capsule:hover { transform: translate(-50%, -50%) scale(1.04); box-shadow: 0 4px 12px rgba(11,42,92,0.16); }
-.rt-map-capsule.rt-cap-above { transform: translate(-50%, -150%); }
-.rt-map-capsule.rt-cap-above:hover { transform: translate(-50%, -150%) scale(1.04); box-shadow: 0 4px 12px rgba(11,42,92,0.16); }
-.rt-map-capsule svg { width: 13px; height: 13px; flex-shrink: 0; color: #243B78; }
-.rt-map-capsule .rt-cap-dist { color: var(--rt-ink-3); font-weight: 600; }
-/* 이동수단 구분은 선 색이 아니라 캡슐 아이콘이 담당 (선은 네이비 단일) */
-.rt-map-capsule.walk svg,
-.rt-map-capsule.transit svg,
-.rt-map-capsule.taxi svg { color: #243B78; }
-.rt-map-capsule.rt-leg-selected { box-shadow: 0 4px 14px rgba(36,59,120,0.20); }
+.rt-leginfo-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 7px; flex-shrink: 0;
+  background: rgba(36,59,120,0.08); color: #243B78;
+}
+.rt-leginfo-icon svg { width: 13px; height: 13px; }
+.rt-leginfo-main { display: flex; flex-direction: column; gap: 1px; }
+.rt-leginfo-mode { font-size: 10px; font-weight: 700; color: var(--rt-ink-3); }
+.rt-leginfo-time { font-size: 12.5px; font-weight: 800; color: var(--rt-ink); }
+.rt-leginfo-time b { color: var(--rt-ink-4); font-weight: 700; margin: 0 1px; }
+.rt-leginfo-est {
+  font-size: 9.5px; font-weight: 700; color: var(--rt-ink-3);
+  background: var(--rt-mist); border-radius: 5px; padding: 2px 5px; flex-shrink: 0;
+}
 /* 수동으로 이동수단을 바꾼 구간 표시 */
-.rt-map-capsule.rt-leg-manual::after {
-  content: ''; width: 4px; height: 4px; border-radius: 50%;
-  background: #E8833A; flex-shrink: 0;
+.rt-leginfo-manual {
+  width: 5px; height: 5px; border-radius: 50%; background: #E8833A; flex-shrink: 0;
 }
+.rt-leginfo-close {
+  width: 18px; height: 18px; border-radius: 6px; border: none; background: none;
+  color: var(--rt-ink-4); cursor: pointer; font-size: 11px; line-height: 1; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; margin-left: 2px;
+  transition: background var(--rt-ease), color var(--rt-ease);
+}
+.rt-leginfo-close:hover { color: #C0392B; background: #FDEEEC; }
 
 /* 클릭 리플 */
 .rt-ripple {
@@ -664,6 +673,11 @@
 }
 .rt-panel-time:hover, .rt-panel-time:focus { background: var(--rt-mist); color: var(--rt-ink); outline: none; }
 .rt-panel-time.is-manual { color: var(--rt-blue); }
+/* ROUTE 단계는 구체적 시각 대신 예상 체류시간만 참고로 보여준다(공항 제외) */
+.rt-panel-dwell {
+  grid-column: 4; font-size: 10.5px; font-weight: 700; color: var(--rt-ink-3);
+  text-align: right; white-space: nowrap; padding: 3px 2px;
+}
 .rt-panel-remove {
   grid-column: 5; width: 18px; height: 18px; border-radius: 5px; border: none;
   background: none; color: var(--rt-ink-4); cursor: pointer; font-size: 11px; line-height: 1;

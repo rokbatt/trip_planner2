@@ -202,6 +202,8 @@ let highlightedPlaceId: string | null = null;
 /** 우측 타임라인에 마우스를 올렸을 때만 잠깐 강조되는 장소 (클릭 선택과 별개인 일시적 미리보기) */
 let hoveredPlaceId: string | null = null;
 let selectedLegKey: string | null = null;
+/** 구간 클릭 시 뜨는 이동시간/비용 정보 — 선 위에 얹지 않고 지도 빈 여백(우하단)에 반투명 패널로 고정 */
+let legInfoPanelEl: HTMLElement | null = null;
 let adhocMode = false;
 let adhocSeq = 0;
 let placeSearchQuery = '';
@@ -240,7 +242,6 @@ let lastSavedSig = '';
 let mapInstance: any = null;
 let mapMarkers: any[] = [];
 let routePolylines: any[] = [];
-let mapOverlays: any[] = [];
 let placeCardOverlay: any = null;
 let placeCardPlaceId: string | null = null;
 let resizeHandler: (() => void) | null = null;
@@ -304,7 +305,7 @@ export function teardownRoute(): void {
   mapInstance = null;
   mapMarkers = [];
   routePolylines = [];
-  mapOverlays = [];
+  legInfoPanelEl = null;
   placeCardOverlay = null;
   placeCardPlaceId = null;
   rtContainer = null;
@@ -2402,6 +2403,15 @@ function renderRightPanel(container: HTMLElement): void {
 
     const badgeClass = isBasecamp ? ' rt-panel-badge-stay' : isAirport ? ' rt-panel-badge-airport' : '';
     const manualTime = timeOverride.has(timeKey(day.id, p.id));
+    // ROUTE 단계는 09:00 같은 구체적 시각을 강제하지 않고 "순서 + 체류시간"에만 집중한다.
+    // 단, 공항만은 예외 — 항공편 시각이라는 실제 제약이라 그대로 시각 입력을 유지한다.
+    const timeOrDwellHtml = isAirport
+      ? '  <input type="text" class="rt-panel-time' + (manualTime ? ' is-manual' : '') + '" value="' + times[i] + '"' +
+        ' data-place-id="' + p.id + '" inputmode="numeric" maxlength="5" spellcheck="false"' +
+        ' aria-label="' + escapeHtml(p.name) + ' 항공편 시각 (24시간 HH:MM)" />'
+      : isBasecamp
+      ? ''
+      : '  <span class="rt-panel-dwell" title="예상 체류시간(참고용 추정치)">' + fmtMin(dwellMinutes(categoryMeta(p, isBasecamp).key)) + ' 체류</span>';
     rows.push(
       [
         // 앵커(숙소/공항)도 이제 순서를 자유롭게 바꿀 수 있다 — draggable="false"였던 고정을 풂.
@@ -2411,12 +2421,7 @@ function renderRightPanel(container: HTMLElement): void {
         '  <span class="rt-panel-badge' + badgeClass + '"' +
           (isAnchor ? '' : ' style="background:' + dColor + '"') + '>' + (i + 1) + '</span>',
         '  <div class="rt-panel-name-col"><div class="rt-panel-name">' + escapeHtml(p.name) + '</div><div class="rt-panel-sub">' + escapeHtml(p.category || (isBasecamp ? '숙소' : '')) + '</div></div>',
-        // native <input type="time">은 로케일에 따라 "오후 01:00"처럼 12시간제로 그려져
-        // 좁은 패널에서 접두사가 잘리면 13:00이 01:00으로 보이는 오표시가 발생한다.
-        // → 로케일과 무관하게 24시간 HH:MM으로 고정되는 텍스트 입력을 쓴다.
-        '  <input type="text" class="rt-panel-time' + (manualTime ? ' is-manual' : '') + '" value="' + times[i] + '"' +
-          ' data-place-id="' + p.id + '" inputmode="numeric" maxlength="5" spellcheck="false"' +
-          ' aria-label="' + escapeHtml(p.name) + ' 도착 시각 (24시간 HH:MM)" />',
+        timeOrDwellHtml,
         !isAnchor
           ? '  <button type="button" class="rt-panel-remove" data-place-id="' + p.id + '" title="동선에서 빼기" aria-label="' + escapeHtml(p.name) + ' 동선에서 빼기">✕</button>'
           : isAirport
@@ -2700,10 +2705,11 @@ function refreshAll(container: HTMLElement, opts: { refit: boolean } = { refit: 
 const ROUTE_NAVY = '#243B78';
 const ROUTE_ORANGE = '#E8833A';
 const ROUTE_GRAY = '#9AA7B8';
+// 기존 두께의 70% 수준으로(지도가 너무 두꺼운 선에 눌려 보인다는 피드백 반영)
 const MODE_STYLE: Record<Leg['mode'], { weight: number; dashed: boolean }> = {
-  WALK: { weight: 5, dashed: true },
-  TRANSIT: { weight: 6, dashed: false },
-  TAXI: { weight: 6, dashed: false },
+  WALK: { weight: 3.5, dashed: true },
+  TRANSIT: { weight: 4.2, dashed: false },
+  TAXI: { weight: 4.2, dashed: false },
 };
 
 async function initMap(container: HTMLElement): Promise<void> {
@@ -2739,6 +2745,7 @@ async function initMap(container: HTMLElement): Promise<void> {
   });
 
   addMapTypeToggle(g, mapInstance);
+  addLegInfoPanel(g, mapInstance);
 
   // 지도 빈 곳 클릭 = 장소 카드/강조 해제 (원칙 3-3 명시적 해제 수단)
   mapInstance.addListener('click', () => {
@@ -2801,6 +2808,19 @@ function addMapTypeToggle(g: any, map: any): void {
   map.controls[g.maps.ControlPosition.RIGHT_TOP].push(wrap);
 }
 
+/**
+ * 구간(화살표)을 클릭했을 때의 이동시간/비용 안내 — 예전엔 그 구간 위에 캡슐로 얹었지만,
+ * 지도 위에 박스가 떠 있으면 어수선해서 지도의 완전히 빈 여백인 우하단에 반투명 패널로
+ * 고정하고 내용만 바꿔 끼운다(구간이 바뀌어도 패널 위치는 그대로).
+ */
+function addLegInfoPanel(g: any, map: any): void {
+  const wrap = document.createElement('div');
+  wrap.className = 'rt-leginfo';
+  wrap.style.display = 'none';
+  map.controls[g.maps.ControlPosition.RIGHT_BOTTOM].push(wrap);
+  legInfoPanelEl = wrap;
+}
+
 function resizeMap(): void {
   const g = (window as any).google;
   if (!g?.maps || !mapInstance) return;
@@ -2813,11 +2833,9 @@ function clearMapOverlays(): void {
   mapMarkers = [];
   routePolylines.forEach((l) => l.setMap(null));
   routePolylines = [];
-  mapOverlays.forEach((o) => o.setMap(null));
-  mapOverlays = [];
 }
 
-/** 마커(숙소+후보) + 순서 폴리라인(모드별 스타일) + 이동 캡슐을 다시 그림 */
+/** 마커(숙소+후보) + 순서 폴리라인(모드별 스타일)을 다시 그림 — 이동시간/비용은 우하단 고정 패널에 */
 function drawRouteOnMap(refit: boolean): void {
   const g = (window as any).google;
   if (!g?.maps || !mapInstance) return;
@@ -2903,47 +2921,35 @@ function drawRouteOnMap(refit: boolean): void {
       mapMarkers.push(buildModeChangeNode(g, { lat: stops[i].lat!, lng: stops[i].lng! }));
     }
 
-    // 이동시간·비용 캡슐은 항상 떠 있으면 지도가 어수선해지므로 이 구간을 직접 호버/클릭했을 때만 표시.
+    // 이동시간·비용은 선 위에 얹지 않고 지도 우하단의 고정 패널에 표시 — 구간을 클릭했을 때만 채워 넣는다.
     if (capsuleActive) {
-      const mid =
-        leg.path && leg.path.length >= 2
-          ? leg.path[Math.floor(leg.path.length / 2)]
-          : { lat: (stops[i].lat! + stops[i + 1].lat!) / 2, lng: (stops[i].lng! + stops[i + 1].lng!) / 2 };
-      // 구간이 화면상 너무 짧으면 캡슐이 정중앙에 있을 때 양 끝 핀과 겹쳐 버리므로,
-      // 그럴 때만 예전처럼 선 위로 살짝 띄운다(그 외엔 화살표 정중앙에 그대로 얹는다).
-      const midLat = (stops[i].lat! + stops[i + 1].lat!) / 2;
-      const zoom = typeof mapInstance.getZoom === 'function' ? mapInstance.getZoom() : 13;
-      const short = legPixelLength(leg.km, midLat, zoom) < CAPSULE_SHORT_PX;
-      const Ctor = getOverlayCtor(g);
-      const cls = 'rt-map-capsule ' + modeColorClass(leg.mode) + ' rt-leg-selected' +
-        (short ? ' rt-cap-above' : '') +
-        (legModeOverride.has(key) ? ' rt-leg-manual' : '');
-      const capsule = new Ctor(new g.maps.LatLng(mid.lat, mid.lng), legCapsuleHtml(leg, mapCur), cls, () =>
-        handleLegClick(stops[i].id, stops[i + 1].id, capsule.div ?? undefined)
-      );
-      capsule.setMap(mapInstance);
-      mapOverlays.push(capsule);
+      updateLegInfoPanel(leg, mapCur, legModeOverride.has(key), stops[i].id, stops[i + 1].id);
     }
   }
+  if (!selectedLegKey && legInfoPanelEl) legInfoPanelEl.style.display = 'none';
 
   if (refit) fitRouteBounds();
 }
 
-// 캡슐 정중앙 배치가 양 끝 핀과 겹칠 만큼 짧은 구간인지 판단하는 기준(px). 캡슐 실제 폭(약
-// 100~130px)보다 살짝 좁게 잡아, 그보다 짧을 때만 "위로 띄우기"로 되돌아간다.
-const CAPSULE_SHORT_PX = 90;
-
-/** 구간의 실제 거리(km)가 현재 지도 확대 수준에서 화면상 몇 px로 보이는지 추정(Web Mercator 근사식) */
-function legPixelLength(km: number, lat: number, zoom: number): number {
-  if (!Number.isFinite(zoom)) zoom = 13;
-  const metersPerPixel = (156543.03392 * Math.cos((lat * Math.PI) / 180)) / Math.pow(2, zoom);
-  if (!Number.isFinite(metersPerPixel) || metersPerPixel <= 0) return Infinity;
-  return (km * 1000) / metersPerPixel;
-}
-
-function legCapsuleHtml(leg: Leg, currency: string): string {
+/** 우하단 고정 패널에 구간 이동시간/비용을 채워 넣는다(지도 위 박스 대신 반투명 패널 하나만 씀) */
+function updateLegInfoPanel(leg: Leg, currency: string, manual: boolean, fromId: string, toId: string): void {
+  if (!legInfoPanelEl) return;
   const extra = leg.mode === 'WALK' ? fmtKm(leg.km) : (leg.costTHB > 0 ? fmtCost(leg.costTHB, currency) : '무료');
-  return modeIcon(leg.mode) + '<span>' + fmtMin(leg.min) + '</span><span class="rt-cap-dist">' + extra + '</span>';
+  legInfoPanelEl.innerHTML = [
+    '<span class="rt-leginfo-icon ' + modeColorClass(leg.mode) + '">' + modeIcon(leg.mode) + '</span>',
+    '<span class="rt-leginfo-main">',
+    '  <span class="rt-leginfo-mode">' + modeLabel(leg.mode) + '</span>',
+    '  <span class="rt-leginfo-time">' + fmtMin(leg.min) + ' <b>·</b> ' + extra + '</span>',
+    '</span>',
+    !leg.real ? '<span class="rt-leginfo-est" title="실제 경로를 못 받아 직선거리로 추정한 값이에요">추정</span>' : '',
+    manual ? '<span class="rt-leginfo-manual" title="직접 지정한 이동수단"></span>' : '',
+    '<button type="button" class="rt-leginfo-close" aria-label="이동 정보 닫기">✕</button>',
+  ].join('');
+  legInfoPanelEl.style.display = 'flex';
+  legInfoPanelEl.querySelector('.rt-leginfo-close')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    handleLegClick(fromId, toId);
+  });
 }
 
 function fitRouteBounds(): void {
@@ -3133,7 +3139,7 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
   const meta = categoryMeta(p, opts.isBasecamp);
   const phase: StopPhase = opts.phase ?? 'plain';
   const scale = (opts.highlighted ? 1.18 : 1) * pinZoomScale();
-  const r = (opts.included ? 15 : 9) * scale;
+  const r = (opts.included ? 15 : 10) * scale;
   // halo/glow까지 담을 여유를 둔 캔버스
   const pad = opts.highlighted ? 26 : 12;
   const size = Math.ceil(r * 2 + pad);
@@ -3148,10 +3154,12 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
   const shadow =
     '<ellipse cx="' + c + '" cy="' + (c + r * 0.62) + '" rx="' + r * 0.78 + '" ry="' + r * 0.26 + '" fill="rgba(11,42,92,0.16)"/>';
 
+  // 후보(아직 안 담은 곳)도 완전히 배경에 묻히지 않도록 아이콘 톤을 한 단계 진하게(ROUTE_GRAY보다 어두운 slate)
+  const CANDIDATE_ICON = '#6B7A93';
   const inner = opts.included
     ? '<text x="' + c + '" y="' + (c + 4.2) + '" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="' +
       Math.round(12 * scale) + '" font-weight="800" fill="#fff">' + (opts.num ?? '') + '</text>'
-    : '<g transform="translate(' + (c - 5.5) + ',' + (c - 5.5) + ') scale(0.46)" color="' + ROUTE_GRAY +
+    : '<g transform="translate(' + (c - 5.5) + ',' + (c - 5.5) + ') scale(0.46)" color="' + CANDIDATE_ICON +
       '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
       iconInner(meta.icon) + '</g>';
 
@@ -3159,7 +3167,7 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
     '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">' +
     halo + shadow +
     '<circle cx="' + c + '" cy="' + c + '" r="' + r + '" fill="' + fill + '" stroke="' +
-      (opts.included ? '#FFFFFF' : 'rgba(154,167,184,0.9)') + '" stroke-width="' + (opts.included ? 2.6 : 1.8) + '"/>' +
+      (opts.included ? '#FFFFFF' : 'rgba(107,122,147,0.85)') + '" stroke-width="' + (opts.included ? 2.6 : 2.2) + '"/>' +
     inner +
     '</svg>';
 
