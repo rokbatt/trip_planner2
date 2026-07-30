@@ -110,6 +110,27 @@ function dayColorFor(dayIndex: number): string {
   return DAY_COLOR_PALETTE[((dayIndex % DAY_COLOR_PALETTE.length) + DAY_COLOR_PALETTE.length) % DAY_COLOR_PALETTE.length];
 }
 
+/**
+ * 우측 패널의 장소 카드(번호 배지) 색 — 예전엔 DAY 전체가 dayColorFor() 한 가지 색으로
+ * 단색이었는데, 그날 안에서도 카드마다 다른 톤이 섞여야 화면이 덜 밋밋하다는 피드백으로
+ * 별도 팔레트를 둔다. "Aviation Blue + Steel Blue" 계열(네이비~스틸블루)에서 흰 숫자와의
+ * 대비가 확실한 색만 골랐다(연한 하늘색 계열은 흰 글자가 묻혀서 뺐다). DAY 정체성(탭 점·
+ * 날짜 색)은 dayColorFor를 그대로 쓰고, 이 팔레트는 그 DAY 안의 방문 순서(1번,2번,3번…)를
+ * 따라 처음부터 다시 순환한다.
+ */
+const PLACE_CARD_PALETTE = [
+  '#173B70', // Primary Navy
+  '#3F78D5', // Route Blue
+  '#2C5AA0', // Deep Royal Blue
+  '#5B8DBE', // Muted Sky Blue
+  '#6B7C93', // Slate Blue-Gray
+  '#3E5C8A', // Denim Blue
+  '#8FA8C6', // Steel Blue
+];
+function placeCardColorFor(visitIndex: number): string {
+  return PLACE_CARD_PALETTE[visitIndex % PLACE_CARD_PALETTE.length];
+}
+
 interface RouteDay {
   id: string;
   label: string;
@@ -2465,12 +2486,16 @@ function renderRightPanel(container: HTMLElement): void {
   const dColor = dayColorFor(Math.max(0, dayIndex));
 
   const rows: string[] = [];
+  // 앵커(숙소/공항)는 고정 색을 쓰고, 실제 방문지만 이 카운터로 팔레트를 순환한다 —
+  // 앵커가 몇 번째 위치에 있든 실제 방문지 1번째는 항상 팔레트 첫 색부터 시작하게.
+  let visitColorIdx = 0;
   stops.forEach((p, i) => {
     const isBasecamp = isBasecampPlace(p, dayIndex);
     const isAirport = isAirportAnchorPlace(p);
     const isAnchor = isBasecamp || isAirport; // 삭제는 금지하되, 순서는 자유롭게 바꿀 수 있음
     const memo = memoStore.get(p.id) ?? '';
     const highlighted = p.id === highlightedPlaceId;
+    const cardColor = isAnchor ? null : placeCardColorFor(visitColorIdx++);
 
     const badgeClass = isBasecamp ? ' rt-panel-badge-stay' : isAirport ? ' rt-panel-badge-airport' : '';
     const manualTime = timeOverride.has(timeKey(day.id, p.id));
@@ -2490,7 +2515,7 @@ function renderRightPanel(container: HTMLElement): void {
         '<div class="rt-panel-stop' + (highlighted ? ' rt-highlighted' : '') + '" draggable="true" data-place-id="' + p.id + '">',
         '  <span class="rt-drag-handle" title="드래그해서 순서 바꾸기" aria-hidden="true">' + IC_GRIP + '</span>',
         '  <span class="rt-panel-badge' + badgeClass + '"' +
-          (isAnchor ? '' : ' style="background:' + dColor + '"') + '>' + (i + 1) + '</span>',
+          (cardColor ? ' style="background:' + cardColor + '"' : '') + '>' + (i + 1) + '</span>',
         '  <div class="rt-panel-name-col"><div class="rt-panel-name">' + escapeHtml(p.name) + '</div><div class="rt-panel-sub">' + escapeHtml(p.category || (isBasecamp ? '숙소' : '')) + '</div></div>',
         timeOrDwellHtml,
         !isAnchor
