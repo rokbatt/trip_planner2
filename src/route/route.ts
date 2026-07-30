@@ -2405,24 +2405,6 @@ function aiPlanNoticeHtml(): string {
   ].join('');
 }
 
-/**
- * 숙소/공항 앵커는 항상 카드로 보이지만, 그 사이에 실제로 담은 곳이 하나도 없을 때
- * 목록 맨 아래 붙는 작은 안내 — 예전의 "전체를 덮는 빈 화면"과 달리 앵커 카드를 가리지
- * 않는다. 처음 쓰는 사용자가 "AI에게 맡기기"를 발견하는 자리이기도 하다.
- */
-function emptyDayHintHtml(): string {
-  return [
-    '<div class="rt-panel-empty-inline">',
-    '  <span class="rt-panel-empty-inline-text">아직 담은 장소가 없어요 · 지도의 핀을 누르거나 왼쪽 목록에서 담아보세요</span>',
-    candidatePlaces.length >= 2
-      ? '  <button type="button" class="rt-panel-empty-cta" id="rt-panel-empty-ai"' + (aiPlanBusy ? ' disabled' : '') + '>' +
-        (aiPlanBusy ? '<span class="rt-ai-spinner"></span> 일정 짜는 중…' : IC_SPARK + ' AI에게 일정 맡기기') +
-        '</button>'
-      : '',
-    '</div>',
-  ].join('');
-}
-
 type AirportKind = 'arrival' | 'departure';
 
 /**
@@ -2720,9 +2702,10 @@ function renderRightPanel(container: HTMLElement): void {
     dayIndex === days.length - 1 && !departureAirportPlace() ? airportInfoHtml('departure') : '',
     '<div class="rt-panel-list" id="rt-panel-list">',
     stops.length
-      // 숙소/공항 앵커는 이제 항상 실제 정류지 카드로 보이므로(비어 있어도), "담은 곳이 0곳"인
-      // 경우엔 그 카드들 아래에 작은 안내만 덧붙인다(예전처럼 전체를 덮는 빈 화면으로 가리지 않음).
-      ? rows.join('') + (s.visitCount === 0 ? emptyDayHintHtml() : '')
+      // 숙소/공항 앵커만 있고 그 사이에 담은 곳이 없어도(예: 공항→숙소만 있는 여유로운 날,
+      // 하루 종일 숙소에서 쉬는 날) 그 자체로 완결된 하루라 "아직 안 담았다"는 안내를 덧붙이지
+      // 않는다 — 일부러 비워둔 걸 미완성처럼 취급하지 않기 위해.
+      ? rows.join('')
       : [
           '<div class="rt-panel-empty">',
           '  <span class="rt-panel-empty-icon">' + IC_ROUTEPATH + '</span>',
@@ -2848,7 +2831,6 @@ function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
   el.querySelector('#rt-panel-add')?.addEventListener('click', () => {
     (container.querySelector('#rt-float-search-input') as HTMLElement | null)?.focus();
   });
-  el.querySelector('#rt-panel-empty-ai')?.addEventListener('click', () => void runAiRoutePlan(container));
   el.querySelector('#rt-panel-daydetail')?.addEventListener('click', () => void runDayDetail(container));
   el.querySelector('#rt-ai-notice-close')?.addEventListener('click', () => {
     aiPlanNotice = null;

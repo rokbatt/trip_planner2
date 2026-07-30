@@ -677,15 +677,6 @@
 .rt-panel-empty-title { font-size: 12.5px; font-weight: 700; color: var(--rt-ink); }
 .rt-panel-empty-hint { font-size: 11px; color: var(--rt-ink-3); line-height: 1.65; }
 
-/* 앵커(숙소/공항) 카드는 항상 보이므로, 실제 방문지가 0곳일 때는 이 작은 안내만 그 아래
-   덧붙인다(예전의 전체 화면을 덮는 빈 상태와 달리 앵커 카드를 가리지 않음). */
-.rt-panel-empty-inline {
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
-  text-align: center; padding: 18px 16px; margin: 4px 12px;
-  border: 1px dashed var(--rt-line-strong); border-radius: 12px;
-}
-.rt-panel-empty-inline-text { font-size: 11px; color: var(--rt-ink-3); line-height: 1.6; }
-
 .rt-panel-stop {
   position: relative;
   display: grid; grid-template-columns: 12px 26px 1fr auto auto; align-items: center;
@@ -921,18 +912,6 @@
 .rt-arrival-airport { flex: 1; min-width: 0; }
 .rt-arrival-airport::placeholder, .rt-arrival-time::placeholder { color: var(--rt-ink-4); font-weight: 500; }
 .rt-arrival-time { width: 50px; text-align: right; font-variant-numeric: tabular-nums; flex-shrink: 0; }
-
-/* 빈 상태에서의 AI CTA — 처음 들어온 사용자가 기능을 발견하는 자리 */
-.rt-panel-empty-cta {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  margin-top: 12px; padding: 9px 15px; border-radius: 10px;
-  border: 1px solid var(--rt-navy); background: var(--rt-navy); color: #fff;
-  font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit;
-  transition: background var(--rt-ease), opacity var(--rt-ease);
-}
-.rt-panel-empty-cta:hover:not(:disabled) { background: var(--rt-navy-hover); }
-.rt-panel-empty-cta:disabled { opacity: 0.6; cursor: default; }
-.rt-panel-empty-cta svg { width: 13px; height: 13px; }
 
 /* ── DAY 세부 계획 모달 ── */
 .rt-ai-modal-backdrop {
