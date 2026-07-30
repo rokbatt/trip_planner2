@@ -1512,9 +1512,10 @@ async function runMapPlaceSearch(query: string, container: HTMLElement): Promise
   }
 }
 
-/** 검색 결과(또는 근처검색 결과) 핀의 "Brainstorm에 담기" — 실제 places 행으로 저장하고,
- * 성공하면 그 자리에서 바로 일반 후보 핀으로 전환한다(새로고침 없이). */
-async function addSearchResultToBoard(p: Place, container: HTMLElement, cacheSource: string): Promise<void> {
+/** 검색 결과(또는 근처검색 결과) 핀의 "일정에 추가" — 실제 places 행으로 저장해서
+ * Brainstorm에도 자동 반영되고, 동시에 지금 보고 있는 DAY의 동선(끝 앵커 바로 앞)에도
+ * 바로 들어간다. 새로고침 없이 그 자리에서 일반 정류지 핀으로 전환된다. */
+async function addSearchResultToDay(p: Place, container: HTMLElement, cacheSource: string): Promise<void> {
   if (!currentTripId) return;
   const g: GooglePlaceResult = {
     place_id: p.google_place_id ?? '',
@@ -1536,6 +1537,8 @@ async function addSearchResultToBoard(p: Place, container: HTMLElement, cacheSou
   searchResultPlaces = searchResultPlaces.filter((sp) => sp.id !== p.id);
   placeById.set(result.place.id, result.place);
   if (!candidatePlaces.some((cp) => cp.id === result.place.id)) candidatePlaces.push(result.place);
+  pushHistory();
+  appendStopBeforeEndAnchor(activeDay(), result.place.id);
   closePlaceCard();
   refreshAll(container, { refit: false });
 }
@@ -2939,7 +2942,9 @@ function refreshAll(container: HTMLElement, opts: { refit: boolean } = { refit: 
  * 도보만 점선을 유지 — 실제 보행로가 도로와 다를 수 있다는 신호로 유용해서.
  */
 const ROUTE_NAVY = '#243B78';
-const ROUTE_ORANGE = '#E8833A';
+// 네이비 위주 팔레트에 안 어울리던 밝은 주황(#E8833A) 대신, "Airport Lounge Premium" 톤에
+// 맞는 골드/브론즈 계열 — 네이비+골드는 항공 라운지 브랜딩에서 흔한 조합이라 자연스럽다.
+const ROUTE_ORANGE = '#C08A2E';
 const ROUTE_GRAY = '#9AA7B8';
 // 기존 두께의 70% 수준으로(지도가 너무 두꺼운 선에 눌려 보인다는 피드백 반영)
 const MODE_STYLE: Record<Leg['mode'], { weight: number; dashed: boolean }> = {
@@ -3382,9 +3387,10 @@ function googleMapsUrl(p: Place): string {
 }
 
 /** 지도 검색/근처 검색 결과 핀 클릭 시 뜨는 카드 — 아직 Brainstorm에도 없는 "진짜 구글
- * 장소"라 openPlaceCard와 달리 담기 버튼 하나뿐이고(동선에서 빼기 개념이 없음), 눌렀을 때
- * insertGooglePlace를 거쳐 실제 places 행으로 저장한다. 장소명은 구글맵 링크로 열어서
- * 리뷰·영업시간 등 여기서 안 보여주는 정보를 바로 확인할 수 있게 한다. */
+ * 장소"라 openPlaceCard와 달리 "일정에 추가" 버튼 하나뿐이다(동선에서 빼기 개념이 없음).
+ * 누르면 insertGooglePlace로 실제 places 행을 만들어 Brainstorm에도 자동 반영되고,
+ * 동시에 지금 DAY의 동선에도 바로 들어간다. 장소명은 구글맵 링크로 열어서 리뷰·영업시간
+ * 등 여기서 안 보여주는 정보를 바로 확인할 수 있게 한다. */
 function openSearchResultCard(g: any, p: Place, cacheSource: string): void {
   closePlaceCard();
   const html = [
@@ -3398,7 +3404,7 @@ function openSearchResultCard(g: any, p: Place, cacheSource: string): void {
     p.google_rating ? '    <span class="rt-clickcard-rate">' + IC_STAR + ' ' + p.google_rating.toFixed(1) + '</span>' : '',
     p.category ? '    <span class="rt-clickcard-cat">' + escapeHtml(p.category) + '</span>' : '',
     '  </div>',
-    '  <button type="button" class="rt-clickcard-action" data-card-act="add-board">' + IC_PLUS + ' Brainstorm에 담기</button>',
+    '  <button type="button" class="rt-clickcard-action" data-card-act="add-day">' + IC_PLUS + ' 일정에 추가</button>',
     '</div>',
   ].join('');
 
@@ -3414,12 +3420,12 @@ function openSearchResultCard(g: any, p: Place, cacheSource: string): void {
       e.stopPropagation();
       closePlaceCard();
     });
-    const addBtn = div.querySelector('[data-card-act="add-board"]') as HTMLButtonElement | null;
+    const addBtn = div.querySelector('[data-card-act="add-day"]') as HTMLButtonElement | null;
     addBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
       addBtn.disabled = true;
-      addBtn.textContent = '담는 중…';
-      void addSearchResultToBoard(p, rtContainer!, cacheSource);
+      addBtn.textContent = '추가하는 중…';
+      void addSearchResultToDay(p, rtContainer!, cacheSource);
     });
   });
 }
@@ -3611,8 +3617,8 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
 }
 
 // 검색 결과 핀은 후보/정류지와 같은 핀 모양(pinTearPath)을 쓰되, "아직 내 계획에 없는,
-// 방금 찾은 곳"이라는 신호로 앰버(주황) 톤을 쓴다 — ROUTE_ORANGE(다음 방문지 표시)와 같은 계열.
-const SEARCH_PIN_COLOR = '#E8833A';
+// 방금 찾은 곳"이라는 신호로 골드 톤을 쓴다 — ROUTE_ORANGE(다음 방문지 표시)와 같은 색.
+const SEARCH_PIN_COLOR = ROUTE_ORANGE;
 
 /** 구글 카테고리 한글 라벨(googleMaps.ts의 CATEGORY_MAP과 동일한 값) → 검색결과 핀 아이콘.
  * 전부 돋보기로 통일돼 있던 걸, 카페=커피잔·편의점=가게처럼 한눈에 구분되게 한다.

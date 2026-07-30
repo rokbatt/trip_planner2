@@ -481,7 +481,7 @@
   background: var(--rt-mist); border-radius: 5px; padding: 2px 5px; flex-shrink: 0;
 }
 .rt-stopinfo-leg-manual {
-  width: 5px; height: 5px; border-radius: 50%; background: #E8833A; flex-shrink: 0;
+  width: 5px; height: 5px; border-radius: 50%; background: #C08A2E; flex-shrink: 0;
 }
 
 /* 확정 장소 정보 패널 안의 "이 근처 검색" — 카테고리 칩 + 직접 입력 */
@@ -493,7 +493,7 @@
   background: #fff; color: var(--rt-ink-2); font-size: 10.5px; font-weight: 700; cursor: pointer;
   transition: border-color var(--rt-ease), background var(--rt-ease), color var(--rt-ease);
 }
-.rt-stopinfo-nearby-chip:hover { border-color: #E8833A; background: rgba(232,131,58,0.08); color: #E8833A; }
+.rt-stopinfo-nearby-chip:hover { border-color: #C08A2E; background: rgba(192,138,46,0.08); color: #C08A2E; }
 .rt-stopinfo-nearby-input {
   width: 100%; border: 1px solid var(--rt-line); border-radius: 8px; outline: none;
   padding: 6px 9px; font-size: 11.5px; color: var(--rt-ink); font-family: inherit; background: #fff;
