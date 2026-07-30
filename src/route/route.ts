@@ -70,6 +70,14 @@ const IC_LANDMARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 const IC_FORK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v7a2 2 0 0 0 2 2v11M7 2v7M9 2v7M11 2v7M16 2c-1.5 0-3 1.5-3 4s1.5 4 3 4v10"/></svg>';
 const IC_TARGET = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/></svg>';
 const IC_BAG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l1 12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L6 8Z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>';
+// 검색결과 핀 전용 — 카테고리별로 한눈에 구분되도록(카페=커피잔, 편의점=가게 등)
+const IC_COFFEE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13v6a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V8Z"/><path d="M17 9h1.5a2.5 2.5 0 0 1 0 5H17"/><path d="M8 2v2M11 2v2M14 2v2"/></svg>';
+const IC_BREAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c-4 0-9 3-9 8 0 6 5 10 9 10s9-4 9-10c0-5-5-8-9-8Z"/><path d="M7 14c1-2 2-3 5-3s4 1 5 3"/></svg>';
+const IC_GLASS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14l-7 9-7-9Z"/><path d="M12 12v9M8 21h8"/></svg>';
+const IC_TREE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 7 9h3l-4 6h4l-3 5h10l-3-5h4l-4-6h3L12 2Z"/><path d="M12 22v-4"/></svg>';
+const IC_TEMPLE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v3M12 5l8 6H4l8-6Z"/><path d="M5 11v9h14v-9"/><path d="M10 20v-5h4v5"/></svg>';
+const IC_FERRIS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16M6.3 6.3l11.4 11.4M17.7 6.3 6.3 17.7"/></svg>';
+const IC_STORE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1-5h16l1 5"/><path d="M3 9a2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0"/><path d="M5 9v11h14V9"/><path d="M9 20v-6h6v6"/></svg>';
 const IC_SEARCH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
 const IC_EXTLINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>';
 const IC_DOTS = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
@@ -3382,7 +3390,7 @@ function openSearchResultCard(g: any, p: Place, cacheSource: string): void {
   const html = [
     p.photo_url
       ? '<div class="rt-clickcard-photo" style="background-image:url(\'' + p.photo_url + '\')"></div>'
-      : '<div class="rt-clickcard-photo">' + IC_SEARCH + '</div>',
+      : '<div class="rt-clickcard-photo">' + searchResultIcon(p.category) + '</div>',
     '<button type="button" class="rt-clickcard-close" aria-label="닫기">✕</button>',
     '<div class="rt-clickcard-body">',
     '  <a class="rt-clickcard-name rt-clickcard-name-link" href="' + googleMapsUrl(p) + '" target="_blank" rel="noopener noreferrer" title="구글맵에서 보기">' + escapeHtml(p.name) + ' ' + IC_EXTLINK + '</a>',
@@ -3606,8 +3614,32 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
 // 방금 찾은 곳"이라는 신호로 앰버(주황) 톤을 쓴다 — ROUTE_ORANGE(다음 방문지 표시)와 같은 계열.
 const SEARCH_PIN_COLOR = '#E8833A';
 
-/** 지도 장소 검색 / 근처 검색 결과 핀 — buildMarkerV2와 같은 핀 모양을 공유하되 번호 없이
- * 돋보기 아이콘만 넣어 "검색으로 찾은 곳"임을 표시한다. */
+/** 구글 카테고리 한글 라벨(googleMaps.ts의 CATEGORY_MAP과 동일한 값) → 검색결과 핀 아이콘.
+ * 전부 돋보기로 통일돼 있던 걸, 카페=커피잔·편의점=가게처럼 한눈에 구분되게 한다.
+ * 못 찾은 카테고리(명소·null 등)는 돋보기로 폴백. */
+const SEARCH_CATEGORY_ICON: Record<string, string> = {
+  '음식점': IC_FORK,
+  '카페': IC_COFFEE,
+  '베이커리': IC_BREAD,
+  '바': IC_GLASS,
+  '나이트라이프': IC_GLASS,
+  '관광명소': IC_LANDMARK,
+  '박물관': IC_LANDMARK,
+  '미술관': IC_LANDMARK,
+  '공원': IC_TREE,
+  '종교시설': IC_TEMPLE,
+  '숙소': IC_BED,
+  '쇼핑': IC_BAG,
+  '테마파크': IC_FERRIS,
+  '공항': IC_PLANE,
+  '편의점': IC_STORE,
+};
+function searchResultIcon(category: string | null): string {
+  return (category && SEARCH_CATEGORY_ICON[category]) || IC_SEARCH;
+}
+
+/** 지도 장소 검색 / 근처 검색 결과 핀 — buildMarkerV2와 같은 핀 모양을 공유하되 번호 대신
+ * 카테고리에 어울리는 아이콘을 넣어 "검색으로 찾은 곳"임과 어떤 종류인지를 함께 보여준다. */
 function buildSearchResultMarker(g: any, p: Place): any {
   const scale = pinZoomScale();
   const r = 11 * scale;
@@ -3624,7 +3656,7 @@ function buildSearchResultMarker(g: any, p: Place): any {
     '<ellipse cx="' + cx + '" cy="' + (tipY + r * 0.1) + '" rx="' + r * 0.42 + '" ry="' + r * 0.15 + '" fill="rgba(11,42,92,0.18)"/>';
   const inner = '<g transform="translate(' + (cx - 5.5) + ',' + (headCy - 5.5) + ') scale(0.46)" color="' + SEARCH_PIN_COLOR +
     '" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
-    iconInner(IC_SEARCH) + '</g>';
+    iconInner(searchResultIcon(p.category)) + '</g>';
 
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +

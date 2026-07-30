@@ -107,6 +107,7 @@ const CATEGORY_MAP: Record<string, string> = {
   amusement_park: '테마파크',
   point_of_interest: '명소',
   airport: '공항',
+  convenience_store: '편의점',
 };
 
 /** 새 Place 클래스 인스턴스(fetchFields 완료 후)를 몽실이 표준 포맷으로 변환 */
