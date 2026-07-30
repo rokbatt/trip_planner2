@@ -13,6 +13,7 @@ import type { Database, TripDestination } from '../types/database';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { loadGoogleMapsScript, extractPlaceResult, suggestGateFromCategory, getPlacePredictions, getPlaceDetails, getCategoryLabel, resetGoogleServices } from '../utils/googleMaps';
 import type { GooglePlaceResult, PlacePrediction } from '../utils/googleMaps';
+import { insertGooglePlace } from '../trips/addGooglePlace';
 import './board.css';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -331,56 +332,10 @@ async function addIdea(tripId: string, mood: string | null, text: string): Promi
   return data;
 }
 
-/** Google Place 자동완성으로 선택된 장소를 리치 데이터와 함께 저장 */
-async function addRichIdea(tripId: string, mood: string | null, g: GooglePlaceResult): Promise<{ place: Place; isDuplicate: boolean } | null> {
-  // 이 트립에 같은 장소(google_place_id)가 이미 있으면 중복 생성하지 않음
-  if (g.place_id) {
-    const { data: existing } = await supabase
-      .from('places')
-      .select('*')
-      .eq('trip_id', tripId)
-      .eq('google_place_id', g.place_id)
-      .maybeSingle();
-
-    if (existing) {
-      console.log('[Verify][중복 방지] "' + g.name + '"은 이미 이 여행에 추가되어 있어서 다시 만들지 않음');
-      return { place: existing, isDuplicate: true };
-    }
-  }
-
-  const user = store.get('user');
-  const { data, error } = await supabase
-    .from('places')
-    .insert({
-      trip_id: tripId,
-      name: g.name,
-      mood,
-      status: 'idea',
-      is_idea: false,
-      added_by: user?.id ?? null,
-      sort_order: Math.floor(Date.now() / 1000),
-      destination_id: activeDestIdForInsert(),
-      address: g.address,
-      lat: g.lat,
-      lng: g.lng,
-      google_place_id: g.place_id,
-      google_rating: g.rating,
-      category: g.category,
-      photo_url: g.photoUrl,
-      opening_hours: g.openingHours,
-    })
-    .select()
-    .single();
-
-  if (error) {
-    console.error('Rich idea add error:', error.message);
-    return null;
-  }
-
-  // 크라우드소싱 캐싱: 다음 사용자를 위해 places_db에도 저장 (실패해도 무시)
-  cacheToPlacesDb(g).catch(() => {});
-
-  return { place: data, isDuplicate: false };
+/** Google Place 자동완성으로 선택된 장소를 리치 데이터와 함께 저장 (보드 화면 전용 얇은 래퍼) —
+ * 실제 저장 로직은 ROUTE의 지도 검색·근처 검색과 공유하는 addGooglePlace.ts에 있다. */
+function addRichIdea(tripId: string, mood: string | null, g: GooglePlaceResult): Promise<{ place: Place; isDuplicate: boolean } | null> {
+  return insertGooglePlace(tripId, activeDestIdForInsert(), mood, g);
 }
 
 /** Google 사진 URL을 우리 Storage로 재호스팅 (실패하면 원본 URL로 폴백) */
@@ -404,41 +359,6 @@ async function rehostPhoto(photoUrl: string, placeId: string): Promise<string> {
     console.error('[Photo] 재호스팅 네트워크 오류, 원본 URL 사용:', (e as Error).message);
   }
   return photoUrl;
-}
-
-async function cacheToPlacesDb(g: GooglePlaceResult): Promise<void> {
-  if (!g.place_id) return;
-  const { data: existing } = await supabase
-    .from('places_db')
-    .select('id')
-    .eq('google_place_id', g.place_id)
-    .maybeSingle();
-
-  if (existing) {
-    console.log('[Verify][6단계: 이미 캐시됨] "' + g.name + '"은 이미 places_db에 있어서 재저장 안 함');
-    return;
-  }
-
-  const { error } = await supabase.from('places_db').insert({
-    name: g.name,
-    category: g.category ?? '기타',
-    country: '',
-    city: '',
-    address: g.address,
-    lat: g.lat,
-    lng: g.lng,
-    google_place_id: g.place_id,
-    google_rating: g.rating,
-    photo_url: g.photoUrl,
-    opening_hours: g.openingHours,
-    source: 'google_autocomplete',
-  });
-
-  if (error) {
-    console.error('[Verify][5단계 실패] places_db 저장 실패:', error.message);
-  } else {
-    console.log('[Verify][5단계 완료] "' + g.name + '"을 places_db에 저장함 → 다음 검색부터는 DB만 조회');
-  }
 }
 
 /** 검색창 입력값으로 우리 DB(places_db)를 먼저 조회 — 무료, 즉시 응답 */

@@ -256,3 +256,64 @@ export function getCategoryLabel(types: string[]): string | null {
   const matched = types.find((t) => CATEGORY_MAP[t]);
   return matched ? CATEGORY_MAP[matched] : null;
 }
+
+/* ============================================================
+   실제 장소 검색 (Text Search / Nearby Search — 신규 Places API)
+   - Autocomplete와 달리 건당 요금이 더 높은 "검색" 호출이라, 타이핑마다가 아니라
+     사용자가 명시적으로 제출(엔터/버튼)했을 때만 불러야 한다.
+   - 결과에 사진/평점/타입이 이미 딸려오므로 개별 Details 재조회가 필요 없다.
+   ============================================================ */
+
+const SEARCH_FIELDS = ['id', 'displayName', 'formattedAddress', 'location', 'rating', 'types', 'photos', 'regularOpeningHours'];
+
+function mapSearchResults(places: any[] | undefined): GooglePlaceResult[] {
+  return (places ?? [])
+    .map((p) => extractPlaceResult(p))
+    .filter((r): r is GooglePlaceResult => !!r);
+}
+
+/** 자유 텍스트로 실제 장소 검색 — ROUTE 지도의 "장소 검색해서 핀 찍기"용.
+ *  locationBias는 현재 지도 화면(google.maps.LatLngBounds) 또는 특정 지점 반경
+ *  ({ center, radius })을 그대로 넘기면 된다 — 그 근처를 우선해서 찾아준다. */
+export async function searchPlacesByText(query: string, locationBias: any): Promise<GooglePlaceResult[]> {
+  const g = window.google;
+  if (!g?.maps?.places || !query.trim()) return [];
+  try {
+    const { Place } = await g.maps.importLibrary('places');
+    const { places } = await Place.searchByText({
+      textQuery: query,
+      fields: SEARCH_FIELDS,
+      locationBias,
+      maxResultCount: 12,
+    });
+    return mapSearchResults(places);
+  } catch (e) {
+    console.error('[GoogleMaps] 장소 텍스트 검색 실패:', (e as Error).message);
+    return [];
+  }
+}
+
+/** 좌표 중심 반경 안에서 카테고리(includedTypes)로 좁혀 검색 — 클릭한 장소 "근처 검색"의
+ *  카테고리 칩(카페/식당/편의점 등)용. Nearby Search는 자유 텍스트를 지원하지 않으므로
+ *  직접 입력한 키워드는 searchPlacesByText에 좌표 반경 bias를 줘서 대신 처리한다. */
+export async function searchPlacesNearby(
+  center: { lat: number; lng: number },
+  radiusMeters: number,
+  includedTypes: string[]
+): Promise<GooglePlaceResult[]> {
+  const g = window.google;
+  if (!g?.maps?.places) return [];
+  try {
+    const { Place } = await g.maps.importLibrary('places');
+    const { places } = await Place.searchNearby({
+      fields: SEARCH_FIELDS,
+      locationRestriction: { center, radius: radiusMeters },
+      includedTypes,
+      maxResultCount: 12,
+    });
+    return mapSearchResults(places);
+  } catch (e) {
+    console.error('[GoogleMaps] 주변 장소 검색 실패:', (e as Error).message);
+    return [];
+  }
+}

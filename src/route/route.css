@@ -145,6 +145,20 @@
   background: none; font-family: inherit;
 }
 .rt-searchbox input::placeholder { color: var(--rt-ink-4); }
+/* 검색 중엔 돋보기 아이콘을 스피너로 대체(입력창은 계속 보이게 둠) */
+.rt-searchbox.is-busy svg { display: none; }
+.rt-searchbox.is-busy::before {
+  content: ''; width: 13px; height: 13px; flex-shrink: 0;
+  border: 2px solid var(--rt-ink-3); border-right-color: transparent; border-radius: 50%;
+  animation: rt-ai-spin 640ms linear infinite;
+}
+.rt-searchbox-clear {
+  border: none; background: none; padding: 0; margin: 0; flex-shrink: 0; cursor: pointer;
+  width: 16px; height: 16px; border-radius: 5px; color: var(--rt-ink-4); font-size: 10px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background var(--rt-ease), color var(--rt-ease);
+}
+.rt-searchbox-clear:hover { background: var(--rt-mist); color: var(--rt-ink-2); }
 
 .rt-optionsbtn {
   display: inline-flex; align-items: center; gap: 5px;
@@ -462,6 +476,24 @@
 .rt-stopinfo-leg-manual {
   width: 5px; height: 5px; border-radius: 50%; background: #E8833A; flex-shrink: 0;
 }
+
+/* 확정 장소 정보 패널 안의 "이 근처 검색" — 카테고리 칩 + 직접 입력 */
+.rt-stopinfo-nearby { border-top: var(--rt-dash); padding: 9px 10px 10px; }
+.rt-stopinfo-nearby-label { font-size: 10px; font-weight: 700; color: var(--rt-ink-3); margin-bottom: 6px; }
+.rt-stopinfo-nearby-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 7px; }
+.rt-stopinfo-nearby-chip {
+  padding: 4px 9px; border-radius: 999px; border: 1px solid var(--rt-line);
+  background: #fff; color: var(--rt-ink-2); font-size: 10.5px; font-weight: 700; cursor: pointer;
+  transition: border-color var(--rt-ease), background var(--rt-ease), color var(--rt-ease);
+}
+.rt-stopinfo-nearby-chip:hover { border-color: #E8833A; background: rgba(232,131,58,0.08); color: #E8833A; }
+.rt-stopinfo-nearby-input {
+  width: 100%; border: 1px solid var(--rt-line); border-radius: 8px; outline: none;
+  padding: 6px 9px; font-size: 11.5px; color: var(--rt-ink); font-family: inherit; background: #fff;
+  transition: border-color var(--rt-ease);
+}
+.rt-stopinfo-nearby-input::placeholder { color: var(--rt-ink-4); }
+.rt-stopinfo-nearby-input:focus { border-color: var(--rt-sky); }
 
 /* 클릭 리플 */
 .rt-ripple {

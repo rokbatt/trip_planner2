@@ -23,8 +23,17 @@ import {
   placeBelongsToDestination,
   updateDestination,
 } from '../trips/destinations';
-import { loadGoogleMapsScript, getAirportPredictions, getPlaceDetails, extractPlaceResult } from '../utils/googleMaps';
-import type { PlacePrediction } from '../utils/googleMaps';
+import {
+  loadGoogleMapsScript,
+  getAirportPredictions,
+  getPlaceDetails,
+  extractPlaceResult,
+  searchPlacesByText,
+  searchPlacesNearby,
+  suggestGateFromCategory,
+} from '../utils/googleMaps';
+import type { PlacePrediction, GooglePlaceResult } from '../utils/googleMaps';
+import { insertGooglePlace } from '../trips/addGooglePlace';
 import {
   loadRoutePlan,
   saveRouteDay,
@@ -234,6 +243,12 @@ let adhocSeq = 0;
 let placeSearchQuery = '';
 /** 좌측 패널 카테고리 필터 — 비어있으면 전체 표시 */
 let activeCatFilters = new Set<CatKey>();
+
+/* ── 지도 장소 검색(우상단 검색창 · 확정 장소 근처검색 공용) ──
+ * 아직 Brainstorm에 담지 않은, "방금 구글에서 찾은" 임시 결과 — 담기 전까지는 지도 위에만
+ * 표시되고 새로고침/새 검색/DAY 전환 시 사라진다(candidatePlaces와는 다른 임시 상태). */
+let searchResultPlaces: Place[] = [];
+let searchBusy = false;
 let historyByDay = new Map<string, HistoryState>();
 const memoStore = new Map<string, string>();
 const timeOverride = new Map<string, string>();
@@ -325,6 +340,8 @@ export function teardownRoute(): void {
   hoveredPlaceId = null;
   adhocMode = false;
   placeSearchQuery = '';
+  searchResultPlaces = [];
+  searchBusy = false;
   activeCatFilters = new Set();
   historyByDay = new Map();
   memoStore.clear();
@@ -779,6 +796,35 @@ function makeAdhocPlace(name: string, lat: number, lng: number): Place {
   };
 }
 
+/** 구글 검색 결과 1건을 지도에 임시로 찍을 Place로 변환 — google_place_id가 있는 "진짜"
+ * 장소라 makeAdhocPlace(이름만 있는 가짜 핀)와 다르다. Brainstorm에 담기 전까지만 쓰는
+ * 임시 id('search-'+place_id)라 담고 나면 실제 DB row의 id로 교체된다. */
+function googleResultToPlace(g: GooglePlaceResult): Place {
+  return {
+    id: 'search-' + (g.place_id || Date.now() + '-' + Math.random().toString(36).slice(2)),
+    trip_id: currentTripId,
+    name: g.name,
+    lat: g.lat,
+    lng: g.lng,
+    address: g.address,
+    photo_url: g.photoUrl,
+    category: g.category,
+    notes: null,
+    added_by: null,
+    created_at: new Date().toISOString(),
+    likes_count: 0,
+    google_place_id: g.place_id,
+    google_rating: g.rating,
+    photo_ref: null,
+    opening_hours: g.openingHours,
+    mood: null,
+    status: 'idea',
+    is_idea: false,
+    sort_order: 0,
+    destination_id: null,
+  };
+}
+
 /* ══════════════════ 데이터 로딩 ══════════════════ */
 
 async function loadTrip(tripId: string): Promise<Trip | null> {
@@ -1219,7 +1265,11 @@ function buildPageHtml(): string {
     '      <button type="button" class="rt-to-timeline-top" id="rt-to-timeline-top">' + IC_ARROW + ' 타임라인으로</button>',
     // 모든 DAY를 한 번에 바꾸는 동작이라 DAY 탭과 같은 줄(여행지 전체 맥락)에 둔다
     '      <button type="button" class="rt-ai-plan-btn" id="rt-ai-plan" title="Brainstorm에 담은 장소들을 영업시간·인기 동선·이동 효율 순으로 DAY별 일정으로 배분해요">' + IC_SPARK + '<span>AI 일정 짜기</span></button>',
-    '      <div class="rt-searchbox">' + IC_SEARCH + '<input type="text" id="rt-search-top" placeholder="여행지 검색" /></div>',
+    '      <div class="rt-searchbox" id="rt-searchbox-top" title="지도에 실제 장소를 검색해서 핀으로 찍어요 · Enter로 검색">' +
+      IC_SEARCH +
+      '<input type="text" id="rt-search-top" placeholder="지도에서 장소 검색 (Enter)" />' +
+      '<button type="button" class="rt-searchbox-clear" id="rt-search-top-clear" title="검색결과 지우기" hidden>✕</button>' +
+      '</div>',
     '      <button type="button" class="rt-optionsbtn" id="rt-options-btn">' + IC_DOTS + '<span>옵션</span>' + IC_CHEVRON + '</button>',
     '    </div>',
     '  </div>',
@@ -1364,6 +1414,7 @@ function renderDayTabs(container: HTMLElement): void {
     btn.addEventListener('click', () => {
       activeDayId = (btn as HTMLElement).dataset.day!;
       highlightedPlaceId = null;
+      searchResultPlaces = []; // 검색 결과는 보던 DAY 맥락에 딸린 임시 상태라 전환 시 비움
       refreshAll(container, { refit: true });
     });
   });
@@ -1371,24 +1422,19 @@ function renderDayTabs(container: HTMLElement): void {
     const n = days.length + 1;
     days.push({ id: 'day-' + n, label: 'DAY ' + n, stopIds: [] });
     activeDayId = 'day-' + n;
+    searchResultPlaces = [];
     refreshAll(container, { refit: true });
   });
 }
 
-/* ── 좌측 플로팅 검색 패널 ── */
+/* ── 좌측 플로팅 검색 패널(내 Brainstorm 목록 필터 — 그대로 유지) ── */
 function bindSearchInputs(container: HTMLElement): void {
   const floatInput = container.querySelector('#rt-float-search-input') as HTMLInputElement | null;
-  const topInput = container.querySelector('#rt-search-top') as HTMLInputElement | null;
   floatInput?.addEventListener('input', () => {
     placeSearchQuery = floatInput.value;
-    if (topInput && topInput.value !== placeSearchQuery) topInput.value = placeSearchQuery;
     renderLeftPanel(container);
   });
-  topInput?.addEventListener('input', () => {
-    placeSearchQuery = topInput.value;
-    if (floatInput && floatInput.value !== placeSearchQuery) floatInput.value = placeSearchQuery;
-    renderLeftPanel(container);
-  });
+  bindTopSearch(container);
 
   const toggle = container.querySelector('#rt-float-toggle') as HTMLElement;
   const panel = container.querySelector('#rt-float-search') as HTMLElement;
@@ -1406,6 +1452,83 @@ function bindSearchInputs(container: HTMLElement): void {
     setCollapsed(false);
     requestAnimationFrame(() => floatInput?.focus());
   });
+}
+
+/* ── 우상단 지도 장소 검색 — Brainstorm 목록 필터가 아니라 실제 구글 장소를 지도에 찍는다.
+ * 타이핑마다가 아니라 Enter로 제출했을 때만 호출한다(Text Search는 Autocomplete보다
+ * 건당 요금이 높다). ── */
+function bindTopSearch(container: HTMLElement): void {
+  const input = container.querySelector('#rt-search-top') as HTMLInputElement | null;
+  const clearBtn = container.querySelector('#rt-search-top-clear') as HTMLElement | null;
+  if (!input) return;
+  input.addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key === 'Enter') {
+      e.preventDefault();
+      void runMapPlaceSearch(input.value, container);
+    }
+  });
+  clearBtn?.addEventListener('click', () => clearSearchResults(container));
+}
+
+function updateSearchClearButton(container: HTMLElement): void {
+  const clearBtn = container.querySelector('#rt-search-top-clear') as HTMLElement | null;
+  if (clearBtn) clearBtn.hidden = searchResultPlaces.length === 0;
+}
+
+function clearSearchResults(container: HTMLElement): void {
+  if (searchResultPlaces.length === 0) return;
+  searchResultPlaces = [];
+  updateSearchClearButton(container);
+  drawRouteOnMap(false);
+}
+
+/** 지도 화면 기준으로 실제 장소를 검색해 결과를 지도 위에 임시 핀으로 찍는다(공용 검색
+ * 파이프라인 — "이 근처 검색"도 이 함수가 반환하는 결과를 그대로 재사용한다). */
+async function runMapPlaceSearch(query: string, container: HTMLElement): Promise<void> {
+  const q = query.trim();
+  if (!q || searchBusy || !mapInstance) return;
+  searchBusy = true;
+  const box = container.querySelector('#rt-searchbox-top');
+  box?.classList.add('is-busy');
+  try {
+    const bounds = typeof mapInstance.getBounds === 'function' ? mapInstance.getBounds() : undefined;
+    const results = await searchPlacesByText(q, bounds);
+    searchResultPlaces = results.map(googleResultToPlace);
+    if (searchResultPlaces.length === 0) window.alert('검색 결과가 없어요. 다른 검색어로 시도해보세요.');
+  } finally {
+    searchBusy = false;
+    box?.classList.remove('is-busy');
+    updateSearchClearButton(container);
+    drawRouteOnMap(false);
+  }
+}
+
+/** 검색 결과(또는 근처검색 결과) 핀의 "Brainstorm에 담기" — 실제 places 행으로 저장하고,
+ * 성공하면 그 자리에서 바로 일반 후보 핀으로 전환한다(새로고침 없이). */
+async function addSearchResultToBoard(p: Place, container: HTMLElement, cacheSource: string): Promise<void> {
+  if (!currentTripId) return;
+  const g: GooglePlaceResult = {
+    place_id: p.google_place_id ?? '',
+    name: p.name,
+    address: p.address,
+    lat: p.lat,
+    lng: p.lng,
+    rating: p.google_rating,
+    category: p.category,
+    photoUrl: p.photo_url,
+    openingHours: p.opening_hours as string[] | null,
+  };
+  const mood = suggestGateFromCategory(p.category);
+  const result = await insertGooglePlace(currentTripId, activeDestId ?? undefined, mood, g, cacheSource);
+  if (!result) {
+    window.alert('장소를 담는 데 실패했어요. 잠시 후 다시 시도해주세요.');
+    return;
+  }
+  searchResultPlaces = searchResultPlaces.filter((sp) => sp.id !== p.id);
+  placeById.set(result.place.id, result.place);
+  if (!candidatePlaces.some((cp) => cp.id === result.place.id)) candidatePlaces.push(result.place);
+  closePlaceCard();
+  refreshAll(container, { refit: false });
 }
 
 function filteredCandidates(): Place[] {
@@ -2981,6 +3104,15 @@ function drawRouteOnMap(refit: boolean): void {
     mapMarkers.push(marker);
   });
 
+  // 지도 검색/근처 검색 결과 — 아직 Brainstorm에도 없는 임시 핀(앰버 톤). clearMapOverlays가
+  // 매 렌더마다 mapMarkers를 비우므로 이 배열도 매번 같이 다시 그려야 리드로우에도 안 사라짐.
+  searchResultPlaces.forEach((p) => {
+    if (p.lat == null || p.lng == null) return;
+    const marker = buildSearchResultMarker(g, p);
+    marker.addListener('click', () => openSearchResultCard(g, p, 'google_search'));
+    mapMarkers.push(marker);
+  });
+
   // 확정된(동선에 담긴) 장소를 클릭하면 정보 패널(사진/평점 + 앞뒤 두 구간)을 채운다.
   let stopInfoShown = false;
 
@@ -3049,6 +3181,36 @@ function drawRouteOnMap(refit: boolean): void {
   if (refit) fitRouteBounds();
 }
 
+/** "이 근처 검색" 카테고리 칩 — Google Nearby Search의 includedTypes 그대로. "전체"는
+ * 두지 않고, 그 대신 자유 텍스트 입력으로 원하는 걸 직접 검색할 수 있게 한다. */
+const NEARBY_CATEGORY_CHIPS: Array<{ label: string; types: string[] }> = [
+  { label: '카페', types: ['cafe'] },
+  { label: '식당', types: ['restaurant'] },
+  { label: '편의점', types: ['convenience_store'] },
+  { label: '관광명소', types: ['tourist_attraction'] },
+];
+const NEARBY_SEARCH_RADIUS_M = 800;
+
+/** 확정된 장소를 클릭했을 때 그 좌표를 기준으로 근처를 찾는다 — 카테고리 칩이면 Nearby
+ * Search(카테고리), 직접 입력한 키워드면 그 좌표 반경으로 Text Search(자유 텍스트).
+ * 결과는 지도 검색과 같은 파이프라인(searchResultPlaces)을 그대로 공유한다. */
+async function runNearbySearch(place: Place, types: string[] | null, keyword: string | null): Promise<void> {
+  if (place.lat == null || place.lng == null || !rtContainer || searchBusy) return;
+  searchBusy = true;
+  try {
+    const center = { lat: place.lat, lng: place.lng };
+    const results = types
+      ? await searchPlacesNearby(center, NEARBY_SEARCH_RADIUS_M, types)
+      : await searchPlacesByText(keyword!, { center, radius: NEARBY_SEARCH_RADIUS_M });
+    searchResultPlaces = results.map(googleResultToPlace);
+    if (searchResultPlaces.length === 0) window.alert('이 근처에 검색 결과가 없어요.');
+  } finally {
+    searchBusy = false;
+    updateSearchClearButton(rtContainer);
+    drawRouteOnMap(false);
+  }
+}
+
 /**
  * 우상단 고정 패널에 "확정된 장소" 정보를 채워 넣는다 — 장소 사진/평점/카테고리 +
  * 그 장소로 들어오고(prev) 나가는(next) 두 구간의 이동시간/비용을 함께 보여준다.
@@ -3098,6 +3260,19 @@ function updateStopInfoPanel(
     '  <button type="button" class="rt-stopinfo-close" aria-label="정보 닫기">✕</button>',
     '</div>',
     legsHtml ? '<div class="rt-stopinfo-legs">' + legsHtml + '</div>' : '',
+    p.lat != null && p.lng != null
+      ? [
+          '<div class="rt-stopinfo-nearby">',
+          '  <div class="rt-stopinfo-nearby-label">이 근처 검색</div>',
+          '  <div class="rt-stopinfo-nearby-chips">',
+          NEARBY_CATEGORY_CHIPS.map(
+            (c) => '    <button type="button" class="rt-stopinfo-nearby-chip" data-nearby-types="' + c.types.join(',') + '">' + escapeHtml(c.label) + '</button>'
+          ).join(''),
+          '  </div>',
+          '  <input type="text" class="rt-stopinfo-nearby-input" placeholder="직접 검색 (예: 환전소, Enter)" />',
+          '</div>',
+        ].join('')
+      : '',
   ].join('');
   stopInfoPanelEl.style.display = 'flex';
   stopInfoPanelEl.querySelector('.rt-stopinfo-close')?.addEventListener('click', (e) => {
@@ -3105,6 +3280,21 @@ function updateStopInfoPanel(
     highlightedPlaceId = null;
     drawRouteOnMap(false);
     renderRightPanel(rtContainer!);
+  });
+  stopInfoPanelEl.querySelectorAll('.rt-stopinfo-nearby-chip').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const types = (btn as HTMLElement).dataset.nearbyTypes?.split(',') ?? [];
+      void runNearbySearch(p, types, null);
+    });
+  });
+  const nearbyInput = stopInfoPanelEl.querySelector('.rt-stopinfo-nearby-input') as HTMLInputElement | null;
+  nearbyInput?.addEventListener('click', (e) => e.stopPropagation());
+  nearbyInput?.addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key !== 'Enter') return;
+    e.preventDefault();
+    const kw = nearbyInput.value.trim();
+    if (kw) void runNearbySearch(p, null, kw);
   });
 }
 
@@ -3188,6 +3378,48 @@ function openPlaceCard(g: any, p: Place): void {
       else removeStop(p.id);
       closePlaceCard();
       refreshAll(rtContainer!, { refit: false });
+    });
+  });
+}
+
+/** 지도 검색/근처 검색 결과 핀 클릭 시 뜨는 카드 — 아직 Brainstorm에도 없는 "진짜 구글
+ * 장소"라 openPlaceCard와 달리 담기 버튼 하나뿐이고(동선에서 빼기 개념이 없음), 눌렀을 때
+ * insertGooglePlace를 거쳐 실제 places 행으로 저장한다. */
+function openSearchResultCard(g: any, p: Place, cacheSource: string): void {
+  closePlaceCard();
+  const html = [
+    p.photo_url
+      ? '<div class="rt-clickcard-photo" style="background-image:url(\'' + p.photo_url + '\')"></div>'
+      : '<div class="rt-clickcard-photo">' + IC_SEARCH + '</div>',
+    '<button type="button" class="rt-clickcard-close" aria-label="닫기">✕</button>',
+    '<div class="rt-clickcard-body">',
+    '  <div class="rt-clickcard-name">' + escapeHtml(p.name) + '</div>',
+    '  <div class="rt-clickcard-meta">',
+    p.google_rating ? '    <span class="rt-clickcard-rate">' + IC_STAR + ' ' + p.google_rating.toFixed(1) + '</span>' : '',
+    p.category ? '    <span class="rt-clickcard-cat">' + escapeHtml(p.category) + '</span>' : '',
+    '  </div>',
+    '  <button type="button" class="rt-clickcard-action" data-card-act="add-board">' + IC_PLUS + ' Brainstorm에 담기</button>',
+    '</div>',
+  ].join('');
+
+  const Ctor = getOverlayCtor(g);
+  placeCardOverlay = new Ctor(new g.maps.LatLng(p.lat!, p.lng!), html, 'rt-clickcard');
+  placeCardOverlay.setMap(mapInstance);
+  placeCardPlaceId = p.id;
+
+  requestAnimationFrame(() => {
+    const div: HTMLElement | null = placeCardOverlay?.div ?? null;
+    if (!div) return;
+    div.querySelector('.rt-clickcard-close')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closePlaceCard();
+    });
+    const addBtn = div.querySelector('[data-card-act="add-board"]') as HTMLButtonElement | null;
+    addBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      addBtn.disabled = true;
+      addBtn.textContent = '담는 중…';
+      void addSearchResultToBoard(p, rtContainer!, cacheSource);
     });
   });
 }
@@ -3370,6 +3602,51 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
     map: mapInstance,
     title: p.name,
     zIndex: opts.highlighted ? 400 : opts.included ? 100 + (opts.num ?? 0) : 10,
+    icon: {
+      url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+      scaledSize: new g.maps.Size(w, h),
+      anchor: new g.maps.Point(cx, tipY),
+    },
+  });
+}
+
+// 검색 결과 핀은 후보/정류지와 같은 핀 모양(pinTearPath)을 쓰되, "아직 내 계획에 없는,
+// 방금 찾은 곳"이라는 신호로 앰버(주황) 톤을 쓴다 — ROUTE_ORANGE(다음 방문지 표시)와 같은 계열.
+const SEARCH_PIN_COLOR = '#E8833A';
+
+/** 지도 장소 검색 / 근처 검색 결과 핀 — buildMarkerV2와 같은 핀 모양을 공유하되 번호 없이
+ * 돋보기 아이콘만 넣어 "검색으로 찾은 곳"임을 표시한다. */
+function buildSearchResultMarker(g: any, p: Place): any {
+  const scale = pinZoomScale();
+  const r = 11 * scale;
+  const pad = 12;
+  const tail = r * PIN_TAIL_RATIO;
+  const w = Math.ceil(r * 2 + pad);
+  const h = Math.ceil(r + tail + pad);
+  const cx = w / 2;
+  const tipY = h - pad / 2;
+  const headCy = tipY - tail;
+  const whiteR = r - r * 0.24;
+
+  const shadow =
+    '<ellipse cx="' + cx + '" cy="' + (tipY + r * 0.1) + '" rx="' + r * 0.42 + '" ry="' + r * 0.15 + '" fill="rgba(11,42,92,0.18)"/>';
+  const inner = '<g transform="translate(' + (cx - 5.5) + ',' + (headCy - 5.5) + ') scale(0.46)" color="' + SEARCH_PIN_COLOR +
+    '" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+    iconInner(IC_SEARCH) + '</g>';
+
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+    shadow +
+    '<path d="' + pinTearPath(cx, headCy, r, tipY) + '" fill="' + SEARCH_PIN_COLOR + '"/>' +
+    '<circle cx="' + cx + '" cy="' + headCy + '" r="' + whiteR + '" fill="#FFFFFF"/>' +
+    inner +
+    '</svg>';
+
+  return new g.maps.Marker({
+    position: { lat: p.lat!, lng: p.lng! },
+    map: mapInstance,
+    title: p.name,
+    zIndex: 350,
     icon: {
       url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
       scaledSize: new g.maps.Size(w, h),
