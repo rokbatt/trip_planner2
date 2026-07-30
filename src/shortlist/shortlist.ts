@@ -2870,28 +2870,19 @@ const HOTEL_SITES: HotelSite[] = [
 ];
 
 /**
- * Step3에서 확정한 숙소 이름을 클릭하면 이동할 Booking.com 검색 URL.
+ * Step3에서 확정한 숙소 이름을 클릭하면 이동할 검색 URL — Google 호텔 가격비교.
  *
- * 시행착오 기록: "숙소명 + 전체 주소", "권역명(시암 등) + 숙소명"은 Booking이 목적지를 못
- * 찾고 홈으로 리다이렉트시킴을 확인함(한 번은 배포 반영 전 상태를 테스트한 결과였을 가능성도
- * 있음). Google Hotels로도 시도했지만 checkin/checkout이 반영 안 되는 문제가 있었음.
- * 최종적으로 "숙소명 + 도시명"(위 HOTEL_SITES의 Booking.com 지역 검색과 같은 형태, 다만
- * 권역명 대신 숙소명을 앞자리에 씀) 조합으로 브라우저에서 직접 검색이 되는 걸 확인함.
- *
- * `URLSearchParams.set`으로 인코딩하면 문자열 안의 띄어쓰기가 전부 "+"로 바뀌어서
- * "골든+포이어+스완나품+에어포트+호텔+방콕"처럼 숙소명 안에서도 단어마다 끊겨 검색됨.
- * 숙소명은 하나의 구(phrase)로, 도시명과의 경계에만 "+" 하나가 오도록 ss 파라미터만
- * 직접 조립함(숙소명 내부 띄어쓰기는 %20으로 인코딩되어 실제 공백으로 남음).
+ * 시행착오 기록: Booking.com 딥링크(searchresults.ko.html?ss=...)는 한동안 "숙소명 +
+ * 도시명" 조합으로 잘 됐지만 이후 안 먹히는 사례가 보고돼(리다이렉트/빈 결과) 신뢰할 수
+ * 없다고 판단, 아래 HOTEL_SITES의 Google Hotels 카드와 같은 방식(travel/search?q=)으로
+ * 바꿈. 이쪽은 Google 자체 검색이라 어떤 OTA로 리다이렉트되든 항상 결과가 뜨고, 특정
+ * 호텔명을 쿼리에 넣으면 그 호텔의 여러 예약 사이트 가격을 한 번에 비교해서 보여준다.
+ * 날짜는(위 Google Hotels 카드와 동일한 이유로) 쿼리에 넣지 않음 — 실제로 필터에
+ * 반영되는지 확인된 바가 없고, Google이 계정/세션 컨텍스트로 알아서 처리하는 것으로 보임.
  */
 function buildHotelSearchUrl(place: Place): string {
-  const ss = encodeURIComponent(place.name) + '+' + encodeURIComponent(getTripDestination());
-  const params = ['ss=' + ss];
-  const dates = getTripDatesISO();
-  if (dates) {
-    params.push('checkin=' + dates.checkin, 'checkout=' + dates.checkout);
-  }
-  params.push('group_adults=' + getTripHeadcount(), 'no_rooms=1', 'group_children=0');
-  return 'https://www.booking.com/searchresults.ko.html?' + params.join('&');
+  const q = place.name + ' ' + getTripDestination() + ' 호텔';
+  return 'https://www.google.com/travel/search?q=' + encodeURIComponent(q);
 }
 
 function renderHotelSiteCards(body: HTMLElement, destination: string, zoneName: string): void {
@@ -3477,7 +3468,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '          <div class="sl-step3-summary-photo"' + (basecamp.photo_url ? ' style="background-image:url(\'' + basecamp.photo_url + '\')"' : '') + '>' + (basecamp.photo_url ? '' : IC_BED) + '</div>',
     '          <div class="sl-step3-summary-body">',
     '            <div class="sl-step3-summary-top">',
-    '              <a class="sl-step3-summary-name sl-step3-summary-name-link" href="' + buildHotelSearchUrl(basecamp) + '" target="_blank" rel="noopener noreferrer" title="Booking.com에서 이 숙소 검색">' + escapeHtml(basecamp.name) + ' ' + IC_EXTLINK + '</a>',
+    '              <a class="sl-step3-summary-name sl-step3-summary-name-link" href="' + buildHotelSearchUrl(basecamp) + '" target="_blank" rel="noopener noreferrer" title="Google 호텔 가격비교에서 이 숙소 검색">' + escapeHtml(basecamp.name) + ' ' + IC_EXTLINK + '</a>',
     stars ? '              <div class="sl-step3-summary-stars">' + stars + '</div>' : '',
     '            </div>',
     '            <div class="sl-step3-summary-tags"><span class="sl-zone-tag">' + escapeHtml(categoryLabel) + '</span></div>',
