@@ -748,25 +748,68 @@
   line-height: 1.8;
 }
 
-.ws-detail-notes {
-  width: 100%;
-  min-height: 72px;
-  padding: 10px 12px;
-  border: 1px solid rgba(130,150,170,0.22);
-  border-radius: 10px;
-  background: #F8FBFE;
+/* 메모 — 긴 문단 대신 한 줄 = 항목 하나인 불릿 리스트 */
+.ws-notes-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ws-notes-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 0;
+}
+
+.ws-notes-bullet {
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #8FD8F8;
+}
+
+.ws-notes-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  outline: none;
   font-size: 13px;
   font-family: inherit;
   color: #0B2A5C;
-  resize: vertical;
-  transition: border-color 180ms cubic-bezier(0.2,0.8,0.2,1), background 180ms cubic-bezier(0.2,0.8,0.2,1);
+  padding: 4px 2px;
+  border-bottom: 1px solid transparent;
+  transition: border-color 180ms cubic-bezier(0.2,0.8,0.2,1);
 }
-.ws-detail-notes:focus {
-  outline: none;
-  border-color: #8FD8F8;
-  background: #FFFFFF;
+.ws-notes-input:focus { border-bottom-color: #8FD8F8; }
+.ws-notes-input::placeholder { color: #A8B7C7; }
+
+.ws-notes-remove {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: none;
+  background: none;
+  color: #B0BCC9;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 180ms cubic-bezier(0.2,0.8,0.2,1), color 180ms cubic-bezier(0.2,0.8,0.2,1), background 180ms cubic-bezier(0.2,0.8,0.2,1);
 }
-.ws-detail-notes::placeholder { color: #A8B7C7; }
+.ws-notes-item:hover .ws-notes-remove { opacity: 1; }
+.ws-notes-remove:focus-visible { opacity: 1; }
+.ws-notes-remove:hover { color: #C0392B; background: #FDEEEC; }
+
+.ws-notes-add-row .ws-notes-bullet { background: #D6DEE8; }
 
 .ws-detail-save-hint {
   display: block;

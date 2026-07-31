@@ -685,7 +685,7 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
     });
     panelEl.querySelector('#detail-close')?.addEventListener('click', closeDrawer);
 
-    bindDetailNoteSave(place.id);
+    bindDetailNotes(place.id, place.notes ?? null);
     bindDetailNameSave(place.id);
     bindDetailGatePicker(place, tripId, (updatedPlace) => openDetailPanel(updatedPlace));
 
@@ -806,7 +806,7 @@ function buildDetailPanelShell(place: any): string {
     '    </div>',
     '    <div class="ws-detail-section">',
     '      <span class="ws-detail-label">메모</span>',
-    '      <textarea class="ws-detail-notes" id="detail-notes" placeholder="메모를 남겨보세요...">' + escapeHtml(place.notes || '') + '</textarea>',
+    '      <ul class="ws-notes-list" id="ws-notes-list"></ul>',
     '      <span class="ws-detail-save-hint" id="detail-save-hint"></span>',
     '    </div>',
     '    <div class="ws-detail-section">',
@@ -875,20 +875,96 @@ function bindDetailGatePicker(place: any, tripId: string, onMoved: (updatedPlace
   });
 }
 
-/** 메모 입력을 디바운스 후 자동 저장 */
-function bindDetailNoteSave(placeId: string): void {
-  const textarea = document.getElementById('detail-notes') as HTMLTextAreaElement | null;
+/**
+ * 메모 — 긴 문단 하나가 아니라 "얼마임" 같은 짧은 줄들을 툭툭 던져 쌓는 불릿 리스트로 보여준다.
+ * DB 컬럼(places.notes)은 여전히 문자열 하나라 마이그레이션이 필요 없다 — 줄바꿈으로 줄을
+ * 구분해 저장하고, 화면에서만 줄 단위 리스트로 쪼개 보여준다. 기존에 저장돼 있던 긴 메모도
+ * 첫 줄 하나짜리 항목으로 그대로 보이고 편집할 수 있다.
+ */
+function bindDetailNotes(placeId: string, initialNotes: string | null): void {
+  const listEl = document.getElementById('ws-notes-list') as HTMLUListElement | null;
   const hint = document.getElementById('detail-save-hint') as HTMLElement | null;
-  if (!textarea) return;
+  if (!listEl) return;
 
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  textarea.addEventListener('input', () => {
+  let lines = (initialNotes ?? '').split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const save = (immediate = false) => {
     if (hint) hint.textContent = '저장 중...';
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(async () => {
-      const { error } = await supabase.from('places').update({ notes: textarea.value }).eq('id', placeId);
+    if (saveTimer) clearTimeout(saveTimer);
+    const commit = async () => {
+      const { error } = await supabase.from('places').update({ notes: lines.join('\n') || null }).eq('id', placeId);
+      if (error) console.error('메모 저장 실패:', error.message);
       if (hint) hint.textContent = error ? '저장 실패' : '저장됨';
       setTimeout(() => { if (hint) hint.textContent = ''; }, 1500);
-    }, 600);
-  });
+    };
+    if (immediate) void commit();
+    else saveTimer = setTimeout(commit, 500);
+  };
+
+  const bindRows = () => {
+    listEl.querySelectorAll('.ws-notes-input:not(.ws-notes-add-input)').forEach((el) => {
+      const input = el as HTMLInputElement;
+      const idx = Number(input.dataset.idx);
+      input.addEventListener('input', () => {
+        lines[idx] = input.value;
+        save();
+      });
+      input.addEventListener('keydown', (e) => {
+        if ((e as KeyboardEvent).key === 'Enter') { e.preventDefault(); input.blur(); }
+      });
+      input.addEventListener('blur', () => {
+        const trimmed = input.value.trim();
+        if (!trimmed) {
+          lines.splice(idx, 1);
+          save(true);
+          render();
+          return;
+        }
+        lines[idx] = trimmed;
+        save(true);
+      });
+    });
+    listEl.querySelectorAll('.ws-notes-remove').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = Number((btn as HTMLElement).dataset.idx);
+        lines.splice(idx, 1);
+        save(true);
+        render();
+      });
+    });
+    const addInput = listEl.querySelector('#ws-notes-add-input') as HTMLInputElement | null;
+    addInput?.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key !== 'Enter') return;
+      e.preventDefault();
+      const v = addInput.value.trim();
+      if (!v) return;
+      lines.push(v);
+      save(true);
+      render();
+      // 방금 새로 그려진 추가 입력칸에 다시 포커스 — "한 줄 입력 → Enter → 다음 줄" 흐름이 안 끊기게
+      (listEl.querySelector('#ws-notes-add-input') as HTMLInputElement | null)?.focus();
+    });
+  };
+
+  const render = () => {
+    listEl.innerHTML =
+      lines
+        .map(
+          (line, idx) =>
+            '<li class="ws-notes-item">' +
+            '<span class="ws-notes-bullet">·</span>' +
+            '<input type="text" class="ws-notes-input" value="' + escapeHtml(line) + '" data-idx="' + idx + '" />' +
+            '<button type="button" class="ws-notes-remove" data-idx="' + idx + '" aria-label="이 메모 지우기">✕</button>' +
+            '</li>'
+        )
+        .join('') +
+      '<li class="ws-notes-item ws-notes-add-row">' +
+      '<span class="ws-notes-bullet">·</span>' +
+      '<input type="text" class="ws-notes-input ws-notes-add-input" id="ws-notes-add-input" placeholder="메모를 한 줄씩 입력하고 Enter" />' +
+      '</li>';
+    bindRows();
+  };
+
+  render();
 }
