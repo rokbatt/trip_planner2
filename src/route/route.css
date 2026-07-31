@@ -707,9 +707,8 @@
 .rt-drag-handle:active { cursor: grabbing; }
 .rt-drag-handle svg { width: 11px; height: 11px; }
 
-/* 카테고리별 알록달록한 색 대신 차분한 블루 계열로 통일 — 지도 핀과 마찬가지로
-   방문 순서가 눈에 잘 들어와야 할 뿐, 카테고리 구분은 이미 아래 서브텍스트로 충분함.
-   숙소(출발점)만 네이비로 살짝 구분해 "여행의 중심"임을 표시한다. */
+/* 배경색은 항상 JS(stopIdentityColor)가 인라인 style로 지정 — 시작/끝 앵커는 고정색(네이비/골드),
+   중간 방문지는 팔레트를 순환. 여기 background는 그 값이 아직 안 붙었을 때의 안전한 기본값일 뿐. */
 .rt-panel-badge {
   grid-column: 2; width: 26px; height: 26px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
@@ -717,9 +716,6 @@
   background: var(--rt-blue);
   box-shadow: 0 1px 3px rgba(11,42,92,0.2);
 }
-.rt-panel-badge-stay { background: var(--rt-navy); }
-/* 공항(도착/출발) 앵커 — 숙소(네이비)와 구분되는 별도 블루 톤. CAT_COLOR.AIRPORT와 값 동일 */
-.rt-panel-badge-airport { background: #2E86C1; }
 .rt-panel-badge svg { width: 12px; height: 12px; }
 .rt-panel-name-col { grid-column: 3; min-width: 0; }
 .rt-panel-name {
@@ -738,11 +734,6 @@
 }
 .rt-panel-time:hover, .rt-panel-time:focus { background: var(--rt-mist); color: var(--rt-ink); outline: none; }
 .rt-panel-time.is-manual { color: var(--rt-blue); }
-/* ROUTE 단계는 구체적 시각 대신 예상 체류시간만 참고로 보여준다(공항 제외) */
-.rt-panel-dwell {
-  grid-column: 4; font-size: 10.5px; font-weight: 700; color: var(--rt-ink-3);
-  text-align: right; white-space: nowrap; padding: 3px 2px;
-}
 .rt-panel-remove {
   grid-column: 5; width: 18px; height: 18px; border-radius: 5px; border: none;
   background: none; color: var(--rt-ink-4); cursor: pointer; font-size: 11px; line-height: 1;

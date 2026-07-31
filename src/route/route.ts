@@ -2630,6 +2630,8 @@ function renderRightPanel(container: HTMLElement): void {
   const rows: string[] = [];
   // 앵커(숙소/공항)는 고정 색을 쓰고, 실제 방문지만 이 카운터로 팔레트를 순환한다 —
   // 앵커가 몇 번째 위치에 있든 실제 방문지 1번째는 항상 팔레트 첫 색부터 시작하게.
+  // 지도 핀(drawRouteOnMap)도 똑같은 stopIdentityColor를 쓰므로 색이 항상 서로 맞는다.
+  const { startId: panelStartId, endId: panelEndId } = dayAnchorIds(dayIndex);
   let visitColorIdx = 0;
   stops.forEach((p, i) => {
     const isBasecamp = isBasecampPlace(p, dayIndex);
@@ -2637,27 +2639,24 @@ function renderRightPanel(container: HTMLElement): void {
     const isAnchor = isBasecamp || isAirport; // 삭제는 금지하되, 순서는 자유롭게 바꿀 수 있음
     const memo = memoStore.get(p.id) ?? '';
     const highlighted = p.id === highlightedPlaceId;
-    const cardColor = isAnchor ? null : placeCardColorFor(visitColorIdx++);
+    const cardColor = stopIdentityColor(p, panelStartId, panelEndId, visitColorIdx);
+    if (!isAnchor) visitColorIdx++;
 
-    const badgeClass = isBasecamp ? ' rt-panel-badge-stay' : isAirport ? ' rt-panel-badge-airport' : '';
     const manualTime = timeOverride.has(timeKey(day.id, p.id));
-    // ROUTE 단계는 09:00 같은 구체적 시각을 강제하지 않고 "순서 + 체류시간"에만 집중한다.
-    // 단, 공항만은 예외 — 항공편 시각이라는 실제 제약이라 그대로 시각 입력을 유지한다.
-    const timeOrDwellHtml = isAirport
-      ? '  <input type="text" class="rt-panel-time' + (manualTime ? ' is-manual' : '') + '" value="' + times[i] + '"' +
-        ' data-place-id="' + p.id + '" inputmode="numeric" maxlength="5" spellcheck="false"' +
-        ' aria-label="' + escapeHtml(p.name) + ' 항공편 시각 (24시간 HH:MM)" />'
-      : isBasecamp
-      ? ''
-      : '  <span class="rt-panel-dwell" title="예상 체류시간(참고용 추정치)">' + fmtMin(dwellMinutes(categoryMeta(p, isBasecamp).key)) + ' 체류</span>';
+    // 예상 체류시간(참고용 추정치) 대신, 그 시각에 실제로 도착하는 시각(HH:MM)을 보여준다 —
+    // computeStopTimes가 앞선 정류지들의 체류·이동시간을 누적해 이미 계산해둔 값이라
+    // 공항이든 숙소든 일반 방문지든 전부 같은 방식으로 편집 가능한 시각 입력으로 통일한다.
+    const timeOrDwellHtml =
+      '  <input type="text" class="rt-panel-time' + (manualTime ? ' is-manual' : '') + '" value="' + times[i] + '"' +
+      ' data-place-id="' + p.id + '" inputmode="numeric" maxlength="5" spellcheck="false"' +
+      ' aria-label="' + escapeHtml(p.name) + ' 도착 시각 (24시간 HH:MM)" />';
     rows.push(
       [
         // 앵커(숙소/공항)도 이제 순서를 자유롭게 바꿀 수 있다 — draggable="false"였던 고정을 풂.
         // "순서 정리" 버튼(optimizedOrder)을 누르면 그때만 다시 양 끝으로 고정된다.
         '<div class="rt-panel-stop' + (highlighted ? ' rt-highlighted' : '') + '" draggable="true" data-place-id="' + p.id + '">',
         '  <span class="rt-drag-handle" title="드래그해서 순서 바꾸기" aria-hidden="true">' + IC_GRIP + '</span>',
-        '  <span class="rt-panel-badge' + badgeClass + '"' +
-          (cardColor ? ' style="background:' + cardColor + '"' : '') + '>' + (i + 1) + '</span>',
+        '  <span class="rt-panel-badge" style="background:' + cardColor + '">' + (i + 1) + '</span>',
         '  <div class="rt-panel-name-col"><div class="rt-panel-name">' + escapeHtml(p.name) + '</div><div class="rt-panel-sub">' + escapeHtml(p.category || (isBasecamp ? '숙소' : '')) + '</div></div>',
         timeOrDwellHtml,
         !isAnchor
@@ -2946,6 +2945,23 @@ const ROUTE_NAVY = '#243B78';
 // 맞는 골드/브론즈 계열 — 네이비+골드는 항공 라운지 브랜딩에서 흔한 조합이라 자연스럽다.
 const ROUTE_ORANGE = '#C08A2E';
 const ROUTE_GRAY = '#9AA7B8';
+// 이 DAY 동선의 시작 앵커(공항 도착 또는 그날의 시작 숙소)와 끝 앵커(끝 숙소 또는 출국 공항)는
+// 서로 다른 고정색을 쓴다 — "고정된 두 지점"이라는 정체성을 색으로도 드러내기 위함.
+// 시작=네이비(중심/거점), 끝=골드("다음 목적지"에 이미 쓰는 것과 같은 도착 강조색)로 통일.
+const ANCHOR_START_COLOR = ROUTE_NAVY;
+const ANCHOR_END_COLOR = ROUTE_ORANGE;
+
+/**
+ * 지도 핀과 우측 패널 배지가 항상 같은 색을 쓰도록 하는 단일 기준 — "이 핀 = 이 카드"가
+ * 색으로도 바로 연결되게 한다. 시작/끝 앵커는 고정색, 중간 방문지는 PLACE_CARD_PALETTE를
+ * 방문 순서대로 순환(앵커는 세지 않음 — 앵커가 몇 번째 위치에 있든 실제 방문지 1번째는
+ * 항상 팔레트 첫 색부터 시작).
+ */
+function stopIdentityColor(p: Place, startId: string | null, endId: string | null, visitIndex: number): string {
+  if (startId && p.id === startId) return ANCHOR_START_COLOR;
+  if (endId && p.id === endId) return ANCHOR_END_COLOR;
+  return placeCardColorFor(visitIndex);
+}
 // 기존 두께의 70% 수준으로(지도가 너무 두꺼운 선에 눌려 보인다는 피드백 반영)
 const MODE_STYLE: Record<Leg['mode'], { weight: number; dashed: boolean }> = {
   WALK: { weight: 3.5, dashed: true },
@@ -3112,11 +3128,15 @@ function drawRouteOnMap(refit: boolean): void {
   // 확정된(동선에 담긴) 장소를 클릭하면 정보 패널(사진/평점 + 앞뒤 두 구간)을 채운다.
   let stopInfoShown = false;
 
-  // 오늘 동선의 정류지 — 순서 번호 + 진행 상태 색
+  // 오늘 동선의 정류지 — 순서 번호 + 정체성 색(평소) / 진행 상태 색(포커스 중일 때만)
+  const { startId: anchorStartId, endId: anchorEndId } = dayAnchorIds(dayIndex);
+  let mapVisitColorIdx = 0;
   stops.forEach((p, i) => {
     const isBasecamp = isBasecampPlace(p, dayIndex);
+    const baseColor = stopIdentityColor(p, anchorStartId, anchorEndId, mapVisitColorIdx);
+    if (!isAnyAnchor(p, dayIndex)) mapVisitColorIdx++;
     // 여행은 아직 미래라 실제 "완료"는 없다. 선택한 지점을 현재로 보고 앞/뒤를 나눠
-    // 진행 방향이 읽히게 한다. 아무것도 선택하지 않았으면 전부 기본 네이비.
+    // 진행 방향이 읽히게 한다. 아무것도 선택하지 않았으면 각자의 정체성 색 그대로.
     let phase: StopPhase = 'plain';
     if (focusIdx >= 0) {
       if (i < focusIdx) phase = 'done';
@@ -3130,6 +3150,7 @@ function drawRouteOnMap(refit: boolean): void {
       num: i + 1,
       highlighted: p.id === focusId,
       phase,
+      baseColor,
     });
     marker.addListener('click', () => handlePinClick(g, p));
     mapMarkers.push(marker);
@@ -3493,13 +3514,16 @@ function iconInner(svg: string): string {
   return svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
 }
 
-/** 동선 안에서의 위치에 따른 핀 상태 — 색은 이것만으로 결정한다(카테고리 색 아님) */
+/** 동선 안에서의 위치에 따른 핀 상태 — 경로를 클릭해 진행 방향을 볼 때만 이 색이 끼어든다 */
 type StopPhase = 'current' | 'next' | 'done' | 'plain';
 
-function phaseColor(phase: StopPhase): string {
+/** baseColor는 아무것도 포커스하지 않은 평소 상태('plain')에 쓰는 그 정류지 고유색
+ * (stopIdentityColor) — 진행 상태 강조(next/done)가 없을 땐 이 색이 곧 핀 색이 된다. */
+function phaseColor(phase: StopPhase, baseColor: string): string {
   if (phase === 'next') return ROUTE_ORANGE;
   if (phase === 'done') return ROUTE_GRAY;
-  return ROUTE_NAVY; // current / plain
+  if (phase === 'current') return ROUTE_NAVY;
+  return baseColor; // plain
 }
 
 interface MarkerOpts {
@@ -3508,6 +3532,7 @@ interface MarkerOpts {
   num?: number;
   highlighted?: boolean;
   phase?: StopPhase;
+  baseColor?: string;
 }
 
 // 확대했을 때(REFERENCE_ZOOM 이상)의 핀 크기가 "적절한" 기준 — 그보다 축소하면 화면 픽셀
@@ -3572,7 +3597,7 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
   const tipY = h - pad / 2;
   const headCy = tipY - tail;
 
-  const borderColor = opts.included ? phaseColor(phase) : 'rgba(107,122,147,0.85)';
+  const borderColor = opts.included ? phaseColor(phase, opts.baseColor ?? ROUTE_NAVY) : 'rgba(107,122,147,0.85)';
   const numberColor = borderColor;
   // 위쪽에서만 링처럼 보이도록, 흰 원은 머리 반지름보다 살짝 작게(그 차이만큼이 링 두께)
   const ringWidth = r * 0.24;
