@@ -57,6 +57,8 @@ const ICON_MOVE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const ICON_BACK_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
 const ICON_COMMENT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
 const ICON_SWAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3L3 7l4 4M3 7h13a4 4 0 0 1 4 4v1M17 21l4-4-4-4M21 17H8a4 4 0 0 1-4-4v-1"/></svg>';
+const ICON_EXPAND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
+const ICON_COLLAPSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v3a2 2 0 0 1-2 2H4M15 3v3a2 2 0 0 0 2 2h3M4 15h3a2 2 0 0 1 2 2v3M21 15h-3a2 2 0 0 0-2 2v3"/></svg>';
 
 const GATES: GateConfig[] = [
   { key: '가고싶어', step: 'GATE 01', label: 'VISIT',    icon: ICON_PIN },
@@ -217,6 +219,12 @@ let boardGeneration = 0; // 렌더링마다 증가 — 오래된 렌더의 비�
 let boardContainer: HTMLElement | null = null; // 여행지 전환 시 재렌더용
 let boardDestinations: TripDestination[] = [];
 let boardActiveDest: TripDestination | null = null;
+
+/* ── 게이트 하나만 크게 보기(포커스 모드) ──
+ * 저장된 장소 데이터는 전혀 건드리지 않는다 — 이미 그려진 DOM에 클래스만 토글해서
+ * 인박스/시큐리티/다른 게이트를 잠깐 숨기고 이 게이트의 카드 목록만 가로로 넓게 펼친다.
+ * 데이터 재조회·재렌더가 없으므로 담아둔 장소가 초기화될 여지가 없다. */
+let focusedGateKey: string | null = null;
 
 /* ── 커스텀 자동완성 드롭다운 상태 ── */
 let acDropdownEl: HTMLElement | null = null;
@@ -495,6 +503,7 @@ export async function renderBoardContent(container: HTMLElement, tripId: string)
   securityEl = security;
   layout.appendChild(security);
   layout.appendChild(buildGates(tripId, places));
+  applyGateFocusState(); // 여행지 전환 등으로 재렌더돼도 포커스 중이던 게이트 상태를 그대로 반영
 
   subscribeRealtime(tripId);
   subscribeCommentActivity();
@@ -1436,6 +1445,7 @@ function buildGates(tripId: string, allPlaces: Place[]): HTMLElement {
 function createGateColumn(_tripId: string, gate: GateConfig, items: Place[]): HTMLElement {
   const col = document.createElement('div');
   col.className = 'bd-gate';
+  col.dataset.gate = gate.key;
 
   col.innerHTML = [
     '<div class="bd-gate-header">',
@@ -1444,6 +1454,7 @@ function createGateColumn(_tripId: string, gate: GateConfig, items: Place[]): HT
     '    <span class="bd-gate-icon">' + gate.icon + '</span>',
     '    <span class="bd-gate-label">' + gate.label + '</span>',
     '    <span class="bd-gate-count" id="gcount-' + gate.key + '">' + items.length + '</span>',
+    '    <button type="button" class="bd-gate-expand" data-gate="' + gate.key + '" title="이 게이트만 크게 보기">' + ICON_EXPAND + '</button>',
     '  </div>',
     '</div>',
     '<div class="bd-gate-list bd-dropzone" id="glist-' + gate.key + '" data-zone="' + gate.key + '"></div>',
@@ -1457,8 +1468,36 @@ function createGateColumn(_tripId: string, gate: GateConfig, items: Place[]): HT
   }
 
   attachDropzone(listEl);
+  col.querySelector('.bd-gate-expand')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleGateFocus(gate.key);
+  });
 
   return col;
+}
+
+/** 다른 게이트/인박스/시큐리티를 숨기고 이 게이트 하나만 화면 전체로 넓혀서 보여준다(다시
+ * 누르면 원래대로). 재렌더가 아니라 순수 DOM 클래스 토글이라 담긴 장소 데이터, 스크롤
+ * 위치, 진행 중이던 드래그 등 아무 상태도 초기화되지 않는다. */
+function toggleGateFocus(gateKey: string): void {
+  focusedGateKey = focusedGateKey === gateKey ? null : gateKey;
+  applyGateFocusState();
+}
+
+function applyGateFocusState(): void {
+  const layout = boardContainer?.querySelector('.bd-layout') as HTMLElement | null;
+  if (!layout) return;
+  layout.classList.toggle('bd-focus-mode', focusedGateKey !== null);
+
+  layout.querySelectorAll('.bd-gate').forEach((el) => {
+    const col = el as HTMLElement;
+    const isFocused = col.dataset.gate === focusedGateKey;
+    col.classList.toggle('is-focused', isFocused);
+    const btn = col.querySelector('.bd-gate-expand') as HTMLElement | null;
+    if (!btn) return;
+    btn.innerHTML = isFocused ? ICON_COLLAPSE : ICON_EXPAND;
+    btn.title = isFocused ? '전체 보기로 돌아가기' : '이 게이트만 크게 보기';
+  });
 }
 
 /* ── 게이트 카드 (보딩패스 스타일) — Google 데이터 있으면 리치 카드 ── */
