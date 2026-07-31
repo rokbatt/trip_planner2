@@ -115,15 +115,43 @@ function decodeHtmlEntities(s: string): string {
     .replace(/&#39;|&apos;/g, "'");
 }
 
-/** <meta property="og:xxx" content="..."> 형태를 속성 순서 상관없이 찾는다 */
+/** <meta property="og:xxx" content="..."> 형태를 속성 순서 상관없이 찾는다.
+ * 따옴표 문자를 캡처해 백레퍼런스로 짝을 맞춘다 — content="Tom's Cafe"처럼 큰따옴표
+ * 안에 작은따옴표(어퍼스트로피)가 섞여도 거기서 끊기지 않는다. */
 function extractMeta(html: string, prop: string): string | null {
   const escaped = prop.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re1 = new RegExp('<meta[^>]+(?:property|name)=["\']' + escaped + '["\'][^>]+content=["\']([^"\']*)["\']', 'i');
+  const re1 = new RegExp('<meta[^>]+(?:property|name)=["\']' + escaped + '["\'][^>]+content=(["\'])([\\s\\S]*?)\\1', 'i');
   const m1 = html.match(re1);
-  if (m1) return decodeHtmlEntities(m1[1]).trim() || null;
-  const re2 = new RegExp('<meta[^>]+content=["\']([^"\']*)["\'][^>]+(?:property|name)=["\']' + escaped + '["\']', 'i');
+  if (m1) return decodeHtmlEntities(m1[2]).trim() || null;
+  const re2 = new RegExp('<meta[^>]+content=(["\'])([\\s\\S]*?)\\1[^>]+(?:property|name)=["\']' + escaped + '["\']', 'i');
   const m2 = html.match(re2);
-  return m2 ? decodeHtmlEntities(m2[1]).trim() || null : null;
+  return m2 ? decodeHtmlEntities(m2[2]).trim() || null : null;
+}
+
+/**
+ * og 스크래핑이 막혔을 때의 최후 폴백 — Agoda/Booking 같은 예약 사이트는 URL 경로에
+ * 이미 실제 이름을 슬러그로 담고 있다(예: /eastin-grand-hotel-sathorn/hotel/...).
+ * 대시(-)가 가장 많은 세그먼트를 "이름"으로 보고 단어별로 대문자화한다. 지어내는 게
+ * 아니라 그 사이트가 URL에 넣어둔 실제 텍스트를 읽기 좋게 바꾸는 것뿐이다.
+ */
+function titleFromUrlSlug(targetUrl: string): string | null {
+  try {
+    const segments = new URL(targetUrl).pathname
+      .split('/')
+      .filter(Boolean)
+      .map((s) => s.replace(/\.[a-z0-9]+$/i, '')); // 끝의 .html 등 확장자 제거
+    if (segments.length === 0) return null;
+
+    const best = segments.reduce((a, b) => (b.split('-').length > a.split('-').length ? b : a));
+    const words = best.split(/[-_]+/).filter(Boolean);
+    if (words.length < 2) return null; // 대시가 거의 없으면 이름 슬러그가 아닐 가능성이 높아 폐기
+
+    return words
+      .map((w) => (/^[a-z0-9]+$/i.test(w) ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+      .join(' ');
+  } catch {
+    return null;
+  }
 }
 
 /** og:image 등 미리보기 이미지를 받아 link-previews 버킷에 재호스팅. 실패하면 null(치명적이지 않음) */
@@ -169,20 +197,30 @@ interface LinkPreviewResult {
 async function buildLinkPreview(supabase: any, targetUrl: string, linkId: string): Promise<LinkPreviewResult> {
   let html = '';
   try {
+    // 예약/여행 사이트는 자기 자신을 "봇"이라 밝히는 User-Agent를 적극적으로 차단하거나
+    // og 태그 없는 껍데기 페이지만 내려주는 경우가 많다(Agoda 등에서 실제로 확인됨).
+    // 사람이 보는 것과 같은 화면을 받기 위해 일반 브라우저처럼 요청한다(1회성 미리보기
+    // 조회일 뿐 대량 크롤링이 아니라 문제 없음 — Slack/Discord 등 링크 미리보기도 흔히 쓰는 방식).
     const pageRes = await fetch(targetUrl, {
       redirect: 'follow',
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MongsilBot/1.0; +https://mongsil.app)' },
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+      },
       signal: AbortSignal.timeout(8000),
     });
     const text = await pageRes.text();
     html = text.slice(0, 300000); // og 태그는 보통 <head> 안, 문서 앞쪽에 있어 앞부분만으로 충분
   } catch (e) {
-    console.error('[link-preview] 페이지를 못 읽음(제목/도메인만으로 대체):', (e as Error).message);
-    return { title: null, imageUrl: null, siteName: null, ogType: null };
+    console.error('[link-preview] 페이지를 못 읽음(URL 슬러그로 대체):', (e as Error).message);
+    return { title: titleFromUrlSlug(targetUrl), imageUrl: null, siteName: null, ogType: null };
   }
 
   const rawTitle = extractMeta(html, 'og:title') || (html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] ?? null);
-  const title = rawTitle ? decodeHtmlEntities(rawTitle).trim().slice(0, 200) || null : null;
+  // og:title도 <title>도 없으면(봇 차단으로 빈 껍데기만 받았을 가능성) URL 슬러그로 마지막 폴백
+  const title = rawTitle ? decodeHtmlEntities(rawTitle).trim().slice(0, 200) || null : titleFromUrlSlug(targetUrl);
   const siteName = extractMeta(html, 'og:site_name');
   const ogType = extractMeta(html, 'og:type');
   const ogImageRaw = extractMeta(html, 'og:image') || extractMeta(html, 'og:image:url') || extractMeta(html, 'twitter:image');

@@ -685,7 +685,7 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
     });
     panelEl.querySelector('#detail-close')?.addEventListener('click', closeDrawer);
 
-    bindDetailNotes(place.id, place.notes ?? null);
+    bindDetailNotes(place);
     bindDetailNameSave(place.id);
     bindDetailGatePicker(place, tripId, (updatedPlace) => openDetailPanel(updatedPlace));
 
@@ -880,20 +880,28 @@ function bindDetailGatePicker(place: any, tripId: string, onMoved: (updatedPlace
  * DB 컬럼(places.notes)은 여전히 문자열 하나라 마이그레이션이 필요 없다 — 줄바꿈으로 줄을
  * 구분해 저장하고, 화면에서만 줄 단위 리스트로 쪼개 보여준다. 기존에 저장돼 있던 긴 메모도
  * 첫 줄 하나짜리 항목으로 그대로 보이고 편집할 수 있다.
+ *
+ * place 객체 전체를 받아 저장할 때마다 place.notes를 직접 같이 갱신한다(DB에만 쓰고 끝내지
+ * 않음) — 이 place는 board.ts의 카드 클릭 핸들러가 클로저로 들고 있는 것과 같은 참조라서,
+ * 여기서 안 바꾸면 같은 카드를 다시 열었을 때 "닫기 전"의 옛 notes로 되돌아가 보이는 버그가
+ * 있었다(카드를 다시 그리기 전까지는 board.ts가 이 값을 다시 읽어오지 않기 때문).
  */
-function bindDetailNotes(placeId: string, initialNotes: string | null): void {
+function bindDetailNotes(place: any): void {
   const listEl = document.getElementById('ws-notes-list') as HTMLUListElement | null;
   const hint = document.getElementById('detail-save-hint') as HTMLElement | null;
   if (!listEl) return;
 
-  let lines = (initialNotes ?? '').split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+  const placeId = place.id;
+  let lines = ((place.notes as string | null) ?? '').split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   const save = (immediate = false) => {
     if (hint) hint.textContent = '저장 중...';
     if (saveTimer) clearTimeout(saveTimer);
+    const nextNotes = lines.join('\n') || null;
+    place.notes = nextNotes; // 같은 카드를 다시 열어도 방금 저장한 내용이 보이도록 즉시 반영
     const commit = async () => {
-      const { error } = await supabase.from('places').update({ notes: lines.join('\n') || null }).eq('id', placeId);
+      const { error } = await supabase.from('places').update({ notes: nextNotes }).eq('id', placeId);
       if (error) console.error('메모 저장 실패:', error.message);
       if (hint) hint.textContent = error ? '저장 실패' : '저장됨';
       setTimeout(() => { if (hint) hint.textContent = ''; }, 1500);
