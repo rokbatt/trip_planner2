@@ -204,7 +204,7 @@ api/                                  ← Vercel 서버리스 함수 (각각 완
 
 1. **Route 게이트** — 아직 플레이스홀더. Shortlist가 `mongsil:navigateGate` 이벤트로 넘기지만 갈 곳이 없음. 확정된 권역+숙소+장소를 기준으로 동선 최적화(Google Routes API)를 만들어야 함
 2. **Timeline 게이트** — 미구현. 날짜별 일정 배치
-3. **Checklist / Expense 탭** — 미구현. **Links 탭**은 채팅에 공유된 링크를 자동 수집하는 MVP만 구현됨(`src/links/links.ts`, `supabase/trip_links.sql`) — 직접 추가 UI는 없음
+3. **Checklist / Expense 탭** — 미구현. **Links 탭**은 채팅 링크를 자동 수집 + og:title/og:image 미리보기 + STAY/PLACE/FOOD/ACTIVITY/VIDEO/ARTICLE/OTHER 자동분류(애매하면 OTHER, 드래그로 수동 재분류 가능)까지 구현됨(`src/links/links.ts`, `src/trips/addLink.ts`, `api/cache-photo.ts`의 `kind:'link-preview'`, `supabase/trip_links.sql`) — 직접 추가 UI는 없음(채팅이 유일한 입력 경로)
 4. **`google.maps.Marker` → `AdvancedMarkerElement` 마이그레이션** — 지금은 폐기 예정 경고만 뜨는 상태, 급하진 않음 (최소 12개월 유예)
 5. **방콕 외 도시의 `stay_zones` 큐레이션** — 현재 방콕만 실제 조사된 데이터, 나머지 도시는 AI 폴백 상태
 

@@ -364,6 +364,10 @@ export interface Database {
           chat_message_id: string | null;
           url: string;
           message: string | null;
+          title: string | null;
+          image_url: string | null;
+          site_name: string | null;
+          category: string;
           added_by: string | null;
           display_name: string | null;
           avatar_url: string | null;
@@ -375,6 +379,10 @@ export interface Database {
           chat_message_id?: string | null;
           url: string;
           message?: string | null;
+          title?: string | null;
+          image_url?: string | null;
+          site_name?: string | null;
+          category?: string;
           added_by?: string | null;
           display_name?: string | null;
           avatar_url?: string | null;
