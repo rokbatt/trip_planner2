@@ -35,6 +35,18 @@ export async function insertGooglePlace(
 
     if (existing) {
       console.log('[Verify][중복 방지] "' + g.name + '"은 이미 이 여행에 추가되어 있어서 다시 만들지 않음');
+      // mood가 없는 채로 저장된 기존 행(예: 예전엔 게이트 매핑이 없던 카테고리)은 Brainstorm
+      // 대기줄에만 머물고 ROUTE 목록(.not('mood','is',null))에서도 빠져 "사라진 것처럼" 보인다.
+      // 지금 다시 담으려는 시도에서 올바른 mood를 계산할 수 있으면 이 기회에 바로 잡아준다.
+      if (!existing.mood && mood) {
+        const { data: healed, error: healError } = await supabase
+          .from('places')
+          .update({ mood })
+          .eq('id', existing.id)
+          .select()
+          .single();
+        if (!healError && healed) return { place: healed, isDuplicate: true };
+      }
       return { place: existing, isDuplicate: true };
     }
   }
