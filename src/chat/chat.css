@@ -86,6 +86,80 @@
   flex-shrink: 0;
 }
 
+.chat-edited {
+  color: #B0BCC9;
+  font-size: 9px;
+}
+
+/* ── 내 메시지 hover 시 나타나는 수정/삭제 버튼 (선택 상태를 덮어쓰지 않는 임시 노출) ── */
+.chat-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 150ms ease;
+  margin-bottom: 2px;
+}
+.chat-row.me:hover .chat-actions { opacity: 1; }
+
+.chat-action-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #94A3B8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+.chat-action-btn svg { width: 13px; height: 13px; }
+.chat-action-btn:hover { background: #EAF2FA; color: #0B2A5C; }
+.chat-delete-btn:hover { background: #FDEAEA; color: #C0392B; }
+
+/* ── 인라인 수정 폼 ── */
+.chat-row.editing { max-width: 100%; width: 100%; }
+
+.chat-edit-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.chat-edit-input {
+  flex: 1;
+  padding: 7px 11px;
+  border: 1px solid #8FD8F8;
+  border-radius: 14px;
+  background: #FFFFFF;
+  font-size: 13px;
+  font-family: inherit;
+  color: #0B2A5C;
+}
+.chat-edit-input:focus { outline: none; }
+
+.chat-edit-save,
+.chat-edit-cancel {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.chat-edit-save { background: #0B2A5C; color: #fff; }
+.chat-edit-save:hover { background: #0E3676; }
+.chat-edit-cancel { background: #F1F6FB; color: #697586; }
+.chat-edit-cancel:hover { background: #E1EAF2; }
+.chat-edit-save svg,
+.chat-edit-cancel svg { width: 13px; height: 13px; }
+
 /* ── 입력 영역 ── */
 .chat-input-form {
   display: flex;
