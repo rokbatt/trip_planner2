@@ -36,6 +36,12 @@ interface VercelResponse {
   json: (body: any) => void;
 }
 
+// link-preview 경로는 여러 User-Agent를 순서대로 시도할 수 있어(PREVIEW_USER_AGENTS)
+// 기본 10초 실행 제한을 넘길 수 있다 — Hobby 플랜에서도 설정 가능한 한도까지 여유를 둠.
+export const config = {
+  maxDuration: 25,
+};
+
 const BUCKET = 'place-photos';
 
 async function fetchFreshPhotoUrl(placeId: string, serverMapsKey: string): Promise<string | null> {
@@ -237,15 +243,18 @@ async function rehostArbitraryImage(supabase: any, imgUrl: string, linkId: strin
   }
 }
 
-/** 카카오톡/페이스북/슬랙 같은 메신저·SNS의 링크 미리보기 봇은 자신을 "일반 브라우저인 척"
- * 하지 않고 잘 알려진 크롤러라고 UA에 그대로 밝힌다. 사이트 입장에서는 자기 링크가 그런
- * 앱에서 예쁘게 보이길 원해서 이런 UA는 따로 허용해 서버 렌더링된 og 태그를 그대로
- * 내려주는 경우가 있다 — 반대로 일반 데스크톱 브라우저인 척하는 요청은 Akamai/Cloudflare
- * 같은 봇 차단에 걸리기 쉽다. 그래서 잘 알려진 미리보기 봇 UA부터 시도하고, 안 되면
- * 데스크톱 브라우저 UA로 한 번 더 시도한다. 다만 이건 만능은 아니다 — Agoda처럼 UA
- * 문자열뿐 아니라 발신 IP까지 실제 카카오/페이스북 크롤러 대역인지 검증하는 사이트에는
- * UA만 바꿔서는 못 뚫는다(우리 서버는 Vercel의 평범한 클라우드 IP라서). */
+/** 텔레그램/카카오톡/페이스북 같은 메신저·SNS의 링크 미리보기 봇은 자신을 "일반
+ * 브라우저인 척"하지 않고 잘 알려진 크롤러라고 UA에 그대로 밝힌다. 사이트 입장에서는
+ * 자기 링크가 그런 앱에서 예쁘게 보이길 원해서 이런 UA는 따로 허용 목록에 넣어 서버
+ * 렌더링된 og 태그를 그대로 내려주는 경우가 있다 — 반대로 일반 데스크톱 브라우저인 척하는
+ * 요청은 Akamai/Cloudflare 같은 봇 차단에 걸리기 쉽다(트립닷컴에서 실제로 확인 — 텔레그램
+ * 봇 UA는 통과하는데 카카오/페이스북 UA와 일반 브라우저 UA는 막힘. 반대로 아고다는
+ * 카카오/페이스북 UA에서만 통과. 사이트마다 허용 목록이 달라서 여러 개를 순서대로
+ * 시도하는 수밖에 없다). 다만 이건 만능은 아니다 — UA 문자열뿐 아니라 발신 IP까지
+ * 실제 크롤러 대역인지 검증하는 사이트에는 UA만 바꿔서는 못 뚫는다(우리 서버는 Vercel의
+ * 평범한 클라우드 IP라서). */
 const PREVIEW_USER_AGENTS = [
+  'TelegramBot (like TwitterBot)',
   'Mozilla/5.0 (compatible; KakaoTalk-Scrap/1.0; +https://devtalk.kakao.com/t/scrap/33984)',
   'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -300,6 +309,9 @@ interface LinkPreviewResult {
 /** 대상 페이지의 og 메타 태그를 읽어 제목/이미지/사이트명을 뽑는다. 페이지를 못 읽어도
  * 빈 값으로 채워 반환할 뿐 절대 throw하지 않는다 — 링크 저장 자체를 막으면 안 되므로. */
 async function buildLinkPreview(supabase: any, targetUrl: string, linkId: string): Promise<LinkPreviewResult> {
+  // 실패했을 때만 로그를 남기면 "로그가 없다"가 성공인지 아예 요청이 서버까지 안 왔는지
+  // 구분이 안 된다 — 요청이 실제로 여기까지 들어왔다는 것 자체를 확인할 수 있도록 시작 로그를 남김
+  console.error('[link-preview] 요청 시작:', targetUrl);
   let html = '';
   try {
     html = await fetchPreviewHtml(targetUrl);
@@ -345,6 +357,7 @@ async function buildLinkPreview(supabase: any, targetUrl: string, linkId: string
     console.error('[link-preview] og:image 메타 태그를 못 찾음:', targetUrl);
   }
 
+  console.error('[link-preview] 요청 완료 — title=' + (title ? 'O' : 'X') + ' image=' + (imageUrl ? 'O' : 'X') + ':', targetUrl);
   return { title, imageUrl, siteName, ogType };
 }
 
