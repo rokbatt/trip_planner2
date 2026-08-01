@@ -146,6 +146,17 @@ function isGenericTitle(title: string, targetUrl: string): boolean {
   return cleanTitle === clean(host) || cleanTitle === clean(hostRoot);
 }
 
+/** 네이버 블로그(blog.naver.com/{아이디}/{글번호})는 요청하면 실제 글 내용이 없는 겉포장
+ * 페이지만 내려주고, 진짜 og:title/og:image는 그 안의 iframe(id="mainFrame", PostView.naver)에
+ * 들어있다. 겉포장 페이지의 <title>은 그 블로그의 모든 글에서 "{블로그 이름} : 네이버
+ * 블로그"로 항상 똑같고 og:image는 아예 없어서, 이 iframe의 src를 찾아 한 번 더 따라간다. */
+function extractMainFrameSrc(html: string): string | null {
+  const m =
+    html.match(/<iframe[^>]+id=["']mainFrame["'][^>]+src=(["'])([\s\S]*?)\1/i) ||
+    html.match(/<iframe[^>]+src=(["'])([\s\S]*?)\1[^>]+id=["']mainFrame["']/i);
+  return m ? decodeHtmlEntities(m[2]) : null;
+}
+
 /**
  * og 스크래핑이 막혔을 때의 최후 폴백 — Agoda/Booking 같은 예약 사이트는 URL 경로에
  * 이미 실제 이름을 슬러그로 담고 있다(예: /eastin-grand-hotel-sathorn/hotel/...).
@@ -249,6 +260,35 @@ async function buildLinkPreview(supabase: any, targetUrl: string, linkId: string
     });
     const text = await pageRes.text();
     html = text.slice(0, 300000); // og 태그는 보통 <head> 안, 문서 앞쪽에 있어 앞부분만으로 충분
+
+    const host = new URL(targetUrl).hostname.replace(/^www\./, '');
+    if (host === 'blog.naver.com') {
+      const frameSrc = extractMainFrameSrc(html);
+      if (frameSrc) {
+        try {
+          const frameUrl = new URL(frameSrc, targetUrl).toString();
+          const frameRes = await fetch(frameUrl, {
+            redirect: 'follow',
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+            },
+            signal: AbortSignal.timeout(8000),
+          });
+          if (frameRes.ok) {
+            html = (await frameRes.text()).slice(0, 300000);
+          } else {
+            console.error('[link-preview] 네이버 블로그 mainFrame 요청 실패(' + frameRes.status + '):', frameUrl);
+          }
+        } catch (e) {
+          console.error('[link-preview] 네이버 블로그 mainFrame 요청 예외(무시):', (e as Error).message);
+        }
+      } else {
+        console.error('[link-preview] 네이버 블로그 mainFrame iframe을 못 찾음:', targetUrl);
+      }
+    }
   } catch (e) {
     console.error('[link-preview] 페이지를 못 읽음(URL 슬러그로 대체):', (e as Error).message);
     return { title: titleFromUrlSlug(targetUrl), imageUrl: null, siteName: null, ogType: null };
