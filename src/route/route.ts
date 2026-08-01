@@ -2950,6 +2950,9 @@ const ROUTE_GRAY = '#9AA7B8';
 // 시작=네이비(중심/거점), 끝=골드("다음 목적지"에 이미 쓰는 것과 같은 도착 강조색)로 통일.
 const ANCHOR_START_COLOR = ROUTE_NAVY;
 const ANCHOR_END_COLOR = ROUTE_ORANGE;
+// 경로 클릭으로 "현재 선택된 정류지"를 가리킬 때 쓰는 강조색. 동선 화살표(ROUTE_NAVY)와
+// 똑같은 색이면 핀이 화살표에 묻혀 보였던 문제 — 인디고로 분리해 화살표와 항상 구분되게 한다.
+const ROUTE_CURRENT = '#4C4FCE';
 
 /**
  * 지도 핀과 우측 패널 배지가 항상 같은 색을 쓰도록 하는 단일 기준 — "이 핀 = 이 카드"가
@@ -3522,7 +3525,7 @@ type StopPhase = 'current' | 'next' | 'done' | 'plain';
 function phaseColor(phase: StopPhase, baseColor: string): string {
   if (phase === 'next') return ROUTE_ORANGE;
   if (phase === 'done') return ROUTE_GRAY;
-  if (phase === 'current') return ROUTE_NAVY;
+  if (phase === 'current') return ROUTE_CURRENT;
   return baseColor; // plain
 }
 
