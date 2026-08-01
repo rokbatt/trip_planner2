@@ -112,7 +112,12 @@ function decodeHtmlEntities(s: string): string {
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'");
+    .replace(/&#39;|&apos;/g, "'")
+    // 숫자 문자 참조(&#44032; / &#xB791;) — Booking.com 등 일부 사이트가 한글 제목을
+    // 이름 붙은 엔티티 대신 이 형식으로 내려줘서, 위의 이름 엔티티만으로는 못 잡고
+    // 화면에 "&#xB791;..." 그대로 노출되는 문제가 있었다.
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec: string) => String.fromCodePoint(parseInt(dec, 10)));
 }
 
 /** <meta property="og:xxx" content="..."> 형태를 속성 순서 상관없이 찾는다.
