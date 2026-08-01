@@ -2933,11 +2933,11 @@ const ROUTE_CURRENT = '#3B6FE0';
 function stopIdentityColor(): string {
   return AERO_BLUE;
 }
-// Aero Light 스펙에 맞춰 두께를 4px로, 얇은 흰 아웃라인·글로우로 지도 배경과의 대비를 만든다.
+// 방향 화살표 대신 점선 자체로 "동선"임을 표현 — 모든 이동수단을 점선으로 통일했다.
 const MODE_STYLE: Record<Leg['mode'], { weight: number; dashed: boolean }> = {
   WALK: { weight: 3.5, dashed: true },
-  TRANSIT: { weight: 4, dashed: false },
-  TAXI: { weight: 4, dashed: false },
+  TRANSIT: { weight: 4, dashed: true },
+  TAXI: { weight: 4, dashed: true },
 };
 
 async function initMap(container: HTMLElement): Promise<void> {
@@ -3541,11 +3541,12 @@ function pinTearPath(cx: number, cy: number, r: number, tipY: number): string {
 }
 
 /**
- * 지도 핀:
- *  - 동선에 포함된 정류지: Aero Blue(또는 진행 상태 색)로 꽉 채운 핀 + 흰색 굵은 숫자 +
- *    글래스모피즘 느낌의 얇은 흰 테두리 링. 예전엔 흰 배경 원에 색 테두리·숫자를 얹어
- *    핀이 흐릿해 보였는데, 색을 꽉 채우고 흰 숫자를 올려 또렷한 "지도 마커"답게 바꿨다.
- *  - 아직 담지 않은 후보: 옅은 톤 테두리 + 흰 배경 원 + 카테고리 아이콘(배경으로 물러나게)
+ * 지도 핀 — 흰 배경 원 + 진행 상태 색 테두리·숫자로 위계를 낮추고, 동그라미 배지가 아니라
+ * 끝이 뾰족한 실제 지도 핀 모양으로. 테두리 색은 얇은 링이 아니라 원 아래로 이어지는 뾰족한
+ * 부분 전체를 채운다 — 뒤에 색깔 핀 실루엣을 통째로 깔고, 그 위에 살짝 작은 흰 원을 얹어
+ * 위쪽만 링처럼 보이고 아래 꼬리는 그대로 색이 드러나는 방식.
+ *  - 동선에 포함된 정류지: 순서 번호 + 진행 상태 색 테두리·숫자
+ *  - 아직 담지 않은 후보: 더 옅은 톤 테두리 + 카테고리 아이콘(배경으로 물러나게)
  */
 function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
   const meta = categoryMeta(p, opts.isBasecamp);
@@ -3564,13 +3565,10 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
   const headCy = tipY - tail;
 
   const borderColor = opts.included ? phaseColor(phase, opts.baseColor ?? AERO_BLUE) : 'rgba(107,122,147,0.85)';
-  // 포함된 정류지는 흰 숫자를 색 채운 핀 위에 얹고, 후보 핀은 예전처럼 흰 배경 위 색 아이콘.
-  const numberColor = opts.included ? '#FFFFFF' : borderColor;
-  // 후보 핀 전용 — 위쪽에서만 링처럼 보이도록, 흰 원은 머리 반지름보다 살짝 작게
+  const numberColor = borderColor;
+  // 위쪽에서만 링처럼 보이도록, 흰 원은 머리 반지름보다 살짝 작게(그 차이만큼이 링 두께)
   const ringWidth = r * 0.24;
   const whiteR = r - ringWidth;
-  // 포함된 정류지 핀에 두르는 글래스모피즘 흰 테두리(스펙상 2px 상당, 줌 배율만큼 스케일)
-  const pinRingWidth = 2 * scale;
 
   // 선택된 지점만 아주 옅은 Aero Blue halo로 강조 — 핀의 머리 부분을 중심으로
   const halo = opts.highlighted
@@ -3580,12 +3578,6 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
   // 그림자는 핀이 실제로 딛고 선 지점(끝)에 얕게
   const shadow =
     '<ellipse cx="' + cx + '" cy="' + (tipY + r * 0.1) + '" rx="' + r * 0.42 + '" ry="' + r * 0.15 + '" fill="rgba(11,42,92,0.18)"/>';
-
-  const pinBody = opts.included
-    ? '<path d="' + pinTearPath(cx, headCy, r, tipY) + '" fill="' + borderColor + '" stroke="rgba(255,255,255,0.8)" stroke-width="' +
-      pinRingWidth + '" stroke-linejoin="round"/>'
-    : '<path d="' + pinTearPath(cx, headCy, r, tipY) + '" fill="' + borderColor + '"/>' +
-      '<circle cx="' + cx + '" cy="' + headCy + '" r="' + whiteR + '" fill="#FFFFFF"/>';
 
   const inner = opts.included
     ? '<text x="' + cx + '" y="' + (headCy + 4.2) + '" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="' +
@@ -3598,7 +3590,8 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
     '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
     halo +
     shadow +
-    pinBody +
+    '<path d="' + pinTearPath(cx, headCy, r, tipY) + '" fill="' + borderColor + '"/>' +
+    '<circle cx="' + cx + '" cy="' + headCy + '" r="' + whiteR + '" fill="#FFFFFF"/>' +
     inner +
     '</svg>';
 
@@ -3793,29 +3786,19 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
   const lineOpacity = opts.dimmed ? 0.28 : opts.selected ? 1 : baseOpacity;
   const weight = opts.selected ? style.weight + 2 : style.weight;
 
-  // 화살표/점선 아이콘의 scale은 구글맵 심볼 스펙상 "화면 픽셀" 고정값이라, 지도를 축소해도
-  // 저절로 작아지지 않고 상대적으로 점점 커 보인다 — 핀 크기를 줄일 때 쓰는 것과 같은 줌
-  // 기반 배율을 곱해 지도 축소에 맞춰 자연스럽게 함께 작아지게 한다.
+  // 점선 아이콘의 scale은 구글맵 심볼 스펙상 "화면 픽셀" 고정값이라, 지도를 축소해도 저절로
+  // 작아지지 않고 상대적으로 점점 커 보인다 — 핀 크기를 줄일 때 쓰는 것과 같은 줌 기반 배율을
+  // 곱해 지도 축소에 맞춰 자연스럽게 함께 작아지게 한다.
+  // 방향을 가리키는 화살표는 없애고 점선만으로 동선을 표현 — 대시 길이를 넉넉히 키워
+  // (예전엔 짧은 틱 모양이라 점처럼 보였음) 12px 대시/8px 간격 정도의 또렷한 점선으로.
   const iconZoomScale = pinZoomScale();
-  const icons: any[] = [];
-  if (style.dashed) {
-    icons.push({
-      icon: { path: 'M 0,-1 0,1', strokeOpacity: lineOpacity, strokeColor: AERO_BLUE, strokeWeight: weight, scale: 3 * iconZoomScale },
+  const icons: any[] = [
+    {
+      icon: { path: 'M 0,-1 0,1', strokeOpacity: lineOpacity, strokeColor: AERO_BLUE, strokeWeight: weight, scale: 6 * iconZoomScale },
       offset: '0',
-      repeat: '15px',
-    });
-  }
-  icons.push({
-    icon: {
-      path: g.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-      scale: 3.4 * iconZoomScale,
-      strokeColor: AERO_BLUE,
-      strokeOpacity: lineOpacity,
-      fillColor: AERO_BLUE,
-      fillOpacity: lineOpacity,
+      repeat: '20px',
     },
-    offset: '96%',
-  });
+  ];
 
   // 선택/호버된 구간은 아주 옅은 Aero Blue halo를 아래에 깔아 배경에서 확실히 떠오르게
   if (opts.selected) {
@@ -3834,34 +3817,31 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
 
   // 은은한 Aero Blue 광채(glow) — 흰 아웃라인 바로 아래에 넓고 옅게 깔아 "활주로 레이더"
   // 느낌의 살짝 빛나는 경로선을 만든다.
-  if (!style.dashed) {
-    routePolylines.push(
-      new g.maps.Polyline({
-        map: mapInstance,
-        path,
-        geodesic: true,
-        strokeColor: AERO_BLUE,
-        strokeOpacity: opts.dimmed ? 0.08 : 0.22,
-        strokeWeight: weight + 8,
-        zIndex: opts.selected ? 17 : 7,
-      })
-    );
-  }
+  routePolylines.push(
+    new g.maps.Polyline({
+      map: mapInstance,
+      path,
+      geodesic: true,
+      strokeColor: AERO_BLUE,
+      strokeOpacity: opts.dimmed ? 0.08 : 0.22,
+      strokeWeight: weight + 8,
+      zIndex: opts.selected ? 17 : 7,
+    })
+  );
 
-  // 흰 테두리를 깔아 지도 배경과 대비를 만든다(도로 위에서도 선이 또렷하게 보임)
-  if (!style.dashed) {
-    routePolylines.push(
-      new g.maps.Polyline({
-        map: mapInstance,
-        path,
-        geodesic: true,
-        strokeColor: '#FFFFFF',
-        strokeOpacity: opts.dimmed ? 0.3 : 0.9,
-        strokeWeight: weight + 3,
-        zIndex: opts.selected ? 18 : 8,
-      })
-    );
-  }
+  // 흰 테두리를 깔아 지도 배경과 대비를 만든다(도로 위에서도 선이 또렷하게 보임) —
+  // 예전 대비 절반 두께(+3 → +1.5)로 얇게.
+  routePolylines.push(
+    new g.maps.Polyline({
+      map: mapInstance,
+      path,
+      geodesic: true,
+      strokeColor: '#FFFFFF',
+      strokeOpacity: opts.dimmed ? 0.3 : 0.9,
+      strokeWeight: weight + 1.5,
+      zIndex: opts.selected ? 18 : 8,
+    })
+  );
 
   return new g.maps.Polyline({
     map: mapInstance,
