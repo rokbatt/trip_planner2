@@ -128,6 +128,24 @@ function extractMeta(html: string, prop: string): string | null {
   return m2 ? decodeHtmlEntities(m2[2]).trim() || null : null;
 }
 
+/** og:title/<title>가 사이트 이름·도메인만 담은 "쓸모없는" 제목인지 판정한다. 예약
+ * 사이트는 봇 차단 시 실제 콘텐츠 대신 <title>Agoda.com</title> 같은 껍데기만 내려주는
+ * 경우가 있는데, 이때는 스크래핑 자체는 "성공"하지만 제목으로 쓸 가치가 없다 — 이런
+ * 경우엔 og:title이 있어도 URL 슬러그 폴백을 대신 쓴다. */
+function isGenericTitle(title: string, targetUrl: string): boolean {
+  let host = '';
+  try {
+    host = new URL(targetUrl).hostname.replace(/^www\./, '');
+  } catch {
+    return false;
+  }
+  const clean = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const cleanTitle = clean(title);
+  if (!cleanTitle) return true;
+  const hostRoot = host.split('.')[0];
+  return cleanTitle === clean(host) || cleanTitle === clean(hostRoot);
+}
+
 /**
  * og 스크래핑이 막혔을 때의 최후 폴백 — Agoda/Booking 같은 예약 사이트는 URL 경로에
  * 이미 실제 이름을 슬러그로 담고 있다(예: /eastin-grand-hotel-sathorn/hotel/...).
@@ -219,8 +237,10 @@ async function buildLinkPreview(supabase: any, targetUrl: string, linkId: string
   }
 
   const rawTitle = extractMeta(html, 'og:title') || (html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] ?? null);
-  // og:title도 <title>도 없으면(봇 차단으로 빈 껍데기만 받았을 가능성) URL 슬러그로 마지막 폴백
-  const title = rawTitle ? decodeHtmlEntities(rawTitle).trim().slice(0, 200) || null : titleFromUrlSlug(targetUrl);
+  const cleanedTitle = rawTitle ? decodeHtmlEntities(rawTitle).trim().slice(0, 200) || null : null;
+  // og:title/<title>이 없거나 도메인 이름만 담은 껍데기 값이면(봇 차단 가능성) URL 슬러그로 폴백
+  const title =
+    cleanedTitle && !isGenericTitle(cleanedTitle, targetUrl) ? cleanedTitle : titleFromUrlSlug(targetUrl) || cleanedTitle;
   const siteName = extractMeta(html, 'og:site_name');
   const ogType = extractMeta(html, 'og:type');
   const ogImageRaw = extractMeta(html, 'og:image') || extractMeta(html, 'og:image:url') || extractMeta(html, 'twitter:image');
