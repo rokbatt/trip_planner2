@@ -36,12 +36,11 @@ interface VercelResponse {
   json: (body: any) => void;
 }
 
-// link-preview 경로는 여러 User-Agent를 순서대로 시도하고(PREVIEW_USER_AGENTS) 이미지까지
-// 재호스팅할 수 있어, 모든 단계가 각자의 최대 타임아웃까지 다 채우는 최악의 경우 40초
-// 안팎이 걸릴 수 있다(각 단계는 이제 withTimeout으로 확실히 끊기지만, 그 합산 시간
-// 자체는 여전히 길 수 있음) — Hobby 플랜에서 설정 가능한 한도까지 여유를 둠.
+// link-preview 경로는 핸들러 레벨에서 FALLBACK_MS(20초) 안에 반드시 응답하도록 만들어져
+// 있지만, 내부 취소가 실제로 안 먹었을 때 백그라운드에 남는 프라미스가 정리될 시간까지
+// 감안해 여유를 둔다.
 export const config = {
-  maxDuration: 50,
+  maxDuration: 30,
 };
 
 const BUCKET = 'place-photos';
@@ -424,7 +423,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       res.status(400).json({ error: 'url, linkId가 필요해요.' });
       return;
     }
-    const result = await buildLinkPreview(supabase, url, linkId);
+    // buildLinkPreview 안에도 단계별 withTimeout이 있지만, 트립닷컴에서 그것마저 안 먹히고
+    // Vercel 함수 자체가 강제 종료될 때까지(maxDuration) 매달린 사례가 실제로 있었다 —
+    // AbortSignal/withTimeout이 특정 서버·리다이렉트 조합에서 안 먹는 런타임 특이 케이스가
+    // 있는 것으로 보임. 원인을 더 파고들기보다, 핸들러 최상단에서 완전히 독립적인 새
+    // setTimeout으로 한 번 더 감싸서 "무슨 일이 있어도" 정해진 시간 안에는 반드시
+    // 클라이언트에 응답하도록 만든다 — 안쪽에서 무엇이 왜 안 먹혔는지와 무관하게 항상 이긴다.
+    // (진 쪽 프라미스가 백그라운드에서 계속 돌 수는 있지만, 응답은 이미 나간 뒤라 사용자
+    // 경험에는 영향 없음 — 최악의 경우도 우리가 만든 URL 슬러그 폴백으로 정상 응답한다.)
+    const FALLBACK_MS = 20000;
+    let settled = false;
+    // 레이스에서 지더라도(폴백이 먼저 응답한 뒤) buildLinkPreview가 나중에 거부되면
+    // 잡아주는 핸들러가 없어 "unhandled rejection"이 남는다 — .catch로 항상 받아준다
+    // (buildLinkPreview는 원래 throw하지 않게 설계돼 있지만 방어적으로 한 번 더 잡음).
+    const backgroundPreview = buildLinkPreview(supabase, url, linkId)
+      .then((r) => {
+        settled = true;
+        return r;
+      })
+      .catch((e) => {
+        settled = true;
+        console.error('[link-preview] 백그라운드 처리 예외(무시):', (e as Error).message);
+        return { title: titleFromUrlSlug(url), imageUrl: null, siteName: null, ogType: null };
+      });
+    const result = await Promise.race([
+      backgroundPreview,
+      new Promise<LinkPreviewResult>((resolve) => {
+        setTimeout(() => {
+          if (!settled) {
+            console.error('[link-preview] 전체 처리 ' + FALLBACK_MS + 'ms 초과 — URL 슬러그 폴백으로 응답:', url);
+          }
+          resolve({ title: titleFromUrlSlug(url), imageUrl: null, siteName: null, ogType: null });
+        }, FALLBACK_MS);
+      }),
+    ]);
     res.status(200).json(result);
     return;
   }
