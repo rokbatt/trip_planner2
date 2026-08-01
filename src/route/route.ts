@@ -157,19 +157,12 @@ interface RealLeg {
 
 interface Pt { lat: number; lng: number }
 
-interface MemberLite {
-  id: string;
-  display_name: string | null;
-}
-
 interface HistoryState {
   past: string[][];
   future: string[][];
 }
 
 type ToolKind = 'select' | 'add' | 'connect' | 'transport' | 'memo' | 'delete';
-
-const MEMBER_PALETTE = ['#2E6BE6', '#F59E0B', '#16A34A', '#9333EA', '#DB2777', '#0891B2'];
 
 /** 하단 플로팅 툴바 정의 — 라벨/툴팁/단축키를 한 곳에서 관리 */
 const TOOLS: Array<{ key: ToolKind; label: string; icon: string; tip: string; shortcut: string; danger?: boolean }> = [
@@ -216,7 +209,6 @@ let activeDayId = '';
 let dayRangeStartDate: string | null = null;
 let panelCollapsed = false;
 let leftPanelCollapsed = false;
-let members: MemberLite[] = [];
 
 let activeTool: ToolKind = 'select';
 let connectFromId: string | null = null;
@@ -323,7 +315,6 @@ export function teardownRoute(): void {
   dayRangeStartDate = null;
   panelCollapsed = false;
   leftPanelCollapsed = false;
-  members = [];
   activeTool = 'select';
   connectFromId = null;
   highlightedPlaceId = null;
@@ -837,23 +828,6 @@ async function loadPlaces(tripId: string): Promise<Place[]> {
   return data ?? [];
 }
 
-async function loadMembers(tripId: string): Promise<MemberLite[]> {
-  const { data, error } = await supabase
-    .from('trip_members')
-    .select('id, display_name')
-    .eq('trip_id', tripId)
-    .order('joined_at', { ascending: true });
-  if (error) {
-    console.error('[Route] members load error:', error.message);
-    return [];
-  }
-  return data ?? [];
-}
-
-function memberColor(i: number): string {
-  return MEMBER_PALETTE[i % MEMBER_PALETTE.length];
-}
-
 /** shortlist 확정 결과(숙소 + 확정 장소들)를 이어받아 초기 상태 구성 */
 async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
   placeById = new Map(places.map((p) => [p.id, p]));
@@ -1188,9 +1162,8 @@ export async function renderRouteContent(container: HTMLElement, tripId: string)
 
   container.innerHTML = '<div class="rt-loading"><span class="rt-loading-spinner"></span>동선 준비 중...</div>';
 
-  const [trip, places, mem] = await Promise.all([loadTrip(tripId), loadPlaces(tripId), loadMembers(tripId)]);
+  const [trip, places] = await Promise.all([loadTrip(tripId), loadPlaces(tripId)]);
   currentTrip = trip;
-  members = mem;
   if (!trip) {
     container.innerHTML = '<div class="rt-loading">여행 정보를 찾을 수 없어요.</div>';
     return;
@@ -1292,8 +1265,6 @@ function buildPageHtml(): string {
     '          <button type="button" class="rt-float-adhoc" id="rt-float-adhoc" title="지도를 클릭한 위치에 Brainstorm에 없는 장소(예: 특정 출입구, 뷰포인트)를 새로 추가해요">' + IC_PIN_PLUS + ' 지도에 직접 추가</button>',
     '        </div>',
 
-    '        <div class="rt-memberlegend" id="rt-memberlegend"></div>',
-
     '        <div class="rt-toolfloat" id="rt-toolfloat" role="toolbar" aria-label="동선 편집 도구">',
     TOOLS.map((t) =>
       '          <button type="button" class="rt-tool' + (t.key === 'select' ? ' active' : '') + (t.danger ? ' danger' : '') +
@@ -1322,7 +1293,6 @@ function bindPage(container: HTMLElement): void {
   renderCatFilters(container);
   renderLeftPanel(container);
   renderRightPanel(container);
-  renderMemberLegend(container);
   bindSearchInputs(container);
   bindToolbar(container);
   bindOptionsMenu(container);
@@ -1625,29 +1595,6 @@ function setAdhocMode(container: HTMLElement, on: boolean): void {
 
 function bindAdhocButton(container: HTMLElement): void {
   container.querySelector('#rt-float-adhoc')?.addEventListener('click', () => setAdhocMode(container, !adhocMode));
-}
-
-/* ── 협업 멤버 색상 범례 ── */
-function renderMemberLegend(container: HTMLElement): void {
-  const el = container.querySelector('#rt-memberlegend') as HTMLElement;
-  if (!el) return;
-  if (!members.length) {
-    el.innerHTML = '';
-    el.style.display = 'none';
-    return;
-  }
-  el.style.display = '';
-  const MAX = 4;
-  el.innerHTML =
-    members
-      .slice(0, MAX)
-      .map(
-        (m, i) =>
-          '<div class="rt-memberlegend-item"><span class="rt-memberlegend-dot" style="background:' + memberColor(i) + '"></span>' +
-          escapeHtml(m.display_name || '멤버') + '</div>'
-      )
-      .join('') +
-    (members.length > MAX ? '<span class="rt-memberlegend-more">+' + (members.length - MAX) + '</span>' : '');
 }
 
 /* ── 하단 플로팅 툴바 ── */
@@ -2695,12 +2642,6 @@ function renderRightPanel(container: HTMLElement): void {
     '  <span class="rt-panel-dot" style="background:' + dColor + '"></span>',
     '  <span class="rt-panel-daylabel">' + escapeHtml(day.label) + '</span>',
     '  <span class="rt-panel-daydate">' + dayDateLabel(dayIndex) + '</span>',
-    '  <div class="rt-panel-header-avatars">' +
-      members
-        .slice(0, 3)
-        .map((m, i) => '<div class="rt-panel-avatar" style="background:' + memberColor(i) + '">' + escapeHtml((m.display_name || '?').charAt(0)) + '</div>')
-        .join('') +
-      '</div>',
     '  <button type="button" class="rt-panel-more" id="rt-panel-more" aria-label="이 DAY 메뉴">' + IC_DOTS + '</button>',
     '</div>',
     aiPlanNoticeHtml(),
@@ -2922,7 +2863,6 @@ function refreshAll(container: HTMLElement, opts: { refit: boolean } = { refit: 
   renderDayTabs(container);
   renderLeftPanel(container);
   renderRightPanel(container);
-  renderMemberLegend(container);
   drawRouteOnMap(opts.refit);
   // 변경이 실제로 있을 때만 저장되고(지문 비교), 새로 생긴 구간은 실측 데이터를 채운다.
   scheduleSave();
