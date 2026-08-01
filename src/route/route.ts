@@ -2941,15 +2941,19 @@ function refreshAll(container: HTMLElement, opts: { refit: boolean } = { refit: 
  * 도보만 점선을 유지 — 실제 보행로가 도로와 다를 수 있다는 신호로 유용해서.
  */
 const ROUTE_NAVY = '#243B78';
-// 네이비 위주 팔레트에 안 어울리던 밝은 주황(#E8833A) 대신, "Airport Lounge Premium" 톤에
-// 맞는 골드/브론즈 계열 — 네이비+골드는 항공 라운지 브랜딩에서 흔한 조합이라 자연스럽다.
-const ROUTE_ORANGE = '#C08A2E';
+// 예전엔 금색(#C08A2E)이었지만 네이비 위주 팔레트와 잘 안 어울린다는 피드백으로 밝은
+// 하늘색 계열로 교체 — "다음 목적지"라는 도착 강조 의미는 그대로 유지.
+const ROUTE_NEXT = '#38BDF8';
 const ROUTE_GRAY = '#9AA7B8';
 // 이 DAY 동선의 시작 앵커(공항 도착 또는 그날의 시작 숙소)와 끝 앵커(끝 숙소 또는 출국 공항)는
 // 서로 다른 고정색을 쓴다 — "고정된 두 지점"이라는 정체성을 색으로도 드러내기 위함.
-// 시작=네이비(중심/거점), 끝=골드("다음 목적지"에 이미 쓰는 것과 같은 도착 강조색)로 통일.
+// 시작=네이비(중심/거점), 끝=하늘색("다음 목적지"에 이미 쓰는 것과 같은 도착 강조색)로 통일.
 const ANCHOR_START_COLOR = ROUTE_NAVY;
-const ANCHOR_END_COLOR = ROUTE_ORANGE;
+const ANCHOR_END_COLOR = ROUTE_NEXT;
+// 경로 클릭으로 "현재 선택된 정류지"를 가리킬 때 쓰는 강조색. 동선 화살표(ROUTE_NAVY)와
+// 똑같은 색이면 핀이 화살표에 묻혀 보였던 문제 — 화살표보다 한 톤 밝은 중간톤 파랑으로
+// 분리해 화살표와 항상 구분되게 한다.
+const ROUTE_CURRENT = '#3B6FE0';
 
 /**
  * 지도 핀과 우측 패널 배지가 항상 같은 색을 쓰도록 하는 단일 기준 — "이 핀 = 이 카드"가
@@ -3520,9 +3524,9 @@ type StopPhase = 'current' | 'next' | 'done' | 'plain';
 /** baseColor는 아무것도 포커스하지 않은 평소 상태('plain')에 쓰는 그 정류지 고유색
  * (stopIdentityColor) — 진행 상태 강조(next/done)가 없을 땐 이 색이 곧 핀 색이 된다. */
 function phaseColor(phase: StopPhase, baseColor: string): string {
-  if (phase === 'next') return ROUTE_ORANGE;
+  if (phase === 'next') return ROUTE_NEXT;
   if (phase === 'done') return ROUTE_GRAY;
-  if (phase === 'current') return ROUTE_NAVY;
+  if (phase === 'current') return ROUTE_CURRENT;
   return baseColor; // plain
 }
 
@@ -3642,8 +3646,9 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
 }
 
 // 검색 결과 핀은 후보/정류지와 같은 핀 모양(pinTearPath)을 쓰되, "아직 내 계획에 없는,
-// 방금 찾은 곳"이라는 신호로 골드 톤을 쓴다 — ROUTE_ORANGE(다음 방문지 표시)와 같은 색.
-const SEARCH_PIN_COLOR = ROUTE_ORANGE;
+// 방금 찾은 곳"이라는 신호로 별도 톤을 쓴다 — ROUTE_NEXT(다음 방문지 표시)와 동시에 지도에
+// 뜰 수 있어 헷갈리지 않도록 파랑이 아닌 틸(teal) 계열로 구분.
+const SEARCH_PIN_COLOR = '#14B8A6';
 
 /** 구글 카테고리 한글 라벨(googleMaps.ts의 CATEGORY_MAP과 동일한 값) → 검색결과 핀 아이콘.
  * 전부 돋보기로 통일돼 있던 걸, 카페=커피잔·편의점=가게처럼 한눈에 구분되게 한다.
