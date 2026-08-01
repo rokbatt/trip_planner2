@@ -515,7 +515,7 @@
   100% { width: 62px; height: 62px; opacity: 0; }
 }
 
-/* 지도/위성 전환 — 구글 기본 버튼 대신 하단 툴바(.rt-tool)와 같은 글래스+네이비 언어로 통일 */
+/* 지도/위성 전환 — 구글 기본 버튼 대신 상단 툴바 아이콘 버튼(.rt-iconbtn)과 같은 글래스+네이비 언어로 통일 */
 .rt-maptype-control {
   display: inline-flex; align-items: center; gap: 2px;
   background: var(--rt-glass);
@@ -536,65 +536,18 @@
 .rt-maptype-btn.active { background: var(--rt-navy); color: #fff; }
 .rt-maptype-btn.active:hover { background: var(--rt-navy-hover); }
 
-/* ── 하단 플로팅 툴바 ── */
-.rt-toolfloat {
-  position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
-  z-index: 5;
-  display: inline-flex; align-items: center; gap: 2px;
-  background: var(--rt-glass);
+/* ── 상단 툴바의 실행취소/다시실행 아이콘 버튼 ── */
+.rt-iconbtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 33px; height: 33px; border-radius: 10px;
+  border: 1px solid var(--rt-line); background: var(--rt-glass);
   backdrop-filter: var(--rt-blur); -webkit-backdrop-filter: var(--rt-blur);
-  border: 1px solid var(--rt-line);
-  border-radius: 15px; padding: 6px;
-  box-shadow: var(--rt-shadow-lg);
+  color: var(--rt-ink-2); cursor: pointer; font-family: inherit;
+  transition: border-color var(--rt-ease), background var(--rt-ease), color var(--rt-ease);
 }
-.rt-tool {
-  position: relative;
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
-  width: 56px; padding: 7px 4px 6px; border-radius: 11px; border: none;
-  background: none; color: var(--rt-ink-2); cursor: pointer; font-family: inherit;
-  transition: background var(--rt-ease), color var(--rt-ease);
-}
-.rt-tool:hover { background: rgba(255,255,255,0.8); color: var(--rt-ink); }
-.rt-tool.active { background: var(--rt-navy); color: #fff; }
-.rt-tool.active:hover { background: var(--rt-navy-hover); }
-.rt-tool svg { width: 16px; height: 16px; }
-.rt-tool-label { font-size: 9.5px; font-weight: 700; white-space: nowrap; }
-.rt-tool.danger:hover { background: #FDEEEC; color: #C0392B; }
-.rt-tool.danger.active { background: #C0392B; color: #fff; }
-.rt-tool-sep { width: 1px; height: 30px; background: var(--rt-line-strong); margin: 0 5px; flex-shrink: 0; }
-.rt-tool[disabled] { opacity: 0.32; cursor: default; }
-.rt-tool[disabled]:hover { background: none; color: var(--rt-ink-2); }
-
-/* 툴 툴팁 — 단축키까지 함께 안내 */
-.rt-tool[data-tip]::after {
-  content: attr(data-tip);
-  position: absolute; bottom: calc(100% + 9px); left: 50%; transform: translateX(-50%);
-  padding: 5px 9px; border-radius: 7px;
-  background: rgba(11,42,92,0.94); color: #fff;
-  font-size: 10.5px; font-weight: 600; white-space: nowrap; letter-spacing: 0.01em;
-  opacity: 0; pointer-events: none;
-  transition: opacity 130ms ease, transform 130ms ease;
-}
-.rt-tool[data-tip]:hover::after { opacity: 1; transform: translateX(-50%) translateY(-2px); }
-.rt-tool[disabled][data-tip]:hover::after { opacity: 0; }
-
-/* ── 협업 멤버 색상 범례 (Google 줌 컨트롤과 겹치지 않도록 좌상단 패널 아래) ── */
-.rt-memberlegend {
-  position: absolute; left: 16px; bottom: 18px; z-index: 4;
-  display: flex; align-items: center; gap: 10px;
-  background: var(--rt-glass);
-  backdrop-filter: var(--rt-blur); -webkit-backdrop-filter: var(--rt-blur);
-  border: 1px solid var(--rt-line);
-  border-radius: 999px; padding: 7px 13px;
-  box-shadow: var(--rt-shadow-md);
-  max-width: 260px; overflow: hidden;
-}
-.rt-memberlegend-item {
-  display: inline-flex; align-items: center; gap: 5px;
-  font-size: 10.5px; font-weight: 700; color: var(--rt-ink-2); white-space: nowrap;
-}
-.rt-memberlegend-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.rt-memberlegend-more { font-size: 10px; color: var(--rt-ink-4); font-weight: 700; }
+.rt-iconbtn svg { width: 15px; height: 15px; }
+.rt-iconbtn:hover:not(:disabled) { border-color: var(--rt-sky); background: #fff; color: var(--rt-ink); }
+.rt-iconbtn:disabled { opacity: 0.35; cursor: default; }
 
 /* ══════════════ 우측 패널 ══════════════ */
 .rt-panel-col {
@@ -639,17 +592,10 @@
 .rt-panel-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--rt-blue); flex-shrink: 0; }
 .rt-panel-daylabel { font-size: 14px; font-weight: 800; color: var(--rt-ink); letter-spacing: 0.01em; }
 .rt-panel-daydate { font-size: 11px; color: var(--rt-ink-3); font-weight: 600; }
-.rt-panel-header-avatars { display: flex; margin-left: auto; flex-shrink: 0; }
-.rt-panel-avatar {
-  width: 21px; height: 21px; border-radius: 50%; margin-left: -6px;
-  border: 1.5px solid #fff; display: flex; align-items: center; justify-content: center;
-  font-size: 8.5px; font-weight: 800; color: #fff; background: var(--rt-ink-3);
-  box-sizing: border-box;
-}
 .rt-panel-more {
   width: 22px; height: 22px; border-radius: 7px; border: none; background: none;
   color: var(--rt-ink-3); display: flex; align-items: center; justify-content: center; cursor: pointer;
-  flex-shrink: 0; transition: background var(--rt-ease), color var(--rt-ease);
+  flex-shrink: 0; margin-left: auto; transition: background var(--rt-ease), color var(--rt-ease);
 }
 .rt-panel-more:hover { background: var(--rt-mist); color: var(--rt-ink); }
 .rt-panel-more svg { width: 14px; height: 14px; }
@@ -1062,8 +1008,6 @@
 /* ── 반응형 ── */
 @media (max-width: 1180px) {
   .rt-float-search { width: 216px; }
-  .rt-tool { width: 50px; }
-  .rt-tool-label { font-size: 9px; }
 }
 @media (max-width: 1080px) {
   .rt-main { flex-direction: column; }
@@ -1074,16 +1018,10 @@
   .rt-toolbar { align-items: flex-start; }
   .rt-toolbar-right { width: 100%; }
   .rt-searchbox { flex: 1; min-width: 0; }
-  /* 좁은 화면에선 툴바가 지도 폭을 넘지 않도록 가로 스크롤 허용 */
-  .rt-toolfloat { max-width: calc(100% - 32px); overflow-x: auto; scrollbar-width: none; }
-  .rt-toolfloat::-webkit-scrollbar { display: none; }
-  .rt-memberlegend { display: none; }
   .rt-float-search { max-height: calc(100% - 104px); }
 }
 @media (max-width: 720px) {
   .rt-float-search { width: 184px; top: 12px; left: 12px; }
-  .rt-tool-label { display: none; }
-  .rt-tool { width: 40px; padding: 9px 4px; }
   .rt-panel-summary-value { font-size: 11.5px; }
 }
 

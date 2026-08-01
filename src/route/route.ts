@@ -56,7 +56,6 @@ type Trip = Database['public']['Tables']['trips']['Row'];
 const IC_WALK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4" r="2"/><path d="M11 8l-3 3 2 7M11 8l3 2 3-1M8 11l-3 2v6M13 10l2 4-2 6"/></svg>';
 const IC_TRANSIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="14" rx="2"/><path d="M4 11h16M8 21l2-4h4l2 4M8 7h.01M16 7h.01"/></svg>';
 const IC_TAXI = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M5 17a2 2 0 1 0 4 0M15 17a2 2 0 1 0 4 0M5 17l1.5-5h11L19 17M8 12V8h8v4"/></svg>';
-const IC_CAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l1.5-5h11L19 13M5 17h14M5 13h14v4H5zM7 17v2M17 17v2"/><circle cx="7.5" cy="15" r="0.6"/><circle cx="16.5" cy="15" r="0.6"/></svg>';
 const IC_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
 const IC_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
 const IC_CHEVRON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
@@ -81,9 +80,7 @@ const IC_STORE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const IC_SEARCH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
 const IC_EXTLINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>';
 const IC_DOTS = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
-const IC_CURSOR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3l6.5 17 2-7 7-2L5 3Z"/></svg>';
 const IC_PIN_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21C12 21 19 14.5 19 9.5C19 5.9 15.9 3 12 3C8.1 3 5 5.9 5 9.5C5 14.5 12 21 12 21Z"/><path d="M12 6.5v6M9 9.5h6"/></svg>';
-const IC_LINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l6-6"/><path d="M8 13l-2 2a4 4 0 0 0 6 6l2-2M16 11l2-2a4 4 0 0 0-6-6l-2 2"/></svg>';
 const IC_NOTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 const IC_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2m-8 0 1 13a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-13"/></svg>';
 const IC_UNDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-2"/></svg>';
@@ -157,29 +154,10 @@ interface RealLeg {
 
 interface Pt { lat: number; lng: number }
 
-interface MemberLite {
-  id: string;
-  display_name: string | null;
-}
-
 interface HistoryState {
   past: string[][];
   future: string[][];
 }
-
-type ToolKind = 'select' | 'add' | 'connect' | 'transport' | 'memo' | 'delete';
-
-const MEMBER_PALETTE = ['#2E6BE6', '#F59E0B', '#16A34A', '#9333EA', '#DB2777', '#0891B2'];
-
-/** 하단 플로팅 툴바 정의 — 라벨/툴팁/단축키를 한 곳에서 관리 */
-const TOOLS: Array<{ key: ToolKind; label: string; icon: string; tip: string; shortcut: string; danger?: boolean }> = [
-  { key: 'select', label: '선택', icon: IC_CURSOR, tip: '선택 · 핀을 눌러 정보 보기 (V)', shortcut: 'v' },
-  { key: 'add', label: '장소 추가', icon: IC_PIN_PLUS, tip: '장소 추가 · 핀을 눌러 담기 (A)', shortcut: 'a' },
-  { key: 'connect', label: '연결', icon: IC_LINK, tip: '연결 · 두 핀을 순서대로 잇기 (C)', shortcut: 'c' },
-  { key: 'transport', label: '교통수단', icon: IC_CAR, tip: '교통수단 · 구간을 눌러 변경 (T)', shortcut: 't' },
-  { key: 'memo', label: '메모', icon: IC_NOTE, tip: '메모 · 핀을 눌러 메모 입력 (M)', shortcut: 'm' },
-  { key: 'delete', label: '삭제', icon: IC_TRASH, tip: '삭제 · 핀을 눌러 동선에서 빼기 (D)', shortcut: 'd', danger: true },
-];
 
 /* ── 모듈 상태 ── */
 let currentTripId = '';
@@ -216,10 +194,7 @@ let activeDayId = '';
 let dayRangeStartDate: string | null = null;
 let panelCollapsed = false;
 let leftPanelCollapsed = false;
-let members: MemberLite[] = [];
 
-let activeTool: ToolKind = 'select';
-let connectFromId: string | null = null;
 let highlightedPlaceId: string | null = null;
 /** 우측 타임라인에 마우스를 올렸을 때만 잠깐 강조되는 장소 (클릭 선택과 별개인 일시적 미리보기) */
 let hoveredPlaceId: string | null = null;
@@ -323,9 +298,6 @@ export function teardownRoute(): void {
   dayRangeStartDate = null;
   panelCollapsed = false;
   leftPanelCollapsed = false;
-  members = [];
-  activeTool = 'select';
-  connectFromId = null;
   highlightedPlaceId = null;
   hoveredPlaceId = null;
   adhocMode = false;
@@ -702,25 +674,6 @@ function appendStopBeforeEndAnchor(day: RouteDay, placeId: string): void {
   day.stopIds.splice(endIdx, 0, placeId);
 }
 
-function toggleStop(placeId: string): void {
-  const day = activeDay();
-  if (day.stopIds.includes(placeId)) {
-    day.stopIds = day.stopIds.filter((id) => id !== placeId);
-  } else {
-    appendStopBeforeEndAnchor(day, placeId);
-  }
-}
-
-/** placeId를 afterId 바로 뒤로 옮긴다(연결 툴). 숙소/공항 앵커도 이제 stopIds 안의 평범한
- * 항목이라(자유롭게 재배치 가능) 별도 특수 처리 없이 그대로 찾아서 뒤에 꽂으면 된다. */
-function moveStopAfter(placeId: string, afterId: string): void {
-  const day = activeDay();
-  day.stopIds = day.stopIds.filter((id) => id !== placeId);
-  const idx = day.stopIds.indexOf(afterId);
-  if (idx === -1) { day.stopIds.push(placeId); return; }
-  day.stopIds.splice(idx + 1, 0, placeId);
-}
-
 /* ── 실행 취소 / 다시 실행 (DAY별 stopIds 스냅샷) ── */
 function pushHistory(dayId: string = activeDayId): void {
   const day = days.find((d) => d.id === dayId);
@@ -835,23 +788,6 @@ async function loadPlaces(tripId: string): Promise<Place[]> {
     return [];
   }
   return data ?? [];
-}
-
-async function loadMembers(tripId: string): Promise<MemberLite[]> {
-  const { data, error } = await supabase
-    .from('trip_members')
-    .select('id, display_name')
-    .eq('trip_id', tripId)
-    .order('joined_at', { ascending: true });
-  if (error) {
-    console.error('[Route] members load error:', error.message);
-    return [];
-  }
-  return data ?? [];
-}
-
-function memberColor(i: number): string {
-  return MEMBER_PALETTE[i % MEMBER_PALETTE.length];
 }
 
 /** shortlist 확정 결과(숙소 + 확정 장소들)를 이어받아 초기 상태 구성 */
@@ -1188,9 +1124,8 @@ export async function renderRouteContent(container: HTMLElement, tripId: string)
 
   container.innerHTML = '<div class="rt-loading"><span class="rt-loading-spinner"></span>동선 준비 중...</div>';
 
-  const [trip, places, mem] = await Promise.all([loadTrip(tripId), loadPlaces(tripId), loadMembers(tripId)]);
+  const [trip, places] = await Promise.all([loadTrip(tripId), loadPlaces(tripId)]);
   currentTrip = trip;
-  members = mem;
   if (!trip) {
     container.innerHTML = '<div class="rt-loading">여행 정보를 찾을 수 없어요.</div>';
     return;
@@ -1272,6 +1207,8 @@ function buildPageHtml(): string {
       '<input type="text" id="rt-search-top" placeholder="지도에서 장소 검색 (Enter)" />' +
       '<button type="button" class="rt-searchbox-clear" id="rt-search-top-clear" title="검색결과 지우기" hidden>✕</button>' +
       '</div>',
+    '      <button type="button" class="rt-iconbtn" id="rt-undo" title="실행 취소 · Ctrl+Z" aria-label="실행 취소" disabled>' + IC_UNDO + '</button>',
+    '      <button type="button" class="rt-iconbtn" id="rt-redo" title="다시 실행 · Ctrl+Shift+Z" aria-label="다시 실행" disabled>' + IC_REDO + '</button>',
     '      <button type="button" class="rt-optionsbtn" id="rt-options-btn">' + IC_DOTS + '<span>옵션</span>' + IC_CHEVRON + '</button>',
     '    </div>',
     '  </div>',
@@ -1291,19 +1228,6 @@ function buildPageHtml(): string {
     '          <div class="rt-float-list" id="rt-float-list"></div>',
     '          <button type="button" class="rt-float-adhoc" id="rt-float-adhoc" title="지도를 클릭한 위치에 Brainstorm에 없는 장소(예: 특정 출입구, 뷰포인트)를 새로 추가해요">' + IC_PIN_PLUS + ' 지도에 직접 추가</button>',
     '        </div>',
-
-    '        <div class="rt-memberlegend" id="rt-memberlegend"></div>',
-
-    '        <div class="rt-toolfloat" id="rt-toolfloat" role="toolbar" aria-label="동선 편집 도구">',
-    TOOLS.map((t) =>
-      '          <button type="button" class="rt-tool' + (t.key === 'select' ? ' active' : '') + (t.danger ? ' danger' : '') +
-      '" data-tool="' + t.key + '" data-tip="' + t.tip + '" aria-label="' + t.label + '" aria-pressed="' + (t.key === 'select') + '">' +
-      t.icon + '<span class="rt-tool-label">' + t.label + '</span></button>'
-    ).join('\n'),
-    '          <div class="rt-tool-sep"></div>',
-    '          <button type="button" class="rt-tool" id="rt-undo" data-tip="실행 취소 · Ctrl+Z" aria-label="실행 취소" disabled>' + IC_UNDO + '<span class="rt-tool-label">실행 취소</span></button>',
-    '          <button type="button" class="rt-tool" id="rt-redo" data-tip="다시 실행 · Ctrl+Shift+Z" aria-label="다시 실행" disabled>' + IC_REDO + '<span class="rt-tool-label">다시 실행</span></button>',
-    '        </div>',
     '      </div>',
     '    </div>',
 
@@ -1322,9 +1246,8 @@ function bindPage(container: HTMLElement): void {
   renderCatFilters(container);
   renderLeftPanel(container);
   renderRightPanel(container);
-  renderMemberLegend(container);
   bindSearchInputs(container);
-  bindToolbar(container);
+  bindUndoRedoButtons(container);
   bindOptionsMenu(container);
   bindAdhocButton(container);
   container.querySelector('#rt-ai-plan')?.addEventListener('click', () => void runAiRoutePlan(container));
@@ -1351,10 +1274,9 @@ function bindPage(container: HTMLElement): void {
     const typing = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
 
     if (e.key === 'Escape') {
-      // 명시적 해제 수단 — 열린 카드 → 즉석추가 모드 → 툴 순으로 하나씩 되돌린다
+      // 명시적 해제 수단 — 열린 카드 → 즉석추가 모드 → 선택 강조 순으로 하나씩 되돌린다
       if (placeCardOverlay) { closePlaceCard(); return; }
       if (adhocMode) { setAdhocMode(container, false); return; }
-      if (activeTool !== 'select') { setActiveTool(container, 'select'); return; }
       if (highlightedPlaceId) {
         highlightedPlaceId = null;
         drawRouteOnMap(false);
@@ -1371,12 +1293,6 @@ function bindPage(container: HTMLElement): void {
       if (e.shiftKey) doRedo(container);
       else doUndo(container);
       return;
-    }
-
-    const tool = TOOLS.find((x) => x.shortcut === e.key.toLowerCase());
-    if (tool && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      e.preventDefault();
-      setActiveTool(container, tool.key);
     }
   };
   document.addEventListener('keydown', escHandler);
@@ -1540,6 +1456,12 @@ async function addSearchResultToDay(p: Place, container: HTMLElement, cacheSourc
   appendStopBeforeEndAnchor(activeDay(), result.place.id);
   closePlaceCard();
   refreshAll(container, { refit: false });
+  // refreshAll이 내부에서 scheduleSave()를 걸지만, 그건 600ms 디바운스라 저장이 끝나기 전에
+  // 새로고침하면 유실될 수 있다(beforeunload로 디바운스를 건너뛰어도, 브라우저가 진짜로
+  // 페이지를 새로고침하는 순간 진행 중이던 네트워크 요청 자체가 취소돼 소용없었다 — 이 함수는
+  // "검색해서 찾은 곳을 담는다"는 명확한 단발성 액션이라, 여기서만큼은 디바운스를 건너뛰고
+  // 바로 기다려서 반환 전에 DB 반영을 확정한다.
+  await persistActiveDay();
 }
 
 function filteredCandidates(): Place[] {
@@ -1627,52 +1549,9 @@ function bindAdhocButton(container: HTMLElement): void {
   container.querySelector('#rt-float-adhoc')?.addEventListener('click', () => setAdhocMode(container, !adhocMode));
 }
 
-/* ── 협업 멤버 색상 범례 ── */
-function renderMemberLegend(container: HTMLElement): void {
-  const el = container.querySelector('#rt-memberlegend') as HTMLElement;
-  if (!el) return;
-  if (!members.length) {
-    el.innerHTML = '';
-    el.style.display = 'none';
-    return;
-  }
-  el.style.display = '';
-  const MAX = 4;
-  el.innerHTML =
-    members
-      .slice(0, MAX)
-      .map(
-        (m, i) =>
-          '<div class="rt-memberlegend-item"><span class="rt-memberlegend-dot" style="background:' + memberColor(i) + '"></span>' +
-          escapeHtml(m.display_name || '멤버') + '</div>'
-      )
-      .join('') +
-    (members.length > MAX ? '<span class="rt-memberlegend-more">+' + (members.length - MAX) + '</span>' : '');
-}
-
-/* ── 하단 플로팅 툴바 ── */
-function bindToolbar(container: HTMLElement): void {
-  container.querySelectorAll('.rt-tool[data-tool]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const tool = (btn as HTMLElement).dataset.tool as ToolKind;
-      setActiveTool(container, activeTool === tool ? 'select' : tool);
-    });
-  });
+function bindUndoRedoButtons(container: HTMLElement): void {
   container.querySelector('#rt-undo')?.addEventListener('click', () => doUndo(container));
   container.querySelector('#rt-redo')?.addEventListener('click', () => doRedo(container));
-}
-
-function setActiveTool(container: HTMLElement, tool: ToolKind): void {
-  activeTool = tool;
-  connectFromId = null;
-  closePlaceCard();
-  container.querySelectorAll('.rt-tool[data-tool]').forEach((btn) => {
-    const on = (btn as HTMLElement).dataset.tool === tool;
-    btn.classList.toggle('active', on);
-    btn.setAttribute('aria-pressed', String(on));
-  });
-  // 툴을 바꾸면 즉석추가 모드는 항상 해제 (모드가 겹쳐 헷갈리지 않도록)
-  if (adhocMode) setAdhocMode(container, false);
 }
 
 /* ── 옵션 드롭다운 ── */
@@ -1735,61 +1614,15 @@ function toggleSatellite(): void {
 /* ── 지도 위 핀 클릭 — 활성 툴에 따라 다르게 동작 ── */
 function handlePinClick(g: any, p: Place): void {
   const activeDayIndex = days.findIndex((d) => d.id === activeDayId);
-  const isBasecamp = isBasecampPlace(p, activeDayIndex);
   const isAnchor = isAnyAnchor(p, activeDayIndex); // 숙소 또는 공항(도착/출발) — 삭제 금지 대상
   closePlaceCard();
   // "이 근처 검색" 결과 핀은 그 검색을 실행한 장소의 정보 패널에 딸린 임시 상태라,
   // 다른 장소를 클릭해 컨텍스트가 바뀌면 함께 지운다(계속 남아있으면 어디서 검색한 건지 헷갈림).
   if (p.id !== highlightedPlaceId) searchResultPlaces = [];
 
-  if (activeTool === 'delete') {
-    if (isAnchor) return;
-    pushHistory();
-    removeStop(p.id);
-    if (highlightedPlaceId === p.id) highlightedPlaceId = null;
-    refreshAll(rtContainer!, { refit: false });
-    return;
-  }
-
-  if (activeTool === 'connect') {
-    const day = activeDay();
-    const needsAdd = !isAnchor && !day.stopIds.includes(p.id);
-    const needsMove = !!connectFromId && connectFromId !== p.id;
-    if (needsAdd || needsMove) pushHistory();
-    if (needsAdd) appendStopBeforeEndAnchor(day, p.id);
-    if (needsMove) moveStopAfter(p.id, connectFromId!);
-    connectFromId = p.id;
-    highlightedPlaceId = p.id;
-    if (g?.maps) showRipple(g, p, categoryMeta(p, isBasecamp).color);
-    refreshAll(rtContainer!, { refit: false });
-    return;
-  }
-
-  if (activeTool === 'memo') {
-    const wasIncluded = isAnchor || activeDay().stopIds.includes(p.id);
-    if (!wasIncluded) { pushHistory(); appendStopBeforeEndAnchor(activeDay(), p.id); }
-    highlightedPlaceId = p.id;
-    refreshAll(rtContainer!, { refit: false });
-    requestAnimationFrame(() => focusMemoInput(p.id));
-    return;
-  }
-
-  if (activeTool === 'transport') return; // 이동수단 변경은 캡슐/커넥터 클릭으로 동작
-
-  if (activeTool === 'add') {
-    // "장소 추가" 툴: 클릭 한 번으로 바로 담기/빼기
-    if (isAnchor) return;
-    pushHistory();
-    toggleStop(p.id);
-    highlightedPlaceId = p.id;
-    if (g?.maps) showRipple(g, p, categoryMeta(p, false).color);
-    refreshAll(rtContainer!, { refit: false });
-    return;
-  }
-
-  // 기본(선택) 툴: 아직 담지 않은 후보는 핀 옆 정보 카드(사진/평점/담기 버튼)를 보여줘 담을지
-  // 결정하게 하고, 이미 오늘 동선에 들어간(확정된) 정류지는 핀 옆 카드 대신 우상단 고정
-  // 패널에 같은 정보 + 앞뒤로 이어지는 두 구간의 이동시간/비용을 함께 보여준다
+  // 아직 담지 않은 후보는 핀 옆 정보 카드(사진/평점/담기 버튼)를 보여줘 담을지 결정하게 하고,
+  // 이미 오늘 동선에 들어간(확정된) 정류지는 핀 옆 카드 대신 우상단 고정 패널에 같은 정보 +
+  // 앞뒤로 이어지는 두 구간의 이동시간/비용을 함께 보여준다
   // (drawRouteOnMap이 highlightedPlaceId를 보고 채워 넣음 — updateStopInfoPanel 참고).
   const alreadyIncluded = isAnchor || activeDay().stopIds.includes(p.id);
   highlightedPlaceId = p.id;
@@ -1810,16 +1643,10 @@ function scrollTimelineTo(placeId: string): void {
   row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
-function focusMemoInput(placeId: string): void {
-  const input = rtContainer?.querySelector('.rt-panel-memo[data-place-id="' + placeId + '"]') as HTMLInputElement | null;
-  input?.focus();
-}
-
 // 구간(화살표/커넥터) 클릭은 이제 정보 패널을 띄우지 않는다 — 이동시간/비용 확인은 장소를
-// 클릭하는 쪽으로 옮겨갔다(장소를 누르면 그 장소와 이어지는 두 구간이 함께 뜬다). 다만
-// 교통수단 변경 툴에서는 여전히 구간을 직접 눌러 모드를 바꾼다.
+// 클릭하는 쪽으로 옮겨갔다(장소를 누르면 그 장소와 이어지는 두 구간이 함께 뜬다). 구간을
+// 직접 누르면 언제나 이동수단을 바로 바꿀 수 있다.
 function handleLegClick(fromId: string, toId: string, anchor?: HTMLElement): void {
-  if (activeTool !== 'transport') return;
   openModeOverridePopover(legKey(fromId, toId), anchor);
 }
 
@@ -2695,12 +2522,6 @@ function renderRightPanel(container: HTMLElement): void {
     '  <span class="rt-panel-dot" style="background:' + dColor + '"></span>',
     '  <span class="rt-panel-daylabel">' + escapeHtml(day.label) + '</span>',
     '  <span class="rt-panel-daydate">' + dayDateLabel(dayIndex) + '</span>',
-    '  <div class="rt-panel-header-avatars">' +
-      members
-        .slice(0, 3)
-        .map((m, i) => '<div class="rt-panel-avatar" style="background:' + memberColor(i) + '">' + escapeHtml((m.display_name || '?').charAt(0)) + '</div>')
-        .join('') +
-      '</div>',
     '  <button type="button" class="rt-panel-more" id="rt-panel-more" aria-label="이 DAY 메뉴">' + IC_DOTS + '</button>',
     '</div>',
     aiPlanNoticeHtml(),
@@ -2922,7 +2743,6 @@ function refreshAll(container: HTMLElement, opts: { refit: boolean } = { refit: 
   renderDayTabs(container);
   renderLeftPanel(container);
   renderRightPanel(container);
-  renderMemberLegend(container);
   drawRouteOnMap(opts.refit);
   // 변경이 실제로 있을 때만 저장되고(지문 비교), 새로 생긴 구간은 실측 데이터를 채운다.
   scheduleSave();
@@ -3001,7 +2821,6 @@ async function initMap(container: HTMLElement): Promise<void> {
     if (placeCardOverlay) { closePlaceCard(); return; }
     if (highlightedPlaceId) {
       highlightedPlaceId = null;
-      connectFromId = null;
       searchResultPlaces = []; // 이 근처 검색 핀은 특정 장소의 정보 패널에 딸린 임시 상태
       drawRouteOnMap(false);
       renderRightPanel(container);
@@ -3019,6 +2838,8 @@ async function initMap(container: HTMLElement): Promise<void> {
     pushHistory();
     appendStopBeforeEndAnchor(activeDay(), p.id);
     refreshAll(rtContainer, { refit: true });
+    // scheduleSave의 600ms 디바운스를 기다리다 새로고침하면 유실될 수 있어 바로 저장을 확정한다.
+    void persistActiveDay();
   });
 
   // 축소할수록 번호 핀이 상대적으로 너무 커 보이는 문제 — 줌 레벨에 따라 핀 크기를 다시 계산.
@@ -3038,7 +2859,7 @@ async function initMap(container: HTMLElement): Promise<void> {
 }
 
 /**
- * 구글 기본 "지도/위성" 버튼(딱딱한 회색 UI)을 끄고, 하단 툴바(.rt-tool)와 같은
+ * 구글 기본 "지도/위성" 버튼(딱딱한 회색 UI)을 끄고, 상단 아이콘 버튼(.rt-iconbtn)과 같은
  * 언어(글래스 배경 + 네이비 active 필)로 만든 커스텀 세그먼트 버튼을 그 자리에 넣는다.
  */
 function addMapTypeToggle(g: any, map: any): void {
@@ -3393,6 +3214,8 @@ function openPlaceCard(g: any, p: Place): void {
       else removeStop(p.id);
       closePlaceCard();
       refreshAll(rtContainer!, { refit: false });
+      // scheduleSave의 600ms 디바운스를 기다리다 새로고침하면 유실될 수 있어 바로 저장을 확정한다.
+      void persistActiveDay();
     });
   });
 }
