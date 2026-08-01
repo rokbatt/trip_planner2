@@ -36,10 +36,12 @@ interface VercelResponse {
   json: (body: any) => void;
 }
 
-// link-preview 경로는 여러 User-Agent를 순서대로 시도할 수 있어(PREVIEW_USER_AGENTS)
-// 기본 10초 실행 제한을 넘길 수 있다 — Hobby 플랜에서도 설정 가능한 한도까지 여유를 둠.
+// link-preview 경로는 여러 User-Agent를 순서대로 시도하고(PREVIEW_USER_AGENTS) 이미지까지
+// 재호스팅할 수 있어, 모든 단계가 각자의 최대 타임아웃까지 다 채우는 최악의 경우 40초
+// 안팎이 걸릴 수 있다(각 단계는 이제 withTimeout으로 확실히 끊기지만, 그 합산 시간
+// 자체는 여전히 길 수 있음) — Hobby 플랜에서 설정 가능한 한도까지 여유를 둠.
 export const config = {
-  maxDuration: 25,
+  maxDuration: 50,
 };
 
 const BUCKET = 'place-photos';
@@ -111,6 +113,27 @@ async function rehostGooglePhoto(
 /* ── 링크 미리보기 (LINKS 탭) ── */
 
 const LINK_PREVIEW_BUCKET = 'link-previews';
+
+/** fetch()에 넘기는 AbortSignal.timeout()만으로는 못 끊는 경우가 실제로 있다(리다이렉트
+ * 체인 중간이나 body 스트림을 읽는 단계에서 신호가 전파 안 되는 케이스, 응답을 아예 안
+ * 주고 연결만 붙잡아두는 봇 차단 등) — 트립닷컴에서 실제로 Vercel 함수 25초 타임아웃까지
+ * 그대로 매달린 사례가 있었다. AbortSignal과는 별개로 자바스크립트 레벨에서 강제로 끊는
+ * 이중 안전장치. 원래 프라미스가 안 끝나도 이 함수는 반드시 ms 안에 reject된다. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(label + ' 타임아웃(' + ms + 'ms)')), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      }
+    );
+  });
+}
 
 function decodeHtmlEntities(s: string): string {
   return s
@@ -200,7 +223,11 @@ function titleFromUrlSlug(targetUrl: string): string | null {
 async function rehostArbitraryImage(supabase: any, imgUrl: string, linkId: string): Promise<string | null> {
   const path = linkId + '.jpg';
   try {
-    const { data: existing, error: listError } = await supabase.storage.from(LINK_PREVIEW_BUCKET).list('', { search: linkId });
+    const { data: existing, error: listError } = await withTimeout(
+      supabase.storage.from(LINK_PREVIEW_BUCKET).list('', { search: linkId }),
+      5000,
+      'Storage list()'
+    );
     if (listError) {
       // link-previews 버킷이 아직 없을 때 가장 흔히 나는 에러 — supabase/trip_links.sql 마지막 블록 참고
       console.error('[link-preview] link-previews 버킷 조회 실패(버킷 미생성 가능성):', listError.message);
@@ -211,7 +238,7 @@ async function rehostArbitraryImage(supabase: any, imgUrl: string, linkId: strin
       return pub.publicUrl;
     }
 
-    const imgRes = await fetch(imgUrl, { signal: AbortSignal.timeout(8000) });
+    const imgRes = await withTimeout(fetch(imgUrl, { signal: AbortSignal.timeout(6000) }), 6500, 'og:image 다운로드');
     if (!imgRes.ok) {
       console.error('[link-preview] og:image 다운로드 실패(' + imgRes.status + '):', imgUrl);
       return null;
@@ -223,13 +250,15 @@ async function rehostArbitraryImage(supabase: any, imgUrl: string, linkId: strin
       return null;
     }
 
-    const arrayBuffer = await imgRes.arrayBuffer();
+    const arrayBuffer = await withTimeout(imgRes.arrayBuffer(), 6500, 'og:image 바디 읽기');
     const bytes = new Uint8Array(arrayBuffer);
     if (bytes.byteLength > 5_000_000) return null; // 비정상적으로 큰 이미지는 스킵(안전장치)
 
-    const { error: uploadError } = await supabase.storage
-      .from(LINK_PREVIEW_BUCKET)
-      .upload(path, bytes, { contentType, upsert: true, cacheControl: '2592000' });
+    const { error: uploadError } = await withTimeout(
+      supabase.storage.from(LINK_PREVIEW_BUCKET).upload(path, bytes, { contentType, upsert: true, cacheControl: '2592000' }),
+      5000,
+      'Storage upload()'
+    );
     if (uploadError) {
       console.error('[link-preview] Storage 업로드 실패:', uploadError.message);
       return null;
@@ -277,21 +306,30 @@ async function fetchPreviewHtml(targetUrl: string): Promise<string> {
   let lastError: Error | null = null;
 
   for (const ua of PREVIEW_USER_AGENTS) {
+    const started = Date.now();
     try {
-      const res = await fetch(targetUrl, {
-        redirect: 'follow',
-        headers: previewHeaders(ua),
-        signal: AbortSignal.timeout(4000),
-      });
-      if (!res.ok) {
-        lastError = new Error('HTTP ' + res.status);
-        continue;
-      }
-      const html = (await res.text()).slice(0, 300000); // og 태그는 보통 <head> 안, 문서 앞쪽에 있어 앞부분만으로 충분
+      // AbortSignal.timeout()만으로는 리다이렉트 체인 도중이나 body 스트림 단계에서
+      // 못 끊는 경우가 실제로 있었다(트립닷컴에서 Vercel 함수 자체가 타임아웃될 때까지
+      // 매달린 사례) — withTimeout으로 fetch+본문 읽기 전체를 자바스크립트 레벨에서
+      // 한 번 더 강제로 끊는다.
+      const html = await withTimeout(
+        (async () => {
+          const res = await fetch(targetUrl, {
+            redirect: 'follow',
+            headers: previewHeaders(ua),
+            signal: AbortSignal.timeout(4000),
+          });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return (await res.text()).slice(0, 300000); // og 태그는 보통 <head> 안, 문서 앞쪽에 있어 앞부분만으로 충분
+        })(),
+        4500,
+        'fetch(' + ua.slice(0, 24) + ')'
+      );
       lastHtml = html;
       if (extractMeta(html, 'og:title') || extractMeta(html, 'og:image')) return html;
     } catch (e) {
       lastError = e as Error;
+      console.error('[link-preview] UA 시도 실패(' + (Date.now() - started) + 'ms, ' + ua.slice(0, 24) + '):', lastError.message);
     }
   }
 
@@ -311,6 +349,7 @@ interface LinkPreviewResult {
 async function buildLinkPreview(supabase: any, targetUrl: string, linkId: string): Promise<LinkPreviewResult> {
   // 실패했을 때만 로그를 남기면 "로그가 없다"가 성공인지 아예 요청이 서버까지 안 왔는지
   // 구분이 안 된다 — 요청이 실제로 여기까지 들어왔다는 것 자체를 확인할 수 있도록 시작 로그를 남김
+  const startedAt = Date.now();
   console.error('[link-preview] 요청 시작:', targetUrl);
   let html = '';
   try {
@@ -331,7 +370,7 @@ async function buildLinkPreview(supabase: any, targetUrl: string, linkId: string
       }
     }
   } catch (e) {
-    console.error('[link-preview] 페이지를 못 읽음(URL 슬러그로 대체):', (e as Error).message);
+    console.error('[link-preview] 페이지를 못 읽음(' + (Date.now() - startedAt) + 'ms, URL 슬러그로 대체):', (e as Error).message);
     return { title: titleFromUrlSlug(targetUrl), imageUrl: null, siteName: null, ogType: null };
   }
 
@@ -357,7 +396,10 @@ async function buildLinkPreview(supabase: any, targetUrl: string, linkId: string
     console.error('[link-preview] og:image 메타 태그를 못 찾음:', targetUrl);
   }
 
-  console.error('[link-preview] 요청 완료 — title=' + (title ? 'O' : 'X') + ' image=' + (imageUrl ? 'O' : 'X') + ':', targetUrl);
+  console.error(
+    '[link-preview] 요청 완료(' + (Date.now() - startedAt) + 'ms) — title=' + (title ? 'O' : 'X') + ' image=' + (imageUrl ? 'O' : 'X') + ':',
+    targetUrl
+  );
   return { title, imageUrl, siteName, ogType };
 }
 
