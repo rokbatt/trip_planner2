@@ -172,20 +172,34 @@ function titleFromUrlSlug(targetUrl: string): string | null {
   }
 }
 
-/** og:image 등 미리보기 이미지를 받아 link-previews 버킷에 재호스팅. 실패하면 null(치명적이지 않음) */
+/** og:image 등 미리보기 이미지를 받아 link-previews 버킷에 재호스팅. 실패하면 null(치명적이지 않음).
+ * 실패 사유는 전부 console.error로 남긴다 — 화면에는 그냥 카테고리 아이콘으로 조용히
+ * 대체되기 때문에, 원인(버킷 미생성/이미지 차단/업로드 실패 등)은 Vercel 함수 로그로만 구분 가능하다. */
 async function rehostArbitraryImage(supabase: any, imgUrl: string, linkId: string): Promise<string | null> {
   const path = linkId + '.jpg';
   try {
-    const { data: existing } = await supabase.storage.from(LINK_PREVIEW_BUCKET).list('', { search: linkId });
+    const { data: existing, error: listError } = await supabase.storage.from(LINK_PREVIEW_BUCKET).list('', { search: linkId });
+    if (listError) {
+      // link-previews 버킷이 아직 없을 때 가장 흔히 나는 에러 — supabase/trip_links.sql 마지막 블록 참고
+      console.error('[link-preview] link-previews 버킷 조회 실패(버킷 미생성 가능성):', listError.message);
+      return null;
+    }
     if (existing && existing.length > 0) {
       const { data: pub } = supabase.storage.from(LINK_PREVIEW_BUCKET).getPublicUrl(path);
       return pub.publicUrl;
     }
 
     const imgRes = await fetch(imgUrl, { signal: AbortSignal.timeout(8000) });
-    if (!imgRes.ok) return null;
+    if (!imgRes.ok) {
+      console.error('[link-preview] og:image 다운로드 실패(' + imgRes.status + '):', imgUrl);
+      return null;
+    }
     const contentType = imgRes.headers.get('content-type') || '';
-    if (!contentType.startsWith('image/')) return null; // og:image가 실제로는 이미지가 아니면 스킵
+    if (!contentType.startsWith('image/')) {
+      // og:image가 실제로는 이미지가 아니면 스킵 — 봇 차단 시 HTML(로그인/캡차 페이지)이 오는 경우가 많음
+      console.error('[link-preview] og:image가 이미지가 아님(content-type=' + contentType + '):', imgUrl);
+      return null;
+    }
 
     const arrayBuffer = await imgRes.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
@@ -194,11 +208,15 @@ async function rehostArbitraryImage(supabase: any, imgUrl: string, linkId: strin
     const { error: uploadError } = await supabase.storage
       .from(LINK_PREVIEW_BUCKET)
       .upload(path, bytes, { contentType, upsert: true, cacheControl: '2592000' });
-    if (uploadError) return null;
+    if (uploadError) {
+      console.error('[link-preview] Storage 업로드 실패:', uploadError.message);
+      return null;
+    }
 
     const { data: pub } = supabase.storage.from(LINK_PREVIEW_BUCKET).getPublicUrl(path);
     return pub.publicUrl;
-  } catch {
+  } catch (e) {
+    console.error('[link-preview] 이미지 재호스팅 중 예외:', (e as Error).message);
     return null;
   }
 }
@@ -253,6 +271,9 @@ async function buildLinkPreview(supabase: any, targetUrl: string, linkId: string
     } catch (e) {
       console.error('[link-preview] 이미지 URL 처리 실패(무시):', (e as Error).message);
     }
+  } else {
+    // og:image/twitter:image 자체가 없는 페이지 — 봇 차단으로 빈 껍데기만 받았을 가능성이 큼
+    console.error('[link-preview] og:image 메타 태그를 못 찾음:', targetUrl);
   }
 
   return { title, imageUrl, siteName, ogType };

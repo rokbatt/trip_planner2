@@ -26,11 +26,11 @@ const IC_SEARCH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 
 const CATEGORY_META: Record<LinkCategory, { label: string; icon: string }> = {
   STAY: { label: '숙소', icon: IC_BED },
-  PLACE: { label: '장소', icon: IC_PIN },
+  PLACE: { label: '관광지', icon: IC_PIN },
   FOOD: { label: '음식', icon: IC_FORK },
   ACTIVITY: { label: '액티비티', icon: IC_TICKET },
   VIDEO: { label: '영상', icon: IC_PLAY },
-  ARTICLE: { label: '아티클', icon: IC_DOC },
+  ARTICLE: { label: '블로그', icon: IC_DOC },
   OTHER: { label: '기타', icon: IC_DOTS },
 };
 
@@ -42,6 +42,8 @@ let chipsEl: HTMLElement | null = null;
 let links: TripLink[] = [];
 let searchQuery = '';
 let activeCategory: CategoryFilter = 'ALL';
+let openCategoryMenuId: string | null = null;
+let outsideClickHandler: ((e: MouseEvent) => void) | null = null;
 
 function escapeHtml(str: string): string {
   const div = document.createElement('div');
@@ -123,13 +125,27 @@ function cardHtml(link: TripLink): string {
     ? '<div class="lk-card-media"><img src="' + escapeHtml(link.image_url) + '" alt="" loading="lazy" /></div>'
     : '<div class="lk-card-media lk-card-media-fallback">' + CATEGORY_META[category].icon + '</div>';
 
+  const menuOpen = openCategoryMenuId === link.id;
+  const categoryMenu = [
+    '<div class="lk-cat-menu' + (menuOpen ? ' is-open' : '') + '" data-cat-menu="' + link.id + '">',
+    LINK_CATEGORIES.map(
+      (cat) =>
+        '<button type="button" class="lk-cat-menu-item' + (cat === category ? ' is-current' : '') + '" data-set-category="' + cat + '">' +
+        CATEGORY_META[cat].icon + '<span>' + escapeHtml(CATEGORY_META[cat].label) + '</span></button>'
+    ).join(''),
+    '</div>',
+  ].join('');
+
   return [
     '<div class="lk-card" data-link-id="' + link.id + '" data-url="' + escapeHtml(link.url) + '">',
     media,
     '  <div class="lk-card-body">',
     '    <div class="lk-card-title">' + escapeHtml(title) + '</div>',
     '    <div class="lk-card-domain-row">',
-    '      <span class="lk-card-category-tag">' + CATEGORY_META[category].icon + escapeHtml(CATEGORY_META[category].label) + '</span>',
+    '      <div class="lk-cat-picker">',
+    '        <button type="button" class="lk-card-category-tag" data-cat-toggle>' + CATEGORY_META[category].icon + escapeHtml(CATEGORY_META[category].label) + '</button>',
+    categoryMenu,
+    '      </div>',
     '      <span class="lk-card-domain">' + escapeHtml(domain) + '</span>',
     '    </div>',
     '    <div class="lk-card-meta">',
@@ -197,6 +213,12 @@ function renderAll(): void {
   renderList();
 }
 
+function closeCategoryMenu(): void {
+  if (openCategoryMenuId === null) return;
+  openCategoryMenuId = null;
+  listEl?.querySelectorAll('.lk-cat-menu.is-open').forEach((m) => m.classList.remove('is-open'));
+}
+
 function bindCards(): void {
   if (!listEl) return;
   listEl.querySelectorAll('.lk-card').forEach((el) => {
@@ -206,6 +228,7 @@ function bindCards(): void {
 
     card.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('.lk-card-remove')) return;
+      if ((e.target as HTMLElement).closest('.lk-cat-picker')) return;
       window.open(url, '_blank', 'noopener,noreferrer');
     });
 
@@ -213,7 +236,40 @@ function bindCards(): void {
       e.stopPropagation();
       void deleteLink(linkId);
     });
+
+    card.querySelector('[data-cat-toggle]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const wasOpen = openCategoryMenuId === linkId;
+      closeCategoryMenu();
+      if (!wasOpen) {
+        openCategoryMenuId = linkId;
+        card.querySelector('.lk-cat-menu')?.classList.add('is-open');
+      }
+    });
+
+    card.querySelectorAll('.lk-cat-menu-item').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const newCategory = (btn as HTMLElement).dataset.setCategory as LinkCategory;
+        closeCategoryMenu();
+        void updateLinkCategory(linkId, newCategory);
+      });
+    });
   });
+}
+
+async function updateLinkCategory(linkId: string, category: LinkCategory): Promise<void> {
+  const link = links.find((l) => l.id === linkId);
+  if (!link || normalizeCategory(link.category) === category) return;
+  const previousCategory = link.category;
+  link.category = category;
+  renderAll();
+  const { error } = await supabase.from('trip_links').update({ category }).eq('id', linkId);
+  if (error) {
+    console.error('링크 카테고리 변경 실패:', error.message);
+    link.category = previousCategory;
+    renderAll();
+  }
 }
 
 async function deleteLink(linkId: string): Promise<void> {
@@ -229,11 +285,16 @@ export function teardownLinks(): void {
     supabase.removeChannel(channel);
     channel = null;
   }
+  if (outsideClickHandler) {
+    document.removeEventListener('click', outsideClickHandler);
+    outsideClickHandler = null;
+  }
   listEl = null;
   chipsEl = null;
   links = [];
   searchQuery = '';
   activeCategory = 'ALL';
+  openCategoryMenuId = null;
 }
 
 export async function renderLinksContent(container: HTMLElement, tripId: string): Promise<void> {
@@ -253,6 +314,12 @@ export async function renderLinksContent(container: HTMLElement, tripId: string)
   ].join('');
   listEl = container.querySelector('#lk-list') as HTMLElement;
   chipsEl = container.querySelector('#lk-chips') as HTMLElement;
+
+  outsideClickHandler = (e: MouseEvent) => {
+    if ((e.target as HTMLElement).closest('.lk-cat-picker')) return;
+    closeCategoryMenu();
+  };
+  document.addEventListener('click', outsideClickHandler);
 
   const searchInput = container.querySelector('#lk-search-input') as HTMLInputElement;
   searchInput.addEventListener('input', () => {
@@ -293,6 +360,17 @@ export async function renderLinksContent(container: HTMLElement, tripId: string)
         const oldRow = payload.old as { id: string };
         if (!links.some((l) => l.id === oldRow.id)) return;
         links = links.filter((l) => l.id !== oldRow.id);
+        renderAll();
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'trip_links', filter: 'trip_id=eq.' + tripId },
+      (payload) => {
+        const updated = payload.new as TripLink;
+        const idx = links.findIndex((l) => l.id === updated.id);
+        if (idx === -1) return;
+        links[idx] = updated;
         renderAll();
       }
     )
