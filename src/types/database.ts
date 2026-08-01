@@ -343,6 +343,7 @@ export interface Database {
           avatar_url: string | null;
           message: string;
           created_at: string;
+          edited_at: string | null;
         };
         Insert: {
           id?: string;
@@ -352,6 +353,7 @@ export interface Database {
           avatar_url?: string | null;
           message: string;
           created_at?: string;
+          edited_at?: string | null;
         };
         Update: Partial<Database['public']['Tables']['chat_messages']['Insert']>;
         Relationships: [];

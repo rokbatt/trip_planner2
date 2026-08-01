@@ -9,7 +9,14 @@ import './chat.css';
 let currentTripId: string | null = null;
 let channel: RealtimeChannel | null = null;
 let messages: ChatMessage[] = [];
-let panelListeners: Array<(msg: ChatMessage) => void> = [];
+
+/** 패널 리스너에 전달되는 이벤트 — 수정/삭제도 실시간으로 반영하기 위해 종류를 구분한다 */
+type ChatEvent =
+  | { type: 'insert'; message: ChatMessage }
+  | { type: 'update'; message: ChatMessage }
+  | { type: 'delete'; id: string };
+
+let panelListeners: Array<(evt: ChatEvent) => void> = [];
 let badgeListener: ((msg: ChatMessage) => void) | null = null;
 
 function escapeHtml(str: string): string {
@@ -111,7 +118,7 @@ export async function initChat(tripId: string): Promise<void> {
         // 중복 방지 (낙관적 렌더링을 하지 않으므로 실질적으로 발생 안 하지만 안전장치)
         if (messages.some((m) => m.id === msg.id)) return;
         messages.push(msg);
-        panelListeners.forEach((fn) => fn(msg));
+        panelListeners.forEach((fn) => fn({ type: 'insert', message: msg }));
         if (badgeListener) badgeListener(msg);
 
         // 다른 멤버가 보낸 메시지에 링크가 있으면, 채팅 패널을 열어보지 않아도
@@ -121,6 +128,26 @@ export async function initChat(tripId: string): Promise<void> {
           const url = extractFirstUrl(msg.message);
           if (url) showLinkShareToast(msg, url);
         }
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'chat_messages', filter: 'trip_id=eq.' + tripId },
+      (payload) => {
+        const msg = payload.new as ChatMessage;
+        const idx = messages.findIndex((m) => m.id === msg.id);
+        if (idx === -1) return;
+        messages[idx] = msg;
+        panelListeners.forEach((fn) => fn({ type: 'update', message: msg }));
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: 'DELETE', schema: 'public', table: 'chat_messages', filter: 'trip_id=eq.' + tripId },
+      (payload) => {
+        const deletedId = (payload.old as { id: string }).id;
+        messages = messages.filter((m) => m.id !== deletedId);
+        panelListeners.forEach((fn) => fn({ type: 'delete', id: deletedId }));
       }
     )
     .subscribe();
@@ -154,7 +181,7 @@ export function setBadgeListener(fn: (msg: ChatMessage) => void): void {
 }
 
 /** 패널이 열려있는 동안만 유지되는 리스너. 반환값 호출로 해제 */
-function onNewMessage(fn: (msg: ChatMessage) => void): () => void {
+function onNewMessage(fn: (evt: ChatEvent) => void): () => void {
   panelListeners.push(fn);
   return () => {
     panelListeners = panelListeners.filter((l) => l !== fn);
@@ -195,6 +222,33 @@ export async function sendMessage(tripId: string, text: string): Promise<boolean
   return true;
 }
 
+/** 본인 메시지만 수정 가능(RLS로도 강제됨). 낙관적 반영 없이 realtime UPDATE로 화면에 반영된다. */
+export async function updateMessage(messageId: string, text: string): Promise<boolean> {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+
+  const { error } = await supabase
+    .from('chat_messages')
+    .update({ message: trimmed, edited_at: new Date().toISOString() })
+    .eq('id', messageId);
+
+  if (error) {
+    console.error('Chat edit error:', error.message);
+    return false;
+  }
+  return true;
+}
+
+/** 본인 메시지만 삭제 가능(RLS로도 강제됨). realtime DELETE로 모든 멤버 화면에서 사라진다. */
+export async function deleteMessage(messageId: string): Promise<boolean> {
+  const { error } = await supabase.from('chat_messages').delete().eq('id', messageId);
+  if (error) {
+    console.error('Chat delete error:', error.message);
+    return false;
+  }
+  return true;
+}
+
 function formatTime(iso: string): string {
   const d = new Date(iso);
   const h = d.getHours();
@@ -204,33 +258,60 @@ function formatTime(iso: string): string {
   return ampm + ' ' + h12 + ':' + m;
 }
 
+const EDIT_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>';
+const DELETE_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z"/></svg>';
+const CHECK_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+const CLOSE_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+
 function bubbleHtml(msg: ChatMessage, isMe: boolean): string {
   const initial = (msg.display_name || '?').charAt(0);
   const avatar = msg.avatar_url
     ? '<img src="' + msg.avatar_url + '" alt="" referrerpolicy="no-referrer" />'
     : escapeHtml(initial);
+  const editedLabel = msg.edited_at ? ' <span class="chat-edited">(수정됨)</span>' : '';
 
   if (isMe) {
     return [
-      '<div class="chat-row me">',
+      '<div class="chat-row me" data-message-id="' + msg.id + '">',
+      '  <div class="chat-actions">',
+      '    <button type="button" class="chat-action-btn chat-edit-btn" title="수정" aria-label="메시지 수정">' + EDIT_ICON + '</button>',
+      '    <button type="button" class="chat-action-btn chat-delete-btn" title="삭제" aria-label="메시지 삭제">' + DELETE_ICON + '</button>',
+      '  </div>',
       '  <div class="chat-bubble-wrap">',
       '    <div class="chat-bubble me">' + escapeHtml(msg.message) + '</div>',
-      '    <span class="chat-time">' + formatTime(msg.created_at) + '</span>',
+      '    <span class="chat-time">' + formatTime(msg.created_at) + editedLabel + '</span>',
       '  </div>',
       '</div>',
     ].join('');
   }
 
   return [
-    '<div class="chat-row them">',
+    '<div class="chat-row them" data-message-id="' + msg.id + '">',
     '  <div class="chat-avatar">' + avatar + '</div>',
     '  <div class="chat-bubble-col">',
     '    <span class="chat-sender">' + escapeHtml(msg.display_name || '익명') + '</span>',
     '    <div class="chat-bubble-wrap">',
     '      <div class="chat-bubble them">' + escapeHtml(msg.message) + '</div>',
-    '      <span class="chat-time">' + formatTime(msg.created_at) + '</span>',
+    '      <span class="chat-time">' + formatTime(msg.created_at) + editedLabel + '</span>',
     '    </div>',
     '  </div>',
+    '</div>',
+  ].join('');
+}
+
+/** "me" 메시지를 수정 모드로 그릴 때 쓰는 인라인 폼 — 값은 렌더 후 JS로 채운다(속성 이스케이프 회피) */
+function editFormHtml(msg: ChatMessage): string {
+  return [
+    '<div class="chat-row me editing" data-message-id="' + msg.id + '">',
+    '  <form class="chat-edit-form" data-edit-id="' + msg.id + '">',
+    '    <input class="chat-edit-input" type="text" autocomplete="off" />',
+    '    <button type="submit" class="chat-edit-save" title="저장" aria-label="저장">' + CHECK_ICON + '</button>',
+    '    <button type="button" class="chat-edit-cancel" title="취소" aria-label="취소">' + CLOSE_ICON + '</button>',
+    '  </form>',
     '</div>',
   ].join('');
 }
@@ -242,6 +323,7 @@ function bubbleHtml(msg: ChatMessage, isMe: boolean): string {
 export function renderChatPanelUI(container: HTMLElement, tripId: string): () => void {
   const user = store.get('user');
   const myId = user?.id;
+  let editingId: string | null = null;
 
   container.innerHTML = [
     '<div class="chat-list" id="chat-list"></div>',
@@ -255,27 +337,126 @@ export function renderChatPanelUI(container: HTMLElement, tripId: string): () =>
 
   const listEl = container.querySelector('#chat-list') as HTMLElement;
 
+  function rowHtml(m: ChatMessage): string {
+    return m.id === editingId ? editFormHtml(m) : bubbleHtml(m, m.user_id === myId);
+  }
+
+  function startEdit(id: string): void {
+    editingId = id;
+    renderAll();
+  }
+
+  function stopEdit(): void {
+    editingId = null;
+    renderAll();
+  }
+
+  async function submitEdit(id: string, input: HTMLInputElement, saveBtn: HTMLButtonElement): Promise<void> {
+    const text = input.value.trim();
+    if (!text) return;
+    input.disabled = true;
+    saveBtn.disabled = true;
+    const success = await updateMessage(id, text);
+    if (!success) {
+      input.disabled = false;
+      saveBtn.disabled = false;
+      return;
+    }
+    // editingId는 유지한 채 대기 — realtime UPDATE 이벤트가 도착하면 자동으로 편집모드가 풀린다
+  }
+
+  async function requestDelete(id: string, btn: HTMLButtonElement): Promise<void> {
+    if (!window.confirm('메시지를 삭제할까요?')) return;
+    btn.disabled = true;
+    const success = await deleteMessage(id);
+    if (!success) btn.disabled = false;
+    // 성공 시엔 realtime DELETE 이벤트가 도착하면서 화면에서 사라진다
+  }
+
+  /** root(전체 목록 또는 새로 삽입/교체된 행 하나) 안의 수정/삭제 버튼과 편집 폼에 이벤트를 건다 */
+  function bindActionsWithin(root: ParentNode): void {
+    root.querySelectorAll('.chat-edit-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = (btn as HTMLElement).closest('.chat-row')?.getAttribute('data-message-id');
+        if (id) startEdit(id);
+      });
+    });
+    root.querySelectorAll('.chat-delete-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = (btn as HTMLElement).closest('.chat-row')?.getAttribute('data-message-id');
+        if (id) requestDelete(id, btn as HTMLButtonElement);
+      });
+    });
+    root.querySelectorAll('.chat-edit-form').forEach((form) => {
+      const id = (form as HTMLElement).dataset.editId;
+      const input = form.querySelector('.chat-edit-input') as HTMLInputElement | null;
+      const saveBtn = form.querySelector('.chat-edit-save') as HTMLButtonElement | null;
+      const cancelBtn = form.querySelector('.chat-edit-cancel') as HTMLButtonElement | null;
+      if (!id || !input || !saveBtn || !cancelBtn) return;
+
+      const msg = messages.find((m) => m.id === id);
+      input.value = msg?.message ?? '';
+      requestAnimationFrame(() => {
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      });
+
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        submitEdit(id, input, saveBtn);
+      });
+      cancelBtn.addEventListener('click', () => stopEdit());
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') stopEdit();
+      });
+    });
+  }
+
   function renderAll(): void {
     if (messages.length === 0) {
       listEl.innerHTML = '<div class="chat-empty">아직 메시지가 없어요.<br>첫 메시지를 보내보세요!</div>';
       return;
     }
-    listEl.innerHTML = messages.map((m) => bubbleHtml(m, m.user_id === myId)).join('');
+    listEl.innerHTML = messages.map(rowHtml).join('');
     listEl.scrollTop = listEl.scrollHeight;
+    bindActionsWithin(listEl);
   }
 
   renderAll();
 
-  const unsubscribe = onNewMessage((msg) => {
-    if (messages.length <= 1) {
-      renderAll();
+  const unsubscribe = onNewMessage((evt) => {
+    if (evt.type === 'insert') {
+      const msg = evt.message;
+      if (messages.length <= 1) {
+        renderAll();
+        return;
+      }
+      const wasNearBottom = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 80;
+      const div = document.createElement('div');
+      div.innerHTML = rowHtml(msg);
+      const rowEl = div.firstElementChild as HTMLElement;
+      listEl.appendChild(rowEl);
+      bindActionsWithin(rowEl);
+      if (wasNearBottom) listEl.scrollTop = listEl.scrollHeight;
       return;
     }
-    const wasNearBottom = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 80;
-    const div = document.createElement('div');
-    div.innerHTML = bubbleHtml(msg, msg.user_id === myId);
-    listEl.appendChild(div.firstElementChild as HTMLElement);
-    if (wasNearBottom) listEl.scrollTop = listEl.scrollHeight;
+
+    if (evt.type === 'update') {
+      if (editingId === evt.message.id) editingId = null; // 저장 성공 → 편집모드 종료
+      const existing = listEl.querySelector('[data-message-id="' + evt.message.id + '"]');
+      if (!existing) return;
+      const div = document.createElement('div');
+      div.innerHTML = rowHtml(evt.message);
+      const rowEl = div.firstElementChild as HTMLElement;
+      existing.replaceWith(rowEl);
+      bindActionsWithin(rowEl);
+      return;
+    }
+
+    // evt.type === 'delete'
+    if (editingId === evt.id) editingId = null;
+    listEl.querySelector('[data-message-id="' + evt.id + '"]')?.remove();
+    if (messages.length === 0) renderAll();
   });
 
   const form = container.querySelector('#chat-input-form') as HTMLFormElement;
