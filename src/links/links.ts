@@ -57,6 +57,36 @@ function hostnameOf(url: string): string {
   }
 }
 
+/** 서버 미리보기가 제목을 못 가져온 경우(구버전에 저장된 링크 포함)를 위한 최종 폴백 —
+ * 아고다/부킹 같은 예약 사이트는 URL 경로에 이미 실제 이름을 슬러그로 담고 있다
+ * (예: /eastin-grand-hotel-sathorn/hotel/...). 대시가 가장 많은 세그먼트를 이름으로
+ * 보고 단어별로 대문자화한다. api/cache-photo.ts의 titleFromUrlSlug와 같은 로직 —
+ * 서버는 새 링크 저장 시점에만 실행되므로, 이미 title 없이 저장된 카드도 화면에서
+ * 바로 보이도록 클라이언트에도 동일한 폴백을 둔다. */
+function titleFromUrlSlug(url: string): string | null {
+  try {
+    const segments = new URL(url).pathname
+      .split('/')
+      .filter(Boolean)
+      .map((s) => s.replace(/\.[a-z0-9]+$/i, ''));
+    if (segments.length === 0) return null;
+
+    const best = segments.reduce((a, b) => (b.split('-').length > a.split('-').length ? b : a));
+    const words = best.split(/[-_]+/).filter(Boolean);
+    if (words.length < 2) return null;
+
+    return words
+      .map((w) => (/^[a-z0-9]+$/i.test(w) ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+      .join(' ');
+  } catch {
+    return null;
+  }
+}
+
+function displayTitle(link: TripLink): string {
+  return (link.title || '').trim() || titleFromUrlSlug(link.url) || hostnameOf(link.url);
+}
+
 function formatDateTime(iso: string): string {
   const d = new Date(iso);
   const h = d.getHours();
@@ -73,7 +103,7 @@ function normalizeCategory(raw: string): LinkCategory {
 function matchesFilter(link: TripLink): boolean {
   if (activeCategory !== 'ALL' && normalizeCategory(link.category) !== activeCategory) return false;
   if (!searchQuery) return true;
-  const haystack = [link.title, link.site_name, hostnameOf(link.url), link.message, link.display_name]
+  const haystack = [displayTitle(link), link.site_name, hostnameOf(link.url), link.message, link.display_name]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
@@ -86,7 +116,7 @@ function cardHtml(link: TripLink): string {
   const avatar = link.avatar_url
     ? '<img src="' + link.avatar_url + '" alt="" referrerpolicy="no-referrer" />'
     : escapeHtml(initial);
-  const title = (link.title || '').trim() || hostnameOf(link.url);
+  const title = displayTitle(link);
   const domain = (link.site_name || '').trim() || hostnameOf(link.url);
 
   const media = link.image_url
