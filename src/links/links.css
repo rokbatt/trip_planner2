@@ -260,10 +260,20 @@
 .lk-card-time { font-size: 10px; color: #B0BCC9; }
 .lk-card-time::before { content: '·'; margin-right: 5px; color: #D6DEE8; }
 
-.lk-card-remove {
+.lk-card-actions {
   position: absolute;
   top: 6px;
   right: 6px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.lk-card:hover .lk-card-actions { opacity: 1; }
+.lk-card-actions:focus-within { opacity: 1; }
+
+.lk-card-retry,
+.lk-card-remove {
   width: 20px;
   height: 20px;
   border-radius: 6px;
@@ -274,10 +284,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0;
-  transition: opacity 150ms ease, color 150ms ease, background 150ms ease;
+  transition: color 150ms ease, background 150ms ease;
 }
+.lk-card-retry svg,
 .lk-card-remove svg { width: 12px; height: 12px; }
-.lk-card:hover .lk-card-remove { opacity: 1; }
-.lk-card-remove:focus-visible { opacity: 1; }
+.lk-card-retry:hover { color: #185FA5; background: #EAF2FA; }
+.lk-card-retry:disabled { cursor: default; opacity: 0.6; }
+.lk-card-retry.is-loading svg { animation: lk-spin 0.7s linear infinite; }
 .lk-card-remove:hover { color: #C0392B; background: #FDEEEC; }
+
+@keyframes lk-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

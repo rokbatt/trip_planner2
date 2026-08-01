@@ -22,6 +22,7 @@ const IC_PLAY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const IC_DOC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>';
 const IC_DOTS = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
 const IC_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z"/></svg>';
+const IC_REFRESH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.36-6.36L21 8M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.36 6.36L3 16M3 21v-5h5"/></svg>';
 const IC_SEARCH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
 
 const CATEGORY_META: Record<LinkCategory, { label: string; icon: string }> = {
@@ -154,7 +155,10 @@ function cardHtml(link: TripLink): string {
     '      <span class="lk-card-time">' + formatDateTime(link.created_at) + '</span>',
     '    </div>',
     '  </div>',
-    '  <button type="button" class="lk-card-remove" data-link-id="' + link.id + '" aria-label="이 링크 삭제" title="삭제">' + IC_TRASH + '</button>',
+    '  <div class="lk-card-actions">',
+    '    <button type="button" class="lk-card-retry" data-link-id="' + link.id + '" aria-label="미리보기 다시 가져오기" title="미리보기 다시 가져오기">' + IC_REFRESH + '</button>',
+    '    <button type="button" class="lk-card-remove" data-link-id="' + link.id + '" aria-label="이 링크 삭제" title="삭제">' + IC_TRASH + '</button>',
+    '  </div>',
     '</div>',
   ].join('');
 }
@@ -227,7 +231,7 @@ function bindCards(): void {
     const url = card.dataset.url!;
 
     card.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('.lk-card-remove')) return;
+      if ((e.target as HTMLElement).closest('.lk-card-actions')) return;
       if ((e.target as HTMLElement).closest('.lk-cat-picker')) return;
       window.open(url, '_blank', 'noopener,noreferrer');
     });
@@ -235,6 +239,11 @@ function bindCards(): void {
     card.querySelector('.lk-card-remove')?.addEventListener('click', (e) => {
       e.stopPropagation();
       void deleteLink(linkId);
+    });
+
+    card.querySelector('.lk-card-retry')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      void retryLinkPreview(linkId, url, e.currentTarget as HTMLButtonElement);
     });
 
     card.querySelector('[data-cat-toggle]')?.addEventListener('click', (e) => {
@@ -269,6 +278,50 @@ async function updateLinkCategory(linkId: string, category: LinkCategory): Promi
     console.error('링크 카테고리 변경 실패:', error.message);
     link.category = previousCategory;
     renderAll();
+  }
+}
+
+/** 이미 저장된 카드는 저장 당시 스크래핑 결과를 DB에 그대로 갖고 있어서, 서버의 스크래핑
+ * 로직을 나중에 개선해도 자동으로 다시 반영되지 않는다(예: 카카오/텔레그램 봇 UA 추가 —
+ * 새로 보내는 링크부터만 적용됨). 카드마다 다시 가져오기 버튼을 둬서, 링크를 지우고 다시
+ * 보내지 않고도 최신 스크래핑 로직으로 재시도할 수 있게 한다. 카테고리는 사용자가 수동으로
+ * 옮겼을 수 있으니 건드리지 않고 제목/이미지/사이트명만 갱신한다. */
+async function retryLinkPreview(linkId: string, url: string, button: HTMLButtonElement): Promise<void> {
+  button.disabled = true;
+  button.classList.add('is-loading');
+  try {
+    const res = await fetch('/api/cache-photo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'link-preview', url, linkId }),
+    });
+    if (!res.ok) {
+      console.error('링크 미리보기 재시도 실패: HTTP ' + res.status);
+      return;
+    }
+    const preview = (await res.json()) as { title: string | null; imageUrl: string | null; siteName: string | null };
+
+    const { error } = await supabase
+      .from('trip_links')
+      .update({ title: preview.title, image_url: preview.imageUrl, site_name: preview.siteName })
+      .eq('id', linkId);
+    if (error) {
+      console.error('링크 미리보기 재시도 저장 실패:', error.message);
+      return;
+    }
+
+    const link = links.find((l) => l.id === linkId);
+    if (link) {
+      link.title = preview.title;
+      link.image_url = preview.imageUrl;
+      link.site_name = preview.siteName;
+      renderAll();
+    }
+  } catch (e) {
+    console.error('링크 미리보기 재시도 예외:', (e as Error).message);
+  } finally {
+    button.disabled = false;
+    button.classList.remove('is-loading');
   }
 }
 
