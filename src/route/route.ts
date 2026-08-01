@@ -274,11 +274,13 @@ let placeCardOverlay: any = null;
 let placeCardPlaceId: string | null = null;
 let resizeHandler: (() => void) | null = null;
 let escHandler: ((e: KeyboardEvent) => void) | null = null;
+let beforeUnloadHandler: (() => void) | null = null;
 let zoomRedrawHandle: number | null = null;
 
 export function teardownRoute(): void {
   if (resizeHandler) { window.removeEventListener('resize', resizeHandler); resizeHandler = null; }
   if (escHandler) { document.removeEventListener('keydown', escHandler); escHandler = null; }
+  if (beforeUnloadHandler) { window.removeEventListener('beforeunload', beforeUnloadHandler); beforeUnloadHandler = null; }
   if (zoomRedrawHandle != null) { window.cancelAnimationFrame(zoomRedrawHandle); zoomRedrawHandle = null; }
   // 화면을 떠날 때 대기 중인 저장은 버리지 않고 커밋한다 (Claude.md 알려진 버그 패턴:
   // 대기 타이머를 그냥 취소하면 "화면엔 반영됐는데 DB엔 없는" 상태가 됨).
@@ -1216,6 +1218,18 @@ export async function renderRouteContent(container: HTMLElement, tripId: string)
   bindPage(container);
   await initMap(container);
 
+  // 새로고침/탭 닫기로 화면이 완전히 사라질 땐 teardownRoute가 안 불려서, 대기 중인
+  // scheduleSave 디바운스(600ms)가 그대로 날아갈 수 있다 — 이 근처 검색으로 담은 장소가
+  // 새로고침하면 사라지던 버그가 이 케이스. 언로드 시점에 디바운스를 건너뛰고 즉시 저장을 건다.
+  beforeUnloadHandler = () => {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      void persistActiveDay();
+    }
+  };
+  window.addEventListener('beforeunload', beforeUnloadHandler);
+
   // 같은 트립을 보고 있는 다른 멤버의 변경을 실시간으로 반영
   subscribeRoutePlan(tripId, () => { void reloadFromRemote(); });
   void loadRealLegsForActiveDay(container);
@@ -1514,6 +1528,12 @@ async function addSearchResultToDay(p: Place, container: HTMLElement, cacheSourc
     return;
   }
   searchResultPlaces = searchResultPlaces.filter((sp) => sp.id !== p.id);
+  // 방금 담은 곳이 세션 캐시엔 여전히 "검색 결과"로 남아있어 같은 검색을 다시 하면 이미
+  // 동선에 있는 곳이 또 뜰 수 있다 — 캐시된 모든 결과 목록에서도 함께 제거.
+  nearbySearchCache.forEach((list, key) => {
+    const next = list.filter((sp) => sp.id !== p.id);
+    if (next.length !== list.length) nearbySearchCache.set(key, next);
+  });
   placeById.set(result.place.id, result.place);
   if (!candidatePlaces.some((cp) => cp.id === result.place.id)) candidatePlaces.push(result.place);
   pushHistory();
@@ -1718,6 +1738,9 @@ function handlePinClick(g: any, p: Place): void {
   const isBasecamp = isBasecampPlace(p, activeDayIndex);
   const isAnchor = isAnyAnchor(p, activeDayIndex); // 숙소 또는 공항(도착/출발) — 삭제 금지 대상
   closePlaceCard();
+  // "이 근처 검색" 결과 핀은 그 검색을 실행한 장소의 정보 패널에 딸린 임시 상태라,
+  // 다른 장소를 클릭해 컨텍스트가 바뀌면 함께 지운다(계속 남아있으면 어디서 검색한 건지 헷갈림).
+  if (p.id !== highlightedPlaceId) searchResultPlaces = [];
 
   if (activeTool === 'delete') {
     if (isAnchor) return;
@@ -2918,17 +2941,15 @@ function refreshAll(container: HTMLElement, opts: { refit: boolean } = { refit: 
 const AERO_BLUE = '#2F86D6';
 // 리스트 배지 등 옅은 틴트 배경이 필요한 곳에서 쓰는, AERO_BLUE를 10% 불투명도로 깐 버전.
 const AERO_BLUE_TINT = 'rgba(47,134,214,0.1)';
-const ROUTE_NEXT = '#38BDF8';
+// "다음 장소"를 가리킬 때 쓰는 강조색 — 스카이블루는 원래 색(Aero Blue)과 너무 비슷해
+// 구분이 잘 안 됐다는 피드백으로 또렷한 오렌지로 교체.
+const ROUTE_NEXT = '#FF6B35';
 const ROUTE_GRAY = '#9AA7B8';
-// 경로 클릭으로 "현재 선택된 정류지"를 가리킬 때 쓰는 강조색. 동선 화살표(AERO_BLUE)와
-// 똑같은 색이면 핀이 화살표에 묻혀 보였던 문제 — 화살표보다 한 톤 밝은 중간톤 파랑으로
-// 분리해 화살표와 항상 구분되게 한다.
-const ROUTE_CURRENT = '#3B6FE0';
 
 /**
  * 지도 핀과 우측 패널 배지가 항상 같은 색을 쓰도록 하는 단일 기준 — "이 핀 = 이 카드"가
  * 색으로도 바로 연결되게 한다. 앵커(숙소/공항)든 일반 방문지든 평소(phase='plain') 상태는
- * 전부 AERO_BLUE 하나로 통일 — 진행 상태 강조(다음/현재/지나옴)만 phaseColor가 다른 색을 얹는다.
+ * 전부 AERO_BLUE 하나로 통일 — 진행 상태 강조(다음/지나옴)만 phaseColor가 다른 색을 얹는다.
  */
 function stopIdentityColor(): string {
   return AERO_BLUE;
@@ -2981,6 +3002,7 @@ async function initMap(container: HTMLElement): Promise<void> {
     if (highlightedPlaceId) {
       highlightedPlaceId = null;
       connectFromId = null;
+      searchResultPlaces = []; // 이 근처 검색 핀은 특정 장소의 정보 패널에 딸린 임시 상태
       drawRouteOnMap(false);
       renderRightPanel(container);
     }
@@ -3142,18 +3164,9 @@ function drawRouteOnMap(refit: boolean): void {
     const overlapIndex = seenLegs.get(geomKey) ?? 0;
     seenLegs.set(geomKey, overlapIndex + 1);
 
-    // "선의 강조 표시(진하기)"는 장소 핀 포커스와 연동한다 — 어떤 장소를 클릭하면 그 장소로
-    // 들어오고 나가는 두 구간만 선명하게, 나머지는 옅게 흐려서 "여기서 어디로 가는지"가
-    // 한눈에 읽히게 한다(이동시간/비용 정보 자체는 이제 그 장소 클릭 시 패널에 함께 뜬다).
-    const selected = focusIdx >= 0 && (i === focusIdx || i === focusIdx - 1);
-    const dimmed = !selected && focusIdx >= 0;
-
-    const line = buildLegPolyline(g, stops[i], stops[i + 1], leg, {
-      selected,
-      dimmed,
-      passed: focusIdx < 0 ? true : i < focusIdx,
-      overlapIndex,
-    });
+    // 경로선은 장소 핀 포커스와 상관없이 항상 같은 모습 — 강조는 핀(halo)에서만 표현하고,
+    // 이동시간/비용 정보는 그 장소 클릭 시 패널에서 확인한다.
+    const line = buildLegPolyline(g, stops[i], stops[i + 1], leg, { overlapIndex });
     line.addListener('click', () => handleLegClick(stops[i].id, stops[i + 1].id));
     routePolylines.push(line);
 
@@ -3176,11 +3189,27 @@ const NEARBY_CATEGORY_CHIPS: Array<{ label: string; types: string[] }> = [
 ];
 const NEARBY_SEARCH_RADIUS_M = 800;
 
+// 같은 장소에서 같은 카테고리/키워드를 다시 검색하면 Google을 또 부르지 않고 세션 캐시를 쓴다
+// (Claude.md 3-2: API 호출 최소화). 장소별 근처 상권은 세션 내내 바뀔 일이 없어 TTL 없이
+// 페이지를 새로고침할 때까지만 유지해도 충분하다.
+const nearbySearchCache = new Map<string, Place[]>();
+function nearbySearchCacheKey(placeId: string, types: string[] | null, keyword: string | null): string {
+  return placeId + '|' + (types ? types.slice().sort().join(',') : 'q:' + keyword!.trim().toLowerCase());
+}
+
 /** 확정된 장소를 클릭했을 때 그 좌표를 기준으로 근처를 찾는다 — 카테고리 칩이면 Nearby
  * Search(카테고리), 직접 입력한 키워드면 그 좌표 반경으로 Text Search(자유 텍스트).
  * 결과는 지도 검색과 같은 파이프라인(searchResultPlaces)을 그대로 공유한다. */
 async function runNearbySearch(place: Place, types: string[] | null, keyword: string | null): Promise<void> {
   if (place.lat == null || place.lng == null || !rtContainer || searchBusy) return;
+  const cacheKey = nearbySearchCacheKey(place.id, types, keyword);
+  const cached = nearbySearchCache.get(cacheKey);
+  if (cached) {
+    searchResultPlaces = cached;
+    updateSearchClearButton(rtContainer);
+    drawRouteOnMap(false);
+    return;
+  }
   searchBusy = true;
   try {
     const center = { lat: place.lat, lng: place.lng };
@@ -3188,6 +3217,7 @@ async function runNearbySearch(place: Place, types: string[] | null, keyword: st
       ? await searchPlacesNearby(center, NEARBY_SEARCH_RADIUS_M, types)
       : await searchPlacesByText(keyword!, { center, radius: NEARBY_SEARCH_RADIUS_M });
     searchResultPlaces = results.map(googleResultToPlace);
+    nearbySearchCache.set(cacheKey, searchResultPlaces);
     if (searchResultPlaces.length === 0) window.alert('이 근처에 검색 결과가 없어요.');
   } finally {
     searchBusy = false;
@@ -3486,12 +3516,12 @@ function iconInner(svg: string): string {
 type StopPhase = 'current' | 'next' | 'done' | 'plain';
 
 /** baseColor는 아무것도 포커스하지 않은 평소 상태('plain')에 쓰는 그 정류지 고유색
- * (stopIdentityColor) — 진행 상태 강조(next/done)가 없을 땐 이 색이 곧 핀 색이 된다. */
+ * (stopIdentityColor) — 클릭으로 선택된 지점('current')도 halo/ring만으로 강조하고 색은
+ * 원래 색 그대로 유지한다. next/done만 진행 상태 색을 얹는다. */
 function phaseColor(phase: StopPhase, baseColor: string): string {
   if (phase === 'next') return ROUTE_NEXT;
   if (phase === 'done') return ROUTE_GRAY;
-  if (phase === 'current') return ROUTE_CURRENT;
-  return baseColor; // plain
+  return baseColor; // current(선택 강조는 halo가 담당) / plain
 }
 
 interface MarkerOpts {
@@ -3756,13 +3786,12 @@ function offsetPath(path: LatLngLit[], meters: number): LatLngLit[] {
 }
 
 interface LegDrawOpts {
-  selected: boolean;
-  dimmed: boolean;
-  /** 선택 지점 기준 "지나온" 구간이면 true → 기본 불투명도(0.85), 이후 예정 구간은 더 옅게 */
-  passed: boolean;
   /** 같은 구간이 여러 번 그려질 때의 회차 (0이면 오프셋 없음) */
   overlapIndex: number;
 }
+
+// 장소 핀을 클릭해도 경로선은 강조/디밍 없이 항상 같은 모습을 유지한다(강조는 핀 쪽에서만).
+const LEG_LINE_OPACITY = 0.85;
 
 function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDrawOpts): any {
   const style = MODE_STYLE[leg.mode];
@@ -3771,20 +3800,11 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
   if (leg.path && leg.path.length >= 2) {
     path = leg.path; // 실측 도로 경로 — 그대로(왜곡 금지)
   } else {
-    // 추정 구간만 부드러운 호로. 선택된 구간은 조금 더 완만하게 펴서 강조.
-    path = arcBetween(
-      { lat: from.lat!, lng: from.lng! },
-      { lat: to.lat!, lng: to.lng! },
-      opts.selected ? 0.08 : 0.12
-    );
+    path = arcBetween({ lat: from.lat!, lng: from.lng! }, { lat: to.lat!, lng: to.lng! }, 0.12);
   }
   if (opts.overlapIndex > 0) path = offsetPath(path, opts.overlapIndex * 28);
 
-  // 진행 방향 읽기: 지나온/평소 구간은 Aero Light 스펙 기준 0.85, 예정 구간은 그보다 옅게.
-  // 다른 구간이 선택되면 흐리게.
-  const baseOpacity = opts.passed ? 0.85 : 0.68;
-  const lineOpacity = opts.dimmed ? 0.28 : opts.selected ? 1 : baseOpacity;
-  const weight = opts.selected ? style.weight + 2 : style.weight;
+  const weight = style.weight;
 
   // 점선 아이콘의 scale은 구글맵 심볼 스펙상 "화면 픽셀" 고정값이라, 지도를 축소해도 저절로
   // 작아지지 않고 상대적으로 점점 커 보인다 — 핀 크기를 줄일 때 쓰는 것과 같은 줌 기반 배율을
@@ -3794,26 +3814,11 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
   const iconZoomScale = pinZoomScale();
   const icons: any[] = [
     {
-      icon: { path: 'M 0,-1 0,1', strokeOpacity: lineOpacity, strokeColor: AERO_BLUE, strokeWeight: weight, scale: 6 * iconZoomScale },
+      icon: { path: 'M 0,-1 0,1', strokeOpacity: LEG_LINE_OPACITY, strokeColor: AERO_BLUE, strokeWeight: weight, scale: 6 * iconZoomScale },
       offset: '0',
       repeat: '20px',
     },
   ];
-
-  // 선택/호버된 구간은 아주 옅은 Aero Blue halo를 아래에 깔아 배경에서 확실히 떠오르게
-  if (opts.selected) {
-    routePolylines.push(
-      new g.maps.Polyline({
-        map: mapInstance,
-        path,
-        geodesic: true,
-        strokeColor: AERO_BLUE,
-        strokeOpacity: 0.14,
-        strokeWeight: weight + 10,
-        zIndex: 9,
-      })
-    );
-  }
 
   // 은은한 Aero Blue 광채(glow) — 흰 아웃라인 바로 아래에 넓고 옅게 깔아 "활주로 레이더"
   // 느낌의 살짝 빛나는 경로선을 만든다.
@@ -3823,9 +3828,9 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
       path,
       geodesic: true,
       strokeColor: AERO_BLUE,
-      strokeOpacity: opts.dimmed ? 0.08 : 0.22,
+      strokeOpacity: 0.22,
       strokeWeight: weight + 8,
-      zIndex: opts.selected ? 17 : 7,
+      zIndex: 7,
     })
   );
 
@@ -3837,9 +3842,9 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
       path,
       geodesic: true,
       strokeColor: '#FFFFFF',
-      strokeOpacity: opts.dimmed ? 0.3 : 0.9,
+      strokeOpacity: 0.9,
       strokeWeight: weight + 1.5,
-      zIndex: opts.selected ? 18 : 8,
+      zIndex: 8,
     })
   );
 
@@ -3848,10 +3853,10 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
     path,
     geodesic: true,
     strokeColor: AERO_BLUE,
-    strokeOpacity: style.dashed ? 0 : lineOpacity,
+    strokeOpacity: 0,
     strokeWeight: weight,
     icons,
-    zIndex: opts.selected ? 20 : 10,
+    zIndex: 10,
   });
 }
 
