@@ -707,14 +707,14 @@
 .rt-drag-handle:active { cursor: grabbing; }
 .rt-drag-handle svg { width: 11px; height: 11px; }
 
-/* 배경색은 항상 JS(stopIdentityColor)가 인라인 style로 지정 — 시작/끝 앵커는 고정색(네이비/골드),
-   중간 방문지는 팔레트를 순환. 여기 background는 그 값이 아직 안 붙었을 때의 안전한 기본값일 뿐. */
+/* 배경/글자색은 항상 JS(stopIdentityColor)가 인라인 style로 지정 — Aero Blue 틴트 배경 +
+   Aero Blue 굵은 숫자. 여기 값은 그게 아직 안 붙었을 때의 안전한 기본값일 뿐. */
 .rt-panel-badge {
   grid-column: 2; width: 26px; height: 26px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 11.5px; font-weight: 800; flex-shrink: 0;
-  background: var(--rt-blue);
-  box-shadow: 0 1px 3px rgba(11,42,92,0.2);
+  font-size: 11.5px; font-weight: 800; flex-shrink: 0;
+  background: rgba(47,134,214,0.1);
+  color: #2F86D6;
 }
 .rt-panel-badge svg { width: 12px; height: 12px; }
 .rt-panel-name-col { grid-column: 3; min-width: 0; }

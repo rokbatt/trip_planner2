@@ -128,27 +128,6 @@ function dayColorFor(dayIndex: number): string {
   return DAY_COLOR_PALETTE[((dayIndex % DAY_COLOR_PALETTE.length) + DAY_COLOR_PALETTE.length) % DAY_COLOR_PALETTE.length];
 }
 
-/**
- * 우측 패널의 장소 카드(번호 배지) 색 — 예전엔 DAY 전체가 dayColorFor() 한 가지 색으로
- * 단색이었는데, 그날 안에서도 카드마다 다른 톤이 섞여야 화면이 덜 밋밋하다는 피드백으로
- * 별도 팔레트를 둔다. "Aviation Blue + Steel Blue" 계열(네이비~스틸블루)에서 흰 숫자와의
- * 대비가 확실한 색만 골랐다(연한 하늘색 계열은 흰 글자가 묻혀서 뺐다). DAY 정체성(탭 점·
- * 날짜 색)은 dayColorFor를 그대로 쓰고, 이 팔레트는 그 DAY 안의 방문 순서(1번,2번,3번…)를
- * 따라 처음부터 다시 순환한다.
- */
-const PLACE_CARD_PALETTE = [
-  '#173B70', // Primary Navy
-  '#3F78D5', // Route Blue
-  '#2C5AA0', // Deep Royal Blue
-  '#5B8DBE', // Muted Sky Blue
-  '#6B7C93', // Slate Blue-Gray
-  '#3E5C8A', // Denim Blue
-  '#8FA8C6', // Steel Blue
-];
-function placeCardColorFor(visitIndex: number): string {
-  return PLACE_CARD_PALETTE[visitIndex % PLACE_CARD_PALETTE.length];
-}
-
 interface RouteDay {
   id: string;
   label: string;
@@ -1793,7 +1772,7 @@ function handlePinClick(g: any, p: Place): void {
   highlightedPlaceId = p.id;
   hoveredPlaceId = null;
   if (g?.maps) {
-    showRipple(g, p, ROUTE_NAVY);
+    showRipple(g, p, AERO_BLUE);
     if (!alreadyIncluded) openPlaceCard(g, p);
   }
   drawRouteOnMap(false);
@@ -2628,19 +2607,14 @@ function renderRightPanel(container: HTMLElement): void {
   const dColor = dayColorFor(Math.max(0, dayIndex));
 
   const rows: string[] = [];
-  // 앵커(숙소/공항)는 고정 색을 쓰고, 실제 방문지만 이 카운터로 팔레트를 순환한다 —
-  // 앵커가 몇 번째 위치에 있든 실제 방문지 1번째는 항상 팔레트 첫 색부터 시작하게.
   // 지도 핀(drawRouteOnMap)도 똑같은 stopIdentityColor를 쓰므로 색이 항상 서로 맞는다.
-  const { startId: panelStartId, endId: panelEndId } = dayAnchorIds(dayIndex);
-  let visitColorIdx = 0;
   stops.forEach((p, i) => {
     const isBasecamp = isBasecampPlace(p, dayIndex);
     const isAirport = isAirportAnchorPlace(p);
     const isAnchor = isBasecamp || isAirport; // 삭제는 금지하되, 순서는 자유롭게 바꿀 수 있음
     const memo = memoStore.get(p.id) ?? '';
     const highlighted = p.id === highlightedPlaceId;
-    const cardColor = stopIdentityColor(p, panelStartId, panelEndId, visitColorIdx);
-    if (!isAnchor) visitColorIdx++;
+    const cardColor = stopIdentityColor();
 
     const manualTime = timeOverride.has(timeKey(day.id, p.id));
     // 예상 체류시간(참고용 추정치) 대신, 그 시각에 실제로 도착하는 시각(HH:MM)을 보여준다 —
@@ -2656,7 +2630,7 @@ function renderRightPanel(container: HTMLElement): void {
         // "순서 정리" 버튼(optimizedOrder)을 누르면 그때만 다시 양 끝으로 고정된다.
         '<div class="rt-panel-stop' + (highlighted ? ' rt-highlighted' : '') + '" draggable="true" data-place-id="' + p.id + '">',
         '  <span class="rt-drag-handle" title="드래그해서 순서 바꾸기" aria-hidden="true">' + IC_GRIP + '</span>',
-        '  <span class="rt-panel-badge" style="background:' + cardColor + '">' + (i + 1) + '</span>',
+        '  <span class="rt-panel-badge" style="background:' + AERO_BLUE_TINT + ';color:' + cardColor + '">' + (i + 1) + '</span>',
         '  <div class="rt-panel-name-col"><div class="rt-panel-name">' + escapeHtml(p.name) + '</div><div class="rt-panel-sub">' + escapeHtml(p.category || (isBasecamp ? '숙소' : '')) + '</div></div>',
         timeOrDwellHtml,
         !isAnchor
@@ -2935,42 +2909,35 @@ function refreshAll(container: HTMLElement, opts: { refit: boolean } = { refit: 
 /* ══════════════════ 지도 ══════════════════ */
 
 /**
- * 동선 선 스타일. 이전엔 이동수단마다 다른 색(초록/파랑/회색)을 썼지만, 지도에서 Route가
- * 확실한 주인공이 되도록 **진한 네이비 단일 색**으로 통일했다. 이동수단 구분은 색이 아니라
+ * 동선 선 스타일 — "인천공항 활주로 레이더(Aero Light)" 톤. 예전 딥 네이비(#243B78)가
+ * 지도의 밝고 옅은 배경과 무거운 명도 대비를 이뤄 답답하다는 피드백으로, 청량한 Action
+ * Sky Blue 한 가지로 화살표·핀·리스트 배지를 전부 통일했다. 이동수단 구분은 색이 아니라
  * 캡슐 배지의 아이콘/라벨과 모드 전환 노드가 담당한다.
  * 도보만 점선을 유지 — 실제 보행로가 도로와 다를 수 있다는 신호로 유용해서.
  */
-const ROUTE_NAVY = '#243B78';
-// 예전엔 금색(#C08A2E)이었지만 네이비 위주 팔레트와 잘 안 어울린다는 피드백으로 밝은
-// 하늘색 계열로 교체 — "다음 목적지"라는 도착 강조 의미는 그대로 유지.
+const AERO_BLUE = '#2F86D6';
+// 리스트 배지 등 옅은 틴트 배경이 필요한 곳에서 쓰는, AERO_BLUE를 10% 불투명도로 깐 버전.
+const AERO_BLUE_TINT = 'rgba(47,134,214,0.1)';
 const ROUTE_NEXT = '#38BDF8';
 const ROUTE_GRAY = '#9AA7B8';
-// 이 DAY 동선의 시작 앵커(공항 도착 또는 그날의 시작 숙소)와 끝 앵커(끝 숙소 또는 출국 공항)는
-// 서로 다른 고정색을 쓴다 — "고정된 두 지점"이라는 정체성을 색으로도 드러내기 위함.
-// 시작=네이비(중심/거점), 끝=하늘색("다음 목적지"에 이미 쓰는 것과 같은 도착 강조색)로 통일.
-const ANCHOR_START_COLOR = ROUTE_NAVY;
-const ANCHOR_END_COLOR = ROUTE_NEXT;
-// 경로 클릭으로 "현재 선택된 정류지"를 가리킬 때 쓰는 강조색. 동선 화살표(ROUTE_NAVY)와
+// 경로 클릭으로 "현재 선택된 정류지"를 가리킬 때 쓰는 강조색. 동선 화살표(AERO_BLUE)와
 // 똑같은 색이면 핀이 화살표에 묻혀 보였던 문제 — 화살표보다 한 톤 밝은 중간톤 파랑으로
 // 분리해 화살표와 항상 구분되게 한다.
 const ROUTE_CURRENT = '#3B6FE0';
 
 /**
  * 지도 핀과 우측 패널 배지가 항상 같은 색을 쓰도록 하는 단일 기준 — "이 핀 = 이 카드"가
- * 색으로도 바로 연결되게 한다. 시작/끝 앵커는 고정색, 중간 방문지는 PLACE_CARD_PALETTE를
- * 방문 순서대로 순환(앵커는 세지 않음 — 앵커가 몇 번째 위치에 있든 실제 방문지 1번째는
- * 항상 팔레트 첫 색부터 시작).
+ * 색으로도 바로 연결되게 한다. 앵커(숙소/공항)든 일반 방문지든 평소(phase='plain') 상태는
+ * 전부 AERO_BLUE 하나로 통일 — 진행 상태 강조(다음/현재/지나옴)만 phaseColor가 다른 색을 얹는다.
  */
-function stopIdentityColor(p: Place, startId: string | null, endId: string | null, visitIndex: number): string {
-  if (startId && p.id === startId) return ANCHOR_START_COLOR;
-  if (endId && p.id === endId) return ANCHOR_END_COLOR;
-  return placeCardColorFor(visitIndex);
+function stopIdentityColor(): string {
+  return AERO_BLUE;
 }
-// 기존 두께의 70% 수준으로(지도가 너무 두꺼운 선에 눌려 보인다는 피드백 반영)
+// Aero Light 스펙에 맞춰 두께를 4px로, 얇은 흰 아웃라인·글로우로 지도 배경과의 대비를 만든다.
 const MODE_STYLE: Record<Leg['mode'], { weight: number; dashed: boolean }> = {
   WALK: { weight: 3.5, dashed: true },
-  TRANSIT: { weight: 4.2, dashed: false },
-  TAXI: { weight: 4.2, dashed: false },
+  TRANSIT: { weight: 4, dashed: false },
+  TAXI: { weight: 4, dashed: false },
 };
 
 async function initMap(container: HTMLElement): Promise<void> {
@@ -3133,12 +3100,9 @@ function drawRouteOnMap(refit: boolean): void {
   let stopInfoShown = false;
 
   // 오늘 동선의 정류지 — 순서 번호 + 정체성 색(평소) / 진행 상태 색(포커스 중일 때만)
-  const { startId: anchorStartId, endId: anchorEndId } = dayAnchorIds(dayIndex);
-  let mapVisitColorIdx = 0;
   stops.forEach((p, i) => {
     const isBasecamp = isBasecampPlace(p, dayIndex);
-    const baseColor = stopIdentityColor(p, anchorStartId, anchorEndId, mapVisitColorIdx);
-    if (!isAnyAnchor(p, dayIndex)) mapVisitColorIdx++;
+    const baseColor = stopIdentityColor();
     // 여행은 아직 미래라 실제 "완료"는 없다. 선택한 지점을 현재로 보고 앞/뒤를 나눠
     // 진행 방향이 읽히게 한다. 아무것도 선택하지 않았으면 각자의 정체성 색 그대로.
     let phase: StopPhase = 'plain';
@@ -3577,13 +3541,11 @@ function pinTearPath(cx: number, cy: number, r: number, tipY: number): string {
 }
 
 /**
- * 지도 핀 — 흰 배경 원 + 진행 상태 색(네이비/오렌지/그레이) 테두리·숫자로 위계를 낮추고
- * (예전엔 진한 네이비로 꽉 채워 다른 네이비 요소들과 뒤섞였음), 동그라미 배지가 아니라 끝이
- * 뾰족한 실제 지도 핀 모양으로. 테두리 색은 얇은 링이 아니라 원 아래로 이어지는 뾰족한
- * 부분 전체를 채운다 — 뒤에 색깔 핀 실루엣을 통째로 깔고, 그 위에 살짝 작은 흰 원을 얹어
- * 위쪽만 링처럼 보이고 아래 꼬리는 그대로 색이 드러나는 방식.
- *  - 동선에 포함된 정류지: 순서 번호 + 진행 상태 색 테두리·숫자
- *  - 아직 담지 않은 후보: 더 옅은 톤 테두리 + 카테고리 아이콘(배경으로 물러나게)
+ * 지도 핀:
+ *  - 동선에 포함된 정류지: Aero Blue(또는 진행 상태 색)로 꽉 채운 핀 + 흰색 굵은 숫자 +
+ *    글래스모피즘 느낌의 얇은 흰 테두리 링. 예전엔 흰 배경 원에 색 테두리·숫자를 얹어
+ *    핀이 흐릿해 보였는데, 색을 꽉 채우고 흰 숫자를 올려 또렷한 "지도 마커"답게 바꿨다.
+ *  - 아직 담지 않은 후보: 옅은 톤 테두리 + 흰 배경 원 + 카테고리 아이콘(배경으로 물러나게)
  */
 function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
   const meta = categoryMeta(p, opts.isBasecamp);
@@ -3601,20 +3563,29 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
   const tipY = h - pad / 2;
   const headCy = tipY - tail;
 
-  const borderColor = opts.included ? phaseColor(phase, opts.baseColor ?? ROUTE_NAVY) : 'rgba(107,122,147,0.85)';
-  const numberColor = borderColor;
-  // 위쪽에서만 링처럼 보이도록, 흰 원은 머리 반지름보다 살짝 작게(그 차이만큼이 링 두께)
+  const borderColor = opts.included ? phaseColor(phase, opts.baseColor ?? AERO_BLUE) : 'rgba(107,122,147,0.85)';
+  // 포함된 정류지는 흰 숫자를 색 채운 핀 위에 얹고, 후보 핀은 예전처럼 흰 배경 위 색 아이콘.
+  const numberColor = opts.included ? '#FFFFFF' : borderColor;
+  // 후보 핀 전용 — 위쪽에서만 링처럼 보이도록, 흰 원은 머리 반지름보다 살짝 작게
   const ringWidth = r * 0.24;
   const whiteR = r - ringWidth;
+  // 포함된 정류지 핀에 두르는 글래스모피즘 흰 테두리(스펙상 2px 상당, 줌 배율만큼 스케일)
+  const pinRingWidth = 2 * scale;
 
-  // 선택된 지점만 아주 옅은 네이비 halo로 강조 — 핀의 머리 부분을 중심으로
+  // 선택된 지점만 아주 옅은 Aero Blue halo로 강조 — 핀의 머리 부분을 중심으로
   const halo = opts.highlighted
-    ? '<circle cx="' + cx + '" cy="' + headCy + '" r="' + (r + 9) + '" fill="' + ROUTE_NAVY + '" fill-opacity="0.09"/>' +
-      '<circle cx="' + cx + '" cy="' + headCy + '" r="' + (r + 4.5) + '" fill="' + ROUTE_NAVY + '" fill-opacity="0.07"/>'
+    ? '<circle cx="' + cx + '" cy="' + headCy + '" r="' + (r + 9) + '" fill="' + AERO_BLUE + '" fill-opacity="0.09"/>' +
+      '<circle cx="' + cx + '" cy="' + headCy + '" r="' + (r + 4.5) + '" fill="' + AERO_BLUE + '" fill-opacity="0.07"/>'
     : '';
   // 그림자는 핀이 실제로 딛고 선 지점(끝)에 얕게
   const shadow =
     '<ellipse cx="' + cx + '" cy="' + (tipY + r * 0.1) + '" rx="' + r * 0.42 + '" ry="' + r * 0.15 + '" fill="rgba(11,42,92,0.18)"/>';
+
+  const pinBody = opts.included
+    ? '<path d="' + pinTearPath(cx, headCy, r, tipY) + '" fill="' + borderColor + '" stroke="rgba(255,255,255,0.8)" stroke-width="' +
+      pinRingWidth + '" stroke-linejoin="round"/>'
+    : '<path d="' + pinTearPath(cx, headCy, r, tipY) + '" fill="' + borderColor + '"/>' +
+      '<circle cx="' + cx + '" cy="' + headCy + '" r="' + whiteR + '" fill="#FFFFFF"/>';
 
   const inner = opts.included
     ? '<text x="' + cx + '" y="' + (headCy + 4.2) + '" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="' +
@@ -3627,8 +3598,7 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
     '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
     halo +
     shadow +
-    '<path d="' + pinTearPath(cx, headCy, r, tipY) + '" fill="' + borderColor + '"/>' +
-    '<circle cx="' + cx + '" cy="' + headCy + '" r="' + whiteR + '" fill="#FFFFFF"/>' +
+    pinBody +
     inner +
     '</svg>';
 
@@ -3721,7 +3691,7 @@ function buildModeChangeNode(g: any, at: LatLngLit): any {
   const c = size / 2;
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">' +
-    '<circle cx="' + c + '" cy="' + c + '" r="4.5" fill="#FFFFFF" stroke="' + ROUTE_NAVY + '" stroke-width="2.4"/></svg>';
+    '<circle cx="' + c + '" cy="' + c + '" r="4.5" fill="#FFFFFF" stroke="' + AERO_BLUE + '" stroke-width="2.4"/></svg>';
   return new g.maps.Marker({
     position: at,
     map: mapInstance,
@@ -3795,7 +3765,7 @@ function offsetPath(path: LatLngLit[], meters: number): LatLngLit[] {
 interface LegDrawOpts {
   selected: boolean;
   dimmed: boolean;
-  /** 선택 지점 기준 "지나온" 구간이면 true → 완전 불투명, 이후 예정 구간은 살짝 투명 */
+  /** 선택 지점 기준 "지나온" 구간이면 true → 기본 불투명도(0.85), 이후 예정 구간은 더 옅게 */
   passed: boolean;
   /** 같은 구간이 여러 번 그려질 때의 회차 (0이면 오프셋 없음) */
   overlapIndex: number;
@@ -3817,8 +3787,9 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
   }
   if (opts.overlapIndex > 0) path = offsetPath(path, opts.overlapIndex * 28);
 
-  // 진행 방향 읽기: 지나온 구간 100%, 예정 구간 80%. 다른 구간이 선택되면 흐리게.
-  const baseOpacity = opts.passed ? 1 : 0.8;
+  // 진행 방향 읽기: 지나온/평소 구간은 Aero Light 스펙 기준 0.85, 예정 구간은 그보다 옅게.
+  // 다른 구간이 선택되면 흐리게.
+  const baseOpacity = opts.passed ? 0.85 : 0.68;
   const lineOpacity = opts.dimmed ? 0.28 : opts.selected ? 1 : baseOpacity;
   const weight = opts.selected ? style.weight + 2 : style.weight;
 
@@ -3829,7 +3800,7 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
   const icons: any[] = [];
   if (style.dashed) {
     icons.push({
-      icon: { path: 'M 0,-1 0,1', strokeOpacity: lineOpacity, strokeColor: ROUTE_NAVY, strokeWeight: weight, scale: 3 * iconZoomScale },
+      icon: { path: 'M 0,-1 0,1', strokeOpacity: lineOpacity, strokeColor: AERO_BLUE, strokeWeight: weight, scale: 3 * iconZoomScale },
       offset: '0',
       repeat: '15px',
     });
@@ -3838,24 +3809,41 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
     icon: {
       path: g.maps.SymbolPath.FORWARD_CLOSED_ARROW,
       scale: 3.4 * iconZoomScale,
-      strokeColor: ROUTE_NAVY,
+      strokeColor: AERO_BLUE,
       strokeOpacity: lineOpacity,
-      fillColor: ROUTE_NAVY,
+      fillColor: AERO_BLUE,
       fillOpacity: lineOpacity,
     },
     offset: '96%',
   });
 
-  // 선택/호버된 구간은 아주 옅은 네이비 halo를 아래에 깔아 배경에서 확실히 떠오르게
+  // 선택/호버된 구간은 아주 옅은 Aero Blue halo를 아래에 깔아 배경에서 확실히 떠오르게
   if (opts.selected) {
     routePolylines.push(
       new g.maps.Polyline({
         map: mapInstance,
         path,
-        strokeColor: ROUTE_NAVY,
+        geodesic: true,
+        strokeColor: AERO_BLUE,
         strokeOpacity: 0.14,
         strokeWeight: weight + 10,
         zIndex: 9,
+      })
+    );
+  }
+
+  // 은은한 Aero Blue 광채(glow) — 흰 아웃라인 바로 아래에 넓고 옅게 깔아 "활주로 레이더"
+  // 느낌의 살짝 빛나는 경로선을 만든다.
+  if (!style.dashed) {
+    routePolylines.push(
+      new g.maps.Polyline({
+        map: mapInstance,
+        path,
+        geodesic: true,
+        strokeColor: AERO_BLUE,
+        strokeOpacity: opts.dimmed ? 0.08 : 0.22,
+        strokeWeight: weight + 8,
+        zIndex: opts.selected ? 17 : 7,
       })
     );
   }
@@ -3866,6 +3854,7 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
       new g.maps.Polyline({
         map: mapInstance,
         path,
+        geodesic: true,
         strokeColor: '#FFFFFF',
         strokeOpacity: opts.dimmed ? 0.3 : 0.9,
         strokeWeight: weight + 3,
@@ -3877,7 +3866,8 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
   return new g.maps.Polyline({
     map: mapInstance,
     path,
-    strokeColor: ROUTE_NAVY,
+    geodesic: true,
+    strokeColor: AERO_BLUE,
     strokeOpacity: style.dashed ? 0 : lineOpacity,
     strokeWeight: weight,
     icons,
