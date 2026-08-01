@@ -232,6 +232,59 @@ async function rehostArbitraryImage(supabase: any, imgUrl: string, linkId: strin
   }
 }
 
+/** 카카오톡/페이스북/슬랙 같은 메신저·SNS의 링크 미리보기 봇은 자신을 "일반 브라우저인 척"
+ * 하지 않고 잘 알려진 크롤러라고 UA에 그대로 밝힌다. 사이트 입장에서는 자기 링크가 그런
+ * 앱에서 예쁘게 보이길 원해서 이런 UA는 따로 허용해 서버 렌더링된 og 태그를 그대로
+ * 내려주는 경우가 있다 — 반대로 일반 데스크톱 브라우저인 척하는 요청은 Akamai/Cloudflare
+ * 같은 봇 차단에 걸리기 쉽다. 그래서 잘 알려진 미리보기 봇 UA부터 시도하고, 안 되면
+ * 데스크톱 브라우저 UA로 한 번 더 시도한다. 다만 이건 만능은 아니다 — Agoda처럼 UA
+ * 문자열뿐 아니라 발신 IP까지 실제 카카오/페이스북 크롤러 대역인지 검증하는 사이트에는
+ * UA만 바꿔서는 못 뚫는다(우리 서버는 Vercel의 평범한 클라우드 IP라서). */
+const PREVIEW_USER_AGENTS = [
+  'Mozilla/5.0 (compatible; KakaoTalk-Scrap/1.0; +https://devtalk.kakao.com/t/scrap/33984)',
+  'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+];
+
+function previewHeaders(userAgent: string): Record<string, string> {
+  return {
+    'User-Agent': userAgent,
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+  };
+}
+
+/** 여러 User-Agent를 순서대로 시도해 og:title/og:image가 담긴 응답을 받아온다. 그 중 하나가
+ * og 태그를 담은 응답을 주면 바로 반환하고 나머지는 시도하지 않는다. 끝까지 못 찾으면
+ * 그나마 마지막으로 받은 HTML(있다면)을 반환 — 완전히 접속 자체가 안 됐을 때만 예외를 던진다.
+ * Vercel 서버리스 함수 시간 제한(3-7 참고) 안에 들어오도록 시도별 타임아웃을 짧게 잡는다. */
+async function fetchPreviewHtml(targetUrl: string): Promise<string> {
+  let lastHtml: string | null = null;
+  let lastError: Error | null = null;
+
+  for (const ua of PREVIEW_USER_AGENTS) {
+    try {
+      const res = await fetch(targetUrl, {
+        redirect: 'follow',
+        headers: previewHeaders(ua),
+        signal: AbortSignal.timeout(4000),
+      });
+      if (!res.ok) {
+        lastError = new Error('HTTP ' + res.status);
+        continue;
+      }
+      const html = (await res.text()).slice(0, 300000); // og 태그는 보통 <head> 안, 문서 앞쪽에 있어 앞부분만으로 충분
+      lastHtml = html;
+      if (extractMeta(html, 'og:title') || extractMeta(html, 'og:image')) return html;
+    } catch (e) {
+      lastError = e as Error;
+    }
+  }
+
+  if (lastHtml !== null) return lastHtml;
+  throw lastError ?? new Error('모든 User-Agent 시도 실패');
+}
+
 interface LinkPreviewResult {
   title: string | null;
   imageUrl: string | null;
@@ -244,22 +297,7 @@ interface LinkPreviewResult {
 async function buildLinkPreview(supabase: any, targetUrl: string, linkId: string): Promise<LinkPreviewResult> {
   let html = '';
   try {
-    // 예약/여행 사이트는 자기 자신을 "봇"이라 밝히는 User-Agent를 적극적으로 차단하거나
-    // og 태그 없는 껍데기 페이지만 내려주는 경우가 많다(Agoda 등에서 실제로 확인됨).
-    // 사람이 보는 것과 같은 화면을 받기 위해 일반 브라우저처럼 요청한다(1회성 미리보기
-    // 조회일 뿐 대량 크롤링이 아니라 문제 없음 — Slack/Discord 등 링크 미리보기도 흔히 쓰는 방식).
-    const pageRes = await fetch(targetUrl, {
-      redirect: 'follow',
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-      },
-      signal: AbortSignal.timeout(8000),
-    });
-    const text = await pageRes.text();
-    html = text.slice(0, 300000); // og 태그는 보통 <head> 안, 문서 앞쪽에 있어 앞부분만으로 충분
+    html = await fetchPreviewHtml(targetUrl);
 
     const host = new URL(targetUrl).hostname.replace(/^www\./, '');
     if (host === 'blog.naver.com') {
@@ -267,23 +305,9 @@ async function buildLinkPreview(supabase: any, targetUrl: string, linkId: string
       if (frameSrc) {
         try {
           const frameUrl = new URL(frameSrc, targetUrl).toString();
-          const frameRes = await fetch(frameUrl, {
-            redirect: 'follow',
-            headers: {
-              'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-              'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-            },
-            signal: AbortSignal.timeout(8000),
-          });
-          if (frameRes.ok) {
-            html = (await frameRes.text()).slice(0, 300000);
-          } else {
-            console.error('[link-preview] 네이버 블로그 mainFrame 요청 실패(' + frameRes.status + '):', frameUrl);
-          }
+          html = await fetchPreviewHtml(frameUrl);
         } catch (e) {
-          console.error('[link-preview] 네이버 블로그 mainFrame 요청 예외(무시):', (e as Error).message);
+          console.error('[link-preview] 네이버 블로그 mainFrame 요청 실패(무시):', (e as Error).message);
         }
       } else {
         console.error('[link-preview] 네이버 블로그 mainFrame iframe을 못 찾음:', targetUrl);
