@@ -639,20 +639,22 @@
   transition: background var(--rt-ease), box-shadow var(--rt-ease), transform var(--rt-ease);
 }
 .rt-panel-stop:active { cursor: grabbing; }
-/* 지도와의 연결감 — 카드에 올리면 살짝 밝아져 "지금 이 지점"임을 알린다 */
-.rt-panel-stop:hover { background: rgba(255,255,255,0.72); }
+/* 지도와의 연결감 — 카드에 올리면 왼쪽에 강조선이 생겨 "지금 이 지점"임을 알린다 */
+.rt-panel-stop:hover { background: rgba(255,255,255,0.72); box-shadow: inset 2px 0 0 #2F86D6; }
 .rt-panel-stop.dragging { opacity: 0.4; box-shadow: var(--rt-shadow-md); transform: scale(1.02); }
 .rt-panel-stop.drag-over { box-shadow: inset 0 2px 0 var(--rt-blue); }
 .rt-panel-stop.rt-highlighted { background: var(--rt-ice); box-shadow: inset 0 0 0 1px rgba(11,124,196,0.18); }
 
 /* 배경/글자색은 항상 JS(stopIdentityColor)가 인라인 style로 지정 — Aero Blue 틴트 배경 +
-   Aero Blue 굵은 숫자. 여기 값은 그게 아직 안 붙었을 때의 안전한 기본값일 뿐. */
+   Aero Blue 굵은 숫자. 여기 값은 그게 아직 안 붙었을 때의 안전한 기본값일 뿐.
+   트리플류 여행 앱에서 자주 보이는 소프트필 "칩" — 원형 대신 둥근 사각형. */
 .rt-panel-badge {
-  grid-column: 1; width: 26px; height: 26px; border-radius: 50%;
+  grid-column: 1; width: 24px; height: 24px; border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 11.5px; font-weight: 800; flex-shrink: 0;
+  font-size: 11px; font-weight: 800; flex-shrink: 0;
   background: rgba(47,134,214,0.1);
   color: #2F86D6;
+  box-shadow: 0 1px 2px rgba(11,42,92,0.06);
 }
 .rt-panel-badge svg { width: 12px; height: 12px; }
 .rt-panel-name-col { grid-column: 2; min-width: 0; }
