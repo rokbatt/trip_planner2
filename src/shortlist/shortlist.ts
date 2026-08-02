@@ -1104,6 +1104,34 @@ async function removeSegment(segId: string): Promise<void> {
   renderStep(slContainer);
 }
 
+/**
+ * 구간이 이 하나뿐일 때 쓰는 "X" 동작 — removeSegment처럼 구간 자체를 지우면 이 여행지가
+ * 구간 0개가 되어버려(나머지 코드는 항상 구간 1개 이상을 가정) 지울 수가 없다. 대신 구간은
+ * 그대로 두고 그 안에 고른 지역·숙소·확정 내역만 전부 비워서 "처음부터 다시 고르는" 상태로
+ * 되돌린다(날짜 범위는 유지 — 어차피 이 여행지의 전체 숙박 기간과 같음).
+ */
+async function resetSegment(segId: string): Promise<void> {
+  if (!currentTrip || !slActiveDest || !slContainer) return;
+  const seg = slSegments.find((s) => s.id === segId);
+  if (!seg) return;
+  const clearedState = {
+    zone_name: null,
+    zone_place_ids: null,
+    basecamp_place_id: null,
+    confirmed_place_ids: null,
+    total_budget_krw: null,
+    basecamp_confirmed_at: null,
+  };
+  const saved = await saveStaySegment(currentTrip, slActiveDest, seg, clearedState);
+  slSegments = slSegments.map((s) => (s.id === segId ? saved : s));
+  if (slActiveSegment?.id === segId) {
+    slActiveSegment = saved;
+    setActiveSegmentId(slActiveDest.id, saved.id);
+    restoreStateFromSegment(saved);
+  }
+  renderStep(slContainer);
+}
+
 /** N박 표기 없이 날짜 범위만("10.26–10.29") — 상단 헤더처럼 최대한 압축해서 보여줄 곳에 사용 */
 function dateRangeOnly(start: string | null, end: string | null): string {
   if (!start || !end) return '';
@@ -1116,7 +1144,7 @@ function dateRangeOnly(start: string | null, end: string | null): string {
 function bindSegmentPillHandlers(wrap: HTMLElement): void {
   wrap.querySelectorAll('.sl-seg-pill').forEach((btn) => {
     btn.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('[data-del-seg]')) return;
+      if ((e.target as HTMLElement).closest('[data-del-seg], [data-reset-seg]')) return;
       switchSegment((btn as HTMLElement).dataset.segId!);
     });
   });
@@ -1126,6 +1154,15 @@ function bindSegmentPillHandlers(wrap: HTMLElement): void {
       const id = (el as HTMLElement).dataset.delSeg!;
       if (confirm('이 숙소 구간을 삭제할까요? 이 구간에서 고른 지역·숙소·장소 선택이 사라져요.')) {
         removeSegment(id);
+      }
+    });
+  });
+  wrap.querySelectorAll('[data-reset-seg]').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = (el as HTMLElement).dataset.resetSeg!;
+      if (confirm('이 숙소 설정을 초기화할까요? 고른 지역·숙소·확정 내역이 모두 사라지고 처음부터 다시 고르게 돼요.')) {
+        resetSegment(id);
       }
     });
   });
@@ -1151,6 +1188,10 @@ function renderSegmentBar(container: HTMLElement): void {
       const active = seg.id === slActiveSegment?.id;
       const confirmed = !!seg.basecamp_confirmed_at;
       const meta = dateRangeOnly(seg.start_date, seg.end_date);
+      // 구간이 이거 하나뿐이면 지울(0개로 만들) 수 없으니 "삭제" 대신 "초기화"로 동작.
+      const soleSegment = slSegments.length === 1;
+      const actionAttr = soleSegment ? 'data-reset-seg="' + seg.id + '"' : 'data-del-seg="' + seg.id + '"';
+      const actionTitle = soleSegment ? '이 숙소 설정 초기화' : '이 숙소 구간 삭제';
       return [
         '<button type="button" class="sl-seg-pill sl-seg-pill-compact' + (active ? ' active' : '') + (confirmed ? ' confirmed' : '') + '" data-seg-id="' + seg.id + '">',
         '  <span class="sl-seg-pill-idx">' + (confirmed ? IC_CHECK : String(i + 1)) + '</span>',
@@ -1158,7 +1199,7 @@ function renderSegmentBar(container: HTMLElement): void {
         '    <span class="sl-seg-pill-name">' + escapeHtml(segmentLabel(seg, i)) + '</span>',
         '    <span class="sl-seg-pill-meta">' + (meta ? escapeHtml(meta) + (confirmed ? ' · ' : '') : '') + (confirmed ? '<span class="sl-seg-pill-confirmed">확정됨</span>' : '') + '</span>',
         '  </span>',
-        slSegments.length > 1 ? '  <span class="sl-seg-pill-del" data-del-seg="' + seg.id + '" title="이 숙소 구간 삭제">' + IC_XCLOSE + '</span>' : '',
+        '  <span class="sl-seg-pill-del" ' + actionAttr + ' title="' + actionTitle + '">' + IC_XCLOSE + '</span>',
         '</button>',
       ].join('');
     })
@@ -2158,6 +2199,59 @@ function buildCategoryIcon(g: any, mood: string | null, category?: string | null
   };
 }
 
+/** 반지름 r인 원(중심 cx,cy)에 외부 접선 두 개를 그어 tip에서 만나는 "물방울(핀)" 윤곽 경로 —
+ *  ROUTE의 pinTearPath(route.ts)와 동일한 수식. 화면(Step1)이 서로 달라 모듈을 공유하지 않고 복제. */
+function pinTearPath(cx: number, cy: number, r: number, tipY: number): string {
+  const d = tipY - cy;
+  const phi = Math.acos(r / d);
+  const a1 = Math.PI / 2 - phi;
+  const a2 = Math.PI / 2 + phi;
+  const t1x = cx + r * Math.cos(a1);
+  const t1y = cy + r * Math.sin(a1);
+  const t2x = cx + r * Math.cos(a2);
+  const t2y = cy + r * Math.sin(a2);
+  return (
+    'M' + t1x + ' ' + t1y +
+    ' A' + r + ' ' + r + ' 0 1 0 ' + t2x + ' ' + t2y +
+    ' L' + cx + ' ' + tipY +
+    ' Z'
+  );
+}
+
+const STEP1_PIN_HEAD_R = 12;
+const STEP1_PIN_FONT_SIZE = 16;
+const STEP1_PIN_TAIL_RATIO = 1.5;
+/** 회색이 아니라 mood(4개 게이트)별 색으로 채운 물방울 모양 핀 — ROUTE 핀과 같은 실루엣.
+ *  Step1 지도(Brainstorm에서 담긴 장소 전체 조망)에서만 쓰고, Step2/3의 buildCategoryIcon(배경
+ *  없는 순수 이모지)은 그대로 둔다 — 두 화면의 핀 스타일이 서로 다른 의미(전부 다 보기 vs
+ *  후보 비교)를 갖고 있어 일부러 구분. */
+function buildStep1GatePin(g: any, mood: string | null, category?: string | null, name?: string | null): any {
+  const icon = isAirportPlace(name, category) ? '✈️' : CATEGORY_ICON[category ?? ''] || MOOD_ICON[mood ?? ''] || '📍';
+  const color = MOOD_COLOR[mood ?? ''] ?? '#6B7A93'; // mood 없는 경우(이론상 없음)만 대비한 slate 폴백
+  const r = STEP1_PIN_HEAD_R;
+  const tail = r * STEP1_PIN_TAIL_RATIO;
+  const pad = 6;
+  const w = Math.ceil(r * 2 + pad);
+  const h = Math.ceil(r + tail + pad);
+  const cx = w / 2;
+  const tipY = h - pad / 2;
+  const headCy = tipY - tail;
+  const whiteR = r - r * 0.24;
+
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+    '<path d="' + pinTearPath(cx, headCy, r, tipY) + '" fill="' + color + '"/>' +
+    '<circle cx="' + cx + '" cy="' + headCy + '" r="' + whiteR + '" fill="#FFFFFF"/>' +
+    '<text x="' + cx + '" y="' + headCy + '" font-size="' + STEP1_PIN_FONT_SIZE + '" text-anchor="middle" dominant-baseline="central">' + icon + '</text>' +
+    '</svg>';
+
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new g.maps.Size(w, h),
+    anchor: new g.maps.Point(cx, tipY),
+  };
+}
+
 /** 카드에 마우스를 올리면 해당 권역만 지도에서 진하게, 나머지는 흐리게. null이면 전체를 기본 상태로 */
 function highlightZone(zoneId: string | null): void {
   highlightedZoneId = zoneId;
@@ -2312,7 +2406,7 @@ async function initMap(body: HTMLElement): Promise<void> {
         position: { lat: p.lat, lng: p.lng },
         map: mapInstance,
         title: p.name,
-        icon: buildCategoryIcon(g, p.mood, p.category, p.name),
+        icon: buildStep1GatePin(g, p.mood, p.category, p.name),
       });
       // 클릭 없이 마우스만 올려도 바로 정보가 뜨게(터치 기기는 hover가 없으니 click도 유지).
       // 클릭으로 고정된 상태(pinned)면 다른 마커 hover에 안 밀리고 mouseout에도 안 닫힘
@@ -2376,7 +2470,7 @@ async function initMap(body: HTMLElement): Promise<void> {
       position: { lat: p.lat, lng: p.lng },
       map: mapInstance,
       title: p.name,
-      icon: buildCategoryIcon(g, p.mood, p.category, p.name),
+      icon: buildStep1GatePin(g, p.mood, p.category, p.name),
     });
     marker.addListener('mouseover', () => {
       if (!placeInfoWindowPinned) showPlaceInfoWindow(g, mapInstance, marker, p);
