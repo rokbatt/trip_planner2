@@ -2828,12 +2828,12 @@ function stopIdentityColor(): string {
   return AERO_BLUE;
 }
 // 방향 화살표 대신 점선 자체로 "동선"임을 표현 — 모든 이동수단을 점선으로 통일했다.
-// 두께는 항상 얇게 고정(줌 배율과 무관) — 이동수단 구분은 색이 아니라 캡슐 배지의
-// 아이콘/라벨과 모드 전환 노드가 담당한다.
+// 두께는 항상 고정(줌 배율과 무관) — 이동수단 구분은 색이 아니라 캡슐 배지의
+// 아이콘/라벨과 모드 전환 노드가 담당한다. (2.2 → 20% 증가한 2.6)
 const MODE_STYLE: Record<Leg['mode'], { weight: number }> = {
-  WALK: { weight: 2.2 },
-  TRANSIT: { weight: 2.2 },
-  TAXI: { weight: 2.2 },
+  WALK: { weight: 2.6 },
+  TRANSIT: { weight: 2.6 },
+  TAXI: { weight: 2.6 },
 };
 
 async function initMap(container: HTMLElement): Promise<void> {
