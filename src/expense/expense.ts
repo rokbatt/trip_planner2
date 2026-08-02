@@ -2,29 +2,46 @@
  * EXPENSE 게이트 — 여행 예산·지출을 멤버들과 함께 계획하고, 여행 중엔 휴대폰으로
  * 기록해가는 탭.
  *
- * 화면 구성 (위 → 아래):
- *  1) 요약 스트립 — 총 예산 / 계획 합계 / 결제 완료 / 1인당(인원수 기준) + 예산 게이지
- *  2) 오버뷰 카드 — 카테고리별 도넛 차트 + 카테고리별 예산·지출 목록(예산 인라인 편집)
- *  3) 정산 카드 — 결제 완료 항목 기준 멤버별 낸 돈/부담액/차액 + 최소 송금 제안
- *  4) 지출 목록 — 날짜별 그룹, 상태(예정/결제완료)·카테고리 필터, 항목 클릭으로 수정
+ * 내부 탭 5개(참고 레퍼런스의 상단 탭 구조를 그대로 따름 — 색상은 기존 "Airport Lounge
+ * Premium Light" 컨셉 그대로 유지):
+ *  - 예산 요약(overview)  : 통계 3카드 + 카테고리별 예산 카드 그리드 + 최근 지출 미리보기
+ *                            (오른쪽 사이드바: 빠른 지출 추가 + 정산 현황 위젯)
+ *  - 지출 내역(list)      : 전체 필터(상태/구분/카테고리/정렬) + 검색 + 날짜별 목록
+ *  - 정산(settlement)     : 멤버별 차액 + 최소 송금 제안 + 공유하기
+ *  - 동행(companions)     : 멤버별 지출 카드(낸 돈/부담액/차액/건수)
+ *  - 설정(settings)       : 총 예산 / 카테고리별 예산 편집
+ *
+ * 재렌더 전략: 실시간 이벤트(다른 멤버의 지출/예산 변경)가 올 때마다 탭 전체를 다시
+ * 그리면, 사이드바 "빠른 지출 추가" 폼이나 설정 탭의 입력 중인 값이 날아간다. 그래서
+ * 데이터가 바뀌면 활성 탭의 "데이터 표시 영역"만 갱신하고, 입력 폼이 있는 영역(빠른
+ * 추가 폼, 설정 탭)은 탭을 새로 열 때만 다시 마운트한다(refreshActiveTabData 참고).
  *
  * 원칙:
  *  - 집계·차트는 전부 원화(amount_krw) 기준. 현지 통화 입력은 저장 시점 환율로 환산해
  *    환율·출처(fx_rate/fx_source)를 함께 저장하고, 참고용 환율이면 화면에 그렇다고 표시(3-1)
  *  - 환율은 기존 /api/exchange-rate 프록시 재사용 + 세션 캐시 (3-2)
  *  - 다른 멤버의 추가/수정이 realtime으로 즉시 반영 (links.ts와 같은 패턴)
+ *  - 정산은 "결제 완료(is_paid) + 공동 지출(split_mode=SHARED)" 항목만 반영
  */
 import { supabase } from '../supabase';
 import { store } from '../store';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import type { TripExpense, TripExpenseBudget } from '../types/database';
+import type { Database, TripExpense, TripExpenseBudget } from '../types/database';
+
+type TripExpenseInsert = Database['public']['Tables']['trip_expenses']['Insert'];
 import './expense.css';
 
 /* ── 카테고리 정의 ──
- * 색은 CVD(색약) 검증을 통과한 7색 고정 순서 — 도넛 조각·범례·칩이 전부 이 순서를 따른다.
+ * 색은 CVD(색약) 검증을 통과한 7색 고정 순서 — 카드·범례·칩이 전부 이 순서를 따른다.
  * 순서 자체가 인접 색 구분성의 안전장치이므로 임의로 섞지 말 것. */
 export const EXPENSE_CATEGORIES = ['FLIGHT', 'STAY', 'TRANSPORT', 'FOOD', 'ACTIVITY', 'SHOPPING', 'ETC'] as const;
 export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];
+
+/** trip_expense_budgets에서 "카테고리별 배분과 별개인 총 예산" lump sum을 저장하는 sentinel 키.
+ *  실제 카테고리 목록에 없는 값이라 trip_expenses.category 체크 제약과 절대 충돌하지 않는다. */
+const BUDGET_TOTAL_KEY = 'TOTAL';
+
+type SplitMode = 'SHARED' | 'PERSONAL';
 
 const IC_PLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>';
 const IC_BED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20v-8a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v8M2 20v-3a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3M2 20h20M6 10V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4"/></svg>';
@@ -38,6 +55,11 @@ const IC_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const IC_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
 const IC_WALLET = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2z"/><path d="M18 7V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v2"/><circle cx="16.5" cy="13.5" r="1" fill="currentColor" stroke="none"/></svg>';
 const IC_SWAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h13M14 3l4 4-4 4M20 17H7M10 13l-4 4 4 4"/></svg>';
+const IC_RECEIPT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12v19l-3-2-3 2-3-2-3 2V2z"/><path d="M8.5 8h7M8.5 11.5h7M8.5 15h4"/></svg>';
+const IC_CAMERA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13.5" r="3.2"/></svg>';
+const IC_LIGHT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>';
+const IC_CHEV_L = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
+const IC_CHEV_R = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>';
 
 const CATEGORY_META: Record<ExpenseCategory, { label: string; color: string; icon: string }> = {
   FLIGHT:    { label: '항공',        color: '#2a78d6', icon: IC_PLANE },
@@ -48,6 +70,8 @@ const CATEGORY_META: Record<ExpenseCategory, { label: string; color: string; ico
   SHOPPING:  { label: '쇼핑',        color: '#008300', icon: IC_BAG },
   ETC:       { label: '기타',        color: '#4a3aa7', icon: IC_DOTS },
 };
+
+const SPLIT_MODE_LABEL: Record<SplitMode, string> = { SHARED: '공동 지출', PERSONAL: '개인 지출' };
 
 /* 여행에서 실제로 자주 등장하는 통화만 — 자유 입력이 아니라 유한 목록 */
 const CURRENCIES: Array<{ code: string; symbol: string }> = [
@@ -64,14 +88,32 @@ const CURRENCIES: Array<{ code: string; symbol: string }> = [
   { code: 'IDR', symbol: 'Rp' },
 ];
 
+const TIPS = [
+  '정산은 "결제 완료" + "공동 지출" 항목만 반영돼요.',
+  '카테고리 카드의 ⋯ 메뉴에서 예산을 바로 수정할 수 있어요.',
+  '환율은 저장 시점 기준이라 실제 결제 금액과 소폭 다를 수 있어요.',
+];
+
 interface MemberLite {
   user_id: string;
   display_name: string | null;
   avatar_url: string | null;
 }
 
+type TabKey = 'overview' | 'list' | 'settlement' | 'companions' | 'settings';
+const TABS: Array<{ key: TabKey; label: string }> = [
+  { key: 'overview', label: '예산 요약' },
+  { key: 'list', label: '지출 내역' },
+  { key: 'settlement', label: '정산' },
+  { key: 'companions', label: '동행' },
+  { key: 'settings', label: '설정' },
+];
+
 type StatusFilter = 'ALL' | 'PLANNED' | 'PAID';
+type SplitModeFilter = 'ALL' | SplitMode;
 type CategoryFilter = ExpenseCategory | 'ALL';
+type SortMode = 'created_desc' | 'amount_desc';
+type CategoryViewMode = 'budget' | 'usage';
 
 /* ── 모듈 상태 ── */
 let rootEl: HTMLElement | null = null;
@@ -80,11 +122,25 @@ let headcount = 1;
 let members: MemberLite[] = [];
 let expenses: TripExpense[] = [];
 let budgets = new Map<string, number | null>();
-let statusFilter: StatusFilter = 'ALL';
-let categoryFilter: CategoryFilter = 'ALL';
 let channel: RealtimeChannel | null = null;
-let editingBudgetCategory: ExpenseCategory | null = null;
+
+let activeTab: TabKey = 'overview';
+let categoryViewMode: CategoryViewMode = 'budget';
+let openCategoryMenu: ExpenseCategory | null = null;
+let tipIndex = 0;
+let outsideClickHandler: ((e: MouseEvent) => void) | null = null;
+
+/* 지출 내역 탭 필터 */
+let statusFilter: StatusFilter = 'ALL';
+let splitModeFilter: SplitModeFilter = 'ALL';
+let categoryFilter: CategoryFilter = 'ALL';
+let sortMode: SortMode = 'created_desc';
+let searchQuery = '';
+let listPageSize = 20;
+
+let editingBudgetCategory: string | null = null; // 카테고리 그리드에서 인라인 편집 중인 카테고리(또는 'TOTAL')
 let lastUsedCurrency = 'KRW';
+let quickAddMode: 'direct' | 'receipt' | 'sms' = 'direct';
 
 /* 환율 캐시 — 같은 세션에서 통화당 1회만 조회 */
 const fxCache = new Map<string, { rate: number | null; source: string }>();
@@ -116,6 +172,10 @@ function krwOf(e: TripExpense): number | null {
   return e.amount_krw;
 }
 
+function modeOf(e: TripExpense): SplitMode {
+  return e.split_mode === 'PERSONAL' ? 'PERSONAL' : 'SHARED';
+}
+
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
 function fmtDateLabel(dateStr: string): string {
@@ -128,14 +188,14 @@ function memberName(userId: string | null): string {
   return members.find((m) => m.user_id === userId)?.display_name || '멤버';
 }
 
-function avatarHtml(userId: string | null, fallbackName?: string | null, fallbackAvatar?: string | null): string {
+function avatarHtml(userId: string | null, size: 'sm' | 'md' | 'lg' = 'md', fallbackName?: string | null, fallbackAvatar?: string | null): string {
   const m = userId ? members.find((mm) => mm.user_id === userId) : null;
   const name = m?.display_name || fallbackName || '?';
   const url = m?.avatar_url || fallbackAvatar || null;
   const inner = url
     ? '<img src="' + escapeHtml(url) + '" alt="" referrerpolicy="no-referrer" />'
     : escapeHtml(name.charAt(0));
-  return '<span class="ex-avatar" title="' + escapeHtml(name) + '">' + inner + '</span>';
+  return '<span class="ex-avatar ex-avatar-' + size + '" title="' + escapeHtml(name) + '">' + inner + '</span>';
 }
 
 /* ══════════════════════ 집계 ══════════════════════ */
@@ -152,22 +212,23 @@ function totalsByCategory(): Map<ExpenseCategory, number> {
   return map;
 }
 
-function sumBudget(): number | null {
+function getTotalBudget(): number | null {
+  return budgets.get(BUDGET_TOTAL_KEY) ?? null;
+}
+
+function getCategoryBudgetSum(): number {
   let sum = 0;
-  let hasAny = false;
-  for (const cat of EXPENSE_CATEGORIES) {
-    const b = budgets.get(cat);
-    if (b != null) { sum += b; hasAny = true; }
-  }
-  return hasAny ? sum : null;
+  for (const cat of EXPENSE_CATEGORIES) sum += budgets.get(cat) ?? 0;
+  return sum;
 }
 
-function sumAll(): number {
-  return expenses.reduce((acc, e) => acc + (krwOf(e) ?? 0), 0);
-}
-
+/** "현재 사용" — 실제로 결제 완료한 금액(예정 항목은 제외) */
 function sumPaid(): number {
   return expenses.filter((e) => e.is_paid).reduce((acc, e) => acc + (krwOf(e) ?? 0), 0);
+}
+
+function sumPaidByMode(mode: SplitMode): number {
+  return expenses.filter((e) => e.is_paid && modeOf(e) === mode).reduce((acc, e) => acc + (krwOf(e) ?? 0), 0);
 }
 
 /** 환산 불가(환율 없음)로 집계에서 빠진 항목 수 — 화면에 정직하게 표시 */
@@ -182,13 +243,14 @@ interface SettleRow {
   paidSum: number;
   shareSum: number;
   balance: number; // + 받을 돈, - 보낼 돈
+  paidCount: number;
 }
 
 function computeSettlement(): { rows: SettleRow[]; transfers: Array<{ from: string; to: string; amount: number }>; skipped: number } {
   const byUser = new Map<string, SettleRow>();
   const ensure = (uid: string): SettleRow => {
     let r = byUser.get(uid);
-    if (!r) { r = { userId: uid, paidSum: 0, shareSum: 0, balance: 0 }; byUser.set(uid, r); }
+    if (!r) { r = { userId: uid, paidSum: 0, shareSum: 0, balance: 0, paidCount: 0 }; byUser.set(uid, r); }
     return r;
   };
   members.forEach((m) => ensure(m.user_id));
@@ -196,12 +258,14 @@ function computeSettlement(): { rows: SettleRow[]; transfers: Array<{ from: stri
   let skipped = 0;
   const allIds = members.map((m) => m.user_id);
   for (const e of expenses) {
-    if (!e.is_paid) continue;
+    if (!e.is_paid || modeOf(e) !== 'SHARED') continue; // 개인 지출/예정 항목은 정산 대상 아님
     const krw = krwOf(e);
     if (krw == null || !e.paid_by) { skipped++; continue; }
     const splitIds = e.split_user_ids && e.split_user_ids.length > 0 ? e.split_user_ids : allIds;
     if (splitIds.length === 0) { skipped++; continue; }
-    ensure(e.paid_by).paidSum += krw;
+    const payerRow = ensure(e.paid_by);
+    payerRow.paidSum += krw;
+    payerRow.paidCount += 1;
     const share = krw / splitIds.length;
     splitIds.forEach((uid) => { ensure(uid).shareSum += share; });
   }
@@ -225,93 +289,133 @@ function computeSettlement(): { rows: SettleRow[]; transfers: Array<{ from: stri
   return { rows, transfers, skipped };
 }
 
-/* ══════════════════════ 도넛 차트 (SVG) ══════════════════════ */
-
-const DONUT_SIZE = 220;
-const DONUT_R = 82;
-const DONUT_STROKE = 30;
-
-function polar(cx: number, cy: number, r: number, angleRad: number): { x: number; y: number } {
-  return { x: cx + r * Math.cos(angleRad), y: cy + r * Math.sin(angleRad) };
+function settlementSummaryText(): string {
+  const { transfers } = computeSettlement();
+  if (transfers.length === 0) return '모두 정산이 맞아요. 보낼 돈이 없어요!';
+  return '[정산 안내]\n' + transfers.map((t) => memberName(t.from) + ' → ' + memberName(t.to) + ' : ' + fmtKRW(t.amount)).join('\n');
 }
 
-function arcPath(cx: number, cy: number, r: number, start: number, end: number): string {
-  const s = polar(cx, cy, r, start);
-  const e = polar(cx, cy, r, end);
-  const largeArc = end - start > Math.PI ? 1 : 0;
-  return 'M ' + s.x.toFixed(2) + ' ' + s.y.toFixed(2) + ' A ' + r + ' ' + r + ' 0 ' + largeArc + ' 1 ' + e.x.toFixed(2) + ' ' + e.y.toFixed(2);
+function shareSettlement(): void {
+  const text = settlementSummaryText();
+  navigator.clipboard.writeText(text).then(
+    () => alert('정산 내역을 복사했어요. 채팅에 붙여넣어 공유해보세요!\n\n' + text),
+    () => alert(text)
+  );
 }
 
-function donutSvg(): string {
-  const totals = totalsByCategory();
-  const total = Array.from(totals.values()).reduce((a, b) => a + b, 0);
-  const c = DONUT_SIZE / 2;
+/* ══════════════════════ 탭 네비게이션 ══════════════════════ */
 
-  const centerText = [
-    '<text x="' + c + '" y="' + (c - 8) + '" text-anchor="middle" class="ex-donut-center-label">지출 합계</text>',
-    '<text x="' + c + '" y="' + (c + 16) + '" text-anchor="middle" class="ex-donut-center-value">' + escapeHtml(fmtKRW(total)) + '</text>',
-  ].join('');
-
-  if (total <= 0) {
-    return [
-      '<svg viewBox="0 0 ' + DONUT_SIZE + ' ' + DONUT_SIZE + '" class="ex-donut" role="img" aria-label="카테고리별 지출 없음">',
-      '<circle cx="' + c + '" cy="' + c + '" r="' + DONUT_R + '" fill="none" stroke="rgba(130,150,170,0.14)" stroke-width="' + DONUT_STROKE + '"/>',
-      centerText,
-      '</svg>',
-    ].join('');
-  }
-
-  const segs: string[] = [];
-  const gapRad = 2 / DONUT_R; // 조각 사이 2px 간격(마크 스페이서)
-  let angle = -Math.PI / 2;
-  for (const cat of EXPENSE_CATEGORIES) {
-    const v = totals.get(cat) ?? 0;
-    if (v <= 0) continue;
-    const frac = v / total;
-    const sweep = frac * Math.PI * 2;
-    const meta = CATEGORY_META[cat];
-    const pct = Math.round(frac * 100);
-    if (frac > 0.999) {
-      // 단일 카테고리 100%는 arc가 그려지지 않으므로 원으로
-      segs.push('<circle cx="' + c + '" cy="' + c + '" r="' + DONUT_R + '" fill="none" stroke="' + meta.color + '" stroke-width="' + DONUT_STROKE + '" class="ex-donut-seg" data-cat="' + cat + '"><title>' + escapeHtml(meta.label + ' ' + fmtKRW(v) + ' (' + pct + '%)') + '</title></circle>');
-    } else {
-      const start = angle + gapRad / 2;
-      const end = angle + sweep - gapRad / 2;
-      if (end > start) {
-        segs.push('<path d="' + arcPath(c, c, DONUT_R, start, end) + '" fill="none" stroke="' + meta.color + '" stroke-width="' + DONUT_STROKE + '" stroke-linecap="butt" class="ex-donut-seg' + (categoryFilter === cat ? ' is-active' : '') + '" data-cat="' + cat + '"><title>' + escapeHtml(meta.label + ' ' + fmtKRW(v) + ' (' + pct + '%)') + '</title></path>');
-      }
-    }
-    angle += sweep;
-  }
-
-  return [
-    '<svg viewBox="0 0 ' + DONUT_SIZE + ' ' + DONUT_SIZE + '" class="ex-donut" role="img" aria-label="카테고리별 지출 비중">',
-    segs.join(''),
-    centerText,
-    '</svg>',
-  ].join('');
+function tabsHtml(): string {
+  return TABS.map((t) =>
+    '<button type="button" class="ex-tab' + (activeTab === t.key ? ' is-active' : '') + '" data-tab="' + t.key + '">' + t.label + '</button>'
+  ).join('');
 }
 
-/* ══════════════════════ 렌더 ══════════════════════ */
+function switchTab(tab: TabKey): void {
+  activeTab = tab;
+  openCategoryMenu = null;
+  const tabsEl = rootEl?.querySelector('#ex-tabs');
+  if (tabsEl) tabsEl.innerHTML = tabsHtml();
+  bindTabsNav();
+  mountTab();
+}
 
-function summaryHtml(): string {
-  const budget = sumBudget();
-  const all = sumAll();
-  const paid = sumPaid();
-  const remaining = budget != null ? budget - all : null;
-  const people = Math.max(1, headcount);
-  const perPerson = all / people;
-  const pct = budget != null && budget > 0 ? Math.min(100, Math.round((all / budget) * 100)) : null;
+function bindTabsNav(): void {
+  rootEl?.querySelectorAll('.ex-tab').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tab = (btn as HTMLElement).dataset.tab as TabKey;
+      if (tab !== activeTab) switchTab(tab);
+    });
+  });
+}
+
+/** 탭 전체를 새로 마운트(탭 전환 시). 데이터만 바뀐 경우엔 refreshActiveTabData를 대신 사용. */
+function mountTab(): void {
+  const panel = rootEl?.querySelector('#ex-tabpanel') as HTMLElement | null;
+  if (!panel) return;
+  if (activeTab === 'overview') mountOverviewTab(panel);
+  else if (activeTab === 'list') mountListTab(panel);
+  else if (activeTab === 'settlement') mountSettlementTab(panel);
+  else if (activeTab === 'companions') mountCompanionsTab(panel);
+  else mountSettingsTab(panel);
+}
+
+/** 실시간 데이터 변경 시 호출 — 입력 폼이 있는 영역(빠른 추가/설정)은 건드리지 않고,
+ *  순수 데이터 표시 영역만 갱신해서 사용자가 입력 중인 값이 날아가지 않게 한다. */
+function refreshActiveTabData(): void {
+  if (activeTab === 'overview') renderOverviewData();
+  else if (activeTab === 'list') mountListTab(rootEl!.querySelector('#ex-tabpanel') as HTMLElement);
+  else if (activeTab === 'settlement') mountSettlementTab(rootEl!.querySelector('#ex-tabpanel') as HTMLElement);
+  else if (activeTab === 'companions') mountCompanionsTab(rootEl!.querySelector('#ex-tabpanel') as HTMLElement);
+  // settings 탭은 새로고침하지 않음(입력 중인 예산 값 보호) — 다음에 탭을 열 때 최신값으로 마운트됨
+}
+
+/* ══════════════════════ 예산 요약 탭 ══════════════════════ */
+
+function mountOverviewTab(panel: HTMLElement): void {
+  panel.innerHTML = [
+    '<div class="ex-overview-layout">',
+    '  <div class="ex-overview-main">',
+    '    <div id="ex-stats"></div>',
+    '    <div class="ex-card al-glass ex-category-card">',
+    '      <div class="ex-section-header">',
+    '        <span class="ex-card-title al-sign-label">카테고리별 예산</span>',
+    '        <div class="ex-viewmode-toggle">',
+    '          <button type="button" class="ex-viewmode-btn' + (categoryViewMode === 'budget' ? ' is-active' : '') + '" data-view="budget">예산 기준</button>',
+    '          <button type="button" class="ex-viewmode-btn' + (categoryViewMode === 'usage' ? ' is-active' : '') + '" data-view="usage">사용 기준</button>',
+    '        </div>',
+    '      </div>',
+    '      <div class="ex-catgrid" id="ex-catgrid"></div>',
+    '    </div>',
+    '    <div class="ex-card al-glass ex-recent-card">',
+    '      <div class="ex-section-header">',
+    '        <span class="ex-card-title al-sign-label">최근 지출</span>',
+    '        <button type="button" class="ex-more-link" id="ex-recent-more">더보기</button>',
+    '      </div>',
+    '      <div id="ex-recent"></div>',
+    '    </div>',
+    '  </div>',
+    '  <div class="ex-overview-sidebar">',
+    '    <div class="ex-card al-glass ex-quickadd-card" id="ex-quickadd"></div>',
+    '    <div class="ex-card al-glass ex-settlewidget-card" id="ex-settlewidget"></div>',
+    '  </div>',
+    '</div>',
+  ].join('\n');
+
+  panel.querySelector('#ex-recent-more')?.addEventListener('click', () => switchTab('list'));
+  panel.querySelectorAll('.ex-viewmode-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      categoryViewMode = (btn as HTMLElement).dataset.view as CategoryViewMode;
+      renderOverviewData();
+    });
+  });
+
+  mountQuickAdd(panel.querySelector('#ex-quickadd') as HTMLElement);
+  renderOverviewData();
+}
+
+function statsHtml(): string {
+  const totalBudget = getTotalBudget();
+  const usage = sumPaid();
+  const remaining = totalBudget != null ? totalBudget - usage : null;
+  const pct = totalBudget != null && totalBudget > 0 ? Math.round((usage / totalBudget) * 100) : null;
   const over = remaining != null && remaining < 0;
+  const people = Math.max(1, headcount);
+  const perPerson = usage / people;
 
-  const gauge = budget != null && budget > 0
+  const sharedUsage = sumPaidByMode('SHARED');
+  const personalUsage = sumPaidByMode('PERSONAL');
+  const sharedPct = usage > 0 ? Math.round((sharedUsage / usage) * 100) : 0;
+  const personalPct = usage > 0 ? 100 - sharedPct : 0;
+
+  const gauge = totalBudget != null && totalBudget > 0
     ? [
         '<div class="ex-gauge" role="img" aria-label="예산 대비 ' + (pct ?? 0) + '% 사용">',
-        '  <div class="ex-gauge-fill' + (over ? ' is-over' : '') + '" style="width:' + (pct ?? 0) + '%"></div>',
+        '  <div class="ex-gauge-fill' + (over ? ' is-over' : '') + '" style="width:' + Math.min(100, pct ?? 0) + '%"></div>',
         '</div>',
-        '<div class="ex-gauge-caption">예산의 <strong>' + (budget > 0 ? Math.round((all / budget) * 100) : 0) + '%</strong> 계획됨</div>',
+        '<div class="ex-gauge-caption"><strong>' + (pct ?? 0) + '%</strong> 사용</div>',
       ].join('')
-    : '<div class="ex-gauge-caption ex-gauge-caption-empty">카테고리별 예산을 입력하면 게이지가 표시돼요</div>';
+    : '<div class="ex-gauge-caption ex-gauge-caption-empty">설정 탭에서 총 예산을 입력해보세요</div>';
 
   const unconverted = unconvertedCount();
   const unconvertedNote = unconverted > 0
@@ -319,339 +423,233 @@ function summaryHtml(): string {
     : '';
 
   return [
-    '<div class="ex-summary al-glass">',
-    '  <div class="ex-summary-stats">',
-    '    <div class="ex-stat">',
-    '      <div class="ex-stat-label">TOTAL BUDGET</div>',
-    '      <div class="ex-stat-value">' + (budget != null ? fmtKRW(budget) : '<span class="ex-stat-empty">미설정</span>') + '</div>',
-    '      <div class="ex-stat-sub">카테고리 예산 합계</div>',
-    '    </div>',
-    '    <div class="ex-stat">',
-    '      <div class="ex-stat-label">PLANNED</div>',
-    '      <div class="ex-stat-value">' + fmtKRW(all) + '</div>',
-    '      <div class="ex-stat-sub">예정 + 결제 완료</div>',
-    '    </div>',
-    '    <div class="ex-stat">',
-    '      <div class="ex-stat-label">PAID</div>',
-    '      <div class="ex-stat-value">' + fmtKRW(paid) + '</div>',
-    '      <div class="ex-stat-sub">결제 완료</div>',
-    '    </div>',
-    '    <div class="ex-stat">',
-    '      <div class="ex-stat-label">REMAINING</div>',
-    '      <div class="ex-stat-value' + (over ? ' is-over' : '') + '">' + (remaining != null ? fmtKRW(remaining) : '<span class="ex-stat-empty">—</span>') + '</div>',
-    '      <div class="ex-stat-sub">' + (over ? '예산 초과' : '남은 예산') + '</div>',
-    '    </div>',
-    '    <div class="ex-stat">',
-    '      <div class="ex-stat-label">PER PERSON</div>',
-    '      <div class="ex-stat-value">' + fmtKRW(perPerson) + '</div>',
-    '      <div class="ex-stat-sub">' + people + '명 기준</div>',
-    '    </div>',
-    '  </div>',
+    '<div class="ex-stat-row">',
+    '  <div class="ex-stat-card al-glass">',
+    '    <div class="ex-stat-card-top"><span class="ex-stat-label">총 예산</span><button type="button" class="ex-stat-edit-link" id="ex-edit-total">예산 수정</button></div>',
+    '    <div class="ex-stat-value">' + (totalBudget != null ? fmtKRW(totalBudget) : '<span class="ex-stat-empty">미설정</span>') + '</div>',
     gauge,
+    (remaining != null ? '<div class="ex-stat-foot' + (over ? ' is-over' : '') + '">' + (over ? '예산 초과 ' : '남은 예산 ') + fmtKRW(Math.abs(remaining)) + '</div>' : ''),
+    '  </div>',
+    '  <div class="ex-stat-card al-glass">',
+    '    <div class="ex-stat-card-top"><span class="ex-stat-label">현재 사용</span></div>',
+    '    <div class="ex-stat-value">' + fmtKRW(usage) + '</div>',
+    '    <div class="ex-usage-split">',
+    '      <div class="ex-usage-split-bar"><span style="width:' + sharedPct + '%;background:var(--al-action)"></span><span style="width:' + personalPct + '%;background:var(--al-text-tertiary)"></span></div>',
+    '      <div class="ex-usage-split-row"><span class="ex-usage-dot" style="background:var(--al-action)"></span>공동 지출 ' + fmtKRW(sharedUsage) + ' <em>(' + sharedPct + '%)</em></div>',
+    '      <div class="ex-usage-split-row"><span class="ex-usage-dot" style="background:var(--al-text-tertiary)"></span>개인 지출 ' + fmtKRW(personalUsage) + ' <em>(' + personalPct + '%)</em></div>',
+    '    </div>',
     unconvertedNote,
-    '</div>',
-  ].join('\n');
-}
-
-function categoryRowsHtml(): string {
-  const totals = totalsByCategory();
-  const total = Array.from(totals.values()).reduce((a, b) => a + b, 0);
-
-  return EXPENSE_CATEGORIES.map((cat) => {
-    const meta = CATEGORY_META[cat];
-    const spent = totals.get(cat) ?? 0;
-    const budget = budgets.get(cat) ?? null;
-    const pctOfTotal = total > 0 ? Math.round((spent / total) * 100) : 0;
-    const pctOfBudget = budget != null && budget > 0 ? Math.min(100, (spent / budget) * 100) : 0;
-    const overBudget = budget != null && budget > 0 && spent > budget;
-    const editing = editingBudgetCategory === cat;
-
-    const budgetPart = editing
-      ? '<span class="ex-cat-budget-edit"><input type="number" inputmode="numeric" class="ex-cat-budget-input" data-cat="' + cat + '" value="' + (budget ?? '') + '" placeholder="예산(원)" /><button type="button" class="ex-cat-budget-save" data-cat="' + cat + '">저장</button></span>'
-      : '<button type="button" class="ex-cat-budget-btn" data-cat="' + cat + '" title="클릭해서 예산 입력">' + (budget != null ? '예산 ' + fmtKRW(budget) : '예산 입력') + '</button>';
-
-    return [
-      '<div class="ex-cat-row' + (categoryFilter === cat ? ' is-active' : '') + '" data-cat="' + cat + '">',
-      '  <span class="ex-cat-dot" style="background:' + meta.color + '"></span>',
-      '  <span class="ex-cat-icon" style="color:' + meta.color + '">' + meta.icon + '</span>',
-      '  <div class="ex-cat-main">',
-      '    <div class="ex-cat-top">',
-      '      <span class="ex-cat-label">' + meta.label + '</span>',
-      '      <span class="ex-cat-amount">' + fmtKRW(spent) + '<span class="ex-cat-pct">' + pctOfTotal + '%</span></span>',
-      '    </div>',
-      '    <div class="ex-cat-bar"><div class="ex-cat-bar-fill' + (overBudget ? ' is-over' : '') + '" style="width:' + pctOfBudget + '%;background:' + meta.color + '"></div></div>',
-      '    <div class="ex-cat-bottom">' + budgetPart + (overBudget ? '<span class="ex-cat-over">초과</span>' : '') + '</div>',
-      '  </div>',
-      '</div>',
-    ].join('');
-  }).join('\n');
-}
-
-function overviewHtml(): string {
-  return [
-    '<div class="ex-card al-glass ex-overview">',
-    '  <div class="ex-card-title al-sign-label">BY CATEGORY</div>',
-    '  <div class="ex-overview-body">',
-    '    <div class="ex-donut-wrap" id="ex-donut-wrap">' + donutSvg() + '</div>',
-    '    <div class="ex-cat-list" id="ex-cat-list">' + categoryRowsHtml() + '</div>',
+    '  </div>',
+    '  <div class="ex-stat-card al-glass">',
+    '    <div class="ex-stat-card-top"><span class="ex-stat-label">1인당 예상 부담액</span>' + IC_WALLET + '</div>',
+    '    <div class="ex-stat-value">' + fmtKRW(perPerson) + '</div>',
+    '    <div class="ex-stat-foot">' + people + '명 평균</div>',
+    '    <button type="button" class="ex-more-link" id="ex-perperson-detail">상세 보기</button>',
     '  </div>',
     '</div>',
   ].join('\n');
 }
 
-function settlementHtml(): string {
-  const { rows, transfers, skipped } = computeSettlement();
-  const hasPaid = expenses.some((e) => e.is_paid);
-
-  let body: string;
-  if (!hasPaid) {
-    body = '<div class="ex-settle-empty">결제 완료로 표시한 지출부터 정산에 반영돼요.<br/>여행 중 휴대폰으로 기록하면서 바로 정산해보세요.</div>';
-  } else {
-    const memberRows = rows
-      .filter((r) => members.some((m) => m.user_id === r.userId))
-      .map((r) => {
-        const balCls = r.balance > 0.5 ? ' is-plus' : r.balance < -0.5 ? ' is-minus' : '';
-        const balText = Math.abs(r.balance) < 0.5 ? '정산 완료' : (r.balance > 0 ? '+' : '−') + fmtKRW(Math.abs(r.balance)).slice(0);
-        return [
-          '<div class="ex-settle-row">',
-          avatarHtml(r.userId),
-          '  <div class="ex-settle-info">',
-          '    <span class="ex-settle-name">' + escapeHtml(memberName(r.userId)) + '</span>',
-          '    <span class="ex-settle-detail">낸 돈 ' + fmtKRW(r.paidSum) + ' · 부담 ' + fmtKRW(r.shareSum) + '</span>',
-          '  </div>',
-          '  <span class="ex-settle-balance' + balCls + '">' + balText + '</span>',
-          '</div>',
-        ].join('');
-      }).join('');
-
-    const transferRows = transfers.length > 0
-      ? '<div class="ex-settle-transfers"><div class="ex-settle-transfers-title">' + IC_SWAP + ' 이렇게 보내면 정산 끝</div>' +
-        transfers.map((t) =>
-          '<div class="ex-transfer"><span class="ex-transfer-from">' + escapeHtml(memberName(t.from)) + '</span><span class="ex-transfer-arrow">→</span><span class="ex-transfer-to">' + escapeHtml(memberName(t.to)) + '</span><span class="ex-transfer-amount">' + fmtKRW(t.amount) + '</span></div>'
-        ).join('') + '</div>'
-      : '<div class="ex-settle-done">모두 정산이 맞아요 ✓</div>';
-
-    const skippedNote = skipped > 0
-      ? '<div class="ex-settle-note">결제 멤버가 없거나 환산 불가라 정산에서 빠진 항목 ' + skipped + '건</div>'
-      : '';
-
-    body = memberRows + transferRows + skippedNote;
-  }
-
-  return [
-    '<div class="ex-card al-glass ex-settle">',
-    '  <div class="ex-card-title al-sign-label">SETTLEMENT</div>',
-    body,
-    '</div>',
-  ].join('\n');
-}
-
-function matchesFilter(e: TripExpense): boolean {
-  if (statusFilter === 'PLANNED' && e.is_paid) return false;
-  if (statusFilter === 'PAID' && !e.is_paid) return false;
-  if (categoryFilter !== 'ALL' && e.category !== categoryFilter) return false;
-  return true;
-}
-
-function expenseRowHtml(e: TripExpense): string {
-  const cat = (EXPENSE_CATEGORIES as readonly string[]).includes(e.category) ? (e.category as ExpenseCategory) : 'ETC';
+function categoryCardHtml(cat: ExpenseCategory): string {
   const meta = CATEGORY_META[cat];
-  const krw = krwOf(e);
+  const totals = totalsByCategory();
+  const spent = totals.get(cat) ?? 0;
+  const budget = budgets.get(cat) ?? null;
+  const totalSpent = Array.from(totals.values()).reduce((a, b) => a + b, 0);
 
-  let amountPart: string;
-  if (e.currency === 'KRW') {
-    amountPart = '<span class="ex-item-amount">' + fmtKRW(e.amount) + '</span>';
+  let pct: number;
+  let subText: string;
+  let overBudget = false;
+  if (categoryViewMode === 'budget') {
+    pct = budget != null && budget > 0 ? Math.min(100, (spent / budget) * 100) : 0;
+    subText = budget != null ? fmtKRW(spent) + ' / ' + fmtKRW(budget) : '예산 미설정';
+    overBudget = budget != null && budget > 0 && spent > budget;
   } else {
-    const sub = krw != null
-      ? '<span class="ex-item-krw"' + (e.fx_source === 'fallback' ? ' title="참고용 환율로 환산된 금액이에요"' : '') + '>≈ ' + fmtKRW(krw) + (e.fx_source === 'fallback' ? '*' : '') + '</span>'
-      : '<span class="ex-item-krw is-na">환산 불가</span>';
-    amountPart = '<span class="ex-item-amount">' + escapeHtml(fmtAmount(e.amount, e.currency)) + '</span>' + sub;
+    pct = totalSpent > 0 ? (spent / totalSpent) * 100 : 0;
+    subText = '전체의 ' + Math.round(pct) + '%';
   }
 
-  const statusBadge = e.is_paid
-    ? '<span class="ex-stamp is-paid">PAID</span>'
-    : '<span class="ex-stamp">예정</span>';
+  const menuOpen = openCategoryMenu === cat;
+  const editing = editingBudgetCategory === cat;
 
-  const memo = e.memo ? '<span class="ex-item-memo">' + escapeHtml(e.memo) + '</span>' : '';
+  const menu = [
+    '<div class="ex-catcard-menu' + (menuOpen ? ' is-open' : '') + '">',
+    '  <button type="button" class="ex-catcard-menu-item" data-action="editBudget" data-cat="' + cat + '">예산 수정</button>',
+    '  <button type="button" class="ex-catcard-menu-item" data-action="viewList" data-cat="' + cat + '">지출 내역 보기</button>',
+    '</div>',
+  ].join('');
+
+  const body = editing
+    ? '<div class="ex-catcard-edit"><input type="number" inputmode="numeric" class="ex-catcard-edit-input" data-cat="' + cat + '" value="' + (budget ?? '') + '" placeholder="예산(원)" /><button type="button" class="ex-catcard-edit-save" data-cat="' + cat + '">저장</button></div>'
+    : [
+        '<div class="ex-catcard-amount">' + fmtKRW(spent) + '</div>',
+        '<div class="ex-catcard-sub">' + escapeHtml(subText) + (overBudget ? '<span class="ex-cat-over">초과</span>' : '') + '</div>',
+        '<div class="ex-catcard-bar"><div class="ex-catcard-bar-fill' + (overBudget ? ' is-over' : '') + '" style="width:' + pct + '%;background:' + meta.color + '"></div></div>',
+      ].join('\n');
 
   return [
-    '<div class="ex-item" data-id="' + e.id + '">',
-    '  <span class="ex-item-cat" style="color:' + meta.color + '" title="' + meta.label + '">' + meta.icon + '</span>',
-    '  <div class="ex-item-main">',
-    '    <div class="ex-item-title-row"><span class="ex-item-title">' + escapeHtml(e.title) + '</span>' + statusBadge + '</div>',
-    '    <div class="ex-item-meta">' + avatarHtml(e.paid_by, e.paid_by_name, e.paid_by_avatar) + '<span>' + escapeHtml(e.paid_by ? memberName(e.paid_by) : (e.paid_by_name || '결제 미지정')) + '</span>' + memo + '</div>',
+    '<div class="ex-catcard' + (categoryFilter === cat ? ' is-active' : '') + '" data-cat="' + cat + '">',
+    '  <div class="ex-catcard-top">',
+    '    <span class="ex-catcard-icon" style="color:' + meta.color + '">' + meta.icon + '</span>',
+    '    <span class="ex-catcard-label">' + meta.label + '</span>',
+    '    <button type="button" class="ex-catcard-menu-btn" data-cat="' + cat + '">' + IC_DOTS + '</button>',
+    menu,
     '  </div>',
-    '  <div class="ex-item-right">' + amountPart + '</div>',
+    body,
     '</div>',
   ].join('');
 }
 
-function listHtml(): string {
-  const filtered = expenses.filter(matchesFilter);
+function renderOverviewData(): void {
+  if (!rootEl) return;
+  const statsEl = rootEl.querySelector('#ex-stats');
+  const catgridEl = rootEl.querySelector('#ex-catgrid');
+  const recentEl = rootEl.querySelector('#ex-recent');
+  const settleWidgetEl = rootEl.querySelector('#ex-settlewidget');
+  if (statsEl) statsEl.innerHTML = statsHtml();
+  if (catgridEl) catgridEl.innerHTML = EXPENSE_CATEGORIES.map(categoryCardHtml).join('');
+  if (recentEl) recentEl.innerHTML = recentListHtml();
+  if (settleWidgetEl) settleWidgetEl.innerHTML = settleWidgetHtml();
+  bindOverviewData();
+}
 
-  const chips = (['ALL', ...EXPENSE_CATEGORIES] as CategoryFilter[]).map((key) => {
-    const count = key === 'ALL' ? expenses.length : expenses.filter((e) => e.category === key).length;
-    const label = key === 'ALL' ? '전체' : CATEGORY_META[key as ExpenseCategory].label;
-    const dot = key === 'ALL' ? '' : '<span class="ex-chip-dot" style="background:' + CATEGORY_META[key as ExpenseCategory].color + '"></span>';
-    return '<button type="button" class="ex-chip' + (categoryFilter === key ? ' is-active' : '') + '" data-category="' + key + '">' + dot + '<span>' + label + '</span><span class="ex-chip-count">' + count + '</span></button>';
-  }).join('');
-
-  const segments = [
-    { key: 'ALL', label: '전체' },
-    { key: 'PLANNED', label: '예정' },
-    { key: 'PAID', label: '결제 완료' },
-  ].map((s) =>
-    '<button type="button" class="ex-seg' + (statusFilter === s.key ? ' is-active' : '') + '" data-status="' + s.key + '">' + s.label + '</button>'
-  ).join('');
-
-  let listBody: string;
-  if (expenses.length === 0) {
-    listBody = [
-      '<div class="ex-empty">',
+function recentListHtml(): string {
+  const recent = [...expenses].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5);
+  if (recent.length === 0) {
+    return [
+      '<div class="ex-empty ex-empty-compact">',
       '  <div class="ex-empty-icon">' + IC_WALLET + '</div>',
       '  <div class="ex-empty-text">아직 입력한 지출이 없어요</div>',
-      '  <div class="ex-empty-hint">항공권·숙소처럼 확정된 비용부터 담아보세요. 여행 중엔 휴대폰으로 바로 기록할 수 있어요.</div>',
+      '  <div class="ex-empty-hint">오른쪽 "빠른 지출 추가"로 첫 지출을 기록해보세요</div>',
       '</div>',
     ].join('');
-  } else if (filtered.length === 0) {
-    listBody = '<div class="ex-empty"><div class="ex-empty-text">조건에 맞는 지출이 없어요</div></div>';
-  } else {
-    // 날짜별 그룹 — 날짜 있는 항목은 여행 순서(오름차순), 날짜 미정은 맨 뒤
-    const groups = new Map<string, TripExpense[]>();
-    for (const e of filtered) {
-      const key = e.expense_date ?? '';
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(e);
-    }
-    const keys = Array.from(groups.keys()).sort((a, b) => {
-      if (a === '') return 1;
-      if (b === '') return -1;
-      return a.localeCompare(b);
-    });
-    listBody = keys.map((key) => {
-      const items = groups.get(key)!;
-      const groupSum = items.reduce((acc, e) => acc + (krwOf(e) ?? 0), 0);
-      return [
-        '<div class="ex-group">',
-        '  <div class="ex-group-header"><span class="ex-group-date">' + (key ? fmtDateLabel(key) : '날짜 미정') + '</span><span class="ex-group-sum">' + fmtKRW(groupSum) + '</span></div>',
-        items.map(expenseRowHtml).join(''),
-        '</div>',
-      ].join('\n');
-    }).join('\n');
   }
+  return '<div class="ex-list">' + recent.map(expenseRowHtml).join('') + '</div>';
+}
+
+function settleWidgetHtml(): string {
+  const { rows, transfers } = computeSettlement();
+  const hasPaid = expenses.some((e) => e.is_paid && modeOf(e) === 'SHARED');
+  const top = rows
+    .filter((r) => members.some((m) => m.user_id === r.userId) && Math.abs(r.balance) > 0.5)
+    .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance))
+    .slice(0, 4);
+
+  const body = !hasPaid
+    ? '<div class="ex-settle-empty">공동 지출을 결제 완료로 표시하면<br/>정산 현황이 여기 표시돼요.</div>'
+    : top.length === 0
+      ? '<div class="ex-settle-done">모두 정산이 맞아요 ✓</div>'
+      : top.map((r) => {
+          const cls = r.balance > 0 ? ' is-plus' : ' is-minus';
+          const text = (r.balance > 0 ? '+' : '−') + fmtKRW(Math.abs(r.balance));
+          return '<div class="ex-settlewidget-row">' + avatarHtml(r.userId, 'sm') + '<span class="ex-settlewidget-name">' + escapeHtml(memberName(r.userId)) + '</span><span class="ex-settlewidget-balance' + cls + '">' + text + '</span></div>';
+        }).join('');
+
+  const tip = TIPS[tipIndex % TIPS.length];
 
   return [
-    '<div class="ex-list-section">',
-    '  <div class="ex-toolbar">',
-    '    <div class="ex-segmented">' + segments + '</div>',
-    '    <div class="ex-chips">' + chips + '</div>',
-    '    <button type="button" class="ex-add-btn" id="ex-add-btn">' + IC_PLUS + ' 지출 추가</button>',
-    '  </div>',
-    '  <div class="ex-list" id="ex-list">' + listBody + '</div>',
+    '<div class="ex-section-header">',
+    '  <span class="ex-card-title al-sign-label">정산 현황</span>',
+    '  <button type="button" class="ex-more-link" id="ex-settle-detail">자세히 보기</button>',
     '</div>',
+    '<div class="ex-settlewidget-body">' + body + '</div>',
+    (transfers.length > 0 ? '<button type="button" class="al-btn-primary ex-settle-cta" id="ex-settle-cta">' + IC_SWAP + ' 정산하기</button>' : ''),
+    '<div class="ex-tip-row">',
+    '  <button type="button" class="ex-tip-nav" id="ex-tip-prev" aria-label="이전 팁">' + IC_CHEV_L + '</button>',
+    '  <div class="ex-tip-text">' + IC_LIGHT + '<span>' + escapeHtml(tip) + '</span></div>',
+    '  <button type="button" class="ex-tip-nav" id="ex-tip-next" aria-label="다음 팁">' + IC_CHEV_R + '</button>',
+    '</div>',
+    '<div class="ex-tip-dots">' + (tipIndex % TIPS.length + 1) + ' / ' + TIPS.length + '</div>',
   ].join('\n');
 }
 
-function renderAll(): void {
-  if (!rootEl) return;
-  const summaryEl = rootEl.querySelector('#ex-summary');
-  const overviewEl = rootEl.querySelector('#ex-overview');
-  const settleEl = rootEl.querySelector('#ex-settle');
-  const listEl = rootEl.querySelector('#ex-list-region');
-  if (summaryEl) summaryEl.innerHTML = summaryHtml();
-  if (overviewEl) overviewEl.innerHTML = overviewHtml();
-  if (settleEl) settleEl.innerHTML = settlementHtml();
-  if (listEl) listEl.innerHTML = listHtml();
-  bindDynamic();
-}
-
-/* ══════════════════════ 이벤트 바인딩 ══════════════════════ */
-
-function bindDynamic(): void {
+function bindOverviewData(): void {
   if (!rootEl) return;
 
-  // 도넛 조각 hover → 해당 카테고리 행 미리보기 강조(클릭 상태는 안 건드림), 클릭 → 필터 토글
-  rootEl.querySelectorAll('.ex-donut-seg').forEach((seg) => {
-    const cat = (seg as SVGElement).dataset.cat as ExpenseCategory;
-    seg.addEventListener('mouseenter', () => {
-      rootEl?.querySelector('.ex-cat-row[data-cat="' + cat + '"]')?.classList.add('is-hot');
-    });
-    seg.addEventListener('mouseleave', () => {
-      rootEl?.querySelector('.ex-cat-row[data-cat="' + cat + '"]')?.classList.remove('is-hot');
-    });
-    seg.addEventListener('click', () => {
-      categoryFilter = categoryFilter === cat ? 'ALL' : cat;
-      renderAll();
-    });
+  rootEl.querySelector('#ex-edit-total')?.addEventListener('click', () => switchTab('settings'));
+  rootEl.querySelector('#ex-perperson-detail')?.addEventListener('click', () => switchTab('settlement'));
+  rootEl.querySelector('#ex-settle-detail')?.addEventListener('click', () => switchTab('settlement'));
+  rootEl.querySelector('#ex-settle-cta')?.addEventListener('click', shareSettlement);
+  rootEl.querySelector('#ex-tip-prev')?.addEventListener('click', () => {
+    tipIndex = (tipIndex - 1 + TIPS.length) % TIPS.length;
+    const w = rootEl?.querySelector('#ex-settlewidget');
+    if (w) w.innerHTML = settleWidgetHtml();
+    bindOverviewData();
+  });
+  rootEl.querySelector('#ex-tip-next')?.addEventListener('click', () => {
+    tipIndex = (tipIndex + 1) % TIPS.length;
+    const w = rootEl?.querySelector('#ex-settlewidget');
+    if (w) w.innerHTML = settleWidgetHtml();
+    bindOverviewData();
   });
 
-  // 카테고리 행 클릭 → 필터 토글 (예산 편집 영역 제외)
-  rootEl.querySelectorAll('.ex-cat-row').forEach((row) => {
-    row.addEventListener('click', (ev) => {
-      if ((ev.target as HTMLElement).closest('.ex-cat-bottom')) return;
-      const cat = (row as HTMLElement).dataset.cat as ExpenseCategory;
-      categoryFilter = categoryFilter === cat ? 'ALL' : cat;
-      renderAll();
-    });
-  });
-
-  // 예산 인라인 편집
-  rootEl.querySelectorAll('.ex-cat-budget-btn').forEach((btn) => {
+  // 카테고리 카드 — 메뉴, 인라인 예산 편집, 클릭 시 지출내역 탭으로 필터 이동
+  rootEl.querySelectorAll('.ex-catcard-menu-btn').forEach((btn) => {
     btn.addEventListener('click', (ev) => {
       ev.stopPropagation();
-      editingBudgetCategory = (btn as HTMLElement).dataset.cat as ExpenseCategory;
-      renderAll();
-      const input = rootEl?.querySelector('.ex-cat-budget-input') as HTMLInputElement | null;
-      input?.focus();
-      input?.select();
+      const cat = (btn as HTMLElement).dataset.cat as ExpenseCategory;
+      openCategoryMenu = openCategoryMenu === cat ? null : cat;
+      const catgridEl = rootEl?.querySelector('#ex-catgrid');
+      if (catgridEl) catgridEl.innerHTML = EXPENSE_CATEGORIES.map(categoryCardHtml).join('');
+      bindOverviewData();
     });
   });
-  const commitBudget = async (cat: ExpenseCategory, raw: string): Promise<void> => {
+  rootEl.querySelectorAll('.ex-catcard-menu-item').forEach((btn) => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const action = (btn as HTMLElement).dataset.action;
+      const cat = (btn as HTMLElement).dataset.cat as ExpenseCategory;
+      openCategoryMenu = null;
+      if (action === 'editBudget') {
+        editingBudgetCategory = cat;
+        const catgridEl = rootEl?.querySelector('#ex-catgrid');
+        if (catgridEl) catgridEl.innerHTML = EXPENSE_CATEGORIES.map(categoryCardHtml).join('');
+        bindOverviewData();
+        (rootEl?.querySelector('.ex-catcard-edit-input[data-cat="' + cat + '"]') as HTMLInputElement | null)?.focus();
+      } else if (action === 'viewList') {
+        categoryFilter = cat;
+        switchTab('list');
+      }
+    });
+  });
+  rootEl.querySelectorAll('.ex-catcard').forEach((card) => {
+    card.addEventListener('click', (ev) => {
+      if ((ev.target as HTMLElement).closest('.ex-catcard-top') || (ev.target as HTMLElement).closest('.ex-catcard-edit')) return;
+      const cat = (card as HTMLElement).dataset.cat as ExpenseCategory;
+      categoryFilter = cat;
+      switchTab('list');
+    });
+  });
+  const commitCatBudget = async (cat: string, raw: string): Promise<void> => {
     const value = raw.trim() === '' ? null : Math.max(0, Math.round(Number(raw)));
     if (value != null && !Number.isFinite(value)) return;
     editingBudgetCategory = null;
     budgets.set(cat, value);
-    renderAll();
+    renderOverviewData();
     const { error } = await supabase
       .from('trip_expense_budgets')
       .upsert({ trip_id: currentTripId, category: cat, amount_krw: value, updated_at: new Date().toISOString() }, { onConflict: 'trip_id,category' });
     if (error) console.error('예산 저장 실패:', error.message);
   };
-  rootEl.querySelectorAll('.ex-cat-budget-input').forEach((el) => {
+  rootEl.querySelectorAll('.ex-catcard-edit-input').forEach((el) => {
     const input = el as HTMLInputElement;
-    const cat = input.dataset.cat as ExpenseCategory;
     input.addEventListener('click', (ev) => ev.stopPropagation());
     input.addEventListener('keydown', (ev) => {
-      if ((ev as KeyboardEvent).key === 'Enter') void commitBudget(cat, input.value);
-      if ((ev as KeyboardEvent).key === 'Escape') { editingBudgetCategory = null; renderAll(); }
+      if ((ev as KeyboardEvent).key === 'Enter') void commitCatBudget(input.dataset.cat!, input.value);
+      if ((ev as KeyboardEvent).key === 'Escape') { editingBudgetCategory = null; renderOverviewData(); }
     });
   });
-  rootEl.querySelectorAll('.ex-cat-budget-save').forEach((btn) => {
+  rootEl.querySelectorAll('.ex-catcard-edit-save').forEach((btn) => {
     btn.addEventListener('click', (ev) => {
       ev.stopPropagation();
-      const cat = (btn as HTMLElement).dataset.cat as ExpenseCategory;
-      const input = rootEl?.querySelector('.ex-cat-budget-input[data-cat="' + cat + '"]') as HTMLInputElement | null;
-      if (input) void commitBudget(cat, input.value);
+      const cat = (btn as HTMLElement).dataset.cat!;
+      const input = rootEl?.querySelector('.ex-catcard-edit-input[data-cat="' + cat + '"]') as HTMLInputElement | null;
+      if (input) void commitCatBudget(cat, input.value);
     });
   });
 
-  // 상태 세그먼트 / 카테고리 칩
-  rootEl.querySelectorAll('.ex-seg').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      statusFilter = (btn as HTMLElement).dataset.status as StatusFilter;
-      renderAll();
-    });
-  });
-  rootEl.querySelectorAll('.ex-chip').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      categoryFilter = (btn as HTMLElement).dataset.category as CategoryFilter;
-      renderAll();
-    });
-  });
-
-  // 지출 추가/수정
-  rootEl.querySelector('#ex-add-btn')?.addEventListener('click', () => openSheet(null));
-  rootEl.querySelectorAll('.ex-item').forEach((row) => {
+  // 최근 지출 항목 클릭 → 수정
+  rootEl.querySelectorAll('#ex-recent .ex-item').forEach((row) => {
     row.addEventListener('click', () => {
       const id = (row as HTMLElement).dataset.id!;
       const e = expenses.find((x) => x.id === id);
@@ -660,7 +658,62 @@ function bindDynamic(): void {
   });
 }
 
-/* ══════════════════════ 입력 시트 (모달/바텀시트) ══════════════════════ */
+/* ══════════════════════ 빠른 지출 추가 (사이드바, 데스크톱 전용) ══════════════════════ */
+
+function quickAddModeTabsHtml(): string {
+  const modes: Array<{ key: typeof quickAddMode; label: string; icon: string }> = [
+    { key: 'direct', label: '직접 입력', icon: '' },
+    { key: 'receipt', label: '영수증', icon: IC_RECEIPT },
+    { key: 'sms', label: '문자·이미지', icon: IC_CAMERA },
+  ];
+  return modes.map((m) =>
+    '<button type="button" class="ex-qa-mode' + (quickAddMode === m.key ? ' is-active' : '') + '" data-mode="' + m.key + '">' + m.icon + '<span>' + m.label + '</span></button>'
+  ).join('');
+}
+
+function quickAddFormHtml(): string {
+  const me = store.get('user');
+  const payer = me?.id ?? (members[0]?.user_id ?? null);
+
+  const catOptions = EXPENSE_CATEGORIES.map((cat) => '<option value="' + cat + '">' + CATEGORY_META[cat].label + '</option>').join('');
+  const currencyOptions = CURRENCIES.map((c) => '<option value="' + c.code + '"' + (c.code === lastUsedCurrency ? ' selected' : '') + '>' + c.code + '</option>').join('');
+  const payerChips = members.map((m) =>
+    '<button type="button" class="ex-qa-member' + (m.user_id === payer ? ' is-active' : '') + '" data-uid="' + m.user_id + '">' + avatarHtml(m.user_id, 'sm') + '<span>' + escapeHtml(m.display_name || '멤버') + '</span></button>'
+  ).join('');
+  const splitChips = members.map((m) =>
+    '<button type="button" class="ex-qa-member is-active" data-uid="' + m.user_id + '">' + avatarHtml(m.user_id, 'sm') + '<span>' + escapeHtml(m.display_name || '멤버') + '</span></button>'
+  ).join('');
+
+  return [
+    '<div class="ex-qa-field"><span class="ex-qa-label">카테고리</span>',
+    '  <select class="ex-qa-input" id="qa-category"><option value="">선택하세요</option>' + catOptions + '</select>',
+    '</div>',
+    '<div class="ex-qa-row">',
+    '  <div class="ex-qa-field ex-qa-amount"><span class="ex-qa-label">금액</span><input type="number" inputmode="decimal" class="ex-qa-input" id="qa-amount" placeholder="0" min="0" step="any" /></div>',
+    '  <div class="ex-qa-field ex-qa-currency"><span class="ex-qa-label">통화</span><select class="ex-qa-input" id="qa-currency">' + currencyOptions + '</select></div>',
+    '  <div class="ex-qa-field ex-qa-date"><span class="ex-qa-label">날짜</span><input type="date" class="ex-qa-input" id="qa-date" value="' + new Date().toISOString().slice(0, 10) + '" /></div>',
+    '</div>',
+    '<div class="ex-fx-hint" id="qa-fxhint"></div>',
+    '<div class="ex-qa-field"><span class="ex-qa-label">구분</span>',
+    '  <div class="ex-splitmode-toggle" id="qa-splitmode">',
+    '    <button type="button" class="ex-splitmode-btn is-active" data-mode="SHARED">공동 지출</button>',
+    '    <button type="button" class="ex-splitmode-btn" data-mode="PERSONAL">개인 지출</button>',
+    '  </div>',
+    '</div>',
+    '<div class="ex-qa-field"><span class="ex-qa-label">결제한 사람</span><div class="ex-qa-members" id="qa-payer">' + payerChips + '</div></div>',
+    '<div class="ex-qa-field" id="qa-split-wrap"><span class="ex-qa-label">나눠 낼 사람</span><div class="ex-qa-members" id="qa-split">' + splitChips + '</div></div>',
+    '<div class="ex-qa-row">',
+    '  <label class="ex-qa-paid-row"><span class="ex-qa-label">결제 완료</span><button type="button" class="ex-paid-toggle is-on" id="qa-paid" role="switch" aria-checked="true"><span class="ex-paid-knob"></span></button></label>',
+    '</div>',
+    '<div class="ex-qa-field"><span class="ex-qa-label">내용</span><input type="text" class="ex-qa-input" id="qa-title" placeholder="예: 왓아룬 보트투어" maxlength="80" /></div>',
+    '<div class="ex-qa-field"><span class="ex-qa-label">메모 <em>(선택)</em></span><input type="text" class="ex-qa-input" id="qa-memo" placeholder="예: 4인 기준" maxlength="120" /></div>',
+    '<div class="ex-qa-actions">',
+    '  <button type="button" class="ex-qa-reset" id="qa-reset">초기화</button>',
+    '  <button type="button" class="al-btn-primary ex-qa-save" id="qa-save">저장</button>',
+    '</div>',
+    '<div class="ex-qa-flash" id="qa-flash"></div>',
+  ].join('\n');
+}
 
 async function fetchRate(currency: string): Promise<{ rate: number | null; source: string }> {
   if (currency === 'KRW') return { rate: 1, source: 'live' };
@@ -676,6 +729,535 @@ async function fetchRate(currency: string): Promise<{ rate: number | null; sourc
     return { rate: null, source: 'unavailable' };
   }
 }
+
+/** 공통: 입력값 → 저장 payload 계산(환율 조회 포함). quick-add와 수정 모달이 함께 사용. */
+async function buildExpensePayload(fields: {
+  category: string; title: string; amount: number; currency: string; expenseDate: string | null;
+  isPaid: boolean; splitMode: SplitMode; payer: string | null; split: Set<string>; memo: string | null;
+}): Promise<TripExpenseInsert> {
+  let amountKrw: number | null = Math.round(fields.amount);
+  let fxRate: number | null = 1;
+  let fxSource: string | null = 'live';
+  if (fields.currency !== 'KRW') {
+    const { rate, source } = await fetchRate(fields.currency);
+    fxRate = rate;
+    fxSource = source;
+    amountKrw = rate != null ? Math.round(fields.amount * rate) : null;
+  }
+  const payerMember = fields.payer ? members.find((m) => m.user_id === fields.payer) : null;
+  return {
+    trip_id: currentTripId,
+    category: fields.category,
+    title: fields.title,
+    amount: fields.amount,
+    currency: fields.currency,
+    amount_krw: amountKrw,
+    fx_rate: fxRate,
+    fx_source: fxSource,
+    expense_date: fields.expenseDate,
+    is_paid: fields.isPaid,
+    split_mode: fields.splitMode,
+    paid_by: fields.payer,
+    paid_by_name: payerMember?.display_name ?? null,
+    paid_by_avatar: payerMember?.avatar_url ?? null,
+    split_user_ids: fields.splitMode === 'PERSONAL' ? (fields.payer ? [fields.payer] : null) : (fields.split.size === members.length ? null : Array.from(fields.split)),
+    memo: fields.memo,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function mountQuickAdd(container: HTMLElement): void {
+  container.innerHTML = [
+    '<div class="ex-section-header"><span class="ex-card-title al-sign-label">빠른 지출 추가</span></div>',
+    '<div class="ex-qa-modes">' + quickAddModeTabsHtml() + '</div>',
+    '<div class="ex-qa-body" id="qa-body"></div>',
+  ].join('\n');
+
+  container.querySelectorAll('.ex-qa-mode').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      quickAddMode = (btn as HTMLElement).dataset.mode as typeof quickAddMode;
+      container.querySelectorAll('.ex-qa-mode').forEach((b) => b.classList.toggle('is-active', b === btn));
+      renderQuickAddBody(container);
+    });
+  });
+
+  renderQuickAddBody(container);
+}
+
+function renderQuickAddBody(container: HTMLElement): void {
+  const bodyEl = container.querySelector('#qa-body') as HTMLElement;
+  if (!bodyEl) return;
+
+  if (quickAddMode !== 'direct') {
+    const icon = quickAddMode === 'receipt' ? IC_RECEIPT : IC_CAMERA;
+    bodyEl.innerHTML = [
+      '<div class="ex-qa-soon">',
+      '  <div class="ex-qa-soon-icon">' + icon + '</div>',
+      '  <div class="ex-qa-soon-text">' + (quickAddMode === 'receipt' ? '영수증 촬영으로 자동 입력' : '문자·이미지로 자동 입력') + '</div>',
+      '  <div class="ex-qa-soon-hint">다음 단계에서 지원 예정이에요</div>',
+      '</div>',
+    ].join('\n');
+    return;
+  }
+
+  bodyEl.innerHTML = quickAddFormHtml();
+
+  let splitMode: SplitMode = 'SHARED';
+  let payer: string | null = store.get('user')?.id ?? (members[0]?.user_id ?? null);
+  let isPaid = true;
+  const split = new Set<string>(members.map((m) => m.user_id));
+
+  const currencySel = bodyEl.querySelector('#qa-currency') as HTMLSelectElement;
+  const fxHint = bodyEl.querySelector('#qa-fxhint') as HTMLElement;
+  const updateFxHint = async (): Promise<void> => {
+    const cur = currencySel.value;
+    if (cur === 'KRW') { fxHint.textContent = ''; return; }
+    fxHint.textContent = '환율 확인 중...';
+    const { rate, source } = await fetchRate(cur);
+    if (currencySel.value !== cur) return;
+    fxHint.textContent = rate == null
+      ? '환율을 가져오지 못했어요 — 원화 환산 없이 저장돼요'
+      : '1 ' + cur + ' ≈ ' + fmtKRW(rate) + (source === 'fallback' ? ' (참고용 환율)' : '');
+  };
+  void updateFxHint();
+  currencySel.addEventListener('change', () => void updateFxHint());
+
+  const splitWrap = bodyEl.querySelector('#qa-split-wrap') as HTMLElement;
+  const updateSplitVisibility = (): void => {
+    splitWrap.style.display = splitMode === 'SHARED' ? '' : 'none';
+  };
+  updateSplitVisibility();
+
+  bodyEl.querySelectorAll('#qa-splitmode .ex-splitmode-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      splitMode = (btn as HTMLElement).dataset.mode as SplitMode;
+      bodyEl.querySelectorAll('#qa-splitmode .ex-splitmode-btn').forEach((b) => b.classList.toggle('is-active', b === btn));
+      updateSplitVisibility();
+    });
+  });
+
+  bodyEl.querySelectorAll('#qa-payer .ex-qa-member').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      payer = (btn as HTMLElement).dataset.uid!;
+      bodyEl.querySelectorAll('#qa-payer .ex-qa-member').forEach((b) => b.classList.toggle('is-active', b === btn));
+    });
+  });
+
+  bodyEl.querySelectorAll('#qa-split .ex-qa-member').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const uid = (btn as HTMLElement).dataset.uid!;
+      if (split.has(uid)) {
+        if (split.size <= 1) return;
+        split.delete(uid);
+        btn.classList.remove('is-active');
+      } else {
+        split.add(uid);
+        btn.classList.add('is-active');
+      }
+    });
+  });
+
+  const paidToggle = bodyEl.querySelector('#qa-paid') as HTMLButtonElement;
+  paidToggle.addEventListener('click', () => {
+    isPaid = !isPaid;
+    paidToggle.classList.toggle('is-on', isPaid);
+    paidToggle.setAttribute('aria-checked', String(isPaid));
+  });
+
+  const resetForm = (): void => {
+    (bodyEl.querySelector('#qa-title') as HTMLInputElement).value = '';
+    (bodyEl.querySelector('#qa-amount') as HTMLInputElement).value = '';
+    (bodyEl.querySelector('#qa-memo') as HTMLInputElement).value = '';
+  };
+  bodyEl.querySelector('#qa-reset')?.addEventListener('click', resetForm);
+
+  const flashEl = bodyEl.querySelector('#qa-flash') as HTMLElement;
+  const saveBtn = bodyEl.querySelector('#qa-save') as HTMLButtonElement;
+  saveBtn.addEventListener('click', async () => {
+    const category = (bodyEl.querySelector('#qa-category') as HTMLSelectElement).value;
+    const title = (bodyEl.querySelector('#qa-title') as HTMLInputElement).value.trim();
+    const amount = Number((bodyEl.querySelector('#qa-amount') as HTMLInputElement).value);
+    const currency = currencySel.value;
+    const dateVal = (bodyEl.querySelector('#qa-date') as HTMLInputElement).value || null;
+    const memo = (bodyEl.querySelector('#qa-memo') as HTMLInputElement).value.trim() || null;
+
+    if (!category) { alert('카테고리를 선택해주세요.'); return; }
+    if (!title) { alert('내용을 입력해주세요.'); return; }
+    if (!Number.isFinite(amount) || amount <= 0) { alert('금액을 입력해주세요.'); return; }
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = '저장 중...';
+    lastUsedCurrency = currency;
+
+    const payload = await buildExpensePayload({ category, title, amount, currency, expenseDate: dateVal, isPaid, splitMode, payer, split, memo });
+    const { data, error } = await supabase.from('trip_expenses').insert(payload).select().single();
+
+    saveBtn.disabled = false;
+    saveBtn.textContent = '저장';
+
+    if (error) {
+      console.error('지출 추가 실패:', error.message);
+      alert('저장에 실패했어요. supabase/trip_expenses.sql 마이그레이션이 실행됐는지 확인해주세요.');
+      return;
+    }
+    if (data) expenses.push(data as TripExpense);
+    resetForm();
+    flashEl.textContent = '저장했어요';
+    setTimeout(() => { flashEl.textContent = ''; }, 1500);
+    renderOverviewData();
+  });
+}
+
+/* ══════════════════════ 지출 내역 탭 ══════════════════════ */
+
+function matchesFilter(e: TripExpense): boolean {
+  if (statusFilter === 'PLANNED' && e.is_paid) return false;
+  if (statusFilter === 'PAID' && !e.is_paid) return false;
+  if (splitModeFilter !== 'ALL' && modeOf(e) !== splitModeFilter) return false;
+  if (categoryFilter !== 'ALL' && e.category !== categoryFilter) return false;
+  if (searchQuery) {
+    const haystack = [e.title, e.memo, memberName(e.paid_by)].filter(Boolean).join(' ').toLowerCase();
+    if (!haystack.includes(searchQuery)) return false;
+  }
+  return true;
+}
+
+function expenseRowHtml(e: TripExpense): string {
+  const cat = (EXPENSE_CATEGORIES as readonly string[]).includes(e.category) ? (e.category as ExpenseCategory) : 'ETC';
+  const meta = CATEGORY_META[cat];
+  const krw = krwOf(e);
+  const mode = modeOf(e);
+
+  let amountPart: string;
+  if (e.currency === 'KRW') {
+    amountPart = '<span class="ex-item-amount">' + fmtKRW(e.amount) + '</span>';
+  } else {
+    const sub = krw != null
+      ? '<span class="ex-item-krw"' + (e.fx_source === 'fallback' ? ' title="참고용 환율로 환산된 금액이에요"' : '') + '>≈ ' + fmtKRW(krw) + (e.fx_source === 'fallback' ? '*' : '') + '</span>'
+      : '<span class="ex-item-krw is-na">환산 불가</span>';
+    amountPart = '<span class="ex-item-amount">' + escapeHtml(fmtAmount(e.amount, e.currency)) + '</span>' + sub;
+  }
+
+  const statusBadge = e.is_paid
+    ? '<span class="ex-stamp is-paid">PAID</span>'
+    : '<span class="ex-stamp">예정</span>';
+  const modeBadge = '<span class="ex-mode-badge ex-mode-' + mode.toLowerCase() + '">' + SPLIT_MODE_LABEL[mode] + '</span>';
+
+  const memo = e.memo ? '<span class="ex-item-memo">' + escapeHtml(e.memo) + '</span>' : '';
+
+  return [
+    '<div class="ex-item" data-id="' + e.id + '">',
+    '  <span class="ex-item-cat" style="color:' + meta.color + '" title="' + meta.label + '">' + meta.icon + '</span>',
+    '  <div class="ex-item-main">',
+    '    <div class="ex-item-title-row"><span class="ex-item-title">' + escapeHtml(e.title) + '</span>' + statusBadge + modeBadge + '</div>',
+    '    <div class="ex-item-meta">' + avatarHtml(e.paid_by, 'sm', e.paid_by_name, e.paid_by_avatar) + '<span>' + escapeHtml(e.paid_by ? memberName(e.paid_by) : (e.paid_by_name || '결제 미지정')) + '</span>' + memo + '</div>',
+    '  </div>',
+    '  <div class="ex-item-right">' + amountPart + '</div>',
+    '</div>',
+  ].join('');
+}
+
+function sortExpenses(items: TripExpense[]): TripExpense[] {
+  const arr = [...items];
+  if (sortMode === 'amount_desc') arr.sort((a, b) => (krwOf(b) ?? 0) - (krwOf(a) ?? 0));
+  else arr.sort((a, b) => b.created_at.localeCompare(a.created_at));
+  return arr;
+}
+
+function listFilterBarHtml(): string {
+  const statusOptions = [
+    { v: 'ALL', l: '전체' }, { v: 'PLANNED', l: '예정' }, { v: 'PAID', l: '결제 완료' },
+  ].map((o) => '<option value="' + o.v + '"' + (statusFilter === o.v ? ' selected' : '') + '>' + o.l + '</option>').join('');
+
+  const splitOptions = [
+    { v: 'ALL', l: '전체 구분' }, { v: 'SHARED', l: '공동 지출' }, { v: 'PERSONAL', l: '개인 지출' },
+  ].map((o) => '<option value="' + o.v + '"' + (splitModeFilter === o.v ? ' selected' : '') + '>' + o.l + '</option>').join('');
+
+  const catOptions = '<option value="ALL"' + (categoryFilter === 'ALL' ? ' selected' : '') + '>전체 카테고리</option>' +
+    EXPENSE_CATEGORIES.map((cat) => '<option value="' + cat + '"' + (categoryFilter === cat ? ' selected' : '') + '>' + CATEGORY_META[cat].label + '</option>').join('');
+
+  const sortOptions = [
+    { v: 'created_desc', l: '최신순' }, { v: 'amount_desc', l: '금액순' },
+  ].map((o) => '<option value="' + o.v + '"' + (sortMode === o.v ? ' selected' : '') + '>' + o.l + '</option>').join('');
+
+  return [
+    '<div class="ex-filterbar">',
+    '  <select class="ex-filter-select" id="lf-status">' + statusOptions + '</select>',
+    '  <select class="ex-filter-select" id="lf-splitmode">' + splitOptions + '</select>',
+    '  <select class="ex-filter-select" id="lf-category">' + catOptions + '</select>',
+    '  <select class="ex-filter-select" id="lf-sort">' + sortOptions + '</select>',
+    '  <div class="ex-filter-search"><input type="text" id="lf-search" placeholder="내용, 메모, 결제자 검색" value="' + escapeHtml(searchQuery) + '" /></div>',
+    '</div>',
+  ].join('\n');
+}
+
+function listBodyHtml(): string {
+  const filtered = sortExpenses(expenses.filter(matchesFilter));
+
+  if (expenses.length === 0) {
+    return [
+      '<div class="ex-empty">',
+      '  <div class="ex-empty-icon">' + IC_WALLET + '</div>',
+      '  <div class="ex-empty-text">아직 입력한 지출이 없어요</div>',
+      '  <div class="ex-empty-hint">항공권·숙소처럼 확정된 비용부터 담아보세요. 여행 중엔 휴대폰으로 바로 기록할 수 있어요.</div>',
+      '</div>',
+    ].join('');
+  }
+  if (filtered.length === 0) {
+    return '<div class="ex-empty"><div class="ex-empty-text">조건에 맞는 지출이 없어요</div></div>';
+  }
+
+  const shown = filtered.slice(0, listPageSize);
+  const groups = new Map<string, TripExpense[]>();
+  for (const e of shown) {
+    const key = e.expense_date ?? '';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(e);
+  }
+  const keys = sortMode === 'amount_desc'
+    ? Array.from(groups.keys()) // 금액순 정렬일 땐 이미 정렬된 순서를 그대로 유지(날짜로 재정렬하지 않음)
+    : Array.from(groups.keys()).sort((a, b) => {
+        if (a === '') return 1;
+        if (b === '') return -1;
+        return b.localeCompare(a);
+      });
+
+  const groupsHtml = keys.map((key) => {
+    const items = groups.get(key)!;
+    const groupSum = items.reduce((acc, e) => acc + (krwOf(e) ?? 0), 0);
+    return [
+      '<div class="ex-group">',
+      '  <div class="ex-group-header"><span class="ex-group-date">' + (key ? fmtDateLabel(key) : '날짜 미정') + '</span><span class="ex-group-sum">' + fmtKRW(groupSum) + '</span></div>',
+      items.map(expenseRowHtml).join(''),
+      '</div>',
+    ].join('\n');
+  }).join('\n');
+
+  const moreBtn = filtered.length > shown.length
+    ? '<button type="button" class="ex-loadmore" id="ex-loadmore">더보기 (' + (filtered.length - shown.length) + '건 남음)</button>'
+    : '';
+
+  return '<div class="ex-list">' + groupsHtml + '</div>' + moreBtn;
+}
+
+function mountListTab(panel: HTMLElement): void {
+  panel.innerHTML = [
+    '<div class="ex-list-section">',
+    listFilterBarHtml(),
+    '  <div id="ex-list-body">' + listBodyHtml() + '</div>',
+    '</div>',
+  ].join('\n');
+  bindListTab(panel);
+}
+
+function refreshListBody(panel: HTMLElement): void {
+  const bodyEl = panel.querySelector('#ex-list-body');
+  if (bodyEl) bodyEl.innerHTML = listBodyHtml();
+  bindListBody(panel);
+}
+
+function bindListTab(panel: HTMLElement): void {
+  (panel.querySelector('#lf-status') as HTMLSelectElement)?.addEventListener('change', (ev) => {
+    statusFilter = (ev.target as HTMLSelectElement).value as StatusFilter;
+    listPageSize = 20;
+    refreshListBody(panel);
+  });
+  (panel.querySelector('#lf-splitmode') as HTMLSelectElement)?.addEventListener('change', (ev) => {
+    splitModeFilter = (ev.target as HTMLSelectElement).value as SplitModeFilter;
+    listPageSize = 20;
+    refreshListBody(panel);
+  });
+  (panel.querySelector('#lf-category') as HTMLSelectElement)?.addEventListener('change', (ev) => {
+    categoryFilter = (ev.target as HTMLSelectElement).value as CategoryFilter;
+    listPageSize = 20;
+    refreshListBody(panel);
+  });
+  (panel.querySelector('#lf-sort') as HTMLSelectElement)?.addEventListener('change', (ev) => {
+    sortMode = (ev.target as HTMLSelectElement).value as SortMode;
+    refreshListBody(panel);
+  });
+  let searchTimer: ReturnType<typeof setTimeout> | null = null;
+  (panel.querySelector('#lf-search') as HTMLInputElement)?.addEventListener('input', (ev) => {
+    const value = (ev.target as HTMLInputElement).value;
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      searchQuery = value.trim().toLowerCase();
+      listPageSize = 20;
+      refreshListBody(panel);
+    }, 200);
+  });
+  bindListBody(panel);
+}
+
+function bindListBody(panel: HTMLElement): void {
+  panel.querySelector('#ex-loadmore')?.addEventListener('click', () => {
+    listPageSize += 20;
+    refreshListBody(panel);
+  });
+  panel.querySelectorAll('.ex-item').forEach((row) => {
+    row.addEventListener('click', () => {
+      const id = (row as HTMLElement).dataset.id!;
+      const e = expenses.find((x) => x.id === id);
+      if (e) openSheet(e);
+    });
+  });
+}
+
+/* ══════════════════════ 정산 탭 ══════════════════════ */
+
+function mountSettlementTab(panel: HTMLElement): void {
+  const { rows, transfers, skipped } = computeSettlement();
+  const hasPaid = expenses.some((e) => e.is_paid && modeOf(e) === 'SHARED');
+
+  let body: string;
+  if (!hasPaid) {
+    body = '<div class="ex-settle-empty">결제 완료로 표시한 공동 지출부터 정산에 반영돼요.<br/>여행 중 휴대폰으로 기록하면서 바로 정산해보세요.</div>';
+  } else {
+    const memberRows = rows.filter((r) => members.some((m) => m.user_id === r.userId)).map((r) => {
+      const balCls = r.balance > 0.5 ? ' is-plus' : r.balance < -0.5 ? ' is-minus' : '';
+      const balText = Math.abs(r.balance) < 0.5 ? '정산 완료' : (r.balance > 0 ? '+' : '−') + fmtKRW(Math.abs(r.balance));
+      return [
+        '<div class="ex-settle-row">',
+        avatarHtml(r.userId, 'md'),
+        '  <div class="ex-settle-info">',
+        '    <span class="ex-settle-name">' + escapeHtml(memberName(r.userId)) + '</span>',
+        '    <span class="ex-settle-detail">낸 돈 ' + fmtKRW(r.paidSum) + ' · 부담 ' + fmtKRW(r.shareSum) + '</span>',
+        '  </div>',
+        '  <span class="ex-settle-balance' + balCls + '">' + balText + '</span>',
+        '</div>',
+      ].join('');
+    }).join('');
+
+    const transferRows = transfers.length > 0
+      ? '<div class="ex-settle-transfers"><div class="ex-settle-transfers-title">' + IC_SWAP + ' 이렇게 보내면 정산 끝</div>' +
+        transfers.map((t) =>
+          '<div class="ex-transfer"><span class="ex-transfer-from">' + escapeHtml(memberName(t.from)) + '</span><span class="ex-transfer-arrow">→</span><span class="ex-transfer-to">' + escapeHtml(memberName(t.to)) + '</span><span class="ex-transfer-amount">' + fmtKRW(t.amount) + '</span></div>'
+        ).join('') +
+        '<button type="button" class="al-btn-primary ex-settle-cta" id="ex-settle-share">' + IC_SWAP + ' 정산 내역 공유하기</button>' +
+        '</div>'
+      : '<div class="ex-settle-done">모두 정산이 맞아요 ✓</div>';
+
+    const skippedNote = skipped > 0
+      ? '<div class="ex-settle-note">결제 멤버가 없거나 환산 불가라 정산에서 빠진 항목 ' + skipped + '건</div>'
+      : '';
+
+    body = memberRows + transferRows + skippedNote;
+  }
+
+  panel.innerHTML = [
+    '<div class="ex-card al-glass ex-settle-full">',
+    body,
+    '</div>',
+  ].join('\n');
+
+  panel.querySelector('#ex-settle-share')?.addEventListener('click', shareSettlement);
+}
+
+/* ══════════════════════ 동행 탭 ══════════════════════ */
+
+function mountCompanionsTab(panel: HTMLElement): void {
+  const { rows } = computeSettlement();
+  const cards = members.map((m) => {
+    const r = rows.find((x) => x.userId === m.user_id) ?? { paidSum: 0, shareSum: 0, balance: 0, paidCount: 0 };
+    const balCls = r.balance > 0.5 ? ' is-plus' : r.balance < -0.5 ? ' is-minus' : '';
+    const balText = Math.abs(r.balance) < 0.5 ? '정산 완료' : (r.balance > 0 ? '+' : '−') + fmtKRW(Math.abs(r.balance));
+    return [
+      '<div class="ex-comp-card al-glass" data-uid="' + m.user_id + '">',
+      '  ' + avatarHtml(m.user_id, 'lg'),
+      '  <div class="ex-comp-name">' + escapeHtml(m.display_name || '멤버') + '</div>',
+      '  <div class="ex-comp-stats">',
+      '    <div class="ex-comp-stat"><span class="ex-comp-stat-label">낸 돈</span><span class="ex-comp-stat-value">' + fmtKRW(r.paidSum) + '</span></div>',
+      '    <div class="ex-comp-stat"><span class="ex-comp-stat-label">부담액</span><span class="ex-comp-stat-value">' + fmtKRW(r.shareSum) + '</span></div>',
+      '  </div>',
+      '  <div class="ex-comp-balance' + balCls + '">' + balText + '</div>',
+      '  <div class="ex-comp-count">결제 ' + r.paidCount + '건</div>',
+      '</div>',
+    ].join('\n');
+  }).join('\n');
+
+  panel.innerHTML = '<div class="ex-comp-grid">' + (cards || '<div class="ex-empty"><div class="ex-empty-text">아직 트립 멤버가 없어요</div></div>') + '</div>';
+
+  panel.querySelectorAll('.ex-comp-card').forEach((card) => {
+    card.addEventListener('click', () => {
+      // 그 사람이 결제한 지출로 목록 필터 이동 — 카테고리 필터는 초기화
+      categoryFilter = 'ALL';
+      switchTab('list');
+      searchQuery = ((card as HTMLElement).querySelector('.ex-comp-name')?.textContent || '').trim().toLowerCase();
+      const searchInput = rootEl?.querySelector('#lf-search') as HTMLInputElement | null;
+      if (searchInput) searchInput.value = searchQuery;
+      refreshListBody(rootEl!.querySelector('#ex-tabpanel') as HTMLElement);
+    });
+  });
+}
+
+/* ══════════════════════ 설정 탭 ══════════════════════ */
+
+function mountSettingsTab(panel: HTMLElement): void {
+  const totalBudget = getTotalBudget();
+  const categorySum = getCategoryBudgetSum();
+
+  const categoryRows = EXPENSE_CATEGORIES.map((cat) => {
+    const meta = CATEGORY_META[cat];
+    const val = budgets.get(cat) ?? null;
+    return [
+      '<div class="ex-settings-row">',
+      '  <span class="ex-settings-icon" style="color:' + meta.color + '">' + meta.icon + '</span>',
+      '  <span class="ex-settings-label">' + meta.label + '</span>',
+      '  <input type="number" inputmode="numeric" class="ex-settings-input" data-cat="' + cat + '" value="' + (val ?? '') + '" placeholder="예산(원)" />',
+      '  <button type="button" class="ex-settings-save" data-cat="' + cat + '">저장</button>',
+      '</div>',
+    ].join('');
+  }).join('\n');
+
+  panel.innerHTML = [
+    '<div class="ex-card al-glass ex-settings-card">',
+    '  <div class="ex-card-title al-sign-label">총 예산</div>',
+    '  <div class="ex-settings-hint">카테고리별 예산 배분과는 별개인, 이번 여행의 전체 목표 예산이에요.</div>',
+    '  <div class="ex-settings-total-row">',
+    '    <input type="number" inputmode="numeric" class="ex-settings-input ex-settings-total-input" id="settings-total" value="' + (totalBudget ?? '') + '" placeholder="예: 1500000" />',
+    '    <button type="button" class="al-btn-primary ex-settings-save-total" id="settings-total-save">저장</button>',
+    '  </div>',
+    '  <span class="ex-settings-hint-inline" id="settings-total-hint"></span>',
+    '</div>',
+    '<div class="ex-card al-glass ex-settings-card">',
+    '  <div class="ex-card-title al-sign-label">카테고리별 예산</div>',
+    '  <div class="ex-settings-hint">카테고리 예산 합계: ' + fmtKRW(categorySum) + '</div>',
+    '  <div class="ex-settings-list">' + categoryRows + '</div>',
+    '</div>',
+  ].join('\n');
+
+  const commitBudget = async (category: string, raw: string, hintEl?: HTMLElement | null): Promise<void> => {
+    const value = raw.trim() === '' ? null : Math.max(0, Math.round(Number(raw)));
+    if (value != null && !Number.isFinite(value)) return;
+    budgets.set(category, value);
+    if (hintEl) { hintEl.textContent = '저장 중...'; }
+    const { error } = await supabase
+      .from('trip_expense_budgets')
+      .upsert({ trip_id: currentTripId, category, amount_krw: value, updated_at: new Date().toISOString() }, { onConflict: 'trip_id,category' });
+    if (hintEl) {
+      hintEl.textContent = error ? '저장 실패' : '저장됨';
+      setTimeout(() => { if (hintEl) hintEl.textContent = ''; }, 1500);
+    }
+    if (error) console.error('예산 저장 실패:', error.message);
+  };
+
+  panel.querySelector('#settings-total-save')?.addEventListener('click', () => {
+    const input = panel.querySelector('#settings-total') as HTMLInputElement;
+    void commitBudget(BUDGET_TOTAL_KEY, input.value, panel.querySelector('#settings-total-hint') as HTMLElement);
+  });
+  panel.querySelectorAll('.ex-settings-save').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const cat = (btn as HTMLElement).dataset.cat!;
+      const input = panel.querySelector('.ex-settings-input[data-cat="' + cat + '"]') as HTMLInputElement;
+      void commitBudget(cat, input.value);
+      const original = btn.textContent;
+      btn.textContent = '저장됨';
+      setTimeout(() => { btn.textContent = original; }, 1200);
+    });
+  });
+}
+
+/* ══════════════════════ 입력 시트 (수정 모달 / 모바일 추가) ══════════════════════ */
 
 function closeSheet(): void {
   rootEl?.querySelector('#ex-sheet-overlay')?.classList.remove('is-open');
@@ -693,6 +1275,7 @@ function openSheet(editing: TripExpense | null): void {
   const selectedCategory = (editing?.category as ExpenseCategory) ?? 'ETC';
   const selectedCurrency = editing?.currency ?? lastUsedCurrency;
   const selectedPayer = editing?.paid_by ?? me?.id ?? null;
+  const selectedMode: SplitMode = editing ? modeOf(editing) : 'SHARED';
   const selectedSplit = new Set<string>(
     editing?.split_user_ids && editing.split_user_ids.length > 0
       ? editing.split_user_ids
@@ -709,11 +1292,11 @@ function openSheet(editing: TripExpense | null): void {
   ).join('');
 
   const payerChips = members.map((m) =>
-    '<button type="button" class="ex-sheet-member' + (m.user_id === selectedPayer ? ' is-active' : '') + '" data-uid="' + m.user_id + '">' + avatarHtml(m.user_id) + '<span>' + escapeHtml(m.display_name || '멤버') + '</span></button>'
+    '<button type="button" class="ex-sheet-member' + (m.user_id === selectedPayer ? ' is-active' : '') + '" data-uid="' + m.user_id + '">' + avatarHtml(m.user_id, 'sm') + '<span>' + escapeHtml(m.display_name || '멤버') + '</span></button>'
   ).join('');
 
   const splitChips = members.map((m) =>
-    '<button type="button" class="ex-sheet-member ex-sheet-split' + (selectedSplit.has(m.user_id) ? ' is-active' : '') + '" data-uid="' + m.user_id + '">' + avatarHtml(m.user_id) + '<span>' + escapeHtml(m.display_name || '멤버') + '</span></button>'
+    '<button type="button" class="ex-sheet-member ex-sheet-split' + (selectedSplit.has(m.user_id) ? ' is-active' : '') + '" data-uid="' + m.user_id + '">' + avatarHtml(m.user_id, 'sm') + '<span>' + escapeHtml(m.display_name || '멤버') + '</span></button>'
   ).join('');
 
   sheet.innerHTML = [
@@ -738,6 +1321,12 @@ function openSheet(editing: TripExpense | null): void {
     '  <div class="ex-field"><span class="ex-field-label">카테고리</span>',
     '    <div class="ex-sheet-cats" id="ex-f-cats">' + catChips + '</div>',
     '  </div>',
+    '  <div class="ex-field"><span class="ex-field-label">구분</span>',
+    '    <div class="ex-splitmode-toggle" id="ex-f-splitmode">',
+    '      <button type="button" class="ex-splitmode-btn' + (selectedMode === 'SHARED' ? ' is-active' : '') + '" data-mode="SHARED">공동 지출</button>',
+    '      <button type="button" class="ex-splitmode-btn' + (selectedMode === 'PERSONAL' ? ' is-active' : '') + '" data-mode="PERSONAL">개인 지출</button>',
+    '    </div>',
+    '  </div>',
     '  <div class="ex-field-row">',
     '    <label class="ex-field"><span class="ex-field-label">날짜 <em>(선택)</em></span>',
     '      <input type="date" class="ex-field-input" id="ex-f-date" value="' + (editing?.expense_date ?? '') + '" />',
@@ -749,7 +1338,7 @@ function openSheet(editing: TripExpense | null): void {
     '  <div class="ex-field"><span class="ex-field-label">결제한 사람</span>',
     '    <div class="ex-sheet-members" id="ex-f-payer">' + payerChips + '</div>',
     '  </div>',
-    '  <div class="ex-field"><span class="ex-field-label">함께 나눌 멤버 <em>(정산에 사용)</em></span>',
+    '  <div class="ex-field" id="ex-f-split-wrap"><span class="ex-field-label">함께 나눌 멤버 <em>(정산에 사용)</em></span>',
     '    <div class="ex-sheet-members" id="ex-f-split">' + splitChips + '</div>',
     '  </div>',
     '  <label class="ex-field"><span class="ex-field-label">메모 <em>(선택)</em></span>',
@@ -765,7 +1354,12 @@ function openSheet(editing: TripExpense | null): void {
   let category = selectedCategory;
   let payer = selectedPayer;
   let isPaid = editing?.is_paid ?? false;
+  let splitMode = selectedMode;
   const split = selectedSplit;
+
+  const splitWrap = sheet.querySelector('#ex-f-split-wrap') as HTMLElement;
+  const updateSplitVisibility = (): void => { splitWrap.style.display = splitMode === 'SHARED' ? '' : 'none'; };
+  updateSplitVisibility();
 
   const fxHint = sheet.querySelector('#ex-f-fxhint') as HTMLElement;
   const currencySel = sheet.querySelector('#ex-f-currency') as HTMLSelectElement;
@@ -774,7 +1368,7 @@ function openSheet(editing: TripExpense | null): void {
     if (cur === 'KRW') { fxHint.textContent = ''; return; }
     fxHint.textContent = '환율 확인 중...';
     const { rate, source } = await fetchRate(cur);
-    if (currencySel.value !== cur) return; // 그 사이 통화가 바뀌었으면 무시
+    if (currencySel.value !== cur) return;
     if (rate == null) {
       fxHint.textContent = '환율을 가져오지 못했어요 — 원화 환산 없이 저장돼요';
     } else {
@@ -795,6 +1389,14 @@ function openSheet(editing: TripExpense | null): void {
     });
   });
 
+  sheet.querySelectorAll('#ex-f-splitmode .ex-splitmode-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      splitMode = (btn as HTMLElement).dataset.mode as SplitMode;
+      sheet.querySelectorAll('#ex-f-splitmode .ex-splitmode-btn').forEach((b) => b.classList.toggle('is-active', b === btn));
+      updateSplitVisibility();
+    });
+  });
+
   sheet.querySelectorAll('#ex-f-payer .ex-sheet-member').forEach((btn) => {
     btn.addEventListener('click', () => {
       payer = (btn as HTMLElement).dataset.uid!;
@@ -807,7 +1409,7 @@ function openSheet(editing: TripExpense | null): void {
     btn.addEventListener('click', () => {
       const uid = (btn as HTMLElement).dataset.uid!;
       if (split.has(uid)) {
-        if (split.size <= 1) return; // 최소 1명은 남겨야 정산이 성립
+        if (split.size <= 1) return;
         split.delete(uid);
         btn.classList.remove('is-active');
       } else {
@@ -829,7 +1431,7 @@ function openSheet(editing: TripExpense | null): void {
     if (!window.confirm('이 지출을 삭제할까요?')) return;
     expenses = expenses.filter((x) => x.id !== editing.id);
     closeSheet();
-    renderAll();
+    refreshActiveTabData();
     const { error } = await supabase.from('trip_expenses').delete().eq('id', editing.id);
     if (error) console.error('지출 삭제 실패:', error.message);
   });
@@ -849,35 +1451,7 @@ function openSheet(editing: TripExpense | null): void {
     saveBtn.textContent = '저장 중...';
     lastUsedCurrency = currency;
 
-    let amountKrw: number | null = Math.round(amount);
-    let fxRate: number | null = 1;
-    let fxSource: string | null = 'live';
-    if (currency !== 'KRW') {
-      const { rate, source } = await fetchRate(currency);
-      fxRate = rate;
-      fxSource = source;
-      amountKrw = rate != null ? Math.round(amount * rate) : null;
-    }
-
-    const payerMember = payer ? members.find((m) => m.user_id === payer) : null;
-    const payload = {
-      trip_id: currentTripId,
-      category,
-      title,
-      amount,
-      currency,
-      amount_krw: amountKrw,
-      fx_rate: fxRate,
-      fx_source: fxSource,
-      expense_date: dateVal,
-      is_paid: isPaid,
-      paid_by: payer,
-      paid_by_name: payerMember?.display_name ?? null,
-      paid_by_avatar: payerMember?.avatar_url ?? null,
-      split_user_ids: split.size === members.length ? null : Array.from(split),
-      memo,
-      updated_at: new Date().toISOString(),
-    };
+    const payload = await buildExpensePayload({ category, title, amount, currency, expenseDate: dateVal, isPaid, splitMode, payer, split, memo });
 
     if (editing) {
       const { data, error } = await supabase.from('trip_expenses').update(payload).eq('id', editing.id).select().single();
@@ -903,7 +1477,7 @@ function openSheet(editing: TripExpense | null): void {
     }
 
     closeSheet();
-    renderAll();
+    refreshActiveTabData();
   });
 }
 
@@ -914,14 +1488,27 @@ export function teardownExpense(): void {
     supabase.removeChannel(channel);
     channel = null;
   }
+  if (outsideClickHandler) {
+    document.removeEventListener('click', outsideClickHandler);
+    outsideClickHandler = null;
+  }
   rootEl = null;
   currentTripId = '';
   members = [];
   expenses = [];
   budgets = new Map();
+  activeTab = 'overview';
+  categoryViewMode = 'budget';
+  openCategoryMenu = null;
   statusFilter = 'ALL';
+  splitModeFilter = 'ALL';
   categoryFilter = 'ALL';
+  sortMode = 'created_desc';
+  searchQuery = '';
+  listPageSize = 20;
   editingBudgetCategory = null;
+  tipIndex = 0;
+  quickAddMode = 'direct';
 }
 
 export async function renderExpenseContent(container: HTMLElement, tripId: string): Promise<void> {
@@ -930,12 +1517,8 @@ export async function renderExpenseContent(container: HTMLElement, tripId: strin
 
   container.innerHTML = [
     '<div class="ex-wrap">',
-    '  <div id="ex-summary"></div>',
-    '  <div class="ex-grid">',
-    '    <div id="ex-overview"></div>',
-    '    <div id="ex-settle"></div>',
-    '  </div>',
-    '  <div id="ex-list-region"></div>',
+    '  <div class="ex-tabs" id="ex-tabs">' + tabsHtml() + '</div>',
+    '  <div class="ex-tabpanel" id="ex-tabpanel"><div class="ex-placeholder-loading">불러오는 중...</div></div>',
     '  <button type="button" class="ex-fab" id="ex-fab" aria-label="지출 추가">' + IC_PLUS + '</button>',
     '  <div class="ex-sheet-overlay" id="ex-sheet-overlay"></div>',
     '  <div class="ex-sheet" id="ex-sheet"></div>',
@@ -943,7 +1526,18 @@ export async function renderExpenseContent(container: HTMLElement, tripId: strin
   ].join('\n');
   rootEl = container.querySelector('.ex-wrap') as HTMLElement;
 
+  bindTabsNav();
   rootEl.querySelector('#ex-fab')?.addEventListener('click', () => openSheet(null));
+
+  outsideClickHandler = (e: MouseEvent) => {
+    if ((e.target as HTMLElement).closest('.ex-catcard-top')) return;
+    if (openCategoryMenu !== null) {
+      openCategoryMenu = null;
+      const catgridEl = rootEl?.querySelector('#ex-catgrid');
+      if (catgridEl) { catgridEl.innerHTML = EXPENSE_CATEGORIES.map(categoryCardHtml).join(''); bindOverviewData(); }
+    }
+  };
+  document.addEventListener('click', outsideClickHandler);
 
   // 트립(인원수)·멤버·지출·예산을 병렬 로드
   const [tripRes, memberRes, expenseRes, budgetRes] = await Promise.all([
@@ -961,7 +1555,7 @@ export async function renderExpenseContent(container: HTMLElement, tripId: strin
   if (budgetRes.error) console.error('예산 로드 실패:', budgetRes.error.message);
   for (const b of (budgetRes.data ?? []) as TripExpenseBudget[]) budgets.set(b.category, b.amount_krw);
 
-  renderAll();
+  mountTab();
 
   channel = supabase
     .channel('trip-expenses:' + tripId)
@@ -981,7 +1575,7 @@ export async function renderExpenseContent(container: HTMLElement, tripId: strin
           const oldRow = payload.old as { id: string };
           expenses = expenses.filter((e) => e.id !== oldRow.id);
         }
-        renderAll();
+        refreshActiveTabData();
       }
     )
     .on(
@@ -991,7 +1585,7 @@ export async function renderExpenseContent(container: HTMLElement, tripId: strin
         if (payload.eventType === 'DELETE') return;
         const row = payload.new as TripExpenseBudget;
         budgets.set(row.category, row.amount_krw);
-        renderAll();
+        refreshActiveTabData();
       }
     )
     .subscribe();
