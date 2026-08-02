@@ -632,39 +632,30 @@
 
 .rt-panel-stop {
   position: relative;
-  display: grid; grid-template-columns: 12px 26px 1fr auto auto; align-items: center;
+  display: grid; grid-template-columns: 26px 1fr auto auto; align-items: center;
   gap: 8px; min-height: 44px; padding: 7px 6px 10px 2px; border-radius: 12px;
   border-bottom: var(--rt-dash);
+  cursor: grab;
   transition: background var(--rt-ease), box-shadow var(--rt-ease), transform var(--rt-ease);
 }
-/* 지도와의 연결감 — 카드에 올리면 왼쪽에 네이비 마커가 생겨 "지금 이 지점" 임을 알린다 */
-.rt-panel-stop:hover { background: rgba(255,255,255,0.72); box-shadow: inset 2px 0 0 #243B78; }
+.rt-panel-stop:active { cursor: grabbing; }
+/* 지도와의 연결감 — 카드에 올리면 살짝 밝아져 "지금 이 지점"임을 알린다 */
+.rt-panel-stop:hover { background: rgba(255,255,255,0.72); }
 .rt-panel-stop.dragging { opacity: 0.4; box-shadow: var(--rt-shadow-md); transform: scale(1.02); }
 .rt-panel-stop.drag-over { box-shadow: inset 0 2px 0 var(--rt-blue); }
 .rt-panel-stop.rt-highlighted { background: var(--rt-ice); box-shadow: inset 0 0 0 1px rgba(11,124,196,0.18); }
 
-/* 드래그 핸들 — 어디를 잡아야 하는지 명확히 (hover 시에만 노출해 평소엔 깔끔하게) */
-.rt-drag-handle {
-  grid-column: 1; display: flex; align-items: center; justify-content: center;
-  width: 12px; height: 22px; color: var(--rt-ink-4);
-  opacity: 0; cursor: grab; transition: opacity var(--rt-ease), color var(--rt-ease);
-}
-.rt-panel-stop:hover .rt-drag-handle { opacity: 1; }
-.rt-drag-handle:hover { color: var(--rt-ink-2); }
-.rt-drag-handle:active { cursor: grabbing; }
-.rt-drag-handle svg { width: 11px; height: 11px; }
-
 /* 배경/글자색은 항상 JS(stopIdentityColor)가 인라인 style로 지정 — Aero Blue 틴트 배경 +
    Aero Blue 굵은 숫자. 여기 값은 그게 아직 안 붙었을 때의 안전한 기본값일 뿐. */
 .rt-panel-badge {
-  grid-column: 2; width: 26px; height: 26px; border-radius: 50%;
+  grid-column: 1; width: 26px; height: 26px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   font-size: 11.5px; font-weight: 800; flex-shrink: 0;
   background: rgba(47,134,214,0.1);
   color: #2F86D6;
 }
 .rt-panel-badge svg { width: 12px; height: 12px; }
-.rt-panel-name-col { grid-column: 3; min-width: 0; }
+.rt-panel-name-col { grid-column: 2; min-width: 0; }
 .rt-panel-name {
   font-size: 12.5px; font-weight: 700; color: var(--rt-ink);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -674,15 +665,15 @@
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .rt-panel-time {
-  grid-column: 4; width: 68px; border: none; background: none; text-align: right;
+  grid-column: 3; width: 68px; border: none; background: none; text-align: right;
   font-size: 11.5px; font-weight: 700; color: var(--rt-ink-2); font-variant-numeric: tabular-nums;
-  border-radius: 6px; padding: 3px 2px; font-family: inherit;
+  border-radius: 6px; padding: 3px 2px; font-family: inherit; cursor: text;
   transition: background var(--rt-ease), color var(--rt-ease);
 }
 .rt-panel-time:hover, .rt-panel-time:focus { background: var(--rt-mist); color: var(--rt-ink); outline: none; }
 .rt-panel-time.is-manual { color: var(--rt-blue); }
 .rt-panel-remove {
-  grid-column: 5; width: 18px; height: 18px; border-radius: 5px; border: none;
+  grid-column: 4; width: 18px; height: 18px; border-radius: 5px; border: none;
   background: none; color: var(--rt-ink-4); cursor: pointer; font-size: 11px; line-height: 1;
   opacity: 0; display: flex; align-items: center; justify-content: center;
   transition: opacity var(--rt-ease), color var(--rt-ease), background var(--rt-ease);
@@ -690,13 +681,13 @@
 .rt-panel-stop:hover .rt-panel-remove { opacity: 1; }
 .rt-panel-remove:focus-visible { opacity: 1; }
 .rt-panel-remove:hover { color: #C0392B; background: #FDEEEC; }
-.rt-panel-remove-spacer { grid-column: 5; width: 18px; }
+.rt-panel-remove-spacer { grid-column: 4; width: 18px; }
 
 .rt-panel-memo-row {
-  grid-column: 3 / span 3; display: flex; align-items: center; gap: 6px; margin-top: 1px;
+  grid-column: 2 / span 3; display: flex; align-items: center; gap: 6px; margin-top: 1px;
 }
 .rt-panel-memo {
-  flex: 1; min-width: 0; border: none; background: none; outline: none;
+  flex: 1; min-width: 0; border: none; background: none; outline: none; cursor: text;
   font-size: 11px; color: var(--rt-ink-2); font-family: inherit; padding: 2px 0;
   border-bottom: 1px solid transparent; transition: border-color var(--rt-ease);
 }
