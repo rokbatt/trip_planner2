@@ -298,6 +298,7 @@ export function teardownRoute(): void {
   dayRangeStartDate = null;
   panelCollapsed = false;
   leftPanelCollapsed = false;
+  showCostInKRW = false;
   highlightedPlaceId = null;
   hoveredPlaceId = null;
   adhocMode = false;
@@ -1734,7 +1735,33 @@ function currencyOf(legs: Leg[]): string {
   return withFare?.fare?.currency ?? 'THB';
 }
 
+// "예상 교통비 원화로 보기" 토글 — 켜져 있으면 fmtCost가 캐시된 환율로 원화 환산해 보여준다.
+let showCostInKRW = false;
+const krwRateCache = new Map<string, number>();
+const krwRateFetchInFlight = new Set<string>();
+
+/** currency→KRW 환율을 백그라운드로 받아와 캐시하고, 도착하면 패널을 다시 그린다.
+ * 이미 캐시됐거나 요청 중이면 아무것도 안 함(중복 호출 방지). */
+function ensureKrwRate(currency: string): void {
+  if (currency === 'KRW' || krwRateCache.has(currency) || krwRateFetchInFlight.has(currency)) return;
+  krwRateFetchInFlight.add(currency);
+  fetch('/api/exchange-rate?from=' + encodeURIComponent(currency))
+    .then((res) => res.json())
+    .then((data) => {
+      if (typeof data?.rate === 'number' && data.rate > 0) {
+        krwRateCache.set(currency, data.rate);
+        if (showCostInKRW && rtContainer) renderRightPanel(rtContainer);
+      }
+    })
+    .catch((e) => console.error('[Route] 환율 조회 실패:', (e as Error).message))
+    .finally(() => krwRateFetchInFlight.delete(currency));
+}
+
 function fmtCost(amount: number, currency: string): string {
+  if (showCostInKRW && currency !== 'KRW') {
+    const rate = krwRateCache.get(currency);
+    if (rate != null) return Math.round(amount * rate).toLocaleString() + '원';
+  }
   return amount.toLocaleString() + ' ' + currency;
 }
 
@@ -2471,6 +2498,7 @@ function renderRightPanel(container: HTMLElement): void {
   const totalKm = legs.reduce((sum, l) => sum + l.km, 0);
   const dayIndex = days.findIndex((d) => d.id === day.id);
   const cur = currencyOf(legs);
+  if (showCostInKRW) ensureKrwRate(cur);
   const dColor = dayColorFor(Math.max(0, dayIndex));
 
   const rows: string[] = [];
@@ -2516,8 +2544,8 @@ function renderRightPanel(container: HTMLElement): void {
     if (i < legs.length) {
       const leg = legs[i];
       const key = legKey(p.id, stops[i + 1].id);
-      // 지도에서 장소를 클릭하면 그 장소와 이어지는 두 구간이 강조되는 것과 같은 기준으로 맞춘다.
-      const selected = highlightedPlaceId === p.id || highlightedPlaceId === stops[i + 1].id;
+      // 지도에서 장소를 클릭하면 그 장소로 "들어오는" 구간만 강조되는 것과 같은 기준으로 맞춘다.
+      const selected = highlightedPlaceId === stops[i + 1].id;
       const manual = legModeOverride.has(key);
       const extra = leg.costTHB > 0 ? fmtCost(leg.costTHB, cur) : (leg.mode === 'WALK' ? fmtKm(leg.km) : '무료');
       rows.push(
@@ -2563,7 +2591,12 @@ function renderRightPanel(container: HTMLElement): void {
     '<div class="rt-panel-summary">',
     '  <div class="rt-panel-summary-item"><div class="rt-panel-summary-label">총 이동시간</div><div class="rt-panel-summary-value">' + fmtMin(s.totalMin) + '</div></div>',
     '  <div class="rt-panel-summary-item"><div class="rt-panel-summary-label">총 이동거리</div><div class="rt-panel-summary-value">' + totalKm.toFixed(1) + 'km</div></div>',
-    '  <div class="rt-panel-summary-item"><div class="rt-panel-summary-label">예상 교통비</div><div class="rt-panel-summary-value">' + fmtCost(s.totalCost, cur) + '</div></div>',
+    '  <div class="rt-panel-summary-item">' +
+      '<div class="rt-panel-summary-label">예상 교통비' +
+      '<button type="button" class="rt-cost-toggle' + (showCostInKRW ? ' active' : '') + '" id="rt-cost-toggle"' +
+      ' title="' + (showCostInKRW ? '현지 통화(' + cur + ')로 보기' : '원화로 보기') + '" aria-pressed="' + showCostInKRW + '">₩</button>' +
+      '</div>' +
+      '<div class="rt-panel-summary-value">' + fmtCost(s.totalCost, cur) + '</div></div>',
     '</div>',
     // 원칙 3-1 — 실측/추정을 섞어 쓰므로 어느 쪽인지 반드시 구분해 표기
     '<div class="rt-panel-estimate-note">' + estimateNoteHtml(legs) + '</div>',
@@ -2673,6 +2706,11 @@ function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
   el.querySelector('#rt-panel-more')?.addEventListener('click', (e) => {
     e.stopPropagation();
     togglePanelMenu(container, el.querySelector('.rt-panel-header') as HTMLElement);
+  });
+  el.querySelector('#rt-cost-toggle')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    showCostInKRW = !showCostInKRW;
+    renderRightPanel(container);
   });
   el.querySelector('#rt-panel-add')?.addEventListener('click', () => {
     (container.querySelector('#rt-float-search-input') as HTMLElement | null)?.focus();
@@ -2792,10 +2830,12 @@ function stopIdentityColor(): string {
   return AERO_BLUE;
 }
 // 방향 화살표 대신 점선 자체로 "동선"임을 표현 — 모든 이동수단을 점선으로 통일했다.
-const MODE_STYLE: Record<Leg['mode'], { weight: number; dashed: boolean }> = {
-  WALK: { weight: 3.5, dashed: true },
-  TRANSIT: { weight: 4, dashed: true },
-  TAXI: { weight: 4, dashed: true },
+// 두께는 항상 얇게 고정(줌 배율과 무관) — 이동수단 구분은 색이 아니라 캡슐 배지의
+// 아이콘/라벨과 모드 전환 노드가 담당한다.
+const MODE_STYLE: Record<Leg['mode'], { weight: number }> = {
+  WALK: { weight: 2.2 },
+  TRANSIT: { weight: 2.2 },
+  TAXI: { weight: 2.2 },
 };
 
 async function initMap(container: HTMLElement): Promise<void> {
@@ -2963,14 +3003,14 @@ function drawRouteOnMap(refit: boolean): void {
   stops.forEach((p, i) => {
     const isBasecamp = isBasecampPlace(p, dayIndex);
     const baseColor = stopIdentityColor();
-    // 여행은 아직 미래라 실제 "완료"는 없다. 선택한 지점을 현재로 보고 앞/뒤를 나눠
-    // 진행 방향이 읽히게 한다. 아무것도 선택하지 않았으면 각자의 정체성 색 그대로.
+    // 어떤 장소를 클릭/호버하면 그 장소(current)와 바로 이전 정류지(adjacent)만 강조하고,
+    // 나머지는 전부 회색으로 물러난다 — "그 장소로 가는 구간 + 이전 장소만" 강조라는 원칙.
+    // 아무것도 선택하지 않았으면 각자의 정체성 색 그대로.
     let phase: StopPhase = 'plain';
     if (focusIdx >= 0) {
-      if (i < focusIdx) phase = 'done';
-      else if (i === focusIdx) phase = 'current';
-      else if (i === focusIdx + 1) phase = 'next';
-      else phase = 'plain';
+      if (i === focusIdx) phase = 'current';
+      else if (i === focusIdx - 1) phase = 'adjacent';
+      else phase = 'dimmed';
     }
     const marker = buildMarkerV2(g, p, {
       isBasecamp,
@@ -3002,9 +3042,11 @@ function drawRouteOnMap(refit: boolean): void {
     const overlapIndex = seenLegs.get(geomKey) ?? 0;
     seenLegs.set(geomKey, overlapIndex + 1);
 
-    // 경로선은 장소 핀 포커스와 상관없이 항상 같은 모습 — 강조는 핀(halo)에서만 표현하고,
-    // 이동시간/비용 정보는 그 장소 클릭 시 패널에서 확인한다.
-    const line = buildLegPolyline(g, stops[i], stops[i + 1], leg, { overlapIndex });
+    // 이 구간이 포커스된 장소로 "들어오는" 구간이면(=stops[i+1]가 포커스) 강조,
+    // 포커스가 있는데 이 구간이 아니면 회색으로 물러난다.
+    const selected = focusIdx >= 0 && i + 1 === focusIdx;
+    const dimmed = focusIdx >= 0 && !selected;
+    const line = buildLegPolyline(g, stops[i], stops[i + 1], leg, { overlapIndex, selected, dimmed });
     line.addListener('click', () => handleLegClick(stops[i].id, stops[i + 1].id));
     routePolylines.push(line);
 
@@ -3352,15 +3394,17 @@ function iconInner(svg: string): string {
   return svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
 }
 
-/** 동선 안에서의 위치에 따른 핀 상태 — 경로를 클릭해 진행 방향을 볼 때만 이 색이 끼어든다 */
-type StopPhase = 'current' | 'next' | 'done' | 'plain';
+/** 동선 안에서의 위치에 따른 핀 상태 — 어떤 장소를 클릭/호버하면 그 장소로 "들어오는" 구간과
+ * 바로 이전 정류지만 강조되고, 그 외 전부(이전의 이전, 이후 전부)는 회색으로 물러난다. */
+type StopPhase = 'current' | 'adjacent' | 'dimmed' | 'plain';
 
 /** baseColor는 아무것도 포커스하지 않은 평소 상태('plain')에 쓰는 그 정류지 고유색
  * (stopIdentityColor) — 클릭으로 선택된 지점('current')도 halo/ring만으로 강조하고 색은
- * 원래 색 그대로 유지한다. next/done만 진행 상태 색을 얹는다. */
+ * 원래 색 그대로 유지한다. 바로 이전 정류지('adjacent')만 강조색을 얹고, 나머지는
+ * 포커스가 있을 때 전부 회색('dimmed')으로 물러난다. */
 function phaseColor(phase: StopPhase, baseColor: string): string {
-  if (phase === 'next') return ROUTE_NEXT;
-  if (phase === 'done') return ROUTE_GRAY;
+  if (phase === 'adjacent') return ROUTE_NEXT;
+  if (phase === 'dimmed') return ROUTE_GRAY;
   return baseColor; // current(선택 강조는 halo가 담당) / plain
 }
 
@@ -3628,10 +3672,16 @@ function offsetPath(path: LatLngLit[], meters: number): LatLngLit[] {
 interface LegDrawOpts {
   /** 같은 구간이 여러 번 그려질 때의 회차 (0이면 오프셋 없음) */
   overlapIndex: number;
+  /** 클릭/호버로 포커스된 장소로 "들어오는" 구간이면 true — 이 구간만 진하게 강조 */
+  selected: boolean;
+  /** 포커스가 있는데 이 구간은 선택되지 않았으면 true — 회색으로 물러남 */
+  dimmed: boolean;
 }
 
-// 장소 핀을 클릭해도 경로선은 강조/디밍 없이 항상 같은 모습을 유지한다(강조는 핀 쪽에서만).
-const LEG_LINE_OPACITY = 0.85;
+// 점선 두께·간격은 줌 배율과 무관하게 항상 고정 — 축소해도 뭉개지거나 두꺼워지지 않고
+// 늘 같은 촘촘한 점선으로 보이게 한다. 테두리/글로우 없이 점선 자체만 그린다.
+const LEG_DASH_SCALE = 3; // 대시 하나 길이(2*scale px)
+const LEG_DASH_REPEAT = '9px'; // 대시 시작점 간격 — 짧고 촘촘하게
 
 function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDrawOpts): any {
   const style = MODE_STYLE[leg.mode];
@@ -3644,59 +3694,27 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
   }
   if (opts.overlapIndex > 0) path = offsetPath(path, opts.overlapIndex * 28);
 
-  const weight = style.weight;
+  const color = opts.dimmed ? ROUTE_GRAY : AERO_BLUE;
+  const opacity = opts.dimmed ? 0.5 : opts.selected ? 1 : 0.85;
+  const weight = opts.selected ? style.weight + 1 : style.weight;
 
-  // 점선 아이콘의 scale은 구글맵 심볼 스펙상 "화면 픽셀" 고정값이라, 지도를 축소해도 저절로
-  // 작아지지 않고 상대적으로 점점 커 보인다 — 핀 크기를 줄일 때 쓰는 것과 같은 줌 기반 배율을
-  // 곱해 지도 축소에 맞춰 자연스럽게 함께 작아지게 한다.
-  // 방향을 가리키는 화살표는 없애고 점선만으로 동선을 표현 — 대시 길이를 넉넉히 키워
-  // (예전엔 짧은 틱 모양이라 점처럼 보였음) 12px 대시/8px 간격 정도의 또렷한 점선으로.
-  const iconZoomScale = pinZoomScale();
   const icons: any[] = [
     {
-      icon: { path: 'M 0,-1 0,1', strokeOpacity: LEG_LINE_OPACITY, strokeColor: AERO_BLUE, strokeWeight: weight, scale: 6 * iconZoomScale },
+      icon: { path: 'M 0,-1 0,1', strokeOpacity: opacity, strokeColor: color, strokeWeight: weight, scale: LEG_DASH_SCALE },
       offset: '0',
-      repeat: '20px',
+      repeat: LEG_DASH_REPEAT,
     },
   ];
-
-  // 은은한 Aero Blue 광채(glow) — 흰 아웃라인 바로 아래에 넓고 옅게 깔아 "활주로 레이더"
-  // 느낌의 살짝 빛나는 경로선을 만든다.
-  routePolylines.push(
-    new g.maps.Polyline({
-      map: mapInstance,
-      path,
-      geodesic: true,
-      strokeColor: AERO_BLUE,
-      strokeOpacity: 0.22,
-      strokeWeight: weight + 8,
-      zIndex: 7,
-    })
-  );
-
-  // 흰 테두리를 깔아 지도 배경과 대비를 만든다(도로 위에서도 선이 또렷하게 보임) —
-  // 예전 대비 절반 두께(+3 → +1.5)로 얇게.
-  routePolylines.push(
-    new g.maps.Polyline({
-      map: mapInstance,
-      path,
-      geodesic: true,
-      strokeColor: '#FFFFFF',
-      strokeOpacity: 0.9,
-      strokeWeight: weight + 1.5,
-      zIndex: 8,
-    })
-  );
 
   return new g.maps.Polyline({
     map: mapInstance,
     path,
     geodesic: true,
-    strokeColor: AERO_BLUE,
+    strokeColor: color,
     strokeOpacity: 0,
     strokeWeight: weight,
     icons,
-    zIndex: 10,
+    zIndex: opts.selected ? 12 : 10,
   });
 }
 
