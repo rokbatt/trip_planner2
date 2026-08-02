@@ -59,6 +59,7 @@ const ICON_COMMENT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 const ICON_SWAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3L3 7l4 4M3 7h13a4 4 0 0 1 4 4v1M17 21l4-4-4-4M21 17H8a4 4 0 0 1-4-4v-1"/></svg>';
 const ICON_EXPAND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
 const ICON_COLLAPSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v3a2 2 0 0 1-2 2H4M15 3v3a2 2 0 0 0 2 2h3M4 15h3a2 2 0 0 1 2 2v3M21 15h-3a2 2 0 0 0-2 2v3"/></svg>';
+const ICON_GROUP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.8"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.8"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.8"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.8"/></svg>';
 
 const GATES: GateConfig[] = [
   { key: '가고싶어', step: 'GATE 01', label: 'VISIT',    icon: ICON_PIN },
@@ -110,10 +111,6 @@ function classifyPlace(place: Pick<Place, 'name' | 'category'>): Suggestion | nu
 /** 문자열 zone key ↔ DB mood 값 변환. 인박스는 '' 로 표현, DB에는 null 저장 */
 function zoneToMood(zone: string): string | null {
   return zone === '' ? null : zone;
-}
-
-function zoneListId(mood: string | null): string {
-  return mood === null ? 'inbox-list' : 'glist-' + mood;
 }
 
 function escapeHtml(str: string): string {
@@ -242,6 +239,23 @@ let commentRealtimeChannel: RealtimeChannel | null = null;
 let commentsViewedHandler: ((e: Event) => void) | null = null;
 const COMMENT_READ_PREFIX = 'mongsil_comment_read_';
 
+/* ── 장소 그룹핑(Group) 다중선택 상태 ──
+ * 케밥 메뉴의 "Group"을 누르면 해당 게이트가 선택 모드로 바뀌고, 카드를 눌러 토글하다가
+ * 하단 플로팅 툴바에서 확정한다. 게이트 하나에서만 동시에 진행 가능. */
+interface GroupSelectState {
+  gateKey: string;
+  mode: 'create' | 'add';
+  groupId: string | null; // 'add' 모드일 때 기존 그룹 id
+  lockedIds: Set<string>; // 이미 그룹 멤버라 선택 해제 불가(개별 제외는 카드 케밥에서)
+  selectedIds: Set<string>;
+}
+let groupSelectState: GroupSelectState | null = null;
+let groupSelectKeyHandler: ((e: KeyboardEvent) => void) | null = null;
+
+function generateGroupId(): string {
+  return 'grp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}
+
 export function teardownBoard(): void {
   boardGeneration++; // 진행 중인 재시도/콜백을 즉시 무효화
   if (realtimeChannel) {
@@ -270,6 +284,7 @@ export function teardownBoard(): void {
   aiPicksExpanded = false;
   closeDestSwitcher();
   cleanupAutocomplete();
+  exitGroupSelectMode();
 }
 
 /** 자동완성 드롭다운/디바운스 타이머 정리 */
@@ -388,8 +403,12 @@ async function deleteIdeaNow(placeId: string): Promise<boolean> {
   return true;
 }
 
+/** 게이트 간 이동(mood 변경) — 그룹은 게이트 하나 안에서만 의미가 있으므로 항상 같이 해제 */
 async function movePlace(placeId: string, newMood: string | null): Promise<boolean> {
-  const { error } = await supabase.from('places').update({ mood: newMood }).eq('id', placeId);
+  const { error } = await supabase
+    .from('places')
+    .update({ mood: newMood, group_id: null, group_name: null, group_order: null })
+    .eq('id', placeId);
   if (error) {
     console.error('Zone move error:', error.message);
     return false;
@@ -479,7 +498,7 @@ export async function renderBoardContent(container: HTMLElement, tripId: string)
   const security = buildSecuritySignage();
   securityEl = security;
   layout.appendChild(security);
-  layout.appendChild(buildGates(tripId, places));
+  layout.appendChild(buildGates(tripId));
   applyGateFocusState(); // 여행지 전환 등으로 재렌더돼도 포커스 중이던 게이트 상태를 그대로 반영
 
   subscribeRealtime(tripId);
@@ -614,13 +633,23 @@ function subscribeRealtime(tripId: string): void {
         placesCache.set(row.id, row);
         // 다른 여행지에 추가된 장소는 이 보드(활성 여행지)에 표시하지 않음
         if (boardActiveDest && !placeBelongsToDestination(row, boardActiveDest)) return;
-        const listEl = document.getElementById(zoneListId(row.mood));
+
+        if (row.mood === null) {
+          const listEl = document.getElementById('inbox-list');
+          if (!listEl) return;
+          removeEmptyState(listEl);
+          const el = createTicket(row);
+          listEl.appendChild(el);
+          triggerLightSweep(el);
+          updateZoneCount(listEl);
+          return;
+        }
+
+        const listEl = document.getElementById('glist-' + row.mood);
         if (!listEl) return;
-        removeEmptyState(listEl);
-        const el = row.mood === null ? createTicket(row) : createBoardingCard(row);
-        listEl.appendChild(el);
-        triggerLightSweep(el);
-        updateZoneCount(listEl);
+        renderGateListContent(listEl, row.mood);
+        const newEl = listEl.querySelector('[data-place-id="' + row.id + '"]') as HTMLElement | null;
+        if (newEl) triggerLightSweep(newEl);
       }
     )
     .on(
@@ -629,7 +658,18 @@ function subscribeRealtime(tripId: string): void {
       (payload) => {
         const oldRow = payload.old as { id: string };
         if (recentlyMutatedIds.has(oldRow.id)) return;
+        const prev = placesCache.get(oldRow.id);
         placesCache.delete(oldRow.id);
+
+        if (prev?.mood) {
+          // 게이트 소속이었으면 통째로 다시 그려서 그룹 클러스터 개수도 같이 갱신
+          const listEl = document.getElementById('glist-' + prev.mood);
+          if (listEl) {
+            renderGateListContent(listEl, prev.mood);
+            return;
+          }
+        }
+
         const el = document.querySelector('[data-place-id="' + oldRow.id + '"]') as HTMLElement | null;
         if (!el) return;
         const listEl = el.closest('[data-zone]') as HTMLElement | null;
@@ -646,39 +686,58 @@ function subscribeRealtime(tripId: string): void {
       (payload) => {
         const row = payload.new as Place;
         if (recentlyMutatedIds.has(row.id)) return;
+        const prev = placesCache.get(row.id);
         placesCache.set(row.id, row);
 
-        const targetListEl = document.getElementById(zoneListId(row.mood));
-        if (!targetListEl) return;
+        const prevZoneKey = prev?.mood ?? null;
+        const newZoneKey = row.mood ?? null;
 
-        const el = document.querySelector('[data-place-id="' + row.id + '"]') as HTMLElement | null;
-        if (el) {
-          const currentZoneEl = el.closest('[data-zone]') as HTMLElement | null;
-          if (currentZoneEl === targetListEl) {
-            // 무드는 그대로, 다른 사람이 순서만 바꾼 경우 — sort_order 기준으로 재배치
-            const siblings = Array.from(targetListEl.querySelectorAll('.bd-ticket, .bd-card')) as HTMLElement[];
-            const afterEl = siblings.find((s) => {
-              const sid = s.dataset.placeId;
-              if (!sid || sid === row.id) return false;
-              const sp = placesCache.get(sid);
-              return sp !== undefined && sp.sort_order > row.sort_order;
-            });
-            if (afterEl) targetListEl.insertBefore(el, afterEl);
-            else targetListEl.appendChild(el);
-            return;
-          }
-          el.remove();
-          if (currentZoneEl) {
-            updateZoneCount(currentZoneEl);
-            ensureEmptyState(currentZoneEl);
-          }
+        // 이전에 속해 있던 게이트가 바뀌었다면, 남겨두고 온 그 게이트도 다시 그려서 카드를 뺀다
+        if (prevZoneKey !== null && prevZoneKey !== newZoneKey) {
+          const prevListEl = document.getElementById('glist-' + prevZoneKey);
+          if (prevListEl) renderGateListContent(prevListEl, prevZoneKey);
         }
 
-        removeEmptyState(targetListEl);
-        const newEl = row.mood === null ? createTicket(row) : createBoardingCard(row);
-        targetListEl.appendChild(newEl);
-        triggerLightSweep(newEl);
-        updateZoneCount(targetListEl);
+        if (newZoneKey === null) {
+          // 인박스는 그룹 개념이 없는 단순 리스트라 기존 방식(부분 patch) 그대로 유지
+          const targetListEl = document.getElementById('inbox-list');
+          if (!targetListEl) return;
+
+          const el = document.querySelector('[data-place-id="' + row.id + '"]') as HTMLElement | null;
+          if (el) {
+            const currentZoneEl = el.closest('[data-zone]') as HTMLElement | null;
+            if (currentZoneEl === targetListEl) {
+              const siblings = Array.from(targetListEl.querySelectorAll('.bd-ticket, .bd-card')) as HTMLElement[];
+              const afterEl = siblings.find((s) => {
+                const sid = s.dataset.placeId;
+                if (!sid || sid === row.id) return false;
+                const sp = placesCache.get(sid);
+                return sp !== undefined && sp.sort_order > row.sort_order;
+              });
+              if (afterEl) targetListEl.insertBefore(el, afterEl);
+              else targetListEl.appendChild(el);
+              return;
+            }
+            el.remove();
+            if (currentZoneEl) {
+              updateZoneCount(currentZoneEl);
+              ensureEmptyState(currentZoneEl);
+            }
+          }
+
+          removeEmptyState(targetListEl);
+          const newEl = createTicket(row);
+          targetListEl.appendChild(newEl);
+          triggerLightSweep(newEl);
+          updateZoneCount(targetListEl);
+          return;
+        }
+
+        const targetListEl = document.getElementById('glist-' + newZoneKey);
+        if (!targetListEl) return;
+        renderGateListContent(targetListEl, newZoneKey);
+        const newEl = targetListEl.querySelector('[data-place-id="' + row.id + '"]') as HTMLElement | null;
+        if (newEl) triggerLightSweep(newEl);
       }
     )
     .subscribe();
@@ -1375,13 +1434,11 @@ function bindSuggestionChip(ticket: HTMLElement, id: string, s: Suggestion): voi
       ensureEmptyState(inboxList);
     }
     if (targetList && place) {
-      const updated = { ...place, mood: s.gate };
+      const updated = { ...place, mood: s.gate, group_id: null, group_name: null, group_order: null };
       placesCache.set(id, updated);
-      removeEmptyState(targetList);
-      const newCard = createBoardingCard(updated);
-      targetList.appendChild(newCard);
-      triggerLightSweep(newCard);
-      updateZoneCount(targetList);
+      renderGateListContent(targetList, s.gate);
+      const newCard = targetList.querySelector('[data-place-id="' + id + '"]') as HTMLElement | null;
+      if (newCard) triggerLightSweep(newCard);
     }
   });
 
@@ -1407,19 +1464,18 @@ function buildSecuritySignage(): HTMLElement {
 }
 
 /* ── 우측: 4개 게이트 (가로 배열, 각 게이트 내부는 세로 스택) ── */
-function buildGates(tripId: string, allPlaces: Place[]): HTMLElement {
+function buildGates(tripId: string): HTMLElement {
   const gates = document.createElement('div');
   gates.className = 'bd-gates';
 
   GATES.forEach((gate) => {
-    const items = allPlaces.filter((p) => p.mood === gate.key);
-    gates.appendChild(createGateColumn(tripId, gate, items));
+    gates.appendChild(createGateColumn(tripId, gate));
   });
 
   return gates;
 }
 
-function createGateColumn(_tripId: string, gate: GateConfig, items: Place[]): HTMLElement {
+function createGateColumn(_tripId: string, gate: GateConfig): HTMLElement {
   const col = document.createElement('div');
   col.className = 'bd-gate';
   col.dataset.gate = gate.key;
@@ -1430,7 +1486,7 @@ function createGateColumn(_tripId: string, gate: GateConfig, items: Place[]): HT
     '  <div class="bd-gate-label-row">',
     '    <span class="bd-gate-icon">' + gate.icon + '</span>',
     '    <span class="bd-gate-label">' + gate.label + '</span>',
-    '    <span class="bd-gate-count" id="gcount-' + gate.key + '">' + items.length + '</span>',
+    '    <span class="bd-gate-count" id="gcount-' + gate.key + '">0</span>',
     '    <button type="button" class="bd-gate-expand" data-gate="' + gate.key + '" title="이 게이트만 크게 보기">' + ICON_EXPAND + '</button>',
     '  </div>',
     '</div>',
@@ -1438,11 +1494,7 @@ function createGateColumn(_tripId: string, gate: GateConfig, items: Place[]): HT
   ].join('\n');
 
   const listEl = col.querySelector('.bd-gate-list') as HTMLElement;
-  if (items.length === 0) {
-    listEl.innerHTML = '<div class="bd-empty bd-empty-sm"><div class="bd-empty-hint">아이디어를 여기로 드래그하세요</div></div>';
-  } else {
-    items.forEach((item) => listEl.appendChild(createBoardingCard(item)));
-  }
+  renderGateListContent(listEl, gate.key);
 
   attachDropzone(listEl);
   col.querySelector('.bd-gate-expand')?.addEventListener('click', (e) => {
@@ -1451,6 +1503,322 @@ function createGateColumn(_tripId: string, gate: GateConfig, items: Place[]): HT
   });
 
   return col;
+}
+
+/* ══════════════════ 장소 그룹핑(Group) ══════════════════
+ * 그룹은 별도 테이블 없이 places.group_id/group_name/group_order 3개 컬럼으로 표현한다
+ * (같은 게이트 안에서만 의미가 있고, 멤버 전원이 같은 값을 공유하는 단순 태그).
+ * 게이트 리스트는 항상 placesCache에서 다시 계산해서 그린다(부분 패치 대신 전체 재구성) —
+ * 그룹 유무에 따라 카드가 클러스터 박스 안/밖으로 옮겨다녀야 해서 삽입 위치를 일일이
+ * 계산하는 것보다 훨씬 단순하고 안전하다. 게이트 하나당 카드 수가 많지 않아 비용도 낮다. */
+
+/** 게이트 안 정렬 규칙: 그룹(먼저 만든 그룹이 위) → 그룹 없는 장소, 그 안에서는 sort_order 순 */
+function gateSortCompare(a: Place, b: Place): number {
+  const rankA = a.group_id ? (a.group_order ?? 0) : Number.MAX_SAFE_INTEGER;
+  const rankB = b.group_id ? (b.group_order ?? 0) : Number.MAX_SAFE_INTEGER;
+  if (rankA !== rankB) return rankA - rankB;
+  return a.sort_order - b.sort_order;
+}
+
+/** 게이트 리스트 하나를 placesCache 기준으로 통째로 다시 그린다(그룹 클러스터 포함) */
+function renderGateListContent(listEl: HTMLElement, gateKey: string): void {
+  const items = Array.from(placesCache.values())
+    .filter((p) => p.mood === gateKey)
+    .filter((p) => !boardActiveDest || placeBelongsToDestination(p, boardActiveDest))
+    .sort(gateSortCompare);
+
+  listEl.innerHTML = '';
+
+  if (items.length === 0) {
+    listEl.innerHTML = '<div class="bd-empty bd-empty-sm"><div class="bd-empty-hint">아이디어를 여기로 드래그하세요</div></div>';
+    updateZoneCount(listEl);
+    return;
+  }
+
+  let i = 0;
+  while (i < items.length) {
+    const place = items[i];
+    if (place.group_id) {
+      const groupId = place.group_id;
+      const members: Place[] = [];
+      while (i < items.length && items[i].group_id === groupId) {
+        members.push(items[i]);
+        i++;
+      }
+      listEl.appendChild(buildGroupCluster(groupId, members, gateKey));
+    } else {
+      listEl.appendChild(createBoardingCard(place));
+      i++;
+    }
+  }
+
+  if (groupSelectState && groupSelectState.gateKey === gateKey) {
+    applySelectOverlays(listEl);
+  }
+  updateZoneCount(listEl);
+}
+
+/** 그룹 멤버 카드들을 테두리 있는 박스 하나로 묶어서 보여준다 */
+function buildGroupCluster(groupId: string, members: Place[], gateKey: string): HTMLElement {
+  const cluster = document.createElement('div');
+  cluster.className = 'bd-group-cluster';
+  cluster.dataset.groupId = groupId;
+
+  const name = members[0]?.group_name;
+  cluster.innerHTML = [
+    '<div class="bd-group-cluster-header">',
+    '  <span class="bd-group-cluster-icon">' + ICON_GROUP + '</span>',
+    '  <span class="bd-group-cluster-name">' + (name ? escapeHtml(name) : '그룹') + '</span>',
+    '  <span class="bd-group-cluster-count">' + members.length + '</span>',
+    '  <button type="button" class="bd-group-cluster-dissolve" title="그룹 해제">' + ICON_CLEAR + '</button>',
+    '</div>',
+    '<div class="bd-group-cluster-body"></div>',
+  ].join('');
+
+  const body = cluster.querySelector('.bd-group-cluster-body') as HTMLElement;
+  members.forEach((m) => body.appendChild(createBoardingCard(m)));
+
+  cluster.querySelector('.bd-group-cluster-dissolve')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dissolveGroup(groupId, gateKey);
+  });
+
+  return cluster;
+}
+
+/** 케밥 "Group"/"그룹에 추가" — 해당 게이트를 다중선택 모드로 전환 */
+function enterGroupSelectMode(originPlace: Place, existingGroupId: string | null): void {
+  exitGroupSelectMode();
+
+  const gateKey = originPlace.mood;
+  if (!gateKey) return;
+
+  const lockedIds = new Set<string>();
+  const selectedIds = new Set<string>();
+  if (existingGroupId) {
+    placesCache.forEach((p) => {
+      if (p.group_id === existingGroupId) {
+        lockedIds.add(p.id);
+        selectedIds.add(p.id);
+      }
+    });
+  } else {
+    selectedIds.add(originPlace.id);
+  }
+
+  const listEl = document.getElementById('glist-' + gateKey);
+  const col = listEl?.closest('.bd-gate') as HTMLElement | null;
+  if (!listEl || !col) return;
+
+  groupSelectState = { gateKey, mode: existingGroupId ? 'add' : 'create', groupId: existingGroupId, lockedIds, selectedIds };
+
+  col.classList.add('group-select-mode');
+  applySelectOverlays(listEl);
+  renderGroupToolbar();
+
+  groupSelectKeyHandler = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') exitGroupSelectMode();
+  };
+  document.addEventListener('keydown', groupSelectKeyHandler);
+}
+
+/** 선택 모드 체크 오버레이를 게이트 안 모든 카드에 붙이거나 상태를 갱신 */
+function applySelectOverlays(listEl: HTMLElement): void {
+  if (!groupSelectState) return;
+  const state = groupSelectState;
+
+  listEl.querySelectorAll('.bd-card').forEach((cardEl) => {
+    const el = cardEl as HTMLElement;
+    const id = el.dataset.placeId;
+    if (!id) return;
+    el.draggable = false;
+
+    let toggle = el.querySelector('.bd-card-select-toggle') as HTMLElement | null;
+    if (!toggle) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      toggle = btn;
+      toggle.className = 'bd-card-select-toggle';
+      toggle.innerHTML = ICON_CHECK;
+      el.prepend(toggle);
+      toggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        toggleCardSelection(id);
+      });
+    }
+
+    toggle.classList.toggle('checked', state.selectedIds.has(id));
+    toggle.classList.toggle('locked', state.lockedIds.has(id));
+  });
+}
+
+function toggleCardSelection(id: string): void {
+  if (!groupSelectState || groupSelectState.lockedIds.has(id)) return;
+
+  if (groupSelectState.selectedIds.has(id)) groupSelectState.selectedIds.delete(id);
+  else groupSelectState.selectedIds.add(id);
+
+  const listEl = document.getElementById('glist-' + groupSelectState.gateKey);
+  if (listEl) applySelectOverlays(listEl);
+  renderGroupToolbar();
+}
+
+/** 화면 하단 플로팅 툴바 — 선택 개수, (그룹 만들기일 때만) 이름 입력, 확정/취소 */
+function renderGroupToolbar(): void {
+  if (!groupSelectState) return;
+  const { mode, selectedIds, lockedIds } = groupSelectState;
+
+  let bar = document.getElementById('bd-group-toolbar') as HTMLElement | null;
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'bd-group-toolbar';
+    bar.className = 'bd-group-toolbar';
+    document.body.appendChild(bar);
+  }
+
+  const newCount = mode === 'add'
+    ? Array.from(selectedIds).filter((id) => !lockedIds.has(id)).length
+    : selectedIds.size;
+  const canConfirm = mode === 'add' ? newCount >= 1 : selectedIds.size >= 2;
+  const prevName = (document.getElementById('bd-group-name-input') as HTMLInputElement | null)?.value ?? '';
+
+  bar.innerHTML = [
+    '<span class="bd-group-toolbar-count">' + selectedIds.size + '개 선택됨</span>',
+    mode === 'create'
+      ? '<input type="text" class="bd-group-toolbar-name" id="bd-group-name-input" placeholder="그룹 이름 (선택)" maxlength="30" value="' + escapeHtml(prevName) + '" />'
+      : '',
+    '<div class="bd-group-toolbar-actions">',
+    '  <button type="button" class="bd-group-toolbar-cancel" id="bd-group-cancel">취소</button>',
+    '  <button type="button" class="bd-group-toolbar-confirm" id="bd-group-confirm"' + (canConfirm ? '' : ' disabled') + '>' + (mode === 'create' ? '그룹 만들기' : '추가하기') + '</button>',
+    '</div>',
+  ].join('');
+
+  bar.querySelector('#bd-group-cancel')?.addEventListener('click', () => exitGroupSelectMode());
+  bar.querySelector('#bd-group-confirm')?.addEventListener('click', () => confirmGroupSelection());
+}
+
+function exitGroupSelectMode(): void {
+  if (groupSelectKeyHandler) {
+    document.removeEventListener('keydown', groupSelectKeyHandler);
+    groupSelectKeyHandler = null;
+  }
+  document.getElementById('bd-group-toolbar')?.remove();
+  if (!groupSelectState) return;
+
+  const gateKey = groupSelectState.gateKey;
+  groupSelectState = null;
+
+  const listEl = document.getElementById('glist-' + gateKey);
+  const col = listEl?.closest('.bd-gate') as HTMLElement | null;
+  col?.classList.remove('group-select-mode');
+  listEl?.querySelectorAll('.bd-card-select-toggle').forEach((t) => t.remove());
+  listEl?.querySelectorAll('.bd-card').forEach((el) => {
+    const cardEl = el as HTMLElement;
+    const place = placesCache.get(cardEl.dataset.placeId ?? '');
+    cardEl.draggable = !place?.group_id;
+  });
+}
+
+/** 선택 확정 — 새 그룹 생성 또는 기존 그룹에 멤버 추가 */
+async function confirmGroupSelection(): Promise<void> {
+  if (!groupSelectState) return;
+  const { gateKey, mode, groupId, selectedIds, lockedIds } = groupSelectState;
+
+  const targetIds = Array.from(selectedIds);
+  if (mode === 'create' && targetIds.length < 2) return;
+
+  const newIds = mode === 'add' ? targetIds.filter((id) => !lockedIds.has(id)) : targetIds;
+  if (newIds.length === 0) return;
+
+  const nameInput = document.getElementById('bd-group-name-input') as HTMLInputElement | null;
+  const finalGroupId = mode === 'add' ? groupId! : generateGroupId();
+  const finalGroupOrder = mode === 'add'
+    ? (placesCache.get(targetIds.find((id) => lockedIds.has(id)) ?? '')?.group_order ?? Date.now())
+    : Date.now();
+  const finalGroupName = mode === 'add'
+    ? (placesCache.get(targetIds.find((id) => lockedIds.has(id)) ?? '')?.group_name ?? null)
+    : (nameInput?.value.trim() || null);
+
+  const idsToUpdate = mode === 'add' ? newIds : targetIds;
+  exitGroupSelectMode();
+
+  const { error } = await supabase
+    .from('places')
+    .update({ group_id: finalGroupId, group_name: finalGroupName, group_order: finalGroupOrder })
+    .in('id', idsToUpdate);
+
+  if (error) {
+    console.error('Group save error:', error.message);
+    return;
+  }
+
+  idsToUpdate.forEach((id) => {
+    markRecentlyMutated(id);
+    const p = placesCache.get(id);
+    if (p) placesCache.set(id, { ...p, group_id: finalGroupId, group_name: finalGroupName, group_order: finalGroupOrder });
+  });
+
+  const listEl = document.getElementById('glist-' + gateKey);
+  if (listEl) renderGateListContent(listEl, gateKey);
+}
+
+/** 카드 하나만 그룹에서 제외 — 남는 멤버가 1명이면 그룹 자체가 의미 없으므로 같이 해제 */
+async function removeFromGroup(place: Place): Promise<void> {
+  if (!place.group_id || !place.mood) return;
+  const groupId = place.group_id;
+  const gateKey = place.mood;
+
+  const remaining = Array.from(placesCache.values()).filter((p) => p.group_id === groupId && p.id !== place.id);
+  const idsToClear = remaining.length === 1 ? [place.id, remaining[0].id] : [place.id];
+
+  idsToClear.forEach((id) => markRecentlyMutated(id));
+
+  const { error } = await supabase
+    .from('places')
+    .update({ group_id: null, group_name: null, group_order: null })
+    .in('id', idsToClear);
+
+  if (error) {
+    console.error('Ungroup error:', error.message);
+    return;
+  }
+
+  idsToClear.forEach((id) => {
+    const p = placesCache.get(id);
+    if (p) placesCache.set(id, { ...p, group_id: null, group_name: null, group_order: null });
+  });
+
+  const listEl = document.getElementById('glist-' + gateKey);
+  if (listEl) renderGateListContent(listEl, gateKey);
+}
+
+/** 그룹 전체 해제 — 클러스터 헤더의 x 버튼 */
+async function dissolveGroup(groupId: string, gateKey: string): Promise<void> {
+  const memberIds = Array.from(placesCache.values())
+    .filter((p) => p.group_id === groupId)
+    .map((p) => p.id);
+  if (memberIds.length === 0) return;
+
+  memberIds.forEach((id) => markRecentlyMutated(id));
+
+  const { error } = await supabase
+    .from('places')
+    .update({ group_id: null, group_name: null, group_order: null })
+    .in('id', memberIds);
+
+  if (error) {
+    console.error('Group dissolve error:', error.message);
+    return;
+  }
+
+  memberIds.forEach((id) => {
+    const p = placesCache.get(id);
+    if (p) placesCache.set(id, { ...p, group_id: null, group_name: null, group_order: null });
+  });
+
+  const listEl = document.getElementById('glist-' + gateKey);
+  if (listEl) renderGateListContent(listEl, gateKey);
 }
 
 /** 다른 게이트/인박스/시큐리티를 숨기고 이 게이트 하나만 화면 전체로 넓혀서 보여준다(다시
@@ -1481,11 +1849,16 @@ function applyGateFocusState(): void {
 function createBoardingCard(place: Place): HTMLElement {
   const card = document.createElement('div');
   card.className = 'bd-card' + (place.photo_url ? ' bd-card-rich' : '');
-  card.draggable = true;
+  card.draggable = !place.group_id; // 그룹 멤버는 클러스터 안 위치가 고정 — 드래그 재정렬 대상에서 제외
   card.dataset.placeId = place.id;
 
   const commentBadge = '<span class="bd-comment-badge">0</span>';
   let innerHtml = '';
+
+  const groupMenuItems = place.group_id
+    ? '<button class="bd-kmenu-item" data-action="group-add">' + ICON_GROUP + '<span>그룹에 추가</span></button>' +
+      '<button class="bd-kmenu-item" data-action="group-remove">' + ICON_CLEAR + '<span>그룹에서 제외</span></button>'
+    : '<button class="bd-kmenu-item" data-action="group-create">' + ICON_GROUP + '<span>Group</span></button>';
 
   if (place.photo_url) {
     innerHtml = [
@@ -1496,6 +1869,7 @@ function createBoardingCard(place: Place): HTMLElement {
       '      <button class="bd-kmenu-item" data-action="edit">' + ICON_EDIT + '<span>Edit</span></button>',
       '      <button class="bd-kmenu-item" data-action="comment">' + ICON_COMMENT + '<span>Comment</span></button>',
       '      <button class="bd-kmenu-item" data-action="move">' + ICON_MOVE + '<span>Move</span></button>',
+             groupMenuItems,
       '      <div class="bd-kmenu-divider"></div>',
       '      <button class="bd-kmenu-item danger" data-action="delete">' + ICON_TRASH + '<span>Delete</span></button>',
       '    </div>',
@@ -1579,6 +1953,15 @@ function bindKebabMenu(card: HTMLElement, place: Place): void {
       } else if (action === 'move') {
         mainView.style.display = 'none';
         moveView.style.display = 'block';
+      } else if (action === 'group-create') {
+        closeMenu();
+        enterGroupSelectMode(place, null);
+      } else if (action === 'group-add') {
+        closeMenu();
+        enterGroupSelectMode(place, place.group_id);
+      } else if (action === 'group-remove') {
+        closeMenu();
+        removeFromGroup(place);
       }
     });
   });
@@ -1602,9 +1985,8 @@ function bindKebabMenu(card: HTMLElement, place: Place): void {
 
 /** 케밥 메뉴의 Move에서 게이트를 직접 선택했을 때 — 드래그와 동일한 절차(스캔→이동) */
 async function moveCardToGate(place: Place, targetGate: string): Promise<void> {
-  const el = document.querySelector('[data-place-id="' + place.id + '"]') as HTMLElement | null;
   const targetList = document.getElementById('glist-' + targetGate);
-  if (!el || !targetList) return;
+  if (!targetList) return;
 
   await runSecurityScan();
 
@@ -1612,21 +1994,18 @@ async function moveCardToGate(place: Place, targetGate: string): Promise<void> {
   const success = await movePlace(place.id, targetGate);
   if (!success) return;
 
-  const sourceZoneEl = el.closest('[data-zone]') as HTMLElement | null;
-  el.remove();
-  if (sourceZoneEl) {
-    updateZoneCount(sourceZoneEl);
-    ensureEmptyState(sourceZoneEl);
-  }
-
-  const updatedPlace = { ...place, mood: targetGate };
+  const sourceGateKey = place.mood; // 카드에 케밥이 있는 카드는 항상 게이트 소속(인박스 아님)
+  const updatedPlace = { ...place, mood: targetGate, group_id: null, group_name: null, group_order: null };
   placesCache.set(place.id, updatedPlace);
 
-  removeEmptyState(targetList);
-  const newEl = createBoardingCard(updatedPlace);
-  targetList.appendChild(newEl);
-  triggerLightSweep(newEl);
-  updateZoneCount(targetList);
+  if (sourceGateKey) {
+    const sourceListEl = document.getElementById('glist-' + sourceGateKey);
+    if (sourceListEl) renderGateListContent(sourceListEl, sourceGateKey);
+  }
+
+  renderGateListContent(targetList, targetGate);
+  const newEl = targetList.querySelector('[data-place-id="' + place.id + '"]') as HTMLElement | null;
+  if (newEl) triggerLightSweep(newEl);
 }
 
 /** 티켓/카드 공통 동작: 클릭(상세 Drawer), 드래그 시작/끝, 삭제 2단계 확인 + Undo */
@@ -1636,6 +2015,12 @@ function bindItemBehavior(el: HTMLElement, place: Place): void {
   el.addEventListener('click', (e) => {
     const target = e.target as HTMLElement;
     if (target.closest('.bd-ticket-delete, .bd-card-delete, .bd-card-kebab, .bd-card-kebab-menu, .bd-suggest')) return;
+
+    if (groupSelectState && groupSelectState.gateKey === place.mood) {
+      toggleCardSelection(id);
+      return;
+    }
+
     el.dispatchEvent(new CustomEvent('mongsil:openPlaceDetail', { detail: { place }, bubbles: true }));
   });
 
@@ -1724,11 +2109,18 @@ function scheduleDelete(id: string, name: string, el: HTMLElement, listEl: HTMLE
 
     const place = placesCache.get(id);
     if (listEl && place) {
-      removeEmptyState(listEl);
-      const restored = listEl.dataset.zone === '' ? createTicket(place) : createBoardingCard(place);
-      listEl.appendChild(restored);
-      triggerLightSweep(restored);
-      updateZoneCount(listEl);
+      const zoneKey = listEl.dataset.zone ?? '';
+      if (zoneKey === '') {
+        removeEmptyState(listEl);
+        const restored = createTicket(place);
+        listEl.appendChild(restored);
+        triggerLightSweep(restored);
+        updateZoneCount(listEl);
+      } else {
+        renderGateListContent(listEl, zoneKey);
+        const restored = listEl.querySelector('[data-place-id="' + id + '"]') as HTMLElement | null;
+        if (restored) triggerLightSweep(restored);
+      }
     }
   });
 }
@@ -1816,23 +2208,33 @@ function attachDropzone(listEl: HTMLElement): void {
     const success = await movePlace(placeId, zoneToMood(toZone));
     if (!success) return;
 
-    const currentEl = document.querySelector('[data-place-id="' + placeId + '"]') as HTMLElement | null;
-    if (!currentEl) return;
-    const sourceZoneEl = currentEl.closest('[data-zone]') as HTMLElement | null;
-    currentEl.remove();
-    if (sourceZoneEl) {
-      updateZoneCount(sourceZoneEl);
-      ensureEmptyState(sourceZoneEl);
-    }
-
-    const updatedPlace = { ...place, mood: zoneToMood(toZone) };
+    const updatedPlace = { ...place, mood: zoneToMood(toZone), group_id: null, group_name: null, group_order: null };
     placesCache.set(placeId, updatedPlace);
 
-    removeEmptyState(listEl);
-    const newEl = toZone === '' ? createTicket(updatedPlace) : createBoardingCard(updatedPlace);
-    listEl.appendChild(newEl);
-    triggerLightSweep(newEl);
-    updateZoneCount(listEl);
+    if (fromZone === '') {
+      const currentEl = document.querySelector('[data-place-id="' + placeId + '"]') as HTMLElement | null;
+      const inboxListEl = document.getElementById('inbox-list');
+      currentEl?.remove();
+      if (inboxListEl) {
+        updateZoneCount(inboxListEl);
+        ensureEmptyState(inboxListEl);
+      }
+    } else {
+      const sourceListEl = document.getElementById('glist-' + fromZone);
+      if (sourceListEl) renderGateListContent(sourceListEl, fromZone);
+    }
+
+    if (toZone === '') {
+      removeEmptyState(listEl);
+      const newEl = createTicket(updatedPlace);
+      listEl.appendChild(newEl);
+      triggerLightSweep(newEl);
+      updateZoneCount(listEl);
+    } else {
+      renderGateListContent(listEl, toZone);
+      const newEl = listEl.querySelector('[data-place-id="' + placeId + '"]') as HTMLElement | null;
+      if (newEl) triggerLightSweep(newEl);
+    }
   });
 }
 
