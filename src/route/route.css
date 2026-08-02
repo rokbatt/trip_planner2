@@ -633,7 +633,8 @@
 .rt-panel-stop {
   position: relative;
   display: grid; grid-template-columns: 12px 26px 1fr auto auto; align-items: center;
-  gap: 8px; min-height: 44px; padding: 7px 6px 7px 2px; border-radius: 12px;
+  gap: 8px; min-height: 44px; padding: 7px 6px 10px 2px; border-radius: 12px;
+  border-bottom: var(--rt-dash);
   transition: background var(--rt-ease), box-shadow var(--rt-ease), transform var(--rt-ease);
 }
 /* 지도와의 연결감 — 카드에 올리면 왼쪽에 네이비 마커가 생겨 "지금 이 지점" 임을 알린다 */
@@ -745,7 +746,20 @@
 .rt-panel-summary::before { left: -6px; clip-path: inset(0 0 0 50%); }
 .rt-panel-summary::after { right: -6px; clip-path: inset(0 50% 0 0); }
 .rt-panel-summary-item { text-align: center; }
-.rt-panel-summary-label { font-size: 9.5px; color: var(--rt-ink-3); font-weight: 600; letter-spacing: 0.02em; }
+.rt-panel-summary-label {
+  font-size: 9.5px; color: var(--rt-ink-3); font-weight: 600; letter-spacing: 0.02em;
+  display: inline-flex; align-items: center; gap: 3px;
+}
+/* 예상 교통비를 원화로 환산해 보는 토글 — 라벨 옆의 작은 원화 배지 */
+.rt-cost-toggle {
+  width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--rt-line-strong);
+  background: #fff; color: var(--rt-ink-4); font-size: 8.5px; font-weight: 800;
+  line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; padding: 0; font-family: inherit;
+  transition: background var(--rt-ease), color var(--rt-ease), border-color var(--rt-ease);
+}
+.rt-cost-toggle:hover { border-color: var(--rt-sky); color: var(--rt-ink-2); }
+.rt-cost-toggle.active { background: var(--rt-navy); border-color: var(--rt-navy); color: #fff; }
 .rt-panel-summary-value {
   font-size: 12.5px; font-weight: 800; color: var(--rt-ink); margin-top: 2px;
   font-variant-numeric: tabular-nums;
