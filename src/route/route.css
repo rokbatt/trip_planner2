@@ -633,7 +633,7 @@
 .rt-panel-stop {
   position: relative;
   display: grid; grid-template-columns: 26px 1fr auto auto; align-items: center;
-  gap: 8px; min-height: 44px; padding: 7px 6px 10px 2px; border-radius: 12px;
+  gap: 8px; min-height: 44px; padding: 7px 6px 10px 7px; border-radius: 12px;
   border-bottom: var(--rt-dash);
   cursor: grab;
   transition: background var(--rt-ease), box-shadow var(--rt-ease), transform var(--rt-ease);
@@ -854,6 +854,7 @@
 .rt-arrival-icon {
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
   width: 22px; height: 22px; border-radius: 7px; background: #fff; color: var(--rt-blue);
+  font-size: 13px; line-height: 1;
 }
 .rt-arrival-icon svg { width: 12px; height: 12px; }
 .rt-arrival-airport, .rt-arrival-time {

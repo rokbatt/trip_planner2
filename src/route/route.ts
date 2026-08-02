@@ -2297,10 +2297,10 @@ type AirportKind = 'arrival' | 'departure';
 function airportInfoHtml(kind: AirportKind): string {
   const name = kind === 'arrival' ? activeDestArrivalAirport : activeDestDepartureAirport;
   const time = kind === 'arrival' ? activeDestArrivalTime : activeDestDepartureTime;
-  const label = kind === 'arrival' ? '도착' : '출발';
+  const label = kind === 'arrival' ? '입국' : '출발';
   return [
     '<div class="rt-arrival" data-kind="' + kind + '">',
-    '  <span class="rt-arrival-icon">' + IC_PLANE + '</span>',
+    '  <span class="rt-arrival-icon" aria-hidden="true">✈️</span>',
     '  <input type="text" class="rt-arrival-airport" id="rt-' + kind + '-airport" placeholder="' + label + ' 공항 (예: 수완나품 BKK)"' +
       ' value="' + escapeHtml(name ?? '') + '" aria-label="' + label + ' 공항" />',
     '  <input type="text" class="rt-arrival-time" id="rt-' + kind + '-time" placeholder="HH:MM"' +
