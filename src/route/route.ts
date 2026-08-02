@@ -736,6 +736,9 @@ function makeAdhocPlace(name: string, lat: number, lng: number): Place {
     is_idea: false,
     sort_order: 0,
     destination_id: null,
+    group_id: null,
+    group_name: null,
+    group_order: null,
   };
 }
 
@@ -765,6 +768,9 @@ function googleResultToPlace(g: GooglePlaceResult): Place {
     is_idea: false,
     sort_order: 0,
     destination_id: null,
+    group_id: null,
+    group_name: null,
+    group_order: null,
   };
 }
 
@@ -1031,6 +1037,9 @@ function makeAnchorPlace(
     is_idea: false,
     sort_order: 0,
     destination_id: null,
+    group_id: null,
+    group_name: null,
+    group_order: null,
   };
 }
 

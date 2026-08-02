@@ -110,6 +110,9 @@ export interface Database {
           is_idea: boolean;
           sort_order: number;
           destination_id: string | null;
+          group_id: string | null;
+          group_name: string | null;
+          group_order: number | null;
         };
         Insert: {
           id?: string;
@@ -133,6 +136,9 @@ export interface Database {
           is_idea?: boolean;
           sort_order?: number;
           destination_id?: string | null;
+          group_id?: string | null;
+          group_name?: string | null;
+          group_order?: number | null;
         };
         Update: Partial<Database['public']['Tables']['places']['Insert']>;
         Relationships: [];
