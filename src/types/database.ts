@@ -429,6 +429,8 @@ export interface Database {
           fx_source: string | null;
           expense_date: string | null;
           is_paid: boolean;
+          /** 'SHARED'(공동, 정산 대상) | 'PERSONAL'(개인, 정산 제외) */
+          split_mode: string;
           paid_by: string | null;
           paid_by_name: string | null;
           paid_by_avatar: string | null;
@@ -451,6 +453,7 @@ export interface Database {
           fx_source?: string | null;
           expense_date?: string | null;
           is_paid?: boolean;
+          split_mode?: string;
           paid_by?: string | null;
           paid_by_name?: string | null;
           paid_by_avatar?: string | null;
