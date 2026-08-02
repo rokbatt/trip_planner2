@@ -12,6 +12,31 @@ import type { GooglePlaceResult } from '../utils/googleMaps';
 
 type Place = Database['public']['Tables']['places']['Row'];
 
+/** Google 사진 URL을 우리 Storage로 재호스팅 (실패하면 원본 URL로 폴백) — BOARD/ROUTE가
+ * 공유. insertGooglePlace를 부르기 전에 반드시 이걸 먼저 거쳐야 photo_url이 매번 Google에
+ * 요청 나가는 원본 URL(API 키 포함, 언젠가 만료됨)이 아니라 우리 Storage URL로 저장된다. */
+export async function rehostPhoto(photoUrl: string, placeId: string): Promise<string> {
+  try {
+    const res = await fetch('/api/cache-photo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ photoUrl, placeId }),
+    });
+    const data = await res.json();
+    if (res.ok && data.url) {
+      console.log(
+        '[Verify][사진 재호스팅] ' + (data.cached ? '이미 Storage에 있음(재다운로드 안 함)' : 'Google에서 새로 다운로드 → Storage 업로드') +
+        ' → ' + data.url
+      );
+      return data.url;
+    }
+    console.error('[Photo] 재호스팅 실패, 원본 URL 사용:', data.error);
+  } catch (e) {
+    console.error('[Photo] 재호스팅 네트워크 오류, 원본 URL 사용:', (e as Error).message);
+  }
+  return photoUrl;
+}
+
 /**
  * 실제 구글 장소를 places 테이블에 저장 — 중복 방지(같은 트립에 같은 google_place_id가
  * 이미 있으면 재생성 안 함) + insert + 크라우드소싱 캐시(places_db) 저장.
@@ -35,13 +60,23 @@ export async function insertGooglePlace(
 
     if (existing) {
       console.log('[Verify][중복 방지] "' + g.name + '"은 이미 이 여행에 추가되어 있어서 다시 만들지 않음');
+      const heal: Partial<Pick<Place, 'mood' | 'photo_url'>> = {};
       // mood가 없는 채로 저장된 기존 행(예: 예전엔 게이트 매핑이 없던 카테고리)은 Brainstorm
       // 대기줄에만 머물고 ROUTE 목록(.not('mood','is',null))에서도 빠져 "사라진 것처럼" 보인다.
       // 지금 다시 담으려는 시도에서 올바른 mood를 계산할 수 있으면 이 기회에 바로 잡아준다.
-      if (!existing.mood && mood) {
+      if (!existing.mood && mood) heal.mood = mood;
+      // 재호스팅 없이 Google 원본 사진 URL(API 키 포함, 언젠가 만료됨)이 그대로 저장된 기존
+      // 행도, 지금 호출자가 이미 재호스팅한 URL을 들고 있으면 이 기회에 교체한다.
+      if (
+        existing.photo_url && existing.photo_url.includes('googleapis.com') &&
+        g.photoUrl && !g.photoUrl.includes('googleapis.com')
+      ) {
+        heal.photo_url = g.photoUrl;
+      }
+      if (Object.keys(heal).length) {
         const { data: healed, error: healError } = await supabase
           .from('places')
-          .update({ mood })
+          .update(heal)
           .eq('id', existing.id)
           .select()
           .single();

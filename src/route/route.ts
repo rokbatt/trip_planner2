@@ -33,7 +33,7 @@ import {
   suggestGateFromCategory,
 } from '../utils/googleMaps';
 import type { PlacePrediction, GooglePlaceResult } from '../utils/googleMaps';
-import { insertGooglePlace } from '../trips/addGooglePlace';
+import { insertGooglePlace, rehostPhoto } from '../trips/addGooglePlace';
 import {
   loadRoutePlan,
   saveRouteDay,
@@ -1446,6 +1446,11 @@ async function addSearchResultToDay(p: Place, container: HTMLElement, cacheSourc
     photoUrl: p.photo_url,
     openingHours: p.opening_hours as string[] | null,
   };
+  // 검색 결과 핀은 임시로 Google 원본 사진 URL을 그대로 보여주지만(재호스팅은 비용이 드니
+  // 실제로 담을 때만), 여기서 실제 저장하기 전에는 반드시 우리 Storage로 재호스팅해야
+  // photo_url이 API 키가 박힌 원본 URL로 영구 저장돼 이미지를 볼 때마다 Google에 요청이
+  // 나가는(그리고 언젠가 만료되는) 문제를 피할 수 있다.
+  if (g.photoUrl) g.photoUrl = await rehostPhoto(g.photoUrl, g.place_id);
   const mood = suggestGateFromCategory(p.category);
   const result = await insertGooglePlace(currentTripId, activeDestId ?? undefined, mood, g, cacheSource);
   if (!result) {
@@ -2334,6 +2339,9 @@ function bindAirportInfo(container: HTMLElement, kind: AirportKind): void {
       lng = extracted?.lng ?? null;
       photo = extracted?.photoUrl ?? null;
       rating = extracted?.rating ?? null;
+      // Google 원본 URL을 그대로 저장하면 볼 때마다 Google에 요청이 나가고(비용) 언젠가
+      // 만료된다 — 우리 Storage로 재호스팅해서 저장.
+      if (photo) photo = await rehostPhoto(photo, p.placeId);
     } catch (e) {
       console.error('[ROUTE] 공항 정보 조회 실패(이름만 저장):', (e as Error).message);
     }

@@ -13,7 +13,7 @@ import type { Database, TripDestination } from '../types/database';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { loadGoogleMapsScript, extractPlaceResult, suggestGateFromCategory, getPlacePredictions, getPlaceDetails, getCategoryLabel, resetGoogleServices } from '../utils/googleMaps';
 import type { GooglePlaceResult, PlacePrediction } from '../utils/googleMaps';
-import { insertGooglePlace } from '../trips/addGooglePlace';
+import { insertGooglePlace, rehostPhoto } from '../trips/addGooglePlace';
 import './board.css';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -344,29 +344,6 @@ async function addIdea(tripId: string, mood: string | null, text: string): Promi
  * 실제 저장 로직은 ROUTE의 지도 검색·근처 검색과 공유하는 addGooglePlace.ts에 있다. */
 function addRichIdea(tripId: string, mood: string | null, g: GooglePlaceResult): Promise<{ place: Place; isDuplicate: boolean } | null> {
   return insertGooglePlace(tripId, activeDestIdForInsert(), mood, g);
-}
-
-/** Google 사진 URL을 우리 Storage로 재호스팅 (실패하면 원본 URL로 폴백) */
-async function rehostPhoto(photoUrl: string, placeId: string): Promise<string> {
-  try {
-    const res = await fetch('/api/cache-photo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ photoUrl, placeId }),
-    });
-    const data = await res.json();
-    if (res.ok && data.url) {
-      console.log(
-        '[Verify][사진 재호스팅] ' + (data.cached ? '이미 Storage에 있음(재다운로드 안 함)' : 'Google에서 새로 다운로드 → Storage 업로드') +
-        ' → ' + data.url
-      );
-      return data.url;
-    }
-    console.error('[Photo] 재호스팅 실패, 원본 URL 사용:', data.error);
-  } catch (e) {
-    console.error('[Photo] 재호스팅 네트워크 오류, 원본 URL 사용:', (e as Error).message);
-  }
-  return photoUrl;
 }
 
 /** 검색창 입력값으로 우리 DB(places_db)를 먼저 조회 — 무료, 즉시 응답 */
