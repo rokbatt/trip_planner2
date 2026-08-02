@@ -1212,9 +1212,12 @@ function mountSettingsTab(panel: HTMLElement): void {
   panel.innerHTML = [
     '<div class="ex-card al-glass ex-settings-card">',
     '  <div class="ex-card-title al-sign-label">총 예산</div>',
-    '  <div class="ex-settings-hint">카테고리별 예산 배분과는 별개인, 이번 여행의 전체 목표 예산이에요.</div>',
+    '  <div class="ex-settings-hint">카테고리별 예산 배분과는 별개인, 이번 여행의 전체 목표 예산이에요. 만원 단위로 입력하세요.</div>',
     '  <div class="ex-settings-total-row">',
-    '    <input type="number" inputmode="numeric" class="ex-settings-input ex-settings-total-input" id="settings-total" value="' + (totalBudget ?? '') + '" placeholder="예: 1500000" />',
+    '    <div class="ex-settings-total-inputwrap">',
+    '      <input type="number" inputmode="numeric" class="ex-settings-total-input" id="settings-total" value="' + (totalBudget != null ? Math.round(totalBudget / 10000) : '') + '" placeholder="예: 150" />',
+    '      <span class="ex-settings-unit">만원</span>',
+    '    </div>',
     '    <button type="button" class="al-btn-primary ex-settings-save-total" id="settings-total-save">저장</button>',
     '  </div>',
     '  <span class="ex-settings-hint-inline" id="settings-total-hint"></span>',
@@ -1226,9 +1229,10 @@ function mountSettingsTab(panel: HTMLElement): void {
     '</div>',
   ].join('\n');
 
-  const commitBudget = async (category: string, raw: string, hintEl?: HTMLElement | null): Promise<void> => {
-    const value = raw.trim() === '' ? null : Math.max(0, Math.round(Number(raw)));
-    if (value != null && !Number.isFinite(value)) return;
+  const commitBudget = async (category: string, raw: string, multiplier = 1, hintEl?: HTMLElement | null): Promise<void> => {
+    const num = raw.trim() === '' ? null : Number(raw);
+    if (num != null && !Number.isFinite(num)) return;
+    const value = num == null ? null : Math.max(0, Math.round(num * multiplier));
     budgets.set(category, value);
     if (hintEl) { hintEl.textContent = '저장 중...'; }
     const { error } = await supabase
@@ -1243,13 +1247,13 @@ function mountSettingsTab(panel: HTMLElement): void {
 
   panel.querySelector('#settings-total-save')?.addEventListener('click', () => {
     const input = panel.querySelector('#settings-total') as HTMLInputElement;
-    void commitBudget(BUDGET_TOTAL_KEY, input.value, panel.querySelector('#settings-total-hint') as HTMLElement);
+    void commitBudget(BUDGET_TOTAL_KEY, input.value, 10000, panel.querySelector('#settings-total-hint') as HTMLElement);
   });
   panel.querySelectorAll('.ex-settings-save').forEach((btn) => {
     btn.addEventListener('click', () => {
       const cat = (btn as HTMLElement).dataset.cat!;
       const input = panel.querySelector('.ex-settings-input[data-cat="' + cat + '"]') as HTMLInputElement;
-      void commitBudget(cat, input.value);
+      void commitBudget(cat, input.value, 1);
       const original = btn.textContent;
       btn.textContent = '저장됨';
       setTimeout(() => { btn.textContent = original; }, 1200);

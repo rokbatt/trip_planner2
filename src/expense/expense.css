@@ -694,7 +694,30 @@
 .ex-settings-card + .ex-settings-card { margin-top: 0; }
 .ex-settings-hint { font-size: 12px; color: var(--al-text-secondary); margin-bottom: var(--s3); }
 .ex-settings-total-row { display: flex; gap: var(--s2); }
-.ex-settings-total-input { flex: 1; font-size: 15px; font-weight: 600; }
+.ex-settings-total-inputwrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--al-divider);
+  border-radius: var(--al-radius-sm);
+  background: #fff;
+  padding: 0 12px;
+}
+.ex-settings-total-inputwrap:focus-within { border-color: var(--al-primary); }
+.ex-settings-total-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 10px 0;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  color: var(--al-text);
+}
+.ex-settings-total-input:focus { outline: none; }
+.ex-settings-unit { font-size: 13px; font-weight: 600; color: var(--al-text-secondary); flex-shrink: 0; }
 .ex-settings-save-total { flex-shrink: 0; padding: 10px 20px; }
 .ex-settings-hint-inline { display: block; margin-top: 6px; font-size: 11px; color: #0a7d43; min-height: 14px; }
 
