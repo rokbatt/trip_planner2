@@ -896,7 +896,13 @@ async function loadRealLegsForActiveDay(container: HTMLElement): Promise<void> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ legs: pending, modes: ['WALK', 'TRANSIT', 'DRIVE'] }),
     });
-    if (!res.ok) return;
+    if (!res.ok) {
+      // 실패해도 화면은 조용히 추정치를 유지하지만(원칙), 원인 진단을 위해 콘솔에는 남긴다 —
+      // 서버 함수 로그(Vercel)는 사용자가 못 보므로, 흔한 원인(키 미설정/Routes API 미활성화)을
+      // 여기서 바로 확인할 수 있게 응답 본문까지 찍는다.
+      console.error('[Route] /api/route-matrix 실패:', res.status, await res.text().catch(() => ''));
+      return;
+    }
     const json = await res.json();
     const results: Array<{ id: string; modes: Record<string, RealLeg> }> = json?.results ?? [];
     let got = false;
@@ -906,12 +912,15 @@ async function loadRealLegsForActiveDay(container: HTMLElement): Promise<void> {
         got = true;
       }
     });
+    if (!got) {
+      console.warn('[Route] /api/route-matrix가 응답은 했지만 실측 구간이 0개 — 키/Routes API 활성화/요금제를 확인하세요.', json);
+    }
     if (got && rtContainer) {
       renderRightPanel(rtContainer);
       drawRouteOnMap(false);
     }
-  } catch {
-    /* 네트워크 실패 → 추정치 유지 */
+  } catch (e) {
+    console.error('[Route] /api/route-matrix 요청 자체가 실패(네트워크/CORS 등):', e);
   } finally {
     realLegPending = false;
     setLegLoading(container, false);

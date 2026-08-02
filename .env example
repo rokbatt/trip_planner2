@@ -6,9 +6,17 @@ VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJ...
 
 # ── 서버리스 함수(/api) 전용 — 절대 VITE_ 접두사 붙이지 말 것 ──
+# SUPABASE_URL이 따로 없으면 VITE_SUPABASE_URL로 폴백하는 함수도 있지만, api/route-matrix.ts
+# 처럼 SUPABASE_URL만 보는 함수도 있어 캐싱까지 확실히 쓰려면 이것도 별도로 채워둘 것.
+SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 GEMINI_API_KEY=
-UNSPLASH_ACCESS_KEY=
-SCRAPER_ADMIN_TOKEN=
-GOOGLE_PLACES_API_KEY=
+# Places API(New)/Text Search/Nearby Search — "Places API (New)" 활성화 필요.
+# 예전 이름(GOOGLE_PLACES_API_KEY)이 아니라 반드시 이 이름으로 설정할 것 — 코드가 이 이름만 읽음.
+GOOGLE_MAPS_SERVER_KEY=
+# Routes API(길찾기 실측/구간 매트릭스) — "Routes API" 활성화 필요. 없으면 GOOGLE_MAPS_SERVER_KEY로 폴백.
 GOOGLE_ROUTES_API_KEY=
+# api/backfill-photos.ts 관리자 인증용 (선택)
+ADMIN_SECRET=
+# api/cleanup-search-cache.ts를 Vercel Cron 외 경로로 호출 못 하게 막는 용도 (선택)
+CRON_SECRET=
