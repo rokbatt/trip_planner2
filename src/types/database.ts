@@ -394,6 +394,75 @@ export interface Database {
         Relationships: [];
       };
 
+      /* EXPENSE 게이트 — 예산·지출(supabase/trip_expenses.sql) */
+      trip_expense_budgets: {
+        Row: {
+          id: string;
+          trip_id: string;
+          category: string;
+          amount_krw: number | null;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          trip_id: string;
+          category: string;
+          amount_krw?: number | null;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['trip_expense_budgets']['Insert']>;
+        Relationships: [];
+      };
+
+      trip_expenses: {
+        Row: {
+          id: string;
+          trip_id: string;
+          destination_id: string | null;
+          category: string;
+          title: string;
+          amount: number;
+          currency: string;
+          /** 저장 시점 환율로 환산한 원화 — 집계/차트는 전부 이 값 기준 */
+          amount_krw: number | null;
+          fx_rate: number | null;
+          fx_source: string | null;
+          expense_date: string | null;
+          is_paid: boolean;
+          paid_by: string | null;
+          paid_by_name: string | null;
+          paid_by_avatar: string | null;
+          /** 나눠 낼 멤버 user_id 목록 — null이면 전원 */
+          split_user_ids: string[] | null;
+          memo: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          trip_id: string;
+          destination_id?: string | null;
+          category?: string;
+          title: string;
+          amount: number;
+          currency?: string;
+          amount_krw?: number | null;
+          fx_rate?: number | null;
+          fx_source?: string | null;
+          expense_date?: string | null;
+          is_paid?: boolean;
+          paid_by?: string | null;
+          paid_by_name?: string | null;
+          paid_by_avatar?: string | null;
+          split_user_ids?: string[] | null;
+          memo?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['trip_expenses']['Insert']>;
+        Relationships: [];
+      };
+
       place_comments: {
         Row: {
           id: string;
@@ -500,3 +569,5 @@ export type TripLink = Database['public']['Tables']['trip_links']['Row'];
 export type PlaceComment = Database['public']['Tables']['place_comments']['Row'];
 export type TripDestination = Database['public']['Tables']['trip_destinations']['Row'];
 export type StaySegment = Database['public']['Tables']['stay_segments']['Row'];
+export type TripExpense = Database['public']['Tables']['trip_expenses']['Row'];
+export type TripExpenseBudget = Database['public']['Tables']['trip_expense_budgets']['Row'];

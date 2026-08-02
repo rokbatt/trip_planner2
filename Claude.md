@@ -168,12 +168,38 @@ Brainstorm에서 모은 장소들을 가장 가까운 권역에 자동 배정 (�
 
 ---
 
+## 5-2. Expense 아키텍처 (완성된 기능, 참고용)
+
+계획 단계엔 데스크톱으로 예산을 잡고, 실제 여행 중엔 휴대폰(반응형)으로 기록·정산하는 흐름.
+
+### 데이터
+- `trip_expense_budgets` — 카테고리별 예산(트립+카테고리당 1행, upsert)
+- `trip_expenses` — 지출 항목. `is_paid`로 "예정 ↔ 결제 완료"를 구분(결제 완료만 정산에 반영).
+  현지 통화 입력 시 저장 시점에 `/api/exchange-rate`로 환산해 `amount_krw`+`fx_rate`+`fx_source`를
+  함께 저장(3-1 — fallback 환율이면 화면에 `*`와 "참고용" 표시, 환산 실패 항목은 합계에서 빠졌다고 명시)
+- 두 테이블 모두 realtime publication에 추가 — 다른 멤버 화면에 즉시 반영 (links와 같은 패턴)
+
+### 화면 (`src/expense/expense.ts`)
+- 요약 스트립: 총 예산 / 계획 합계 / 결제 완료 / 남은 예산 / 1인당(trips.headcount 기준) + 예산 게이지
+- 도넛 차트: 외부 라이브러리 없이 SVG arc로 직접 그림. 카테고리 7색은 CVD(색약) 검증을 통과한
+  **고정 순서 팔레트**(항공 #2a78d6 / 숙소 #eb6834 / 교통 #1baf7a / 식비 #eda100 / 관광·액티비티
+  #e87ba4 / 쇼핑 #008300 / 기타 #4a3aa7) — 순서 자체가 인접 색 구분성의 안전장치이므로 섞지 말 것.
+  조각 hover는 "일시적 미리보기"(행 강조), 클릭은 카테고리 필터 토글(다시 클릭하면 해제 — 3-3)
+- 카테고리 행: 지출액/비중 + 예산 인라인 편집(클릭 → 입력 → Enter/저장) + 예산 대비 막대
+- 정산: 결제 완료 항목의 `paid_by`/`split_user_ids` 기반으로 멤버별 낸 돈·부담액·차액을 계산하고
+  그리디 매칭으로 최소 송금 제안("A → B ₩x"). 별도 테이블 없이 클라이언트 계산
+- 입력 시트: 데스크톱은 센터 모달, 모바일(≤768px)은 바텀시트 + FAB. 통화 선택(유한 목록),
+  결제한 사람/나눌 멤버는 멤버 칩으로 선택
+
+---
+
 ## 6. 파일 구조
 
 ```
 src/
   board/board.ts, board.css          ← Brainstorm 게이트
   shortlist/shortlist.ts, shortlist.css  ← Shortlist 게이트 (Step1/2/3 전부 이 안에)
+  expense/expense.ts, expense.css    ← Expense 게이트 (예산·지출·도넛 차트·정산, 5-2 참고)
   workspace/workspace.ts             ← 게이트 라우팅, 사이드바
   utils/googleMaps.ts                ← Google Maps 로더, GooglePlaceResult 추출/카테고리 매핑 (공유 유틸)
   types/database.ts                  ← Supabase 테이블 타입
@@ -204,7 +230,7 @@ api/                                  ← Vercel 서버리스 함수 (각각 완
 
 1. **Route 게이트** — 아직 플레이스홀더. Shortlist가 `mongsil:navigateGate` 이벤트로 넘기지만 갈 곳이 없음. 확정된 권역+숙소+장소를 기준으로 동선 최적화(Google Routes API)를 만들어야 함
 2. **Timeline 게이트** — 미구현. 날짜별 일정 배치
-3. **Checklist / Expense 탭** — 미구현. **Links 탭**은 채팅 링크를 자동 수집 + og:title/og:image 미리보기 + STAY/PLACE/FOOD/ACTIVITY/VIDEO/ARTICLE/OTHER 자동분류(애매하면 OTHER, 드래그로 수동 재분류 가능)까지 구현됨(`src/links/links.ts`, `src/trips/addLink.ts`, `api/cache-photo.ts`의 `kind:'link-preview'`, `supabase/trip_links.sql`) — 직접 추가 UI는 없음(채팅이 유일한 입력 경로)
+3. **Checklist 탭** — 미구현. **Links 탭**은 채팅 링크를 자동 수집 + og:title/og:image 미리보기 + STAY/PLACE/FOOD/ACTIVITY/VIDEO/ARTICLE/OTHER 자동분류(애매하면 OTHER, 드래그로 수동 재분류 가능)까지 구현됨(`src/links/links.ts`, `src/trips/addLink.ts`, `api/cache-photo.ts`의 `kind:'link-preview'`, `supabase/trip_links.sql`) — 직접 추가 UI는 없음(채팅이 유일한 입력 경로). **Expense 탭**은 구현됨(아래 5-2 참고) — `supabase/trip_expenses.sql` 마이그레이션을 Supabase에서 실행해야 동작
 4. **`google.maps.Marker` → `AdvancedMarkerElement` 마이그레이션** — 지금은 폐기 예정 경고만 뜨는 상태, 급하진 않음 (최소 12개월 유예)
 5. **방콕 외 도시의 `stay_zones` 큐레이션** — 현재 방콕만 실제 조사된 데이터, 나머지 도시는 AI 폴백 상태
 

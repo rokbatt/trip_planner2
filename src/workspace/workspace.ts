@@ -422,6 +422,7 @@ let boardModuleRef: { teardownBoard: () => void } | null = null;
 let shortlistModuleRef: { teardownShortlist: () => void } | null = null;
 let routeModuleRef: { teardownRoute: () => void } | null = null;
 let linksModuleRef: { teardownLinks: () => void } | null = null;
+let expenseModuleRef: { teardownExpense: () => void } | null = null;
 let navigateGateHandlerRef: EventListener | null = null;
 let openVoteTargetHandlerRef: EventListener | null = null;
 let activeDestChangeHandler: ((e: Event) => void) | null = null;
@@ -443,6 +444,10 @@ async function renderGate(body: HTMLElement, tripId: string, gate: string): Prom
     linksModuleRef.teardownLinks();
     linksModuleRef = null;
   }
+  if (gate !== 'expense' && expenseModuleRef) {
+    expenseModuleRef.teardownExpense();
+    expenseModuleRef = null;
+  }
 
   if (gate === 'ideas') {
     const mod = await import('../board/board');
@@ -460,6 +465,10 @@ async function renderGate(body: HTMLElement, tripId: string, gate: string): Prom
     const mod = await import('../links/links');
     linksModuleRef = mod;
     await mod.renderLinksContent(body, tripId);
+  } else if (gate === 'expense') {
+    const mod = await import('../expense/expense');
+    expenseModuleRef = mod;
+    await mod.renderExpenseContent(body, tripId);
   } else {
     const title = GATE_TITLES[gate] || gate;
     body.innerHTML = [
@@ -505,6 +514,8 @@ function bindEvents(page: HTMLElement, tripId: string): void {
     routeModuleRef = null;
     linksModuleRef?.teardownLinks();
     linksModuleRef = null;
+    expenseModuleRef?.teardownExpense();
+    expenseModuleRef = null;
     navigate('trips');
   });
 
