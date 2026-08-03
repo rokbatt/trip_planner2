@@ -606,6 +606,18 @@
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   align-items: start;
 }
+/* 그룹 클러스터는 멤버 수만큼 열을 가로로 차지하고, 안의 카드도 세로 스택 대신 가로로 늘어선다 */
+.bd-layout.bd-focus-mode .bd-gate.is-focused .bd-group-cluster {
+  grid-column: span var(--group-span, 1);
+}
+.bd-layout.bd-focus-mode .bd-gate.is-focused .bd-group-cluster-body {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.bd-layout.bd-focus-mode .bd-gate.is-focused .bd-group-cluster-body .bd-card {
+  flex: 1 1 160px;
+  min-width: 160px;
+}
 
 /* ── 보딩패스 카드 (텍스트 전용) ── */
 .bd-card {

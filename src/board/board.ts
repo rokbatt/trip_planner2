@@ -1563,6 +1563,9 @@ function buildGroupCluster(groupId: string, members: Place[], gateKey: string): 
   const cluster = document.createElement('div');
   cluster.className = 'bd-group-cluster';
   cluster.dataset.groupId = groupId;
+  // 포커스 모드(게이트 하나만 크게 보기)에서 카드가 가로 그리드로 늘어설 때, 클러스터도
+  // 멤버 수만큼 열을 차지해서 안의 카드들이 세로로 쌓이지 않고 가로로 나란히 보이게 함
+  cluster.style.setProperty('--group-span', String(Math.max(1, Math.min(members.length, 4))));
 
   const name = members[0]?.group_name;
   cluster.innerHTML = [
@@ -2245,12 +2248,15 @@ function triggerLightSweep(el: HTMLElement): void {
   setTimeout(() => el.classList.remove('sweep'), 650);
 }
 
+/** document.getElementById 대신 조상 기준으로 카운트 배지를 찾는다 — 게이트 컬럼은
+ * 아직 document에 붙기 전(생성 직후) 초기 렌더 단계에서도 renderGateListContent가
+ * 호출되므로, document 전역 조회에 의존하면 이 시점엔 항상 못 찾아서 0으로 남는다. */
 function updateZoneCount(listEl: HTMLElement): void {
   const zone = listEl.dataset.zone ?? '';
   const count = listEl.querySelectorAll('.bd-ticket, .bd-card').length;
   const countEl = zone === ''
-    ? document.getElementById('inbox-count')
-    : document.getElementById('gcount-' + zone);
+    ? listEl.closest('.bd-inbox')?.querySelector('.bd-inbox-count')
+    : listEl.closest('.bd-gate')?.querySelector('.bd-gate-count');
   if (countEl) countEl.textContent = String(count);
 }
 
