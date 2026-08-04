@@ -58,6 +58,7 @@ function syntheticDestination(trip: Trip): TripDestination {
     departure_lng: null,
     departure_photo_url: null,
     departure_rating: null,
+    ai_plan_notes: null,
   };
 }
 
@@ -326,6 +327,7 @@ export async function updateDestination(
       | 'departure_lng'
       | 'departure_photo_url'
       | 'departure_rating'
+      | 'ai_plan_notes'
     >
   >
 ): Promise<boolean> {

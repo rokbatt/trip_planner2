@@ -172,6 +172,8 @@ export interface Database {
           departure_lng: number | null;
           departure_photo_url: string | null;
           departure_rating: number | null;
+          /** "AI 일정 짜기"에 매번 그대로 전달되는 자유 텍스트 요청사항(여행 컨셉/니즈/Day별 지시 등) */
+          ai_plan_notes: string | null;
         };
         Insert: {
           id?: string;
@@ -195,6 +197,7 @@ export interface Database {
           departure_lng?: number | null;
           departure_photo_url?: string | null;
           departure_rating?: number | null;
+          ai_plan_notes?: string | null;
         };
         Update: Partial<Database['public']['Tables']['trip_destinations']['Insert']>;
         Relationships: [

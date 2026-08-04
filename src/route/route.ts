@@ -179,6 +179,9 @@ let activeDestDepartureLat: number | null = null;
 let activeDestDepartureLng: number | null = null;
 let activeDestDeparturePhoto: string | null = null;
 let activeDestDepartureRating: number | null = null;
+/** "AI 일정 짜기"에 매번 그대로 전달되는 자유 텍스트 요청사항(여행 컨셉/니즈/특정 Day 지시 등).
+ * trip_destinations.ai_plan_notes에 저장 — 한 번 써두면 재사용된다. */
+let activeDestAiPlanNotes: string | null = null;
 let candidatePlaces: Place[] = []; // 확정 장소들(숙소 제외)
 let placeById = new Map<string, Place>();
 let days: RouteDay[] = [];
@@ -214,6 +217,8 @@ let activeDestName = '';
 
 /* ── AI 일정 추천 상태 ── */
 let aiPlanBusy = false;
+/** 매크로→Day별 세부 호출 진행 상황 — "Day 2/6 짜는 중…" 버튼 라벨용 */
+let aiPlanProgressLabel: string | null = null;
 /** 방금 만든 추천의 설명 — 적용 직후 우측 패널 위에 한 번 보여주고 닫을 수 있게 */
 let aiPlanNotice: { notes: string; usedCount: number; skippedCount: number; cached: boolean } | null = null;
 let dayDetailBusy = false;
@@ -262,6 +267,7 @@ export function teardownRoute(): void {
   activeDestId = null;
   activeDestName = '';
   aiPlanBusy = false;
+  aiPlanProgressLabel = null;
   aiPlanNotice = null;
   aiPlanUndo = null;
   dayDetailBusy = false;
@@ -283,6 +289,7 @@ export function teardownRoute(): void {
   activeDestDepartureLng = null;
   activeDestDeparturePhoto = null;
   activeDestDepartureRating = null;
+  activeDestAiPlanNotes = null;
   candidatePlaces = [];
   placeById = new Map();
   days = [];
@@ -681,6 +688,7 @@ async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
   activeDestDepartureLng = activeDest?.departure_lng ?? null;
   activeDestDeparturePhoto = activeDest?.departure_photo_url ?? null;
   activeDestDepartureRating = activeDest?.departure_rating ?? null;
+  activeDestAiPlanNotes = activeDest?.ai_plan_notes ?? null;
   const segments = activeDest ? await loadStaySegments(trip, activeDest) : [];
   const seg = activeDest ? resolveActiveSegment(activeDest.id, segments) : null;
   // 날짜 순으로 정렬해 둬야 basecampForDay()가 dayIndex 순서와 맞게 구간을 찾는다
@@ -1133,7 +1141,7 @@ function bindPage(container: HTMLElement): void {
   bindUndoRedoButtons(container);
   bindOptionsMenu(container);
   bindAdhocButton(container);
-  container.querySelector('#rt-ai-plan')?.addEventListener('click', () => void runAiRoutePlan(container));
+  container.querySelector('#rt-ai-plan')?.addEventListener('click', () => openAiPlanNotesModal(container));
 
   const toggle = container.querySelector('#rt-collapse-toggle') as HTMLElement;
   const mainEl = container.querySelector('#rt-main') as HTMLElement;
@@ -1886,24 +1894,32 @@ async function runAiRoutePlan(container: HTMLElement): Promise<void> {
   }
 
   aiPlanBusy = true;
+  aiPlanProgressLabel = null;
   aiPlanNotice = null;
   aiPlanUndo = null;
   renderRightPanel(container);
   updateAiPlanButton(container);
 
   try {
-    const result = await requestRoutePlan({
-      destinationId: activeDestId,
-      destinationName: activeDestName || currentTrip?.name || '',
-      dayCount: days.length,
-      startDate: dayRangeStartDate,
-      staySegments: buildAiStaySegments(),
-      arrivalAirport: activeDestArrivalAirport,
-      arrivalTime: activeDestArrivalTime,
-      departureAirport: activeDestDepartureAirport,
-      departureTime: activeDestDepartureTime,
-      places: candidatePlaces.filter((p) => p.lat != null && p.lng != null).map((p) => toAiPlace(p)),
-    });
+    const result = await requestRoutePlan(
+      {
+        destinationId: activeDestId,
+        destinationName: activeDestName || currentTrip?.name || '',
+        dayCount: days.length,
+        startDate: dayRangeStartDate,
+        staySegments: buildAiStaySegments(),
+        arrivalAirport: activeDestArrivalAirport,
+        arrivalTime: activeDestArrivalTime,
+        departureAirport: activeDestDepartureAirport,
+        departureTime: activeDestDepartureTime,
+        places: candidatePlaces.filter((p) => p.lat != null && p.lng != null).map((p) => toAiPlace(p)),
+        planNotes: activeDestAiPlanNotes,
+      },
+      (done, total) => {
+        aiPlanProgressLabel = done <= 1 ? '전체 그림 짜는 중…' : 'Day ' + (done - 1) + '/' + (total - 1) + ' 짜는 중…';
+        updateAiPlanButton(container);
+      }
+    );
 
     // 반영하기 **전에** 쓸 만한 결과인지 먼저 확인한다 — 먼저 지우고 나서 판단하면
     // 결과가 비었을 때 기존 동선만 날아간다. (DAY마다 숙소가 다를 수 있어 그날 기준으로 판단)
@@ -1932,6 +1948,7 @@ async function runAiRoutePlan(container: HTMLElement): Promise<void> {
     window.alert((e as Error).message);
   } finally {
     aiPlanBusy = false;
+    aiPlanProgressLabel = null;
     refreshAll(container, { refit: true });
     updateAiPlanButton(container);
   }
@@ -1944,8 +1961,73 @@ function updateAiPlanButton(container: HTMLElement): void {
   btn.disabled = aiPlanBusy;
   btn.classList.toggle('is-busy', aiPlanBusy);
   btn.innerHTML = aiPlanBusy
-    ? '<span class="rt-ai-spinner"></span><span>일정 짜는 중…</span>'
+    ? '<span class="rt-ai-spinner"></span><span>' + escapeHtml(aiPlanProgressLabel ?? '일정 짜는 중…') + '</span>'
     : IC_SPARK + '<span>AI 일정 짜기</span>';
+}
+
+/**
+ * "AI 일정 짜기" 버튼을 누르면 실제 실행 전에 이 모달이 먼저 뜬다 — 여행 니즈/요청사항을
+ * 자유 텍스트로 적을 수 있는 칸 하나(예: "휴양 위주로 여유롭게", "1일차는 밤 늦게 도착하니
+ * 쉬는 날로", "마사지는 저녁에"). 원문 그대로 모든 프롬프트에 전달되고(원칙 3-1 — 우리가
+ * 해석/가공하지 않음), 여행지에 저장되어 다음에 다시 열어도 남아있다.
+ */
+function openAiPlanNotesModal(container: HTMLElement): void {
+  if (aiPlanBusy) return;
+  if (!activeDestId) {
+    window.alert('여행지를 먼저 선택해 주세요.');
+    return;
+  }
+  if (candidatePlaces.length < 2) {
+    window.alert('AI가 일정을 짜려면 Brainstorm에서 분류한 장소가 2곳 이상 필요해요.');
+    return;
+  }
+
+  document.querySelector('.rt-ai-modal-backdrop')?.remove();
+  const backdrop = document.createElement('div');
+  backdrop.className = 'rt-ai-modal-backdrop';
+  backdrop.innerHTML = [
+    '<div class="rt-ai-modal rt-ai-notes-modal" role="dialog" aria-modal="true" aria-label="AI 일정 짜기 요청사항">',
+    '  <div class="rt-ai-modal-head">',
+    '    <div><div class="rt-ai-modal-eyebrow">AI 일정 짜기</div>',
+    '    <div class="rt-ai-modal-title">여행 니즈나 요청사항이 있나요?</div></div>',
+    '    <button type="button" class="rt-ai-modal-close" id="rt-ai-notes-close" aria-label="닫기">✕</button>',
+    '  </div>',
+    '  <div class="rt-ai-modal-body">',
+    '    <div class="rt-ai-notes-hint">비워둬도 괜찮아요. 적어두면 AI가 매번 그대로 참고해요 —' +
+      ' 예) "휴양 위주로 여유롭게", "1일차는 밤 늦게 도착하니 쉬는 날로", "마사지는 저녁에 가고 싶어"</div>',
+    '    <textarea class="rt-ai-notes-input" id="rt-ai-notes-input" rows="4" placeholder="예: 아이 동반이라 낮잠 시간이 필요해요. 맛집 위주로 다니고 싶어요.">' +
+      escapeHtml(activeDestAiPlanNotes ?? '') +
+      '</textarea>',
+    '  </div>',
+    '  <div class="rt-ai-notes-actions">',
+    '    <button type="button" class="rt-ai-notes-cancel" id="rt-ai-notes-cancel">취소</button>',
+    '    <button type="button" class="rt-ai-notes-start" id="rt-ai-notes-start">' + IC_SPARK + ' 일정 짜기 시작</button>',
+    '  </div>',
+    '</div>',
+  ].join('\n');
+
+  const close = () => {
+    backdrop.remove();
+    document.removeEventListener('keydown', onKey);
+  };
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+
+  backdrop.querySelector('#rt-ai-notes-close')?.addEventListener('click', close);
+  backdrop.querySelector('#rt-ai-notes-cancel')?.addEventListener('click', close);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+  document.addEventListener('keydown', onKey);
+
+  backdrop.querySelector('#rt-ai-notes-start')?.addEventListener('click', () => {
+    const textarea = backdrop.querySelector('#rt-ai-notes-input') as HTMLTextAreaElement;
+    const notes = textarea.value.trim().slice(0, 1000);
+    activeDestAiPlanNotes = notes || null;
+    if (activeDestId) void updateDestination(activeDestId, { ai_plan_notes: activeDestAiPlanNotes });
+    close();
+    void runAiRoutePlan(container);
+  });
+
+  document.body.appendChild(backdrop);
+  (backdrop.querySelector('#rt-ai-notes-input') as HTMLTextAreaElement)?.focus();
 }
 
 async function runDayDetail(container: HTMLElement): Promise<void> {
