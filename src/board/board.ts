@@ -1570,7 +1570,6 @@ function buildGroupCluster(groupId: string, members: Place[], gateKey: string): 
   const name = members[0]?.group_name;
   cluster.innerHTML = [
     '<div class="bd-group-cluster-header">',
-    '  <span class="bd-group-cluster-icon">' + ICON_GROUP + '</span>',
     '  <span class="bd-group-cluster-name">' + (name ? escapeHtml(name) : '그룹') + '</span>',
     '  <span class="bd-group-cluster-count">' + members.length + '</span>',
     '  <button type="button" class="bd-group-cluster-dissolve" title="그룹 해제">' + ICON_CLEAR + '</button>',
