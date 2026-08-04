@@ -142,35 +142,51 @@
 .tl-segment:hover { color: var(--tl-ink-2); }
 .tl-segment.active { background: #fff; color: var(--tl-ink); box-shadow: var(--tl-shadow-sm); }
 
-.tl-nowbtn, .tl-routebtn {
+.tl-nowbtn, .tl-routebtn, .tl-mapbtn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 7px 12px; border-radius: 9px; border: 1px solid var(--tl-line-strong);
   background: #fff; color: var(--tl-ink-2); font-family: inherit;
   font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;
   transition: all var(--tl-ease);
 }
-.tl-nowbtn svg, .tl-routebtn svg { width: 14px; height: 14px; }
-.tl-nowbtn:hover, .tl-routebtn:hover { border-color: var(--tl-blue); color: var(--tl-blue); }
+.tl-nowbtn svg, .tl-routebtn svg, .tl-mapbtn svg { width: 14px; height: 14px; }
+.tl-nowbtn:hover, .tl-routebtn:hover, .tl-mapbtn:hover { border-color: var(--tl-blue); color: var(--tl-blue); }
 .tl-nowbtn { border-color: rgba(11,42,92,0.28); color: var(--tl-navy); }
+/* 지도 열기/닫기 — 항상 누를 수 있는 토글이라, 켜져 있을 때는 눌린 상태임을 색으로 알린다 */
+.tl-mapbtn.active { border-color: var(--tl-blue); background: var(--tl-ice); color: var(--tl-blue); }
+.tl-mapbtn:disabled { opacity: 0.4; cursor: default; }
+.tl-mapbtn:disabled:hover { border-color: var(--tl-line-strong); color: var(--tl-ink-2); }
 
 /* ══════════════ 본문 레이아웃 — 일정 | 지도 ══════════════ */
 
+/*
+ * 지도는 화면 폭이 아니라 사용자의 토글(#tl-map-toggle)로만 열리고 닫힌다 — 기본값은
+ * "닫힘"(1열)이고, JS가 mapOpen 상태에 따라 .tl-map-open 클래스를 붙였다 뗀다.
+ * 전체 보기(.tl-view-all)에선 그 상태와 무관하게 항상 접힌다.
+ */
 .tl-body {
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 40%);
+  display: grid; grid-template-columns: minmax(0, 1fr);
   gap: 16px; align-items: start; min-width: 0;
 }
-/* 전체 보기는 가로 폭이 전부 필요하므로 지도를 접는다 */
-.tl-body.tl-view-all { grid-template-columns: minmax(0, 1fr); }
-.tl-body.tl-view-all .tl-mapcol { display: none; }
+.tl-body.tl-map-open { grid-template-columns: minmax(0, 1fr) minmax(320px, 40%); }
 
 .tl-main { min-width: 0; }
 
-.tl-mapcol {
+.tl-mapcol { display: none; }
+.tl-body.tl-map-open .tl-mapcol {
+  display: block;
   position: sticky; top: 8px;
   height: calc(100vh - 210px); min-height: 460px;
   border-radius: 16px; overflow: hidden;
   border: 1px solid var(--tl-line); background: var(--tl-mist);
   box-shadow: var(--tl-shadow-sm);
+}
+/* 좁은 화면에선 사이드바로 붙이지 않고 목록 위에 한 블록으로 펼친다(아래 반응형 참고) */
+@media (max-width: 1080px) {
+  .tl-body.tl-map-open { grid-template-columns: minmax(0, 1fr); }
+  .tl-body.tl-map-open .tl-mapcol {
+    position: static; order: -1; height: 320px; min-height: 260px;
+  }
 }
 .tl-map { width: 100%; height: 100%; }
 .tl-map-error {
@@ -327,29 +343,13 @@
 
 .tl-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 
+/* 카테고리 아이콘·평점·주소는 일부러 없다 — 이 카드에서 볼 건 이름과 메모뿐이다 */
 .tl-card-titlerow { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.tl-cat {
-  flex-shrink: 0; width: 26px; height: 26px; border-radius: 9px;
-  display: grid; place-items: center;
-}
-.tl-cat svg { width: 14px; height: 14px; }
 .tl-name {
   margin: 0; font-size: 16px; font-weight: 700; color: var(--tl-ink);
   letter-spacing: -0.015em; line-height: 1.3;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-
-.tl-sub {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  font-size: 11.5px; color: var(--tl-ink-3); min-width: 0;
-}
-.tl-rating { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; color: var(--tl-ink-2); font-weight: 700; }
-.tl-rating svg { width: 11px; height: 11px; color: #F5A623; }
-.tl-addr {
-  display: inline-flex; align-items: center; gap: 3px; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.tl-addr svg { width: 12px; height: 12px; flex-shrink: 0; }
 
 /* Brainstorm에서 모아둔 장소 메모 — 계획서에서 제일 자주 보게 되는 내용이라 카드에 그대로 편다 */
 .tl-notes {
@@ -569,13 +569,7 @@
 .tl-allempty { padding: 20px 10px; text-align: center; font-size: 10.5px; color: var(--tl-ink-4); }
 
 /* ══════════════ 반응형 ══════════════ */
-
-/* 지도를 붙이기엔 좁은 폭 — 일정에 폭을 다 준다 */
-@media (max-width: 1080px) {
-  .tl-body { grid-template-columns: minmax(0, 1fr); }
-  /* 지도를 붙이기엔 좁은 폭 — 지도와 "지도에서 보기" 버튼을 함께 접는다 */
-  .tl-mapcol, .tl-tool-map { display: none; }
-}
+/* 지도 열림/닫힘은 화면 폭이 아니라 토글로만 결정한다 — 위 .tl-body.tl-map-open 규칙 참고 */
 
 @media (max-width: 860px) {
   .tl-photo { width: 104px; height: 76px; }
@@ -609,10 +603,8 @@
   .tl-card { padding: 10px 10px 10px 8px; gap: 9px; border-radius: 12px; }
   .tl-card-body { gap: 4px; }
   .tl-name { font-size: 13.5px; }
-  .tl-cat { width: 22px; height: 22px; border-radius: 7px; }
-  .tl-cat svg { width: 12px; height: 12px; }
   .tl-pin { width: 21px; height: 21px; font-size: 11px; border-radius: 7px; }
-  .tl-photo, .tl-notes, .tl-addr { display: none; }
+  .tl-photo, .tl-notes { display: none; }
   /* 메모는 이미 적힌 게 있을 때만 — 빈 입력칸이 줄마다 붙어 높이를 잡아먹지 않게 */
   .tl-memo-row { padding: 3px 7px; }
   .tl-memo { font-size: 11.5px; }
