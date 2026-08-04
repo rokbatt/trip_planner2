@@ -2578,13 +2578,10 @@ function refreshAll(container: HTMLElement, opts: { refit: boolean } = { refit: 
 const AERO_BLUE = '#2F86D6';
 // 리스트 배지 등 옅은 틴트 배경이 필요한 곳에서 쓰는, AERO_BLUE를 10% 불투명도로 깐 버전.
 const AERO_BLUE_TINT = 'rgba(47,134,214,0.1)';
-// "다음 장소"를 가리킬 때 쓰는 강조색 — 스카이블루는 원래 색(Aero Blue)과 너무 비슷해
-// 구분이 잘 안 됐다는 피드백으로 또렷한 오렌지로 교체.
-const ROUTE_NEXT = '#FF6B35';
+// "다음 장소"를 가리킬 때 쓰는 강조색 — "Galaxy"(새 팔레트의 짙은 네이비-인디고)로 교체.
+// 핀·경로선이 전부 Aero Blue 계열이라, 밝기 차이가 뚜렷한 짙은 톤이라야 옆에서 바로 구분된다.
+const ROUTE_NEXT = '#0B0F5C';
 const ROUTE_GRAY = '#9AA7B8';
-// 동선(경로선) 색 — 핀은 계속 Aero Blue를 쓰고, 실제 걷는/이동하는 "길" 자체만 따뜻한
-// 톤(Sunset Coral)으로 분리해 지도 위에서 더 또렷하게 떠오르게 한다.
-const ROUTE_LINE_COLOR = '#F0563F';
 
 /**
  * 지도 핀과 우측 패널 배지가 항상 같은 색을 쓰도록 하는 단일 기준 — "이 핀 = 이 카드"가
@@ -3455,7 +3452,7 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
   }
   if (opts.overlapIndex > 0) path = offsetPath(path, opts.overlapIndex * 28);
 
-  const color = opts.dimmed ? ROUTE_GRAY : ROUTE_LINE_COLOR;
+  const color = opts.dimmed ? ROUTE_GRAY : AERO_BLUE;
   const opacity = opts.dimmed ? 0.5 : opts.selected ? 1 : 0.85;
   const weight = opts.selected ? style.weight + 1 : style.weight;
 
@@ -3501,6 +3498,7 @@ const MAP_STYLE_LIGHT = [
   { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#A6D2EA' }] },
   { featureType: 'water', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#F5F6F1' }] },
-  // 건물 등 인공 지형을 육지보다 살짝 다른 톤으로 — "여기 건물이 있다"는 감각만 남긴다
-  { featureType: 'landscape.man_made', elementType: 'geometry', stylers: [{ color: '#EAEDF2' }] },
+  // 건물 등 인공 지형을 육지보다 뚜렷이 다른 톤으로 — "여기 건물이 있다"는 감각이 확대해도
+  // 보이도록 대비를 크게 준다(이전엔 육지와 거의 안 보일 정도로 톤 차이가 작았음).
+  { featureType: 'landscape.man_made', elementType: 'geometry', stylers: [{ color: '#D5DBE3' }] },
 ];
