@@ -882,8 +882,8 @@ function stopCardHtml(stop: TlStop, i: number, s: DaySchedule, dateISO: string |
       ? '  <span class="tl-staybox-label">예상 체류</span><span class="tl-staybox-value">' + fmtMin(dwell) + '</span>'
       : '',
     '  <div class="tl-staybox-times">',
-    '    <span class="tl-staybox-time"><b>도착</b> ' + minToHHMM(s.arriveMin[i]) + '</span>',
-    '    <span class="tl-staybox-time"><b>출발</b> ' + minToHHMM(s.departMin[i]) + '</span>',
+    '    <span class="tl-staybox-time"><b>도착</b>' + minToHHMM(s.arriveMin[i]) + '</span>',
+    '    <span class="tl-staybox-time"><b>출발</b>' + minToHHMM(s.departMin[i]) + '</span>',
     '  </div>',
     '</div>',
   ].join('');
@@ -905,23 +905,27 @@ function stopCardHtml(stop: TlStop, i: number, s: DaySchedule, dateISO: string |
 
     '  <div class="tl-col-card">',
     '    <div class="tl-card">',
-    '      <span class="tl-grip" title="드래그해서 순서 바꾸기">' + IC_GRIP + '</span>',
-    '      <span class="tl-pin">' + (i + 1) + '</span>',
+    // 사진은 카드 맨 왼쪽에서 위아래로 꽉 차게 — 카드가 overflow:hidden이라 왼쪽 모서리만
+    // 카드 radius를 따라 둥글게 깎인다.
     photo,
     '      <div class="tl-card-body">',
+    // 번호는 제목 앞에 붙는다(사진 왼쪽이 아니라) — 레퍼런스의 "① 장소명" 한 줄 구조
     '        <div class="tl-card-titlerow">',
+    '          <span class="tl-pin">' + (i + 1) + '</span>',
     '          <h3 class="tl-name">' + escapeHtml(stop.name) + '</h3>',
-    rating,
     warn,
     '        </div>',
-    (catLine || badges) ? '        <div class="tl-metarow">' + catLine + badges + '</div>' : '',
+    catLine ? '        <div class="tl-catrow">' + catLine + '</div>' : '',
+    (rating || badges) ? '        <div class="tl-metarow">' + rating + badges + '</div>' : '',
     '        <div class="tl-memo-row">',
+    '          <span class="tl-memo-label">메모</span>',
     '          <input type="text" class="tl-memo" placeholder="메모 추가" value="' + escapeHtml(stop.memo ?? '') + '"' +
       ' data-key="' + stop.key + '" aria-label="' + escapeHtml(stop.name) + ' 메모" />',
     '        </div>',
     '      </div>',
     stayBox,
     '      <div class="tl-card-tools">',
+    '        <span class="tl-tool tl-grip" title="드래그해서 순서 바꾸기">' + IC_GRIP + '</span>',
     '        <button type="button" class="tl-tool tl-tool-map" data-key="' + stop.key + '" title="지도에서 이 일정 보기" aria-label="지도에서 보기">' + IC_PIN_SMALL + '</button>',
     mapsUrl ? '        <a class="tl-tool" href="' + mapsUrl + '" target="_blank" rel="noopener noreferrer" title="Google 지도에서 열기" aria-label="Google 지도에서 열기">' + IC_EXTLINK + '</a>' : '',
     '        <button type="button" class="tl-tool tl-tool-remove" data-key="' + stop.key + '" title="이 일정 빼기" aria-label="' + escapeHtml(stop.name) + ' 일정에서 빼기">' + IC_TRASH + '</button>',
@@ -965,15 +969,21 @@ function legRowHtml(leg: Leg | null, to: TlStop, i: number, nextArriveMin: numbe
     '  <div class="tl-col-spine"><span class="tl-spine-line"></span></div>',
     '  <div class="tl-col-card">',
     '    <div class="tl-legcard">',
-    '      <span class="tl-legcard-icon">' + MODE_ICON[leg.mode] + '</span>',
+    // 직접 지정한 이동수단은 아이콘 원에 얇은 링으로 표시한다 — 이름 옆에 점을 붙이면
+    // "도보 •"처럼 오타로 읽힌다.
+    '      <span class="tl-legcard-icon' + (manual ? ' is-manual" title="직접 지정한 이동수단' : '') + '">' +
+      MODE_ICON[leg.mode] + '</span>',
+    '      <span class="tl-legcard-mode">' + modeLabel(leg.mode) + '</span>',
+    // 소요시간·거리·요금은 왼쪽 라벨과 붙지 않고 오른쪽(도착 예정 앞)으로 몰아 정렬한다
     '      <div class="tl-legcard-info">',
-    '        <span class="tl-legcard-mode">' + modeLabel(leg.mode) + (manual ? '<i class="tl-manual"></i>' : '') + '</span>',
-    '        <span class="tl-legcard-stats">' + fmtMin(leg.min) + ' · ' + fmtKm(leg.km) +
-      (!leg.real ? ' <span class="tl-est" title="실제 경로를 못 받아 직선거리로 추정한 값이에요">추정</span>' : '') + '</span>',
+    '        <span class="tl-legcard-stats"><b>' + fmtMin(leg.min) + '</b><b>' + fmtKm(leg.km) + '</b>' +
+      (!leg.real ? '<span class="tl-est" title="실제 경로를 못 받아 직선거리로 추정한 값이에요">추정</span>' : '') + '</span>',
     costText ? '        <span class="tl-legcard-cost">' + escapeHtml(costText) + '</span>' : '',
     '      </div>',
+    // 시각과 "도착 예정"을 따로 감싼다 — 좁은 화면에선 말(label)만 접고 시각은 남기려고
     '      <button type="button" class="tl-legcard-eta" data-leg-idx="' + i + '" aria-expanded="' + open + '" title="눌러서 이동수단 바꾸기">',
-    '        <span>' + minToHHMM(nextArriveMin) + ' 도착 예정</span>' + IC_CHEVRON_DOWN,
+    '        <span class="tl-eta-time">' + minToHHMM(nextArriveMin) + '</span>' +
+      '<span class="tl-eta-label">도착 예정</span>' + IC_CHEVRON_DOWN,
     '      </button>',
     '    </div>',
     open ? '    <div class="tl-modes">' + modeBtns + '</div>' : '',
