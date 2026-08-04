@@ -435,7 +435,7 @@ async function handleSave(
           departurePhotoUrl: w.departure.photoUrl, departureRating: w.departure.rating,
         };
         if (w.realId) {
-          await updateDestination(w.realId, {
+          const ok = await updateDestination(w.realId, {
             name: w.name, start_date: w.start || null, end_date: w.end || null, sort_order: sortOrder,
             arrival_airport: airportFields.arrivalAirport, arrival_time: airportFields.arrivalTime,
             arrival_lat: airportFields.arrivalLat, arrival_lng: airportFields.arrivalLng,
@@ -444,6 +444,7 @@ async function handleSave(
             departure_lat: airportFields.departureLat, departure_lng: airportFields.departureLng,
             departure_photo_url: airportFields.departurePhotoUrl, departure_rating: airportFields.departureRating,
           });
+          if (!ok) console.error('[trip-edit] 여행지 "' + w.name + '" 수정 실패 — 항공편 정보가 저장되지 않았을 수 있어요.');
           keepIds.add(w.realId);
         } else {
           const created = await createDestination(trip.id, w.name, {
@@ -455,6 +456,8 @@ async function handleSave(
           if (created) {
             keepIds.add(created.id);
             if (originalIsSynthetic && sortOrder === 0) migratedSyntheticDestId = created.id;
+          } else {
+            console.error('[trip-edit] 여행지 "' + w.name + '" 생성 실패 — 항공편 정보가 저장되지 않았을 수 있어요.');
           }
         }
         sortOrder++;
