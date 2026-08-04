@@ -794,9 +794,11 @@
   padding: 2px 6px; border-radius: 999px; background: var(--rt-ice);
   color: var(--rt-blue); font-size: 9px; font-weight: 800; letter-spacing: 0.02em;
 }
-/* 예전엔 이 버튼이 DAY 액션들 아래에 있어서 위쪽 여백이 필요 없었는데, 이제 헤더 바로
-   아래(공항 입력 칸이 있던 자리)로 올라와서 헤더의 border-bottom과 붙어 보이지 않게 */
-.rt-panel-detail-top { margin-top: 12px; }
+/* "AI 일정 짜기"가 툴바 대신 패널 안(예전 공항 입력 칸 자리)에 올 때 — 툴바에서 쓰던
+   .rt-ai-plan-btn(색/아이콘/스피너)은 그대로 두고, 패널 폭에 맞춰 전체 너비로만 넓힌다 */
+.rt-ai-plan-btn-panel {
+  width: calc(100% - 24px); margin: 12px 12px 14px; justify-content: center;
+}
 
 /* AI 추천 적용 직후 안내 배너 */
 .rt-ai-notice {

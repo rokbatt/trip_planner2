@@ -197,6 +197,9 @@ export function openEditTripModal(trip: Trip, onSaved: () => void): void {
   // 여행지 사이 "이동 항공편" 칸을 펼쳐둔 갭(gap) 인덱스 — DB에 저장하는 값이 아니라
   // 이 모달이 열려있는 동안만 기억하는 UI 상태(이미 값이 있는 갭은 항상 펼쳐짐).
   const openGaps = new Set<number>();
+  // 이 모달이 열려있는 동안 mount된 모든 공항 입력 칸의 핸들 — 저장 직전에 전부
+  // waitForPending()해서, 자동완성으로 고르자마자 바로 저장을 눌러도 좌표가 안 빠지게 한다.
+  const airportPickerHandles: Array<{ waitForPending(): Promise<void> }> = [];
 
   /** 맨 위 "입국"(첫 여행지로 들어오는 항공편) / 맨 아래 "출국"(마지막 여행지에서 나가는
    *  항공편) 칸 — 여행지가 추가/삭제되면 첫/마지막이 바뀌므로 목록과 함께 다시 그린다. */
@@ -204,18 +207,18 @@ export function openEditTripModal(trip: Trip, onSaved: () => void): void {
     arrivalMount.innerHTML = '';
     departureMount.innerHTML = '';
     if (working.length === 0) return;
-    mountAirportPicker(arrivalMount, {
+    airportPickerHandles.push(mountAirportPicker(arrivalMount, {
       label: '입국',
       placeholder: '입국 공항 (예: 수완나품 BKK)',
       initial: working[0].arrival,
       onChange: (v) => { working[0].arrival = v; },
-    });
-    mountAirportPicker(departureMount, {
+    }));
+    airportPickerHandles.push(mountAirportPicker(departureMount, {
       label: '출국',
       placeholder: '출국 공항 (예: 인천 ICN)',
       initial: working[working.length - 1].departure,
       onChange: (v) => { working[working.length - 1].departure = v; },
-    });
+    }));
   }
 
   function renderDestRows(): void {
@@ -288,21 +291,21 @@ export function openEditTripModal(trip: Trip, onSaved: () => void): void {
     });
     listEl.querySelectorAll('.te-gap-mount[data-role="dep"]').forEach((el) => {
       const idx = Number((el as HTMLElement).dataset.gapIdx);
-      mountAirportPicker(el as HTMLElement, {
+      airportPickerHandles.push(mountAirportPicker(el as HTMLElement, {
         label: (working[idx].name || '이전 여행지') + ' 출발',
         placeholder: '출발 공항',
         initial: working[idx].departure,
         onChange: (v) => { working[idx].departure = v; },
-      });
+      }));
     });
     listEl.querySelectorAll('.te-gap-mount[data-role="arr"]').forEach((el) => {
       const idx = Number((el as HTMLElement).dataset.gapIdx); // 갭 인덱스 i → 도착지는 working[i+1]
-      mountAirportPicker(el as HTMLElement, {
+      airportPickerHandles.push(mountAirportPicker(el as HTMLElement, {
         label: (working[idx + 1].name || '다음 여행지') + ' 도착',
         placeholder: '도착 공항',
         initial: working[idx + 1].arrival,
         onChange: (v) => { working[idx + 1].arrival = v; },
-      });
+      }));
     });
   }
 
@@ -341,6 +344,9 @@ export function openEditTripModal(trip: Trip, onSaved: () => void): void {
   const form = overlay.querySelector('#te-form') as HTMLFormElement;
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    // 자동완성에서 방금 고른 공항의 좌표 조회가 아직 진행 중일 수 있으니(비동기) 다 끝날
+    // 때까지 기다린 뒤에 저장한다 — 안 그러면 고르자마자 바로 저장했을 때 좌표가 빠진다.
+    await Promise.all(airportPickerHandles.map((h) => h.waitForPending()));
     await handleSave(overlay, trip, working, onSaved, close);
   });
 }

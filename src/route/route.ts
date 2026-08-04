@@ -1088,8 +1088,6 @@ function buildPageHtml(): string {
     '    <div class="rt-daytabs" id="rt-daytabs"></div>',
     '    <div class="rt-toolbar-right">',
     '      <button type="button" class="rt-to-timeline-top" id="rt-to-timeline-top">' + IC_ARROW + ' 타임라인으로</button>',
-    // 모든 DAY를 한 번에 바꾸는 동작이라 DAY 탭과 같은 줄(여행지 전체 맥락)에 둔다
-    '      <button type="button" class="rt-ai-plan-btn" id="rt-ai-plan" title="Brainstorm에 담은 장소들을 영업시간·인기 동선·이동 효율 순으로 DAY별 일정으로 배분해요">' + IC_SPARK + '<span>AI 일정 짜기</span></button>',
     '      <div class="rt-searchbox" id="rt-searchbox-top" title="지도에 실제 장소를 검색해서 핀으로 찍어요 · Enter로 검색">' +
       IC_SEARCH +
       '<input type="text" id="rt-search-top" placeholder="지도에서 장소 검색 (Enter)" />' +
@@ -1138,7 +1136,6 @@ function bindPage(container: HTMLElement): void {
   bindUndoRedoButtons(container);
   bindOptionsMenu(container);
   bindAdhocButton(container);
-  container.querySelector('#rt-ai-plan')?.addEventListener('click', () => openAiPlanNotesModal(container));
 
   const toggle = container.querySelector('#rt-collapse-toggle') as HTMLElement;
   const mainEl = container.querySelector('#rt-main') as HTMLElement;
@@ -1951,7 +1948,9 @@ async function runAiRoutePlan(container: HTMLElement): Promise<void> {
   }
 }
 
-/** 상단 툴바 버튼은 패널 재렌더 대상이 아니라 따로 상태를 갱신해준다 */
+/** 진행 상황 콜백처럼 패널 전체를 다시 그리긴 아까운 잦은 갱신은 이 버튼만 따로 갱신한다
+ *  (버튼은 renderRightPanel이 그리는 패널 안에 있지만, 매 진행 단계마다 패널 전체를 다시
+ *  그리면 rows 재계산 등 불필요한 비용이 들어서 버튼 노드만 직접 건드린다). */
 function updateAiPlanButton(container: HTMLElement): void {
   const btn = container.querySelector('#rt-ai-plan') as HTMLButtonElement | null;
   if (!btn) return;
@@ -2331,15 +2330,15 @@ function renderRightPanel(container: HTMLElement): void {
     '  <button type="button" class="rt-panel-more" id="rt-panel-more" aria-label="이 DAY 메뉴">' + IC_DOTS + '</button>',
     '</div>',
     aiPlanNoticeHtml(),
-    // 이 DAY 하나에 대한 AI 세부 계획 — 예전엔 여기가 공항 정보 입력 칸이었는데, 입국/출국은
-    // 이제 여행 생성/편집에서 미리 받으므로(trips/trip-create.ts, trips/trip-edit.ts) 이 칸은
-    // 필요 없어졌고, 그 대신 DAY 진입 직후 바로 보이는 이 자리에 세부 계획 버튼을 둔다.
-    '<button type="button" class="rt-panel-detail rt-panel-detail-top" id="rt-panel-daydetail"' +
-      (s.visitCount === 0 || dayDetailBusy ? ' disabled' : '') +
-      ' title="이 DAY의 동선을 보고 장소별 추천 체류시간·팁·예상 예산을 정리해요">' +
-      (dayDetailBusy
-        ? '<span class="rt-ai-spinner"></span><span>세부 계획 만드는 중…</span>'
-        : IC_NOTE + '<span>이 DAY 세부 계획</span><span class="rt-panel-detail-badge">PRO 예정</span>') +
+    // 예전엔 여기가 공항 정보 입력 칸이었는데, 입국/출국은 이제 여행 생성/편집에서 미리
+    // 받으므로(trips/trip-create.ts, trips/trip-edit.ts) 이 칸은 필요 없어졌고, 그 대신
+    // 여러 DAY를 한 번에 바꾸는 "AI 일정 짜기"를 DAY 진입 직후 바로 보이는 자리로 옮겼다.
+    '<button type="button" class="rt-ai-plan-btn rt-ai-plan-btn-panel" id="rt-ai-plan"' +
+      (aiPlanBusy ? ' disabled' : '') +
+      ' title="Brainstorm에 담은 장소들을 영업시간·인기 동선·이동 효율 순으로 DAY별 일정으로 배분해요">' +
+      (aiPlanBusy
+        ? '<span class="rt-ai-spinner"></span><span>' + escapeHtml(aiPlanProgressLabel ?? '일정 짜는 중…') + '</span>'
+        : IC_SPARK + '<span>AI 일정 짜기</span>') +
       '</button>',
     '<div class="rt-panel-list" id="rt-panel-list">',
     stops.length
@@ -2372,6 +2371,14 @@ function renderRightPanel(container: HTMLElement): void {
     '  <button type="button" class="rt-panel-action primary" id="rt-panel-optimize"' + (s.visitCount < 2 ? ' disabled' : '') +
       ' title="' + (s.visitCount < 2 ? '장소가 2곳 이상일 때 정렬할 수 있어요' : '가까운 순서로 다시 정렬해요') + '">' + IC_SPARK + ' 순서 정리</button>',
     '</div>',
+    // 이 DAY 하나에 대한 심화 기능이라 DAY 단위 액션(장소 추가/순서 정리) 바로 아래에 둔다.
+    '<button type="button" class="rt-panel-detail" id="rt-panel-daydetail"' +
+      (s.visitCount === 0 || dayDetailBusy ? ' disabled' : '') +
+      ' title="이 DAY의 동선을 보고 장소별 추천 체류시간·팁·예상 예산을 정리해요">' +
+      (dayDetailBusy
+        ? '<span class="rt-ai-spinner"></span><span>세부 계획 만드는 중…</span>'
+        : IC_NOTE + '<span>이 DAY 세부 계획</span><span class="rt-panel-detail-badge">PRO 예정</span>') +
+      '</button>',
   ].join('\n');
 
   bindRightPanelEvents(container, el);
@@ -2379,6 +2386,7 @@ function renderRightPanel(container: HTMLElement): void {
 }
 
 function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
+  el.querySelector('#rt-ai-plan')?.addEventListener('click', () => openAiPlanNotesModal(container));
   el.querySelectorAll('.rt-panel-remove').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
