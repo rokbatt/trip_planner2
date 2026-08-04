@@ -104,6 +104,9 @@ export function openCreateTripModal(onCreated: () => void): void {
   const form = overlay.querySelector('#tc-form') as HTMLFormElement;
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    // 자동완성에서 방금 고른 공항의 좌표 조회가 아직 진행 중일 수 있으니(비동기) 다 끝날
+    // 때까지 기다린 뒤에 값을 읽는다 — 안 그러면 고르자마자 바로 제출했을 때 좌표가 빠진다.
+    await Promise.all([arrivalPicker.waitForPending(), departurePicker.waitForPending()]);
     await handleSubmit(overlay, arrivalPicker.getValue(), departurePicker.getValue(), onCreated, close);
   });
 }
@@ -178,6 +181,34 @@ async function handleSubmit(
 
     if (tripError) throw tripError;
 
+    const metaFullName = user.user_metadata && user.user_metadata.full_name;
+    const metaName = user.user_metadata && user.user_metadata.name;
+    const metaAvatar = user.user_metadata && user.user_metadata.avatar_url;
+    const metaPicture = user.user_metadata && user.user_metadata.picture;
+
+    // 트리거가 owner를 trip_members에 이미 추가했을 수 있으므로 upsert로 충돌(409) 없이
+    // 넘어가되, ignoreDuplicates는 쓰지 않는다 — 이미 있는 행이면 트리거가 만든 이름/아바타
+    // 없는 placeholder일 수 있으므로, 여기서 실제 프로필 정보(display_name/avatar_url)로
+    // 덮어써야 한다. (ignoreDuplicates:true였을 때는 이미 있는 행을 그대로 두고 조용히
+    // 넘어가서, 트리거가 만든 이름/아바타 없는 행이 계속 남아 프로필 사진이 "?"로 보였음)
+    //
+    // ⚠️ trip_destinations를 만들기 **전에** 반드시 먼저 실행해야 한다 — trip_destinations의
+    // RLS 정책이 "이 트립의 trip_members에 내가 있어야" insert를 허용하는데, 트리거가 아직
+    // 안 돌았거나 지연되면 순서가 바뀌었을 때 항공편 정보를 담은 여행지 행이 RLS에 막혀
+    // 조용히(에러 알림 없이) 사라져버린다.
+    const { error: memberError } = await supabase.from('trip_members').upsert(
+      {
+        trip_id: trip.id,
+        user_id: user.id,
+        role: 'owner',
+        display_name: metaFullName || metaName || user.email || '나',
+        avatar_url: metaAvatar || metaPicture || null,
+      },
+      { onConflict: 'trip_id,user_id' }
+    );
+
+    if (memberError) throw memberError;
+
     // 입국/출국 항공편을 입력했으면(또는 도시를 여러 곳 적었으면) 실제 trip_destinations 행을
     // 바로 만든다 — arrival_*/departure_* 컬럼은 실제 여행지 행에만 있어서, 만들어두지 않으면
     // 지금 입력한 항공편 정보를 저장할 곳이 없다. 도시를 안 적었어도 항공편만 입력했으면
@@ -186,7 +217,7 @@ async function handleSubmit(
     for (let i = 0; i < destNames.length; i++) {
       const isFirst = i === 0;
       const isLast = i === destNames.length - 1;
-      await createDestination(trip.id, destNames[i], {
+      const created = await createDestination(trip.id, destNames[i], {
         sortOrder: i,
         ...(isFirst
           ? {
@@ -203,30 +234,8 @@ async function handleSubmit(
             }
           : {}),
       });
+      if (!created) console.error('[trip-create] 여행지 "' + destNames[i] + '" 생성 실패 — 항공편 정보가 저장되지 않았을 수 있어요.');
     }
-
-    const metaFullName = user.user_metadata && user.user_metadata.full_name;
-    const metaName = user.user_metadata && user.user_metadata.name;
-    const metaAvatar = user.user_metadata && user.user_metadata.avatar_url;
-    const metaPicture = user.user_metadata && user.user_metadata.picture;
-
-    // 트리거가 owner를 trip_members에 이미 추가했을 수 있으므로 upsert로 충돌(409) 없이
-    // 넘어가되, ignoreDuplicates는 쓰지 않는다 — 이미 있는 행이면 트리거가 만든 이름/아바타
-    // 없는 placeholder일 수 있으므로, 여기서 실제 프로필 정보(display_name/avatar_url)로
-    // 덮어써야 한다. (ignoreDuplicates:true였을 때는 이미 있는 행을 그대로 두고 조용히
-    // 넘어가서, 트리거가 만든 이름/아바타 없는 행이 계속 남아 프로필 사진이 "?"로 보였음)
-    const { error: memberError } = await supabase.from('trip_members').upsert(
-      {
-        trip_id: trip.id,
-        user_id: user.id,
-        role: 'owner',
-        display_name: metaFullName || metaName || user.email || '나',
-        avatar_url: metaAvatar || metaPicture || null,
-      },
-      { onConflict: 'trip_id,user_id' }
-    );
-
-    if (memberError) throw memberError;
 
     close();
     onCreated();

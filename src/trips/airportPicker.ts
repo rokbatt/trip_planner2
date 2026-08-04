@@ -26,6 +26,10 @@ export const EMPTY_AIRPORT_VALUE: AirportValue = {
 
 export interface AirportPickerHandle {
   getValue(): AirportValue;
+  /** 자동완성에서 방금 고른 곳의 좌표 조회(getPlaceDetails)가 아직 안 끝났으면 끝날 때까지
+   *  기다린다 — 고르자마자 바로 저장 버튼을 눌러도 좌표가 빠진 채로 getValue()가 불리지
+   *  않도록, 저장 직전에 반드시 이걸 먼저 await해야 한다. */
+  waitForPending(): Promise<void>;
   destroy(): void;
 }
 
@@ -88,31 +92,39 @@ export function mountAirportPicker(container: HTMLElement, opts: AirportPickerOp
     wrap.querySelector('.apk-ac')?.remove();
     acPredictions = [];
   };
+  // 드롭다운에서 골랐을 때 좌표 조회(getPlaceDetails)가 끝나기 전에 저장 버튼을 눌러버리는
+  // 경우를 막기 위해 진행 중인 조회를 추적 — waitForPending()이 이걸 기다린다.
+  let pendingLookup: Promise<void> | null = null;
+
   // 드롭다운에서 실제로 골랐을 때만 좌표를 받아와 채운다
-  const selectAirport = async (p: PlacePrediction) => {
+  const selectAirport = (p: PlacePrediction): Promise<void> => {
     airportInput.value = p.mainText;
     closeAc();
     value = { ...value, airport: p.mainText };
 
-    let lat: number | null = null;
-    let lng: number | null = null;
-    let photo: string | null = null;
-    let rating: number | null = null;
-    try {
-      const details = await getPlaceDetails(p.placeId);
-      const extracted = extractPlaceResult(details);
-      lat = extracted?.lat ?? null;
-      lng = extracted?.lng ?? null;
-      photo = extracted?.photoUrl ?? null;
-      rating = extracted?.rating ?? null;
-      // Google 원본 URL을 그대로 저장하면 볼 때마다 Google에 요청이 나가고(비용) 언젠가
-      // 만료된다 — 우리 Storage로 재호스팅해서 저장.
-      if (photo) photo = await rehostPhoto(photo, p.placeId);
-    } catch (e) {
-      console.error('[airportPicker] 공항 정보 조회 실패(이름만 저장):', (e as Error).message);
-    }
-    value = { ...value, lat, lng, photoUrl: photo, rating };
-    emit();
+    const lookup = (async () => {
+      let lat: number | null = null;
+      let lng: number | null = null;
+      let photo: string | null = null;
+      let rating: number | null = null;
+      try {
+        const details = await getPlaceDetails(p.placeId);
+        const extracted = extractPlaceResult(details);
+        lat = extracted?.lat ?? null;
+        lng = extracted?.lng ?? null;
+        photo = extracted?.photoUrl ?? null;
+        rating = extracted?.rating ?? null;
+        // Google 원본 URL을 그대로 저장하면 볼 때마다 Google에 요청이 나가고(비용) 언젠가
+        // 만료된다 — 우리 Storage로 재호스팅해서 저장.
+        if (photo) photo = await rehostPhoto(photo, p.placeId);
+      } catch (e) {
+        console.error('[airportPicker] 공항 정보 조회 실패(이름만 저장):', (e as Error).message);
+      }
+      value = { ...value, lat, lng, photoUrl: photo, rating };
+      emit();
+    })();
+    pendingLookup = lookup;
+    return lookup;
   };
   const renderAc = () => {
     wrap.querySelector('.apk-ac')?.remove();
@@ -166,6 +178,7 @@ export function mountAirportPicker(container: HTMLElement, opts: AirportPickerOp
 
   return {
     getValue: () => value,
+    waitForPending: async () => { if (pendingLookup) await pendingLookup; },
     destroy: () => wrap.remove(),
   };
 }
