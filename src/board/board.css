@@ -943,8 +943,6 @@
   transform: translateY(0);
   pointer-events: auto;
 }
-.bd-group-cluster-icon { width: 11px; height: 11px; color: #E08E00; flex-shrink: 0; }
-.bd-group-cluster-icon svg { width: 100%; height: 100%; }
 .bd-group-cluster-name {
   font-size: 10.5px;
   font-weight: 700;
