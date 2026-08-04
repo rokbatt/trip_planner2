@@ -50,6 +50,7 @@ import {
   minToHHMM,
   hhmmToMin,
   parseTimeInput,
+  CAT_LABEL,
 } from '../utils/travelEstimate';
 import type { Leg, RealLeg, TravelMode, CatKey } from '../utils/travelEstimate';
 import type { Database, StaySegment, TripDestination } from '../types/database';
@@ -70,21 +71,36 @@ const IC_ROUTEPATH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 const IC_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2m-8 0 1 13a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-13"/></svg>';
 const IC_GRIP = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>';
 const IC_EXTLINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>';
-const IC_NOTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 const IC_PIN_SMALL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.5 7-11.5A7 7 0 0 0 5 9.5C5 14.5 12 21 12 21Z"/></svg>';
 /** 지도 열기/닫기 토글에만 쓰는 아이콘 — 카드의 "지도에서 보기"(IC_PIN_SMALL)와 구분 */
 const IC_MAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3 3 5v16l6-2 6 2 6-2V3l-6 2-6-2Z"/><path d="M9 3v16M15 5v16"/></svg>';
+const IC_STAR = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.8 5.9 20.4 7.2 13.7 2.2 9l6.8-.8z"/></svg>';
+const IC_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
 
 const MODE_ICON: Record<TravelMode, string> = { WALK: IC_WALK, TRANSIT: IC_TRANSIT, TAXI: IC_TAXI };
 const MODES: TravelMode[] = ['WALK', 'TRANSIT', 'TAXI'];
 
+/** 일정 핀·시간축 점 색 — 전부 같은 Primary Navy 하나로 통일(레퍼런스 기준) */
+const PIN_NAVY = '#193A73';
+
 /**
- * 일정 핀·점 색 — 카테고리별 무지개색(빨강/주황/보라/초록)이 아니라 앱의 스카이블루 계열로
- * 통일한다. 아이콘을 없앤 지금은 카테고리를 색으로 구분할 이유가 없고, 대신 "숙소/공항 =
- * 하루의 시작·끝점"이라는 구조적인 구분만 짙은 남색으로 남긴다(그 외는 전부 같은 블루).
+ * 이 정류지가 속한 캘린더 날짜(dateISO)의 요일에 맞는 영업시간 한 줄을 고른다.
+ * Google Places의 opening_hours(weekdayDescriptions)는 월요일부터 7줄이 오므로,
+ * JS의 getDay()(일=0)를 월요일 기준 인덱스로 바꿔서 정확히 그날의 줄만 골라 쓴다.
+ * 데이터가 없거나 형식이 다르면 null — 근거 없는 영업시간을 지어내지 않는다(원칙 3-1).
  */
-function pinColorFor(cat: CatKey): string {
-  return cat === 'STAY' || cat === 'AIRPORT' ? '#0B2A5C' : '#0B7CC4';
+function todaysHoursLine(place: Place | null, dateISO: string | null): string | null {
+  const lines = place?.opening_hours;
+  if (!dateISO || !Array.isArray(lines) || lines.length !== 7) return null;
+  if (!lines.every((l) => typeof l === 'string')) return null;
+  const d = new Date(dateISO + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return null;
+  const mondayFirstIdx = (d.getDay() + 6) % 7;
+  const line = String(lines[mondayFirstIdx]).trim();
+  if (!line) return null;
+  // "월요일: 09:00~18:00" 형식이면 요일 접두어는 떼고 시간만 배지에 보여준다
+  const colonIdx = line.indexOf(':');
+  return colonIdx >= 0 && colonIdx < 6 ? line.slice(colonIdx + 1).trim() : line;
 }
 
 const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
@@ -774,8 +790,8 @@ function dayScheduleHtml(): string {
   const s = scheduleFor(day);
   const rows: string[] = [];
   day.stops.forEach((stop, i) => {
-    rows.push(stopCardHtml(stop, i, s));
-    if (i < day.stops.length - 1) rows.push(legRowHtml(s.legs[i], day.stops[i + 1], i));
+    rows.push(stopCardHtml(stop, i, s, day.date));
+    if (i < day.stops.length - 1) rows.push(legRowHtml(s.legs[i], day.stops[i + 1], i, s.arriveMin[i + 1]));
   });
 
   return ['<div class="tl-day">', dayHeadHtml(day, s), '  <ol class="tl-list" id="tl-list">' + rows.join('') + '</ol>', '</div>'].join('');
@@ -817,16 +833,15 @@ function dayHeadHtml(day: TlDay, s: DaySchedule): string {
 }
 
 /**
- * 일정 카드 — 이름과 메모에만 집중한다.
- * 구글 평점·주소·카테고리 아이콘 같은 메타데이터는 일부러 넣지 않는다 — 이 카드에서
- * 사용자가 실제로 보고 싶은 건 "몇 시에 어디를, 뭐라고 메모해 뒀는지"뿐이다.
- * (모바일에선 CSS로 사진·메모·액션을 접어 한 줄에 가깝게 줄인다)
+ * 일정 카드 — 사진(좌) · 이름/평점/카테고리/영업시간 · 메모, 오른쪽엔 체류 요약 박스.
+ * 구글 평점·카테고리·영업시간은 실제로 저장된 데이터가 있을 때만 보여준다 — 입장료·체크인
+ * 시각·WiFi처럼 우리 DB에 없는 값은 지어내지 않는다(원칙 3-1).
  */
-function stopCardHtml(stop: TlStop, i: number, s: DaySchedule): string {
-  const color = pinColorFor(stop.cat);
+function stopCardHtml(stop: TlStop, i: number, s: DaySchedule, dateISO: string | null): string {
   const selected = selectedKey === stop.key;
   const fixed = !!stop.arriveTime;
   const dwell = s.dwellMin[i];
+  const place = stop.place;
 
   const warn =
     s.overrunMin[i] > 0
@@ -836,31 +851,42 @@ function stopCardHtml(stop: TlStop, i: number, s: DaySchedule): string {
       ? '<span class="tl-flag tl-flag-slack" title="고정한 시각까지 비는 시간이에요">여유 ' + fmtMin(s.slackMin[i]) + '</span>'
       : '';
 
-  // Brainstorm에서 모아둔 장소 메모(불릿)를 그대로 가져온다 — 계획서에서 제일 자주 보게 되는 내용
-  const noteLines = ((stop.place?.notes as string | null) ?? '')
-    .split('\n').map((l) => l.trim()).filter(Boolean);
-  const shownNotes = noteLines.slice(0, 4);
-  const notesHtml = shownNotes.length
-    ? '<ul class="tl-notes">' +
-      shownNotes.map((l) => '<li>' + escapeHtml(l) + '</li>').join('') +
-      (noteLines.length > shownNotes.length
-        ? '<li class="tl-notes-more">외 ' + (noteLines.length - shownNotes.length) + '개</li>'
-        : '') +
-      '</ul>'
+  const rating = typeof place?.google_rating === 'number'
+    ? '<span class="tl-rating">' + IC_STAR + '<b>' + place.google_rating.toFixed(1) + '</b></span>'
     : '';
+
+  const catParts = [CAT_LABEL[stop.cat], place?.category ?? ''].filter(Boolean);
+  const catLine = catParts.length ? '<span class="tl-cat">' + escapeHtml(catParts.join(' · ')) + '</span>' : '';
+
+  const hoursLine = todaysHoursLine(place, dateISO);
+  const badges = hoursLine ? '<span class="tl-badge">' + escapeHtml(hoursLine) + '</span>' : '';
 
   // 사진 주소는 style 속성에 직접 끼워 넣지 않는다 — 따옴표·괄호가 섞이면 CSS가 깨지고,
   // 이미 인코딩된 주소를 다시 인코딩하면(encodeURI) %23 → %2523이 되어 이미지가 안 뜬다.
   // 값은 data-* 로만 넘기고 렌더 후 JS가 style에 넣는다.
-  const photo = stop.place?.photo_url
-    ? '<div class="tl-photo" data-photo="' + escapeHtml(stop.place.photo_url) + '"></div>'
-    : '';
+  const photo = place?.photo_url
+    ? '<div class="tl-photo" data-photo="' + escapeHtml(place.photo_url) + '"></div>'
+    : '<div class="tl-photo tl-photo-empty"></div>';
 
-  const mapsUrl = stop.place?.google_place_id
-    ? 'https://www.google.com/maps/place/?q=place_id:' + stop.place.google_place_id
+  const mapsUrl = place?.google_place_id
+    ? 'https://www.google.com/maps/place/?q=place_id:' + place.google_place_id
     : stop.lat != null && stop.lng != null
     ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(stop.lat + ',' + stop.lng)
     : null;
+
+  // 우측 체류 요약 박스 — 도착/출발은 항상, "예상 체류"는 실제로 머무는 시간이 있을 때만
+  // (앵커 정류지처럼 체류시간이 0인 곳에 없는 값을 지어내 보여주지 않기 위해)
+  const stayBox = [
+    '<div class="tl-staybox">',
+    dwell > 0
+      ? '  <span class="tl-staybox-label">예상 체류</span><span class="tl-staybox-value">' + fmtMin(dwell) + '</span>'
+      : '',
+    '  <div class="tl-staybox-times">',
+    '    <span class="tl-staybox-time"><b>도착</b> ' + minToHHMM(s.arriveMin[i]) + '</span>',
+    '    <span class="tl-staybox-time"><b>출발</b> ' + minToHHMM(s.departMin[i]) + '</span>',
+    '  </div>',
+    '</div>',
+  ].join('');
 
   return [
     '<li class="tl-row tl-stop' + (selected ? ' is-selected' : '') + '" data-key="' + stop.key + '" data-idx="' + i + '" draggable="true">',
@@ -875,25 +901,26 @@ function stopCardHtml(stop: TlStop, i: number, s: DaySchedule): string {
     fixed ? '    <button type="button" class="tl-unfix" data-key="' + stop.key + '" title="고정 해제 — 앞 일정에 맞춰 자동으로 계산해요">고정 해제</button>' : '',
     '  </div>',
 
-    '  <div class="tl-col-spine"><span class="tl-dot" style="background:' + color + '"></span></div>',
+    '  <div class="tl-col-spine"><span class="tl-spine-line"></span><span class="tl-dot"><i></i></span></div>',
 
     '  <div class="tl-col-card">',
     '    <div class="tl-card">',
     '      <span class="tl-grip" title="드래그해서 순서 바꾸기">' + IC_GRIP + '</span>',
-    '      <span class="tl-pin" style="background:' + color + '">' + (i + 1) + '</span>',
+    '      <span class="tl-pin">' + (i + 1) + '</span>',
+    photo,
     '      <div class="tl-card-body">',
     '        <div class="tl-card-titlerow">',
     '          <h3 class="tl-name">' + escapeHtml(stop.name) + '</h3>',
+    rating,
     warn,
     '        </div>',
-    notesHtml,
-    '        <div class="tl-memo-row' + (stop.memo ? '' : ' is-empty') + '">',
-    '          <span class="tl-memo-ico">' + IC_NOTE + '</span>',
+    (catLine || badges) ? '        <div class="tl-metarow">' + catLine + badges + '</div>' : '',
+    '        <div class="tl-memo-row">',
     '          <input type="text" class="tl-memo" placeholder="메모 추가" value="' + escapeHtml(stop.memo ?? '') + '"' +
       ' data-key="' + stop.key + '" aria-label="' + escapeHtml(stop.name) + ' 메모" />',
     '        </div>',
     '      </div>',
-    photo,
+    stayBox,
     '      <div class="tl-card-tools">',
     '        <button type="button" class="tl-tool tl-tool-map" data-key="' + stop.key + '" title="지도에서 이 일정 보기" aria-label="지도에서 보기">' + IC_PIN_SMALL + '</button>',
     mapsUrl ? '        <a class="tl-tool" href="' + mapsUrl + '" target="_blank" rel="noopener noreferrer" title="Google 지도에서 열기" aria-label="Google 지도에서 열기">' + IC_EXTLINK + '</a>' : '',
@@ -906,16 +933,17 @@ function stopCardHtml(stop: TlStop, i: number, s: DaySchedule): string {
 }
 
 /**
- * 이동 구간 — 누르면 그 자리에서 이동수단을 바꾼다.
- * 이동수단은 "두 일정 사이"의 속성이라 카드 안이 아니라 여기에 두는 게 맞다.
+ * 이동 구간 — 아이콘 원 + 소요시간/거리/요금 + "N시 도착 예정"을 한 장의 카드로 묶는다.
+ * 화살표(▼)를 누르면 그 자리에서 이동수단을 바꾼다. 이동수단은 "두 일정 사이"의 속성이라
+ * 카드 안이 아니라 여기에 두는 게 맞다.
  */
-function legRowHtml(leg: Leg | null, to: TlStop, i: number): string {
+function legRowHtml(leg: Leg | null, to: TlStop, i: number, nextArriveMin: number): string {
   if (!leg) {
     return [
       '<li class="tl-row tl-leg tl-leg-unknown">',
       '  <div class="tl-col-time"></div>',
       '  <div class="tl-col-spine"><span class="tl-spine-line"></span></div>',
-      '  <div class="tl-col-card"><span class="tl-leg-body">좌표가 없어 이동시간을 계산할 수 없어요</span></div>',
+      '  <div class="tl-col-card"><div class="tl-legcard"><span class="tl-legcard-empty">좌표가 없어 이동시간을 계산할 수 없어요</span></div></div>',
       '</li>',
     ].join('');
   }
@@ -923,7 +951,7 @@ function legRowHtml(leg: Leg | null, to: TlStop, i: number): string {
   const open = openLegIndex === i;
   const manual = !!to.travelMode;
   // 걸어서 가는 구간엔 요금이 없으므로 거리만 한 번 보여준다
-  const cost = leg.costTHB > 0 ? leg.costTHB.toLocaleString() + ' ' + (leg.fare?.currency ?? 'THB') : '';
+  const costText = leg.costTHB > 0 ? '예상 요금 ' + leg.costTHB.toLocaleString() + ' ' + (leg.fare?.currency ?? 'THB') : '';
 
   const modeBtns = MODES.map((m) =>
     '<button type="button" class="tl-modebtn' + (to.travelMode === m ? ' active' : '') + '"' +
@@ -936,14 +964,18 @@ function legRowHtml(leg: Leg | null, to: TlStop, i: number): string {
     '  <div class="tl-col-time"><span class="tl-leg-dur">' + fmtMin(leg.min) + '</span></div>',
     '  <div class="tl-col-spine"><span class="tl-spine-line"></span></div>',
     '  <div class="tl-col-card">',
-    '    <button type="button" class="tl-leg-body" data-leg-idx="' + i + '" aria-expanded="' + open + '" title="눌러서 이동수단 바꾸기">',
-    '      <span class="tl-leg-ico">' + MODE_ICON[leg.mode] + '</span>',
-    '      <span class="tl-leg-mode">' + modeLabel(leg.mode) + '</span>',
-    '      <span class="tl-leg-sep">·</span><span class="tl-leg-dim">' + fmtKm(leg.km) + '</span>',
-    cost ? '      <span class="tl-leg-sep">·</span><span class="tl-leg-dim">' + escapeHtml(cost) + '</span>' : '',
-    !leg.real ? '      <span class="tl-est" title="실제 경로를 못 받아 직선거리로 추정한 값이에요">추정</span>' : '',
-    manual ? '      <span class="tl-manual" title="직접 지정한 이동수단"></span>' : '',
-    '    </button>',
+    '    <div class="tl-legcard">',
+    '      <span class="tl-legcard-icon">' + MODE_ICON[leg.mode] + '</span>',
+    '      <div class="tl-legcard-info">',
+    '        <span class="tl-legcard-mode">' + modeLabel(leg.mode) + (manual ? '<i class="tl-manual"></i>' : '') + '</span>',
+    '        <span class="tl-legcard-stats">' + fmtMin(leg.min) + ' · ' + fmtKm(leg.km) +
+      (!leg.real ? ' <span class="tl-est" title="실제 경로를 못 받아 직선거리로 추정한 값이에요">추정</span>' : '') + '</span>',
+    costText ? '        <span class="tl-legcard-cost">' + escapeHtml(costText) + '</span>' : '',
+    '      </div>',
+    '      <button type="button" class="tl-legcard-eta" data-leg-idx="' + i + '" aria-expanded="' + open + '" title="눌러서 이동수단 바꾸기">',
+    '        <span>' + minToHHMM(nextArriveMin) + ' 도착 예정</span>' + IC_CHEVRON_DOWN,
+    '      </button>',
+    '    </div>',
     open ? '    <div class="tl-modes">' + modeBtns + '</div>' : '',
     '  </div>',
     '</li>',
@@ -968,7 +1000,7 @@ function allDaysHtml(): string {
             return [
               '<div class="tl-allrow">',
               '  <span class="tl-alltime">' + minToHHMM(s.arriveMin[j]) + '</span>',
-              '  <span class="tl-alldot" style="background:' + pinColorFor(stop.cat) + '"></span>',
+              '  <span class="tl-alldot" style="background:' + PIN_NAVY + '"></span>',
               '  <span class="tl-allname">' + escapeHtml(stop.name) + '</span>',
               '</div>',
               leg && j < d.stops.length - 1
@@ -1034,7 +1066,7 @@ function renderNowMarker(): void {
   marker.className = 'tl-row tl-nowline';
   marker.innerHTML =
     '<div class="tl-col-time"><span class="tl-nowline-time">' + minToHHMM(now) + '</span></div>' +
-    '<div class="tl-col-spine"><span class="tl-nowline-dot"></span></div>' +
+    '<div class="tl-col-spine"><span class="tl-spine-line"></span><span class="tl-nowline-dot"></span></div>' +
     '<div class="tl-col-card"><span class="tl-nowline-label">지금</span><span class="tl-nowline-bar"></span></div>';
 
   const target = list.querySelector('.tl-stop[data-idx="' + nextIdx + '"]');
@@ -1152,7 +1184,7 @@ function drawMap(): void {
     const marker = new g.maps.Marker({
       position: pos,
       map: mapInstance,
-      icon: pinIcon(g, i + 1, pinColorFor(stop.cat), active),
+      icon: pinIcon(g, i + 1, PIN_NAVY, active),
       title: stop.name,
       zIndex: active ? 999 : 10 + i,
     });
@@ -1351,8 +1383,8 @@ function bindDaySchedule(main: HTMLElement): void {
     });
   });
 
-  /* 이동수단 — 구간을 눌러 펼치고, 켜진 걸 다시 누르면 자동 선택으로 되돌린다 */
-  main.querySelectorAll('.tl-leg-body').forEach((btn) => {
+  /* 이동수단 — "N시 도착 예정" 칩을 눌러 펼치고, 켜진 걸 다시 누르면 자동 선택으로 되돌린다 */
+  main.querySelectorAll('.tl-legcard-eta').forEach((btn) => {
     btn.addEventListener('click', () => {
       const idx = Number((btn as HTMLElement).dataset.legIdx);
       if (!Number.isFinite(idx)) return;

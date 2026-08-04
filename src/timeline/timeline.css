@@ -31,8 +31,26 @@
   --tl-warn-bg: #FDEEEC;
   --tl-ease: 150ms ease;
 
-  /* 시각표 3열 격자 — 시각 / 스파인 / 카드. 모든 줄이 공유해서 세로줄이 정확히 맞물린다 */
-  --tl-col-time: 74px;
+  /* ── 레퍼런스(Airport Lounge Boarding-Pass) 카드·시간축 색상 — 요청 원문 값을 그대로 사용 ── */
+  --tl-c-primary: #193A73;    /* 번호 핀, 시간축 점, 강조 상태 */
+  --tl-c-time: #172B4D;       /* 시간축 큰 시각(볼드 네이비) */
+  --tl-c-time-sub: #8B97A8;   /* 시간축 체류시간·출발시각 보조 텍스트 */
+  --tl-c-title: #17212B;      /* 장소 이름 */
+  --tl-c-body: #334155;       /* 이동 카드 통계·배지 본문 */
+  --tl-c-secondary: #7A8798;  /* 카테고리 등 보조 텍스트 */
+  --tl-c-card-border: #E9EEF5;/* 카드 테두리 */
+  --tl-c-spine: #E6EDF5;      /* 시간축 세로선 */
+  --tl-c-rating: #F6B545;
+  --tl-c-taxi-tint: rgba(246,181,69,0.14);
+  --tl-c-taxi-icon: #D39A1A;
+  --tl-c-walk-tint: rgba(83,185,156,0.14);
+  --tl-c-walk-icon: #2E9D76;
+  --tl-c-staybox-bg: #FCFDFF;
+  --tl-card-shadow: 0 1px 2px rgba(23,33,43,0.04);
+
+  /* 시각표 3열 격자 — 시각 / 스파인 / 카드. 모든 줄이 공유해서 세로줄이 정확히 맞물린다.
+     시각 폰트를 20% 키운 만큼(15px→18px) 칸도 넉넉히 늘려야 "09:00"이 잘리지 않는다 */
+  --tl-col-time: 96px;
   --tl-col-spine: 20px;
 
   max-width: 1512px;
@@ -211,15 +229,12 @@
 
 /* ══════════════ 하루 일정 ══════════════ */
 
-.tl-day {
-  border: 1px solid var(--tl-line); border-radius: 16px;
-  background: var(--tl-glass); backdrop-filter: var(--tl-blur);
-  box-shadow: var(--tl-shadow-sm); overflow: hidden;
-}
+/* 레퍼런스는 하루 전체를 감싸는 카드 틀이 없다 — DAY 헤더와 카드들이 페이지 배경 위에
+   바로 놓여 하나의 긴 타임라인처럼 이어진다. 그래서 여기엔 테두리·배경·그림자를 두지 않는다. */
+.tl-day { display: block; }
 
 .tl-dayhead {
-  padding: 15px 18px 13px; border-bottom: 1px solid var(--tl-line);
-  background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(241,246,251,0.5));
+  padding: 4px 24px 10px;
 }
 .tl-dayhead-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .tl-dayhead-label {
@@ -243,42 +258,50 @@
 .tl-dayhead-note { margin-top: 7px; font-size: 10px; color: var(--tl-ink-4); }
 .tl-est-loading { color: var(--tl-ink-3); }
 
-.tl-list { list-style: none; margin: 0; padding: 12px 0 14px; }
+.tl-list { list-style: none; margin: 0; padding: 2px 0 10px; }
 
-/* 모든 줄이 공유하는 3열 격자 */
+/* 모든 줄이 공유하는 3열 격자 — 카드 좌우 여백 24px, 카드 간 세로 간격 16px */
 .tl-row {
   display: grid;
   grid-template-columns: var(--tl-col-time) var(--tl-col-spine) minmax(0, 1fr);
   align-items: stretch; column-gap: 10px;
+  padding-bottom: 16px;
 }
-
 .tl-col-time {
   display: flex; flex-direction: column; align-items: flex-end; justify-content: center;
-  padding-left: 14px; gap: 2px;
+  padding-left: 24px; gap: 2px;
 }
 .tl-col-spine { position: relative; display: flex; align-items: center; justify-content: center; }
-.tl-col-card { min-width: 0; padding-right: 16px; }
+.tl-col-card { min-width: 0; padding-right: 24px; }
 
 /* 카드가 길어져도 도착 시각과 점은 카드 제목 줄에 맞춘다 — 세로 가운데에 두면
    사진·메모가 많은 카드에서 시각이 제목과 한참 떨어져 어느 일정의 시각인지 흐려진다 */
-.tl-stop .tl-col-time { justify-content: flex-start; padding-top: 15px; }
-.tl-stop .tl-col-spine { align-items: flex-start; padding-top: 21px; }
+.tl-stop .tl-col-time { justify-content: flex-start; padding-top: 17px; }
+.tl-stop .tl-col-spine { align-items: flex-start; padding-top: 23px; }
 
-/* ── 스파인 — 점과 점선으로 하루가 이어져 있음을 표현 ── */
-.tl-dot {
-  width: 10px; height: 10px; border-radius: 50%;
-  box-shadow: 0 0 0 3px #fff, 0 0 0 4.5px rgba(130,150,170,0.16);
-  z-index: 1;
-}
+/* ── 시간축 — 페이지의 중심축처럼 보이도록 점과 점 사이를 끊김 없는 실선으로 잇는다.
+   .tl-spine-line은 모든 줄(정류지·이동 구간)에 공통으로 깔려 있고, 정류지 줄에서만
+   그 위에 점이 얹힌다 — 그래서 하루 전체가 위에서 아래로 한 줄의 축으로 읽힌다. */
 .tl-spine-line {
-  width: 0; height: 100%; min-height: 26px;
-  border-left: 1px dashed rgba(130,150,170,0.45);
+  position: absolute; left: 50%; top: 0; bottom: 0; width: 2px;
+  background: var(--tl-c-spine); transform: translateX(-50%);
 }
+.tl-list li:first-child .tl-spine-line { top: 50%; }
+.tl-list li:last-child .tl-spine-line { bottom: 50%; }
+
+/* 정류지의 점 — 흰색 내부 + Navy 외곽선 + 가운데 Navy Dot ("현재 위치"를 표시하는 구조) */
+.tl-dot {
+  position: relative; z-index: 1;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: #fff; border: 2px solid var(--tl-c-primary);
+  display: flex; align-items: center; justify-content: center;
+}
+.tl-dot i { width: 5px; height: 5px; border-radius: 50%; background: var(--tl-c-primary); }
 
 /* ── 시각 칸 ── */
 .tl-time {
   width: 100%; border: none; background: none; text-align: right;
-  font-family: inherit; font-size: 15px; font-weight: 800; color: var(--tl-ink);
+  font-family: inherit; font-size: 18px; font-weight: 800; color: var(--tl-c-time);
   font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
   padding: 2px 4px; border-radius: 7px; cursor: text;
   transition: background var(--tl-ease), color var(--tl-ease);
@@ -287,13 +310,12 @@
 /* 사용자가 직접 고정한 시각은 색으로 구분 — 자동 계산값과 섞이지 않게 */
 .tl-time.is-fixed { color: var(--tl-blue); }
 .tl-dwell {
-  font-size: 10.5px; font-weight: 700; color: var(--tl-ink-2);
-  padding: 1px 7px; border-radius: 999px; background: var(--tl-mist);
-  font-variant-numeric: tabular-nums;
+  font-size: 11px; font-weight: 700; color: var(--tl-c-time-sub);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .tl-out {
-  font-size: 10px; font-weight: 600; color: var(--tl-ink-4);
-  font-variant-numeric: tabular-nums; padding-right: 4px;
+  font-size: 11px; font-weight: 600; color: var(--tl-c-time-sub);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .tl-unfix {
   margin-top: 2px; padding: 2px 7px; border-radius: 6px;
@@ -308,95 +330,103 @@
 .tl-stop { position: relative; }
 .tl-card {
   position: relative;
-  display: flex; align-items: flex-start; gap: 12px;
-  padding: 14px 14px 13px 10px; margin-bottom: 2px;
-  border: 1px solid var(--tl-line); border-radius: 14px;
-  background: #fff; box-shadow: var(--tl-shadow-sm);
-  transition: border-color var(--tl-ease), box-shadow var(--tl-ease), transform var(--tl-ease);
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 14px 12px 10px;
+  border: 1px solid var(--tl-c-card-border); border-radius: 18px;
+  background: #fff; box-shadow: var(--tl-card-shadow);
+  transition: border-color var(--tl-ease), box-shadow var(--tl-ease);
 }
-.tl-stop:hover .tl-card { border-color: var(--tl-line-strong); box-shadow: var(--tl-shadow-md); }
+.tl-stop:hover .tl-card { border-color: var(--tl-line-strong); }
 /* 클릭으로 고른 카드 — 지도의 확대된 핀과 짝을 이룬다 */
 .tl-stop.is-selected .tl-card {
-  border-color: var(--tl-blue);
-  box-shadow: 0 0 0 1px var(--tl-blue), var(--tl-shadow-md);
+  border-color: var(--tl-c-primary);
+  box-shadow: 0 0 0 1px var(--tl-c-primary);
 }
 .tl-stop.dragging .tl-card { opacity: 0.45; }
-.tl-stop.drag-over .tl-card { border-color: var(--tl-blue); box-shadow: inset 0 3px 0 var(--tl-blue); }
+.tl-stop.drag-over .tl-card { border-color: var(--tl-c-primary); box-shadow: inset 0 3px 0 var(--tl-c-primary); }
 
 .tl-grip {
   display: flex; align-items: center; color: var(--tl-ink-4);
   cursor: grab; opacity: 0; transition: opacity var(--tl-ease);
-  margin-top: 3px; flex-shrink: 0;
+  flex-shrink: 0;
 }
 .tl-grip svg { width: 14px; height: 14px; }
 .tl-stop:hover .tl-grip { opacity: 1; }
 .tl-stop:active .tl-grip { cursor: grabbing; }
 
-/* 카드 순번 = 지도 핀의 숫자 — 색까지 같아서 둘이 바로 이어진다 */
+/* 숫자 인덱스 — 지도 핀과 동일한 Navy 원형 + 흰색 볼드 숫자 */
 .tl-pin {
-  flex-shrink: 0; width: 24px; height: 24px; border-radius: 8px;
-  display: grid; place-items: center; margin-top: 1px;
-  color: #fff; font-size: 12px; font-weight: 800;
+  flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--tl-c-primary); color: #fff; font-size: 14px; font-weight: 800;
   font-variant-numeric: tabular-nums;
-  box-shadow: 0 1px 3px rgba(11,42,92,0.18);
 }
 
-.tl-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+/* 사진 — 가로형(약 1.8:1) 썸네일. 카드 높이가 메모 줄 수에 따라 달라져도 사진
+   비율은 늘어나지 않고 카드 안에서 세로 중앙에 놓인다 */
+.tl-photo {
+  flex-shrink: 0; align-self: center;
+  width: 128px; aspect-ratio: 1.8 / 1; border-radius: 14px;
+  background-size: cover; background-position: center;
+  background-color: var(--tl-mist); border: 1px solid var(--tl-c-card-border);
+}
+.tl-photo-empty { background-image: none; }
 
-/* 카테고리 아이콘·평점·주소는 일부러 없다 — 이 카드에서 볼 건 이름과 메모뿐이다 */
+.tl-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+
 .tl-card-titlerow { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .tl-name {
-  margin: 0; font-size: 16px; font-weight: 700; color: var(--tl-ink);
-  letter-spacing: -0.015em; line-height: 1.3;
+  margin: 0; font-size: 16px; font-weight: 700; color: var(--tl-c-title);
+  letter-spacing: -0.01em; line-height: 1.3;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* 별점 — 노란 Star + 평점 숫자. 실제 저장된 값이 있을 때만 보인다(원칙 3-1) */
+.tl-rating {
+  display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0;
+  font-size: 12.5px; color: var(--tl-c-body);
+}
+.tl-rating svg { width: 12px; height: 12px; color: var(--tl-c-rating); }
+.tl-rating b { font-weight: 700; }
 
-/* Brainstorm에서 모아둔 장소 메모 — 계획서에서 제일 자주 보게 되는 내용이라 카드에 그대로 편다 */
-.tl-notes {
-  list-style: none; margin: 2px 0 0; padding: 0;
-  display: flex; flex-direction: column; gap: 3px;
+/* 카테고리(작은 회색 텍스트) + 영업시간 배지 — 실제 데이터가 있는 것만 나타난다 */
+.tl-metarow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.tl-cat {
+  font-size: 12px; color: var(--tl-c-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.tl-notes li {
-  position: relative; padding-left: 12px;
-  font-size: 12px; color: var(--tl-ink-2); line-height: 1.55;
+.tl-badge {
+  padding: 2px 8px; border-radius: 999px; background: var(--tl-mist);
+  color: var(--tl-c-body); font-size: 10.5px; font-weight: 600; white-space: nowrap;
 }
-.tl-notes li::before {
-  content: ''; position: absolute; left: 3px; top: 8px;
-  width: 3px; height: 3px; border-radius: 50%; background: var(--tl-ink-4);
-}
-.tl-notes-more { color: var(--tl-ink-4); font-size: 11px; }
 
-/* 메모 — 적힌 게 있으면 또렷한 칩으로, 비어 있으면 카드에 올릴 때만 보이는 옅은 줄로.
-   빈 입력칸이 카드마다 똑같이 박혀 있으면 정작 적어 둔 메모가 눈에 안 띈다. */
+/* 메모 — 실제 입력칸처럼 항상 또렷하게. 비어 있어도 흐리게 숨기지 않는다 */
 .tl-memo-row {
-  display: flex; align-items: center; gap: 6px; margin-top: 3px;
-  padding: 5px 9px; border-radius: 9px;
+  margin-top: 2px; padding: 6px 10px; border-radius: 9px;
   background: var(--tl-mist); border: 1px solid transparent;
-  transition: border-color var(--tl-ease), background var(--tl-ease), opacity var(--tl-ease);
+  transition: border-color var(--tl-ease), background var(--tl-ease);
 }
-/* 비어 있을 땐 높이를 반만 쓰는 옅은 한 줄 — hover로 나타났다 사라지면 카드가 들썩이므로
-   자리는 늘 잡아 두되 눈에 덜 띄게만 한다 */
-.tl-memo-row.is-empty { background: none; padding: 0; margin-top: 1px; opacity: 0.55; }
-.tl-stop:hover .tl-memo-row.is-empty, .tl-stop.is-selected .tl-memo-row.is-empty { opacity: 1; }
-.tl-memo-row.is-empty .tl-memo { font-size: 11.5px; }
-.tl-memo-row.is-empty:focus-within { opacity: 1; background: #fff; border-color: var(--tl-sky); padding: 5px 9px; }
 .tl-memo-row:focus-within { background: #fff; border-color: var(--tl-sky); }
-.tl-memo-ico { display: flex; color: var(--tl-ink-4); flex-shrink: 0; }
-.tl-memo-ico svg { width: 12px; height: 12px; }
 .tl-memo {
-  flex: 1; min-width: 0; border: none; background: none; outline: none;
-  font-family: inherit; font-size: 12px; color: var(--tl-ink); padding: 1px 0;
+  width: 100%; border: none; background: none; outline: none;
+  font-family: inherit; font-size: 12.5px; color: var(--tl-c-title);
 }
-.tl-memo::placeholder { color: var(--tl-ink-4); }
+.tl-memo::placeholder { color: var(--tl-c-secondary); }
 
-/* 사진은 카드 높이를 따라간다 — 고정 높이로 두면 글이 적은 카드엔 사진 아래로
-   빈 공간이, 글이 많은 카드엔 어정쩡한 여백이 남는다 */
-.tl-photo {
-  flex-shrink: 0; width: 132px; align-self: stretch;
-  min-height: 76px; max-height: 150px; border-radius: 11px;
-  background-size: cover; background-position: center;
-  background-color: var(--tl-mist); border: 1px solid var(--tl-line);
+/* 우측 체류 요약 박스 — 카드 안의 독립된 작은 정보 영역 */
+.tl-staybox {
+  flex-shrink: 0; width: 130px; align-self: stretch;
+  display: flex; flex-direction: column; justify-content: center; gap: 3px;
+  padding: 10px 12px; border-radius: 12px;
+  background: var(--tl-c-staybox-bg); border: 1px solid var(--tl-c-card-border);
 }
+.tl-staybox-label { font-size: 10px; color: var(--tl-c-secondary); }
+.tl-staybox-value {
+  font-size: 15px; font-weight: 800; color: var(--tl-c-title);
+  font-variant-numeric: tabular-nums; margin-bottom: 2px;
+}
+.tl-staybox-times { display: flex; flex-direction: column; gap: 1px; }
+.tl-staybox-time { font-size: 10.5px; color: var(--tl-c-secondary); font-variant-numeric: tabular-nums; }
+.tl-staybox-time b { font-weight: 600; color: var(--tl-c-body); }
 
 /* 카드 도구 — 평소엔 숨어 있다가 카드에 올리면 나타난다 */
 .tl-card-tools {
@@ -408,15 +438,14 @@
 .tl-stop.is-selected .tl-card-tools { opacity: 1; }
 .tl-card-tools:focus-within { opacity: 1; }
 .tl-tool {
-  width: 26px; height: 26px; border-radius: 8px;
-  border: 1px solid var(--tl-line); background: rgba(255,255,255,0.94);
+  width: 24px; height: 24px; border-radius: 8px;
+  border: 1px solid var(--tl-c-card-border); background: rgba(255,255,255,0.94);
   color: var(--tl-ink-3); cursor: pointer; display: grid; place-items: center;
   text-decoration: none; transition: all var(--tl-ease);
-  /* 사진 위에 겹쳐도 읽히도록 */
-  box-shadow: 0 1px 4px rgba(11,42,92,0.14);
+  box-shadow: 0 1px 4px rgba(23,33,43,0.12);
 }
-.tl-tool svg { width: 13px; height: 13px; }
-.tl-tool:hover { border-color: var(--tl-blue); color: var(--tl-blue); }
+.tl-tool svg { width: 12px; height: 12px; }
+.tl-tool:hover { border-color: var(--tl-c-primary); color: var(--tl-c-primary); }
 .tl-tool-remove:hover { border-color: var(--tl-warn); color: var(--tl-warn); background: var(--tl-warn-bg); }
 
 /* 시간이 안 맞거나 크게 비는 지점 */
@@ -429,57 +458,80 @@
 .tl-flag-over { background: var(--tl-warn-bg); color: var(--tl-warn); }
 .tl-flag-slack { background: var(--tl-mist); color: var(--tl-ink-3); }
 
-/* ══════════════ 이동 구간 ══════════════ */
+/* ══════════════ 이동 구간 — 연결 카드 ══════════════ */
 
 .tl-leg .tl-col-time { justify-content: center; }
 .tl-leg-dur {
-  font-size: 10.5px; font-weight: 700; color: var(--tl-ink-4);
+  font-size: 11px; font-weight: 700; color: var(--tl-c-secondary);
   font-variant-numeric: tabular-nums;
 }
-.tl-leg .tl-col-card {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
-  padding: 7px 16px 7px 10px;
-}
-.tl-leg-body {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 5px 12px 5px 8px; border-radius: 999px;
-  border: 1px solid transparent; background: rgba(241,246,251,0.9);
-  font-family: inherit; font-size: 11.5px; font-weight: 600; color: var(--tl-ink-2);
-  cursor: pointer; transition: all var(--tl-ease);
-}
-.tl-leg-body:hover { border-color: var(--tl-line-strong); }
-.tl-leg.is-open .tl-leg-body { border-color: var(--tl-blue); }
-.tl-leg-ico { display: flex; }
-.tl-leg-ico svg { width: 13px; height: 13px; }
-.tl-leg-mode { font-weight: 700; }
-.tl-leg-sep { color: var(--tl-ink-4); }
-.tl-leg-dim { color: var(--tl-ink-3); font-variant-numeric: tabular-nums; }
+.tl-leg .tl-col-card { display: flex; flex-direction: column; gap: 6px; }
 
-/* 이동수단별 색 — ROUTE의 구간 색과 같은 기준 */
-.tl-leg.walk .tl-leg-body { color: #1D9E75; background: rgba(29,158,117,0.08); }
-.tl-leg.transit .tl-leg-body { color: #0B7CC4; background: rgba(11,124,196,0.08); }
-.tl-leg.taxi .tl-leg-body { color: #E08A1E; background: rgba(245,166,35,0.10); }
-.tl-leg-unknown .tl-leg-body { color: var(--tl-ink-3); font-style: italic; cursor: default; }
+/* 단순 구분선(Divider)이 아니라 일정의 일부처럼 보이는 카드 — 높이 약 52~56px */
+.tl-legcard {
+  display: flex; align-items: center; gap: 12px;
+  min-height: 52px; padding: 8px 14px 8px 10px;
+  border: 1px solid var(--tl-c-card-border); border-radius: 16px;
+  background: #fff;
+}
+.tl-legcard-empty { font-size: 12px; color: var(--tl-ink-3); font-style: italic; }
+
+.tl-legcard-icon {
+  flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%;
+  display: grid; place-items: center;
+}
+.tl-legcard-icon svg { width: 17px; height: 17px; }
+/* 이동수단별 아주 옅은 Tint 배경 + 짙은 아이콘 색 */
+.tl-leg.taxi .tl-legcard-icon { background: var(--tl-c-taxi-tint); color: var(--tl-c-taxi-icon); }
+.tl-leg.walk .tl-legcard-icon { background: var(--tl-c-walk-tint); color: var(--tl-c-walk-icon); }
+.tl-leg.transit .tl-legcard-icon { background: rgba(11,124,196,0.14); color: var(--tl-blue); }
+
+.tl-legcard-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.tl-legcard-mode {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 700; color: var(--tl-c-secondary);
+}
+.tl-legcard-stats {
+  font-size: 13px; font-weight: 700; color: var(--tl-c-body);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tl-legcard-cost {
+  font-size: 11px; color: var(--tl-c-secondary); font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
 /* 원칙 3-1 — 추정치는 반드시 눈에 보이게 구분 */
 .tl-est {
   padding: 1px 6px; border-radius: 999px; background: rgba(130,150,170,0.16);
   color: var(--tl-ink-3); font-size: 9px; font-weight: 800; letter-spacing: 0.02em;
 }
-.tl-manual { width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: 0.7; }
+.tl-manual { width: 4px; height: 4px; border-radius: 50%; background: var(--tl-c-primary); display: inline-block; margin-left: 2px; }
 
-.tl-modes { display: flex; gap: 5px; flex-wrap: wrap; padding-left: 2px; }
+/* 다음 일정 도착 예정 — 눌러서 이동수단을 바꾸는 유일한 상호작용 지점 */
+.tl-legcard-eta {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px;
+  border: none; background: none; padding: 4px 2px;
+  font-family: inherit; font-size: 11.5px; font-weight: 700; color: var(--tl-c-secondary);
+  cursor: pointer; white-space: nowrap; transition: color var(--tl-ease);
+}
+.tl-legcard-eta svg { width: 13px; height: 13px; transition: transform 180ms ease; }
+.tl-legcard-eta:hover { color: var(--tl-c-primary); }
+.tl-leg.is-open .tl-legcard-eta { color: var(--tl-c-primary); }
+.tl-leg.is-open .tl-legcard-eta svg { transform: rotate(180deg); }
+
+.tl-modes { display: flex; gap: 5px; flex-wrap: wrap; padding: 0 2px; }
 .tl-modebtn {
   display: inline-flex; align-items: center; gap: 5px;
-  padding: 6px 11px; border-radius: 9px; border: 1px solid var(--tl-line);
-  background: #fff; color: var(--tl-ink-2); font-family: inherit;
+  padding: 6px 11px; border-radius: 9px; border: 1px solid var(--tl-c-card-border);
+  background: #fff; color: var(--tl-c-body); font-family: inherit;
   font-size: 11px; font-weight: 700; cursor: pointer; white-space: nowrap;
   transition: all var(--tl-ease);
 }
 .tl-modebtn svg { width: 13px; height: 13px; }
-.tl-modebtn:hover { border-color: var(--tl-line-strong); color: var(--tl-ink); }
-.tl-modebtn.active { border-color: var(--tl-navy); background: var(--tl-navy); color: #fff; }
-.tl-modeauto { color: var(--tl-ink-3); }
+.tl-modebtn:hover { border-color: var(--tl-line-strong); color: var(--tl-c-title); }
+.tl-modebtn.active { border-color: var(--tl-c-primary); background: var(--tl-c-primary); color: #fff; }
+.tl-modeauto { color: var(--tl-c-secondary); }
 
 /* ══════════════ "지금" 선 (여행 중) ══════════════ */
 
@@ -572,13 +624,14 @@
 /* 지도 열림/닫힘은 화면 폭이 아니라 토글로만 결정한다 — 위 .tl-body.tl-map-open 규칙 참고 */
 
 @media (max-width: 860px) {
-  .tl-photo { width: 104px; height: 76px; }
+  .tl-photo { width: 96px; }
+  .tl-staybox { width: 108px; }
   .tl-name { font-size: 15px; }
 }
 
 /*
  * 모바일 — 여행 중 빠르게 확인하는 화면.
- * 사진·주소·장소 메모·도구를 접어 카드 한 장을 두어 줄로 줄인다.
+ * 사진·체류 박스·도구를 접어 카드 한 장을 두어 줄로 줄인다.
  * (편집은 데스크톱에서 하고, 여기선 "지금 어디로, 몇 시에"만 보이면 된다)
  */
 @media (max-width: 720px) {
@@ -590,31 +643,34 @@
   .tl-topbar-actions { justify-content: flex-end; }
   .tl-daychip { min-width: 100px; }
 
-  .tl-dayhead { padding: 13px 14px 11px; }
+  .tl-dayhead { padding: 4px 12px 8px; }
   .tl-dayhead-label { font-size: 21px; }
   .tl-dayhead-stats { gap: 12px; margin-top: 7px; }
-  .tl-list { padding: 8px 0 10px; }
-  .tl-col-time { padding-left: 8px; }
+  .tl-col-time { padding-left: 10px; }
   .tl-col-card { padding-right: 12px; }
 
-  .tl-time { font-size: 13.5px; }
+  .tl-time { font-size: 15px; }
   .tl-out, .tl-unfix { display: none; }
 
-  .tl-card { padding: 10px 10px 10px 8px; gap: 9px; border-radius: 12px; }
+  .tl-card { padding: 10px 10px 10px 8px; gap: 9px; border-radius: 14px; }
   .tl-card-body { gap: 4px; }
   .tl-name { font-size: 13.5px; }
-  .tl-pin { width: 21px; height: 21px; font-size: 11px; border-radius: 7px; }
-  .tl-photo, .tl-notes { display: none; }
-  /* 메모는 이미 적힌 게 있을 때만 — 빈 입력칸이 줄마다 붙어 높이를 잡아먹지 않게 */
-  .tl-memo-row { padding: 3px 7px; }
+  .tl-pin { width: 24px; height: 24px; font-size: 11px; }
+  .tl-photo, .tl-staybox { display: none; }
+  .tl-memo-row { padding: 4px 8px; }
   .tl-memo { font-size: 11.5px; }
   .tl-grip { display: none; }
   /* 좁은 화면에선 장소 이름이 먼저다 — 참고용 "여유"는 접고, 일정이 안 맞는 경고만 남긴다 */
   .tl-flag-slack { display: none; }
-  /* 도구는 항상 보이게 (모바일엔 hover가 없다). 세로로 쌓으면 카드가 쓸데없이 길어져 가로로 둔다 */
+  /* 도구는 항상 보이게 (모바일엔 hover가 없다) */
   .tl-card-tools { opacity: 1; top: 7px; right: 7px; }
-  .tl-tool { width: 24px; height: 24px; }
+  .tl-tool { width: 22px; height: 22px; }
   /* 제목이 도구 아래로 파고들지 않도록 */
-  .tl-card-titlerow { padding-right: 54px; }
+  .tl-card-titlerow { padding-right: 50px; }
   .tl-leg-dur { font-size: 9.5px; white-space: nowrap; }
+  .tl-legcard { padding: 8px 10px; gap: 9px; }
+  .tl-legcard-icon { width: 30px; height: 30px; }
+  .tl-legcard-icon svg { width: 14px; height: 14px; }
+  .tl-legcard-cost { display: none; }
+  .tl-legcard-eta { font-size: 10.5px; }
 }
