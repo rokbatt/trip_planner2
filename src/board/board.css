@@ -961,8 +961,10 @@
   padding: 0 6px;
   flex-shrink: 0;
 }
+/* 평소엔 이름표에서도 자리를 차지하지 않고(가로 길이 축소), 이름표에 마우스를
+   올렸을 때만 폭이 늘어나며 나타난다 — 클러스터 hover → 이름표 hover, 2단계 노출 */
 .bd-group-cluster-dissolve {
-  width: 15px;
+  width: 0;
   height: 15px;
   border: none;
   background: none;
@@ -971,11 +973,19 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   cursor: pointer;
   flex-shrink: 0;
-  transition: background 150ms ease, color 150ms ease;
+  opacity: 0;
+  pointer-events: none;
+  transition: width 150ms ease, opacity 150ms ease, background 150ms ease, color 150ms ease;
 }
-.bd-group-cluster-dissolve svg { width: 9px; height: 9px; }
+.bd-group-cluster-header:hover .bd-group-cluster-dissolve {
+  width: 15px;
+  opacity: 1;
+  pointer-events: auto;
+}
+.bd-group-cluster-dissolve svg { width: 9px; height: 9px; flex-shrink: 0; }
 .bd-group-cluster-dissolve:hover { background: #FDEEEC; color: #C0392B; }
 .bd-group-cluster-body {
   display: flex;
