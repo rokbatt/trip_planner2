@@ -922,6 +922,7 @@
   position: absolute;
   top: -11px;
   left: 10px;
+  z-index: 20; /* DOM상 카드보다 먼저 있어 z-index 없이는 뒤에 그려지는 카드 사진에 가려짐 */
   max-width: calc(100% - 20px);
   display: flex;
   align-items: center;
