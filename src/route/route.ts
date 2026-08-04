@@ -2572,11 +2572,8 @@ function refreshAll(container: HTMLElement, opts: { refit: boolean } = { refit: 
 /* ══════════════════ 지도 ══════════════════ */
 
 /**
- * 동선 선 스타일 — "인천공항 활주로 레이더(Aero Light)" 톤. 예전 딥 네이비(#243B78)가
- * 지도의 밝고 옅은 배경과 무거운 명도 대비를 이뤄 답답하다는 피드백으로, 청량한 Action
- * Sky Blue 한 가지로 화살표·핀·리스트 배지를 전부 통일했다. 이동수단 구분은 색이 아니라
- * 캡슐 배지의 아이콘/라벨과 모드 전환 노드가 담당한다.
- * 도보만 점선을 유지 — 실제 보행로가 도로와 다를 수 있다는 신호로 유용해서.
+ * 핀·배지·리스트 강조색 — Aero Blue 한 가지로 통일. 이동수단 구분은 색이 아니라 캡슐
+ * 배지의 아이콘/라벨과 모드 전환 노드가 담당한다.
  */
 const AERO_BLUE = '#2F86D6';
 // 리스트 배지 등 옅은 틴트 배경이 필요한 곳에서 쓰는, AERO_BLUE를 10% 불투명도로 깐 버전.
@@ -2585,6 +2582,9 @@ const AERO_BLUE_TINT = 'rgba(47,134,214,0.1)';
 // 구분이 잘 안 됐다는 피드백으로 또렷한 오렌지로 교체.
 const ROUTE_NEXT = '#FF6B35';
 const ROUTE_GRAY = '#9AA7B8';
+// 동선(경로선) 색 — 핀은 계속 Aero Blue를 쓰고, 실제 걷는/이동하는 "길" 자체만 따뜻한
+// 톤(Sunset Coral)으로 분리해 지도 위에서 더 또렷하게 떠오르게 한다.
+const ROUTE_LINE_COLOR = '#F0563F';
 
 /**
  * 지도 핀과 우측 패널 배지가 항상 같은 색을 쓰도록 하는 단일 기준 — "이 핀 = 이 카드"가
@@ -2596,11 +2596,12 @@ function stopIdentityColor(): string {
 }
 // 방향 화살표 대신 점선 자체로 "동선"임을 표현 — 모든 이동수단을 점선으로 통일했다.
 // 두께는 항상 고정(줌 배율과 무관) — 이동수단 구분은 색이 아니라 캡슐 배지의
-// 아이콘/라벨과 모드 전환 노드가 담당한다. (2.2 → 20% 증가한 2.6)
+// 아이콘/라벨과 모드 전환 노드가 담당한다. 점선→실선으로 바꾸면서 실제 길찾기 사이트들이
+// 흔히 쓰는 두께로 살짝 키움(2.6 → 3.5).
 const MODE_STYLE: Record<Leg['mode'], { weight: number }> = {
-  WALK: { weight: 2.6 },
-  TRANSIT: { weight: 2.6 },
-  TAXI: { weight: 2.6 },
+  WALK: { weight: 3.5 },
+  TRANSIT: { weight: 3.5 },
+  TAXI: { weight: 3.5 },
 };
 
 async function initMap(container: HTMLElement): Promise<void> {
@@ -3443,11 +3444,6 @@ interface LegDrawOpts {
   dimmed: boolean;
 }
 
-// 점선 두께·간격은 줌 배율과 무관하게 항상 고정 — 축소해도 뭉개지거나 두꺼워지지 않고
-// 늘 같은 촘촘한 점선으로 보이게 한다. 테두리/글로우 없이 점선 자체만 그린다.
-const LEG_DASH_SCALE = 3; // 대시 하나 길이(2*scale px)
-const LEG_DASH_REPEAT = '9px'; // 대시 시작점 간격 — 짧고 촘촘하게
-
 function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDrawOpts): any {
   const style = MODE_STYLE[leg.mode];
 
@@ -3459,58 +3455,52 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
   }
   if (opts.overlapIndex > 0) path = offsetPath(path, opts.overlapIndex * 28);
 
-  const color = opts.dimmed ? ROUTE_GRAY : AERO_BLUE;
+  const color = opts.dimmed ? ROUTE_GRAY : ROUTE_LINE_COLOR;
   const opacity = opts.dimmed ? 0.5 : opts.selected ? 1 : 0.85;
   const weight = opts.selected ? style.weight + 1 : style.weight;
-
-  const icons: any[] = [
-    {
-      icon: { path: 'M 0,-1 0,1', strokeOpacity: opacity, strokeColor: color, strokeWeight: weight, scale: LEG_DASH_SCALE },
-      offset: '0',
-      repeat: LEG_DASH_REPEAT,
-    },
-  ];
 
   return new g.maps.Polyline({
     map: mapInstance,
     path,
     geodesic: true,
     strokeColor: color,
-    strokeOpacity: 0,
+    strokeOpacity: opacity,
     strokeWeight: weight,
-    icons,
     zIndex: opts.selected ? 12 : 10,
   });
 }
 
 /**
- * 지도는 "배경", Route가 "주인공"이 되도록 채도를 낮춘 스타일.
- * 길 찾을 때 필요한 도로망과 지명은 남기되(위치 감각에 꼭 필요), 색은 거의 무채색에 가깝게
- * 눌러서 네이비 동선이 확실히 위로 떠오르게 한다. 업체 POI 아이콘/라벨은 전부 끈다.
+ * "소프트 스탠다드" 테마 — 구글 기본 지도에 가까운 익숙한 배색(크림 육지·파란 물·초록 공원)
+ * 이면서, 채도를 낮춰서 Route(경로선)가 확실히 위로 떠오르게 한다. 지하철 노선 같은 세부
+ * 정보나 동네/지역 이름 같은 글자 소음은 다 끄고, 건물(landscape.man_made)·공원·물 정도만
+ * 색으로 구분되게 한다. 업체 POI 아이콘/라벨은 전부 끈다.
  */
 const MAP_STYLE_LIGHT = [
-  { elementType: 'geometry', stylers: [{ color: '#F7F9FC' }] },
+  { elementType: 'geometry', stylers: [{ color: '#F5F6F1' }] },
   { elementType: 'labels.text.fill', stylers: [{ color: '#A9B4C2' }] },
   { elementType: 'labels.text.stroke', stylers: [{ color: '#FFFFFF' }, { weight: 2 }] },
   { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-  // POI는 전부 숨기고 공원 지형만 아주 옅게 남겨 위치 감각을 돕는다
+  // POI는 전부 숨기고 공원 지형만 남겨 위치 감각을 돕는다
   { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#EFF4EF' }, { visibility: 'on' }] },
+  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#C9E0B7' }, { visibility: 'on' }] },
   { featureType: 'administrative', elementType: 'geometry', stylers: [{ visibility: 'off' }] },
   // 동네/지역 이름은 지도를 채우는 가장 큰 글자 소음이라 완전히 끈다(위치 감각은 도로망으로 충분)
   { featureType: 'administrative.locality', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   { featureType: 'administrative.neighborhood', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-  // 도로는 유지하되 흰색~아주 연한 회색으로 (동선 네이비와 최대 대비)
+  // 도로는 유지하되 흰색~아주 연한 회색으로 (동선과 최대 대비)
   { featureType: 'road', elementType: 'geometry.fill', stylers: [{ color: '#FFFFFF' }] },
-  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#EDF1F6' }] },
-  { featureType: 'road.highway', elementType: 'geometry.fill', stylers: [{ color: '#FAFBFD' }] },
-  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#E6EBF2' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#E1E4E8' }] },
+  { featureType: 'road.highway', elementType: 'geometry.fill', stylers: [{ color: '#FBFCFA' }] },
+  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#D3D9DF' }] },
   { featureType: 'road.highway', elementType: 'labels.text.fill', stylers: [{ color: '#B7C1CD' }] },
   { featureType: 'road.local', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   // 잔도로 이름까지는 필요 없음 — 주요 도로(고속도로)만 이름을 남긴다
   { featureType: 'road.arterial', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#DEEAF4' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#A6D2EA' }] },
   { featureType: 'water', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-  { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#F4F7FA' }] },
+  { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#F5F6F1' }] },
+  // 건물 등 인공 지형을 육지보다 살짝 다른 톤으로 — "여기 건물이 있다"는 감각만 남긴다
+  { featureType: 'landscape.man_made', elementType: 'geometry', stylers: [{ color: '#EAEDF2' }] },
 ];
