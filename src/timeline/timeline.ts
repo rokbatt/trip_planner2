@@ -50,8 +50,6 @@ import {
   minToHHMM,
   hhmmToMin,
   parseTimeInput,
-  CAT_COLOR,
-  CAT_LABEL,
 } from '../utils/travelEstimate';
 import type { Leg, RealLeg, TravelMode, CatKey } from '../utils/travelEstimate';
 import type { Database, StaySegment, TripDestination } from '../types/database';
@@ -65,30 +63,29 @@ type Trip = Database['public']['Tables']['trips']['Row'];
 const IC_WALK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4" r="2"/><path d="M11 8l-3 3 2 7M11 8l3 2 3-1M8 11l-3 2v6M13 10l2 4-2 6"/></svg>';
 const IC_TRANSIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="14" rx="2"/><path d="M4 11h16M8 21l2-4h4l2 4M8 7h.01M16 7h.01"/></svg>';
 const IC_TAXI = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M5 17a2 2 0 1 0 4 0M15 17a2 2 0 1 0 4 0M5 17l1.5-5h11L19 17M8 12V8h8v4"/></svg>';
-const IC_BED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20v-9a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9"/><path d="M4 15h16M8 9V6h8v3"/><path d="M4 20v1M20 20v1"/></svg>';
-const IC_PLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
-const IC_LANDMARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M4 21V10M20 21V10M2 10l10-6 10 6M6 10v7M10 10v7M14 10v7M18 10v7"/></svg>';
-const IC_FORK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v7a2 2 0 0 0 2 2v11M7 2v7M9 2v7M11 2v7M16 2c-1.5 0-3 1.5-3 4s1.5 4 3 4v10"/></svg>';
-const IC_FERRIS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16M6.3 6.3l11.4 11.4M17.7 6.3 6.3 17.7"/></svg>';
-const IC_BAG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l1 12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L6 8Z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>';
 const IC_ARROW_BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>';
-const IC_MAPPIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21C12 21 19 14.5 19 9.5C19 5.9 15.9 3 12 3C8.1 3 5 5.9 5 9.5C5 14.5 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.2"/></svg>';
 const IC_CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
 const IC_ALERT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>';
 const IC_ROUTEPATH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H14a3.5 3.5 0 0 0 0-7h-4a3.5 3.5 0 0 1 0-7h5.5"/></svg>';
 const IC_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2m-8 0 1 13a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-13"/></svg>';
 const IC_GRIP = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>';
-const IC_STAR = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.8 5.9 20.4 7.2 13.7 2.2 9l6.8-.8z"/></svg>';
 const IC_EXTLINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>';
 const IC_NOTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 const IC_PIN_SMALL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.5 7-11.5A7 7 0 0 0 5 9.5C5 14.5 12 21 12 21Z"/></svg>';
-
-const CAT_ICON: Record<CatKey, string> = {
-  VISIT: IC_LANDMARK, FOOD: IC_FORK, ACTIVITY: IC_FERRIS, SHOPPING: IC_BAG, STAY: IC_BED, AIRPORT: IC_PLANE,
-};
+/** 지도 열기/닫기 토글에만 쓰는 아이콘 — 카드의 "지도에서 보기"(IC_PIN_SMALL)와 구분 */
+const IC_MAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3 3 5v16l6-2 6 2 6-2V3l-6 2-6-2Z"/><path d="M9 3v16M15 5v16"/></svg>';
 
 const MODE_ICON: Record<TravelMode, string> = { WALK: IC_WALK, TRANSIT: IC_TRANSIT, TAXI: IC_TAXI };
 const MODES: TravelMode[] = ['WALK', 'TRANSIT', 'TAXI'];
+
+/**
+ * 일정 핀·점 색 — 카테고리별 무지개색(빨강/주황/보라/초록)이 아니라 앱의 스카이블루 계열로
+ * 통일한다. 아이콘을 없앤 지금은 카테고리를 색으로 구분할 이유가 없고, 대신 "숙소/공항 =
+ * 하루의 시작·끝점"이라는 구조적인 구분만 짙은 남색으로 남긴다(그 외는 전부 같은 블루).
+ */
+function pinColorFor(cat: CatKey): string {
+  return cat === 'STAY' || cat === 'AIRPORT' ? '#0B2A5C' : '#0B7CC4';
+}
 
 const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -193,6 +190,8 @@ let mapMarkers: any[] = [];
 let mapLines: any[] = [];
 let mapReady = false;
 let mapFitKey = '';
+/** 지도 열림/닫힘 — 화면 폭과 무관하게 사용자가 언제든 토글할 수 있다 */
+let mapOpen = true;
 
 /* ══════════════ 정리 ══════════════ */
 
@@ -210,6 +209,7 @@ export function teardownTimeline(): void {
   mapInstance = null;
   mapReady = false;
   mapFitKey = '';
+  mapOpen = true;
   container = null;
   currentTrip = null;
   activeDestId = null;
@@ -647,6 +647,7 @@ function shellHtml(): string {
     '        <button type="button" class="tl-segment" data-view="all">전체</button>',
     '      </div>',
     '      <button type="button" class="tl-nowbtn" id="tl-now-btn" hidden>' + IC_CLOCK + '<span>지금</span></button>',
+    '      <button type="button" class="tl-mapbtn" id="tl-map-toggle" aria-pressed="true" title="지도 열기/닫기">' + IC_MAP + '<span>지도</span></button>',
     '      <button type="button" class="tl-routebtn" id="tl-to-route">' + IC_ARROW_BACK + ' 동선 수정</button>',
     '    </div>',
     '  </div>',
@@ -686,6 +687,15 @@ function renderViewMode(): void {
   const nowBtn = container?.querySelector('#tl-now-btn') as HTMLElement | null;
   if (nowBtn) nowBtn.hidden = todayDayIndex() < 0;
   container?.querySelector('#tl-body')?.classList.toggle('tl-view-all', viewMode === 'all');
+
+  // 지도 토글은 전체 보기에선 의미가 없다(그 뷰는 항상 지도를 접음) — 버튼은 남기고 막기만 한다
+  const mapBtn = container?.querySelector('#tl-map-toggle') as HTMLButtonElement | null;
+  if (mapBtn) {
+    mapBtn.disabled = viewMode === 'all';
+    mapBtn.classList.toggle('active', mapOpen && viewMode === 'day');
+    mapBtn.setAttribute('aria-pressed', String(mapOpen));
+  }
+  container?.querySelector('#tl-body')?.classList.toggle('tl-map-open', mapOpen && viewMode === 'day');
 }
 
 /* ══════════════ DAY 스트립 ══════════════ */
@@ -807,19 +817,16 @@ function dayHeadHtml(day: TlDay, s: DaySchedule): string {
 }
 
 /**
- * 일정 카드 — 사진·메모·평점까지 한 장에 다 담는다.
- * 접었다 폈다 하지 않고 처음부터 다 보여주는 이유: 이 화면은 "훑어보는 목록"이 아니라
- * 여행 계획서 그 자체라, 무엇이 담겨 있는지 클릭해봐야 아는 상태를 만들지 않기 위해서다.
+ * 일정 카드 — 이름과 메모에만 집중한다.
+ * 구글 평점·주소·카테고리 아이콘 같은 메타데이터는 일부러 넣지 않는다 — 이 카드에서
+ * 사용자가 실제로 보고 싶은 건 "몇 시에 어디를, 뭐라고 메모해 뒀는지"뿐이다.
  * (모바일에선 CSS로 사진·메모·액션을 접어 한 줄에 가깝게 줄인다)
  */
 function stopCardHtml(stop: TlStop, i: number, s: DaySchedule): string {
-  const color = CAT_COLOR[stop.cat];
+  const color = pinColorFor(stop.cat);
   const selected = selectedKey === stop.key;
   const fixed = !!stop.arriveTime;
   const dwell = s.dwellMin[i];
-  const rating = typeof stop.place?.google_rating === 'number' ? stop.place.google_rating : null;
-
-  const subParts = [CAT_LABEL[stop.cat], stop.place?.category ?? ''].filter(Boolean);
 
   const warn =
     s.overrunMin[i] > 0
@@ -876,14 +883,8 @@ function stopCardHtml(stop: TlStop, i: number, s: DaySchedule): string {
     '      <span class="tl-pin" style="background:' + color + '">' + (i + 1) + '</span>',
     '      <div class="tl-card-body">',
     '        <div class="tl-card-titlerow">',
-    '          <span class="tl-cat" style="color:' + color + ';background:' + color + '14">' + CAT_ICON[stop.cat] + '</span>',
     '          <h3 class="tl-name">' + escapeHtml(stop.name) + '</h3>',
     warn,
-    '        </div>',
-    '        <div class="tl-sub">',
-    subParts.length ? '<span>' + escapeHtml(subParts.join(' · ')) + '</span>' : '',
-    rating != null ? '<span class="tl-rating">' + IC_STAR + rating.toFixed(1) + '</span>' : '',
-    stop.place?.address ? '<span class="tl-addr">' + IC_MAPPIN + escapeHtml(stop.place.address) + '</span>' : '',
     '        </div>',
     notesHtml,
     '        <div class="tl-memo-row' + (stop.memo ? '' : ' is-empty') + '">',
@@ -967,7 +968,7 @@ function allDaysHtml(): string {
             return [
               '<div class="tl-allrow">',
               '  <span class="tl-alltime">' + minToHHMM(s.arriveMin[j]) + '</span>',
-              '  <span class="tl-alldot" style="background:' + CAT_COLOR[stop.cat] + '"></span>',
+              '  <span class="tl-alldot" style="background:' + pinColorFor(stop.cat) + '"></span>',
               '  <span class="tl-allname">' + escapeHtml(stop.name) + '</span>',
               '</div>',
               leg && j < d.stops.length - 1
@@ -1106,8 +1107,9 @@ function drawMap(): void {
 
   const legendEl = container?.querySelector('#tl-map-legend') as HTMLElement | null;
   const day = activeDay();
-  // 전체 보기에선 지도를 접으므로 그릴 것도 없다
-  if (viewMode === 'all' || !day || !day.stops.length) {
+  // 전체 보기이거나 사용자가 지도를 닫아 놓았으면 그릴 것도 없다(닫힌 지도는 폭이 0이라
+  // 마커를 만들어도 의미가 없고, 다시 열릴 때 resizeMapSoon이 새로 그린다)
+  if (viewMode === 'all' || !mapOpen || !day || !day.stops.length) {
     if (legendEl) legendEl.innerHTML = '';
     return;
   }
@@ -1150,7 +1152,7 @@ function drawMap(): void {
     const marker = new g.maps.Marker({
       position: pos,
       map: mapInstance,
-      icon: pinIcon(g, i + 1, CAT_COLOR[stop.cat], active),
+      icon: pinIcon(g, i + 1, pinColorFor(stop.cat), active),
       title: stop.name,
       zIndex: active ? 999 : 10 + i,
     });
@@ -1196,6 +1198,22 @@ function panToStop(stop: TlStop): void {
   if (mapInstance.getZoom() < 14) mapInstance.setZoom(15);
 }
 
+/**
+ * 지도 칸이 닫혀 있다가 열리면(또는 뷰 전환으로 다시 나타나면) Google Maps가 크기 변경을
+ * 스스로 감지하지 못해 타일이 잘려 보인다 — resize 이벤트를 직접 쏴 주고, 패널 크기가
+ * 달라졌으니 맞춰뒀던 bounds도 다시 계산하게 mapFitKey를 비운다.
+ */
+function resizeMapSoon(after?: () => void): void {
+  if (!mapInstance) return;
+  const g = (window as any).google;
+  mapFitKey = '';
+  setTimeout(() => {
+    g?.maps?.event?.trigger(mapInstance, 'resize');
+    drawMap();
+    after?.();
+  }, 60);
+}
+
 /* ══════════════ 이벤트 ══════════════ */
 
 function bindShell(): void {
@@ -1209,11 +1227,15 @@ function bindShell(): void {
       viewMode = v;
       render();
       // 지도가 숨었다 다시 나타나면 크기를 다시 잡아줘야 회색 여백이 남지 않는다
-      if (v === 'day' && mapInstance) {
-        const g = (window as any).google;
-        setTimeout(() => { g?.maps?.event?.trigger(mapInstance, 'resize'); }, 60);
-      }
+      if (v === 'day' && mapOpen) resizeMapSoon();
     });
+  });
+
+  // 지도 열기/닫기 — 화면 폭과 무관하게 언제든 토글할 수 있다(요청: "항상 열고닫기가 되어야 함")
+  container.querySelector('#tl-map-toggle')?.addEventListener('click', () => {
+    mapOpen = !mapOpen;
+    render();
+    if (mapOpen) resizeMapSoon();
   });
 
   container.querySelector('#tl-now-btn')?.addEventListener('click', () => {
@@ -1277,8 +1299,11 @@ function bindDaySchedule(main: HTMLElement): void {
       const found = findStop((btn as HTMLElement).dataset.key!);
       if (!found) return;
       selectedKey = found.stop.key;
+      const wasClosed = !mapOpen;
+      mapOpen = true; // "지도에서 보기"는 지도를 보러 온 거니 닫혀 있었다면 열어준다
       render();
-      panToStop(found.stop);
+      if (wasClosed) resizeMapSoon(() => panToStop(found.stop));
+      else panToStop(found.stop);
     });
   });
 
