@@ -60,6 +60,8 @@ const IC_CAMERA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const IC_LIGHT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>';
 const IC_CHEV_L = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
 const IC_CHEV_R = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>';
+const IC_CHEV_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+const IC_CHEV_UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>';
 
 const CATEGORY_META: Record<ExpenseCategory, { label: string; color: string; icon: string }> = {
   FLIGHT:    { label: '항공',        color: '#2a78d6', icon: IC_PLANE },
@@ -139,6 +141,7 @@ let searchQuery = '';
 let listPageSize = 20;
 
 let editingBudgetCategory: string | null = null; // 카테고리 그리드에서 인라인 편집 중인 카테고리(또는 'TOTAL')
+let expandedBatchGroups = new Set<string>(); // 펼쳐진 개인 지출 배치 묶음(그룹 키)
 let lastUsedCurrency = 'KRW';
 let quickAddMode: 'direct' | 'receipt' | 'sms' = 'direct';
 
@@ -514,8 +517,7 @@ function renderOverviewData(): void {
 }
 
 function recentListHtml(): string {
-  const recent = [...expenses].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5);
-  if (recent.length === 0) {
+  if (expenses.length === 0) {
     return [
       '<div class="ex-empty ex-empty-compact">',
       '  <div class="ex-empty-icon">' + IC_WALLET + '</div>',
@@ -524,7 +526,9 @@ function recentListHtml(): string {
       '</div>',
     ].join('');
   }
-  return '<div class="ex-list">' + recent.map(expenseRowHtml).join('') + '</div>';
+  const sorted = [...expenses].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const groups = groupExpenseRows(sorted).slice(0, 5);
+  return '<div class="ex-list">' + groups.map(expenseGroupRowHtml).join('') + '</div>';
 }
 
 function settleWidgetHtml(): string {
@@ -648,14 +652,15 @@ function bindOverviewData(): void {
     });
   });
 
-  // 최근 지출 항목 클릭 → 수정
-  rootEl.querySelectorAll('#ex-recent .ex-item').forEach((row) => {
+  // 최근 지출 항목 클릭 → 수정 (그룹 요약 행은 펼침 토글이므로 제외)
+  rootEl.querySelectorAll('#ex-recent .ex-item[data-id]').forEach((row) => {
     row.addEventListener('click', () => {
       const id = (row as HTMLElement).dataset.id!;
       const e = expenses.find((x) => x.id === id);
       if (e) openSheet(e);
     });
   });
+  bindGroupToggles(rootEl.querySelector('#ex-recent') as HTMLElement, renderOverviewData);
 }
 
 /* ══════════════════════ 빠른 지출 추가 (사이드바, 데스크톱 전용) ══════════════════════ */
@@ -700,7 +705,7 @@ function quickAddFormHtml(): string {
     '    <button type="button" class="ex-splitmode-btn" data-mode="PERSONAL">개인 지출</button>',
     '  </div>',
     '</div>',
-    '<div class="ex-qa-field"><span class="ex-qa-label">결제한 사람</span><span class="ex-qa-label-hint" id="qa-payer-hint"></span><div class="ex-qa-members" id="qa-payer">' + payerChips + '</div></div>',
+    '<div class="ex-qa-field"><span class="ex-qa-label">결제한 사람</span><div class="ex-qa-members" id="qa-payer">' + payerChips + '</div></div>',
     '<div class="ex-qa-field" id="qa-split-wrap"><span class="ex-qa-label">나눠 낼 사람</span><div class="ex-qa-members" id="qa-split">' + splitChips + '</div></div>',
     '<div class="ex-qa-row">',
     '  <label class="ex-qa-paid-row"><span class="ex-qa-label">결제 완료</span><button type="button" class="ex-paid-toggle is-on" id="qa-paid" role="switch" aria-checked="true"><span class="ex-paid-knob"></span></button></label>',
@@ -824,10 +829,8 @@ function renderQuickAddBody(container: HTMLElement): void {
   currencySel.addEventListener('change', () => void updateFxHint());
 
   const splitWrap = bodyEl.querySelector('#qa-split-wrap') as HTMLElement;
-  const payerHintEl = bodyEl.querySelector('#qa-payer-hint') as HTMLElement;
   const updateSplitVisibility = (): void => {
     splitWrap.style.display = splitMode === 'SHARED' ? '' : 'none';
-    payerHintEl.textContent = splitMode === 'PERSONAL' ? '(각자 결제했다면 여러 명 선택 가능)' : '';
   };
   updateSplitVisibility();
 
@@ -1007,6 +1010,88 @@ function expenseRowHtml(e: TripExpense): string {
   ].join('');
 }
 
+/** 개인 지출을 여러 명 배치로 등록하면 같은 제목·금액의 행이 인원수만큼 생기는데,
+ *  화면에는 "N명"으로 묶어 한 줄로 보여주고 펼치면 개별 항목이 나오게 한다.
+ *  공동 지출은 원래 결제자가 한 명뿐이라 그룹화 대상이 아니다(항목별 고유 키 부여). */
+function batchGroupKey(e: TripExpense): string {
+  return [e.title, e.amount, e.currency, e.category, e.expense_date ?? '', e.is_paid ? '1' : '0'].join('|');
+}
+
+function groupExpenseRows(items: TripExpense[]): TripExpense[][] {
+  const map = new Map<string, TripExpense[]>();
+  const order: string[] = [];
+  for (const e of items) {
+    const key = modeOf(e) === 'PERSONAL' ? 'batch:' + batchGroupKey(e) : 'single:' + e.id;
+    if (!map.has(key)) { map.set(key, []); order.push(key); }
+    map.get(key)!.push(e);
+  }
+  return order.map((k) => map.get(k)!);
+}
+
+function avatarStackHtml(userIds: Array<string | null>, max = 4): string {
+  const shown = userIds.slice(0, max);
+  const overflow = userIds.length - shown.length;
+  const itemsHtml = shown.map((uid) => '<span class="ex-avatar-stack-item">' + avatarHtml(uid, 'sm') + '</span>').join('');
+  const overflowHtml = overflow > 0 ? '<span class="ex-avatar-stack-item ex-avatar-stack-overflow"><span class="ex-avatar ex-avatar-sm">+' + overflow + '</span></span>' : '';
+  return '<span class="ex-avatar-stack">' + itemsHtml + overflowHtml + '</span>';
+}
+
+/** group.length === 1이면 평범한 단일 행, 2개 이상이면 "N명" 요약 행 + 펼침 토글 */
+function expenseGroupRowHtml(group: TripExpense[]): string {
+  if (group.length === 1) return expenseRowHtml(group[0]);
+
+  const first = group[0];
+  const cat = (EXPENSE_CATEGORIES as readonly string[]).includes(first.category) ? (first.category as ExpenseCategory) : 'ETC';
+  const meta = CATEGORY_META[cat];
+  const key = batchGroupKey(first);
+  const expanded = expandedBatchGroups.has(key);
+  const krwList = group.map(krwOf);
+  const anyMissing = krwList.some((v) => v == null);
+  const totalKrw = krwList.reduce((acc: number, v) => acc + (v ?? 0), 0);
+
+  let amountPart: string;
+  if (first.currency === 'KRW') {
+    amountPart = '<span class="ex-item-amount">' + fmtKRW(first.amount) + '</span><span class="ex-item-krw">1인당 · 총 ' + fmtKRW(totalKrw) + '</span>';
+  } else {
+    const totalText = anyMissing ? '환산 불가' : '≈ ' + fmtKRW(totalKrw);
+    amountPart = '<span class="ex-item-amount">' + escapeHtml(fmtAmount(first.amount, first.currency)) + '</span><span class="ex-item-krw">1인당 · 총 ' + totalText + '</span>';
+  }
+
+  const statusBadge = first.is_paid ? '<span class="ex-stamp is-paid">PAID</span>' : '<span class="ex-stamp">예정</span>';
+  const modeBadge = '<span class="ex-mode-badge ex-mode-personal">' + SPLIT_MODE_LABEL.PERSONAL + '</span>';
+  const memo = first.memo ? '<span class="ex-item-memo">' + escapeHtml(first.memo) + '</span>' : '';
+
+  const header = [
+    '<div class="ex-item ex-item-groupheader" data-groupkey="' + escapeHtml(key) + '">',
+    '  <span class="ex-item-cat" style="color:' + meta.color + '" title="' + meta.label + '">' + meta.icon + '</span>',
+    '  <div class="ex-item-main">',
+    '    <div class="ex-item-title-row"><span class="ex-item-title">' + escapeHtml(first.title) + '</span>' + statusBadge + modeBadge + '</div>',
+    '    <div class="ex-item-meta">' + avatarStackHtml(group.map((g) => g.paid_by)) + '<span>' + group.length + '명</span>' + memo + '</div>',
+    '  </div>',
+    '  <div class="ex-item-right">' + amountPart + '</div>',
+    '  <span class="ex-item-expand-icon">' + (expanded ? IC_CHEV_UP : IC_CHEV_DOWN) + '</span>',
+    '</div>',
+  ].join('');
+
+  const childrenHtml = expanded
+    ? '<div class="ex-item-group-children">' + group.map(expenseRowHtml).join('') + '</div>'
+    : '';
+
+  return header + childrenHtml;
+}
+
+/** 그룹 요약 행(펼침 토글) 클릭 바인딩 — 개별 항목 클릭(수정 열기)과는 분리되어 있음 */
+function bindGroupToggles(container: ParentNode, onToggle: () => void): void {
+  container.querySelectorAll('.ex-item-groupheader[data-groupkey]').forEach((row) => {
+    row.addEventListener('click', () => {
+      const key = (row as HTMLElement).dataset.groupkey!;
+      if (expandedBatchGroups.has(key)) expandedBatchGroups.delete(key);
+      else expandedBatchGroups.add(key);
+      onToggle();
+    });
+  });
+}
+
 function sortExpenses(items: TripExpense[]): TripExpense[] {
   const arr = [...items];
   if (sortMode === 'amount_desc') arr.sort((a, b) => (krwOf(b) ?? 0) - (krwOf(a) ?? 0));
@@ -1078,7 +1163,7 @@ function listBodyHtml(): string {
     return [
       '<div class="ex-group">',
       '  <div class="ex-group-header"><span class="ex-group-date">' + (key ? fmtDateLabel(key) : '날짜 미정') + '</span><span class="ex-group-sum">' + fmtKRW(groupSum) + '</span></div>',
-      items.map(expenseRowHtml).join(''),
+      groupExpenseRows(items).map(expenseGroupRowHtml).join(''),
       '</div>',
     ].join('\n');
   }).join('\n');
@@ -1144,13 +1229,15 @@ function bindListBody(panel: HTMLElement): void {
     listPageSize += 20;
     refreshListBody(panel);
   });
-  panel.querySelectorAll('.ex-item').forEach((row) => {
+  // 그룹 요약 행은 펼침 토글이므로, 개별 항목 클릭(수정 열기)에서는 제외
+  panel.querySelectorAll('.ex-item[data-id]').forEach((row) => {
     row.addEventListener('click', () => {
       const id = (row as HTMLElement).dataset.id!;
       const e = expenses.find((x) => x.id === id);
       if (e) openSheet(e);
     });
   });
+  bindGroupToggles(panel, () => refreshListBody(panel));
 }
 
 /* ══════════════════════ 정산 탭 ══════════════════════ */
@@ -1389,7 +1476,7 @@ function openSheet(editing: TripExpense | null): void {
     '      <button type="button" class="ex-paid-toggle' + (editing?.is_paid ? ' is-on' : '') + '" id="ex-f-paid" role="switch" aria-checked="' + (editing?.is_paid ? 'true' : 'false') + '"><span class="ex-paid-knob"></span></button>',
     '    </label>',
     '  </div>',
-    '  <div class="ex-field"><span class="ex-field-label">결제한 사람</span><span class="ex-field-label-hint" id="ex-f-payer-hint"></span>',
+    '  <div class="ex-field"><span class="ex-field-label">결제한 사람</span>',
     '    <div class="ex-sheet-members" id="ex-f-payer">' + payerChips + '</div>',
     '  </div>',
     '  <div class="ex-field" id="ex-f-split-wrap"><span class="ex-field-label">함께 나눌 멤버 <em>(정산에 사용)</em></span>',
@@ -1414,10 +1501,8 @@ function openSheet(editing: TripExpense | null): void {
   const allowMultiPayer = !editing;
 
   const splitWrap = sheet.querySelector('#ex-f-split-wrap') as HTMLElement;
-  const payerHintEl = sheet.querySelector('#ex-f-payer-hint') as HTMLElement;
   const updateSplitVisibility = (): void => {
     splitWrap.style.display = splitMode === 'SHARED' ? '' : 'none';
-    payerHintEl.textContent = allowMultiPayer && splitMode === 'PERSONAL' ? '(각자 결제했다면 여러 명 선택 가능)' : '';
   };
   updateSplitVisibility();
 
@@ -1608,6 +1693,7 @@ export function teardownExpense(): void {
   searchQuery = '';
   listPageSize = 20;
   editingBudgetCategory = null;
+  expandedBatchGroups = new Set();
   tipIndex = 0;
   quickAddMode = 'direct';
 }
