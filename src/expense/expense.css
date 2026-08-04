@@ -320,7 +320,6 @@
 .ex-qa-field { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 0; }
 .ex-qa-label { font-size: 11px; font-weight: 600; color: var(--al-text-secondary); }
 .ex-qa-label em { font-style: normal; font-weight: 400; color: var(--al-text-tertiary); }
-.ex-qa-label-hint { font-size: 10px; color: var(--al-text-tertiary); margin-left: 4px; }
 .ex-qa-input {
   padding: 8px 10px;
   border: 1px solid var(--al-divider);
@@ -525,6 +524,23 @@
 .ex-item-amount { font-size: 14px; font-weight: 700; color: var(--al-text); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ex-item-krw { font-size: 11px; color: var(--al-text-tertiary); font-variant-numeric: tabular-nums; }
 .ex-item-krw.is-na { color: #b0713a; }
+
+/* 개인 지출 여러 명 배치 입력 — 요약 행 + 펼침 */
+.ex-item-expand-icon { color: var(--al-text-tertiary); flex-shrink: 0; margin-left: 2px; }
+.ex-item-expand-icon svg { width: 16px; height: 16px; display: block; }
+
+.ex-item-group-children {
+  margin-left: 42px;
+  border-left: 2px solid var(--al-divider);
+  padding-left: var(--s3);
+}
+.ex-item-group-children .ex-item { padding-top: var(--s2); padding-bottom: var(--s2); }
+
+.ex-avatar-stack { display: inline-flex; align-items: center; flex-shrink: 0; }
+.ex-avatar-stack-item { margin-left: -6px; }
+.ex-avatar-stack-item:first-child { margin-left: 0; }
+.ex-avatar-stack-item .ex-avatar { border: 2px solid #fff; box-shadow: 0 1px 2px rgba(23,33,43,0.1); }
+.ex-avatar-stack-overflow .ex-avatar { background: var(--al-action); color: #fff; }
 
 .ex-stamp {
   font-size: 9px;
@@ -837,7 +853,6 @@
 .ex-field { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
 .ex-field-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: var(--al-text-secondary); }
 .ex-field-label em { font-style: normal; font-weight: 400; color: var(--al-text-tertiary); }
-.ex-field-label-hint { font-size: 10px; font-weight: 400; letter-spacing: 0; color: var(--al-text-tertiary); margin-left: 4px; }
 .ex-field-input {
   padding: 10px 12px;
   border: 1px solid var(--al-divider);
