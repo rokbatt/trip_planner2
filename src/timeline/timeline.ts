@@ -4,16 +4,14 @@
  * ROUTE(03)에서 지도 위로 만든 동선을 이어받아, **시간축 위에 올려놓고 다듬는** 화면이다.
  * 같은 route_days/route_stops를 읽고 쓰므로 두 화면은 항상 같은 일정을 본다.
  *
- *   ROUTE     = "어디를 어떤 순서로" (공간)
- *   TIMELINE  = "몇 시에 얼마나"     (시간)
+ *   ROUTE     = "어디를 어떤 순서로" (지도가 주인공, 동선을 만드는 곳)
+ *   TIMELINE  = "몇 시에 얼마나"     (일정 카드가 주인공, 하루를 완성하는 곳)
  *
- * 공항 메타포에서 이 화면은 **운항 시각표(FLIGHT SCHEDULE)** 다 — 시각·편명·게이트가
- * 한 줄에 정렬된 전광판처럼, 한 정류지가 한 줄에 다 들어오도록 밀도를 최우선으로 설계했다.
- *
- * 화면 구성
- *   상단  DAY 스트립  — 날짜별 채움 정도를 막대로 나란히 비교 (트리플엔 없는 "날짜 간 비교")
- *   좌측  시각표       — 시각 / 스파인 / 정류지 한 줄. 펼치면 그 자리에서 편집
- *   우측  요약 레일     — 하루 리듬(이동·머무름·여유 비율), 24시간 분포, 주의 신호, 예상 교통비
+ * 화면 구성 — 데스크톱은 크게, 모바일은 촘촘하게
+ *   상단  DAY 스트립  — 날짜별 채움 정도를 막대로 나란히 비교
+ *   좌측  일정 카드    — 사진·메모·평점까지 한 카드에서 다 보이는 "여행 계획서" 형태
+ *   우측  지도        — 그날의 경로와 핀. 카드를 누르면 그 핀으로 이동하고, 핀을 누르면 카드로 간다
+ *   모바일에선 지도를 접고 카드도 한 줄에 가깝게 줄여, 여행 중 빠르게 확인하는 데 집중한다
  *
  * 원칙 3-1 — 여기 뜨는 시각·체류시간·교통비는 대부분 추정치다.
  *   · 이동시간/거리 : Routes API 실측이 오면 실측, 못 받으면 직선거리 추정(구간마다 "추정" 표기)
@@ -39,6 +37,7 @@ import {
   resetRouteStorageProbe,
 } from '../route/routeStore';
 import type { StoredStop } from '../route/routeStore';
+import { loadGoogleMapsScript } from '../utils/googleMaps';
 import {
   estimateLegBetween,
   legKey,
@@ -72,8 +71,6 @@ const IC_LANDMARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 const IC_FORK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v7a2 2 0 0 0 2 2v11M7 2v7M9 2v7M11 2v7M16 2c-1.5 0-3 1.5-3 4s1.5 4 3 4v10"/></svg>';
 const IC_FERRIS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16M6.3 6.3l11.4 11.4M17.7 6.3 6.3 17.7"/></svg>';
 const IC_BAG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l1 12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L6 8Z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>';
-const IC_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
-const IC_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
 const IC_ARROW_BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>';
 const IC_MAPPIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21C12 21 19 14.5 19 9.5C19 5.9 15.9 3 12 3C8.1 3 5 5.9 5 9.5C5 14.5 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.2"/></svg>';
 const IC_CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
@@ -82,8 +79,9 @@ const IC_ROUTEPATH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 const IC_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2m-8 0 1 13a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-13"/></svg>';
 const IC_GRIP = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>';
 const IC_STAR = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.8 5.9 20.4 7.2 13.7 2.2 9l6.8-.8z"/></svg>';
+const IC_EXTLINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>';
 const IC_NOTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
-const IC_EXTLINK ='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>';
+const IC_PIN_SMALL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.5 7-11.5A7 7 0 0 0 5 9.5C5 14.5 12 21 12 21Z"/></svg>';
 
 const CAT_ICON: Record<CatKey, string> = {
   VISIT: IC_LANDMARK, FOOD: IC_FORK, ACTIVITY: IC_FERRIS, SHOPPING: IC_BAG, STAY: IC_BED, AIRPORT: IC_PLANE,
@@ -97,11 +95,22 @@ const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
 /** 하루의 기본 시작 시각(분) — ROUTE의 computeStopTimes와 같은 09:00 기준 */
 const DAY_START_MIN = 9 * 60;
 
+/**
+ * 여행 중에도 쓰는 화면이라 도로·지형은 살리고, 업체 POI 라벨만 옅게 눌러
+ * 우리 핀이 묻히지 않게 한다 (shortlist Step2와 같은 접근).
+ */
+const MAP_STYLE = [
+  { featureType: 'poi.business', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi', elementType: 'labels.icon', stylers: [{ saturation: -45 }, { lightness: 30 }] },
+  { featureType: 'poi', elementType: 'labels.text', stylers: [{ visibility: 'simplified' }] },
+  { featureType: 'transit', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+];
+
 /* ══════════════ 타입 ══════════════ */
 
-/** 시각표 한 줄 — route_stops 한 행에 대응 */
+/** 일정 카드 한 장 — route_stops 한 행에 대응 */
 interface TlStop {
-  /** 이 DAY 안에서만 유일하면 되는 행 키 (같은 장소를 하루에 두 번 담을 수 있으므로 인덱스 포함) */
+  /** 이 DAY 안에서만 유일하면 되는 행 키 (같은 장소를 하루에 두 번 담을 수 있으므로 순번 포함) */
   key: string;
   placeId: string | null;
   /** 지도에 직접 찍은 지점·공항처럼 places 행이 없는 정류지의 이름 */
@@ -129,11 +138,8 @@ interface TlDay {
 
 /** 한 DAY를 시간축에 올린 결과 */
 interface DaySchedule {
-  /** stops[i]의 도착 시각(분) — 화면에 보여주는 값 */
   arriveMin: number[];
-  /** stops[i]에서 떠나는 시각(분) = 도착 + 체류 */
   departMin: number[];
-  /** stops[i]의 체류시간(분) */
   dwellMin: number[];
   /** 고정 시각 때문에 생긴 여유(분). 0보다 크면 그 앞에 빈 시간이 있다는 뜻 */
   slackMin: number[];
@@ -143,13 +149,10 @@ interface DaySchedule {
   legs: Array<Leg | null>;
   totalMoveMin: number;
   totalDwellMin: number;
-  totalSlackMin: number;
   totalCost: number;
   currency: string;
-  /** 하루의 첫 도착 ~ 마지막 출발 */
   spanStartMin: number;
   spanEndMin: number;
-  /** 실측으로 채워진 구간 수 / 전체 구간 수 (원칙 3-1 표기용) */
   realLegCount: number;
   legCount: number;
 }
@@ -162,7 +165,6 @@ let container: HTMLElement | null = null;
 let currentTripId = '';
 let currentTrip: Trip | null = null;
 let activeDestId: string | null = null;
-let activeDest: TripDestination | null = null;
 let staySegments: StaySegment[] = [];
 let placeById = new Map<string, Place>();
 let basecampIds = new Set<string>();
@@ -171,8 +173,10 @@ let airportNames = new Set<string>();
 let days: TlDay[] = [];
 let activeDayIndex = 0;
 let viewMode: ViewMode = 'day';
-/** 펼쳐 놓은 정류지의 행 키 — 한 번에 하나만 (열려 있는 걸 다시 누르면 접힘) */
-let expandedKey: string | null = null;
+/** 클릭으로 고른 일정 — 카드 강조 + 지도 핀 확대가 함께 따라간다 (마우스를 떼도 유지) */
+let selectedKey: string | null = null;
+/** 이동수단을 바꾸려고 펼쳐 놓은 구간 번호 (한 번에 하나) */
+let openLegIndex: number | null = null;
 
 /** legKey → 모드별 실측. 없으면 직선거리 추정치 (ROUTE와 같은 캐시 전략) */
 let realLegs = new Map<string, Record<string, RealLeg>>();
@@ -182,6 +186,13 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingSaveDays = new Set<number>();
 let nowTimer: ReturnType<typeof setInterval> | null = null;
 let storageReady = false;
+
+/* 지도 */
+let mapInstance: any = null;
+let mapMarkers: any[] = [];
+let mapLines: any[] = [];
+let mapReady = false;
+let mapFitKey = '';
 
 /* ══════════════ 정리 ══════════════ */
 
@@ -195,10 +206,13 @@ export function teardownTimeline(): void {
   if (nowTimer) { clearInterval(nowTimer); nowTimer = null; }
   unsubscribeRoutePlan();
   resetRouteStorageProbe();
+  clearMapOverlays();
+  mapInstance = null;
+  mapReady = false;
+  mapFitKey = '';
   container = null;
   currentTrip = null;
   activeDestId = null;
-  activeDest = null;
   staySegments = [];
   placeById = new Map();
   basecampIds = new Set();
@@ -206,7 +220,8 @@ export function teardownTimeline(): void {
   days = [];
   activeDayIndex = 0;
   viewMode = 'day';
-  expandedKey = null;
+  selectedKey = null;
+  openLegIndex = null;
   realLegs = new Map();
   realLegPending = false;
   storageReady = false;
@@ -276,7 +291,7 @@ async function loadPlaces(tripId: string): Promise<Place[]> {
 }
 
 /**
- * 저장된 동선(route_days/route_stops)을 시각표 모델로 변환한다.
+ * 저장된 동선(route_days/route_stops)을 일정 모델로 변환한다.
  * ROUTE가 숙소·공항 앵커까지 전부 순서대로 저장해 두므로, 여기서 앵커를 다시 계산하지 않고
  * 저장된 순서를 그대로 신뢰한다 — 그래야 두 화면의 일정이 어긋날 여지가 없다.
  */
@@ -285,8 +300,7 @@ async function buildDays(trip: Trip): Promise<void> {
   placeById = new Map(places.map((p) => [p.id, p]));
 
   const dests = await loadDestinations(trip);
-  const dest = resolveActiveDestination(trip.id, dests);
-  activeDest = dest ?? null;
+  const dest: TripDestination | null = resolveActiveDestination(trip.id, dests) ?? null;
   activeDestId = dest && !isSyntheticDestination(dest.id) ? dest.id : null;
 
   const segments = dest ? await loadStaySegments(trip, dest) : [];
@@ -415,14 +429,10 @@ function scheduleFor(day: TlDay): DaySchedule {
     if (l.fare?.currency) currency = l.fare.currency;
   });
 
-  const totalDwell = dwellMin.reduce((a, b) => a + b, 0);
-  const totalSlack = slackMin.reduce((a, b) => a + b, 0);
-
   return {
     arriveMin, departMin, dwellMin, slackMin, overrunMin, legs,
     totalMoveMin: totalMove,
-    totalDwellMin: totalDwell,
-    totalSlackMin: totalSlack,
+    totalDwellMin: dwellMin.reduce((a, b) => a + b, 0),
     totalCost,
     currency,
     spanStartMin: arriveMin.length ? arriveMin[0] : DAY_START_MIN,
@@ -591,6 +601,7 @@ export async function renderTimelineContent(host: HTMLElement, tripId: string): 
 
   subscribeRoutePlan(tripId, () => { void reloadFromRemote(); });
   void loadRealLegsForActiveDay();
+  void initMap();
 
   // "지금" 표시는 분 단위로만 움직이면 충분하다
   nowTimer = setInterval(() => { if (todayDayIndex() >= 0) renderNowMarker(); }, 60_000);
@@ -617,7 +628,7 @@ function emptyStateHtml(): string {
     '<div class="tl-shell">',
     '  <div class="tl-empty">',
     '    <span class="tl-empty-icon">' + IC_ROUTEPATH + '</span>',
-    '    <div class="tl-empty-title">아직 시각표에 올릴 동선이 없어요</div>',
+    '    <div class="tl-empty-title">아직 일정에 올릴 동선이 없어요</div>',
     '    <div class="tl-empty-hint">ROUTE에서 하루 동선을 만들면,<br>여기서 시간 단위로 다듬을 수 있어요.</div>',
     '    <button type="button" class="tl-empty-btn" id="tl-go-route">' + IC_ARROW_BACK + ' ROUTE로 이동</button>',
     '  </div>',
@@ -641,7 +652,10 @@ function shellHtml(): string {
     '  </div>',
     '  <div class="tl-body" id="tl-body">',
     '    <div class="tl-main" id="tl-main"></div>',
-    '    <aside class="tl-rail" id="tl-rail"></aside>',
+    '    <div class="tl-mapcol" id="tl-mapcol">',
+    '      <div class="tl-map" id="tl-map"></div>',
+    '      <div class="tl-map-legend" id="tl-map-legend"></div>',
+    '    </div>',
     '  </div>',
     '</div>',
   ].join('\n');
@@ -652,8 +666,7 @@ function render(): void {
   renderDayStrip();
   renderViewMode();
   const main = container.querySelector('#tl-main') as HTMLElement | null;
-  const rail = container.querySelector('#tl-rail') as HTMLElement | null;
-  if (!main || !rail) return;
+  if (!main) return;
 
   if (viewMode === 'all') {
     main.innerHTML = allDaysHtml();
@@ -662,9 +675,8 @@ function render(): void {
     main.innerHTML = dayScheduleHtml();
     bindDaySchedule(main);
   }
-  rail.innerHTML = railHtml();
-  bindRail(rail);
   renderNowMarker();
+  drawMap();
 }
 
 function renderViewMode(): void {
@@ -680,8 +692,7 @@ function renderViewMode(): void {
 
 /**
  * 날짜를 나란히 놓고 **막대 하나로 하루의 밀도를 비교**하게 한다.
- * 트리플식 일정표가 "그날 안에서만" 보이는 것과 달리, 어느 날이 비었고 어느 날이 빡빡한지를
- * 탭을 옮겨 다니지 않고도 한 줄에서 알 수 있게 하려는 것.
+ * 하루씩 넘겨보지 않아도 어느 날이 비었고 어느 날이 빡빡한지 한 줄에서 알 수 있다.
  */
 function renderDayStrip(): void {
   const el = container?.querySelector('#tl-daystrip') as HTMLElement | null;
@@ -724,7 +735,9 @@ function renderDayStrip(): void {
       const idx = Number((btn as HTMLElement).dataset.day);
       if (!Number.isFinite(idx) || idx === activeDayIndex) return;
       activeDayIndex = idx;
-      expandedKey = null;
+      selectedKey = null;
+      openLegIndex = null;
+      mapFitKey = ''; // DAY가 바뀌면 지도를 그 하루에 맞춰 다시 잡는다
       viewMode = 'day';
       render();
       void loadRealLegsForActiveDay();
@@ -732,7 +745,7 @@ function renderDayStrip(): void {
   });
 }
 
-/* ══════════════ 하루 시각표 ══════════════ */
+/* ══════════════ 하루 일정 (카드) ══════════════ */
 
 function dayScheduleHtml(): string {
   const day = activeDay();
@@ -750,56 +763,63 @@ function dayScheduleHtml(): string {
 
   const s = scheduleFor(day);
   const rows: string[] = [];
-
   day.stops.forEach((stop, i) => {
-    rows.push(stopRowHtml(day, stop, i, s));
-    const leg = s.legs[i];
-    if (i < day.stops.length - 1) rows.push(legRowHtml(leg, day.stops[i + 1], i));
+    rows.push(stopCardHtml(stop, i, s));
+    if (i < day.stops.length - 1) rows.push(legRowHtml(s.legs[i], day.stops[i + 1], i));
   });
 
+  return ['<div class="tl-day">', dayHeadHtml(day, s), '  <ol class="tl-list" id="tl-list">' + rows.join('') + '</ol>', '</div>'].join('');
+}
+
+/** 하루의 요약은 별도 패널이 아니라 제목 옆 한 줄로 — 화면을 나눠 쓰지 않고도 다 읽힌다 */
+function dayHeadHtml(day: TlDay, s: DaySchedule): string {
+  const estNote =
+    s.legCount === 0
+      ? ''
+      : s.realLegCount === 0
+      ? '<span id="tl-legs-loading" class="tl-est-loading" style="display:none">실제 경로 확인 중… </span>이동 정보는 직선거리 기반 추정치'
+      : s.realLegCount === s.legCount
+      ? '이동시간·거리는 실제 경로 기준 · 택시 요금은 추정치'
+      : s.legCount + '개 구간 중 ' + s.realLegCount + '개만 실제 경로 기준';
+
+  const stats = [
+    ['일정', day.stops.length + '곳'],
+    ['이동', fmtMin(s.totalMoveMin)],
+    ['예상 교통비', s.totalCost.toLocaleString() + ' ' + s.currency],
+  ];
+
   return [
-    '<div class="tl-day">',
     '  <div class="tl-dayhead">',
-    '    <div class="tl-dayhead-left">',
+    '    <div class="tl-dayhead-title">',
     '      <span class="tl-dayhead-label">' + escapeHtml(day.label) + '</span>',
     '      <span class="tl-dayhead-date">' + escapeHtml(dateLabel(day.date)) + '</span>',
-    '    </div>',
-    '    <div class="tl-dayhead-right">',
     '      <span class="tl-dayhead-span">' + minToHHMM(s.spanStartMin) + ' – ' + minToHHMM(s.spanEndMin) + '</span>',
-    '      <span class="tl-dayhead-dot">·</span>',
-    '      <span class="tl-dayhead-count">' + day.stops.length + '곳</span>',
     '    </div>',
-    '  </div>',
-    // 열 이름 — 아래 모든 줄이 같은 격자를 쓰므로, 숫자들이 무엇인지 한 번만 알려주면 된다
-    '  <div class="tl-row tl-colhead">',
-    '    <div class="tl-col-time">도착</div>',
-    '    <div class="tl-col-spine"></div>',
-    '    <div class="tl-col-card">',
-    '      <span class="tl-ch-name">일정</span>',
-    '      <span class="tl-ch-track">' + minToHHMM(s.spanStartMin) + '<i></i>' + minToHHMM(s.spanEndMin) + '</span>',
-    '      <span class="tl-ch-num">체류</span>',
-    '      <span class="tl-ch-num tl-ch-depart">출발</span>',
-    '      <span></span>',
+    '    <div class="tl-dayhead-stats">',
+    stats.map(([k, v]) =>
+      '<span class="tl-hstat"><span class="tl-hstat-k">' + k + '</span><span class="tl-hstat-v">' + escapeHtml(v) + '</span></span>'
+    ).join(''),
     '    </div>',
+    // 원칙 3-1 — 실측/추정을 섞어 쓰므로 어느 쪽인지 반드시 밝힌다
+    estNote ? '    <div class="tl-dayhead-note">* ' + estNote + '예요</div>' : '',
     '  </div>',
-    '  <ol class="tl-list" id="tl-list">' + rows.join('') + '</ol>',
-    '</div>',
   ].join('');
 }
 
-function stopRowHtml(day: TlDay, stop: TlStop, i: number, s: DaySchedule): string {
+/**
+ * 일정 카드 — 사진·메모·평점까지 한 장에 다 담는다.
+ * 접었다 폈다 하지 않고 처음부터 다 보여주는 이유: 이 화면은 "훑어보는 목록"이 아니라
+ * 여행 계획서 그 자체라, 무엇이 담겨 있는지 클릭해봐야 아는 상태를 만들지 않기 위해서다.
+ * (모바일에선 CSS로 사진·메모·액션을 접어 한 줄에 가깝게 줄인다)
+ */
+function stopCardHtml(stop: TlStop, i: number, s: DaySchedule): string {
   const color = CAT_COLOR[stop.cat];
-  const expanded = expandedKey === stop.key;
+  const selected = selectedKey === stop.key;
   const fixed = !!stop.arriveTime;
   const dwell = s.dwellMin[i];
   const rating = typeof stop.place?.google_rating === 'number' ? stop.place.google_rating : null;
 
-  // 부제 — 유형 + 구글 카테고리 + 평점을 한 줄에 합친다. 열을 늘리지 않고 정보를 넣기 위해서고,
-  // 없는 값(평점 미수집 등)은 그냥 빠진다(원칙 3-1 — 자리를 채우려 만들지 않음).
   const subParts = [CAT_LABEL[stop.cat], stop.place?.category ?? ''].filter(Boolean);
-  const sub =
-    (subParts.length ? '<span>' + escapeHtml(subParts.join(' · ')) + '</span>' : '') +
-    (rating != null ? '<span class="tl-rating">' + IC_STAR + rating.toFixed(1) + '</span>' : '');
 
   const warn =
     s.overrunMin[i] > 0
@@ -809,68 +829,85 @@ function stopRowHtml(day: TlDay, stop: TlStop, i: number, s: DaySchedule): strin
       ? '<span class="tl-flag tl-flag-slack" title="고정한 시각까지 비는 시간이에요">여유 ' + fmtMin(s.slackMin[i]) + '</span>'
       : '';
 
+  // Brainstorm에서 모아둔 장소 메모(불릿)를 그대로 가져온다 — 계획서에서 제일 자주 보게 되는 내용
+  const noteLines = ((stop.place?.notes as string | null) ?? '')
+    .split('\n').map((l) => l.trim()).filter(Boolean);
+  const shownNotes = noteLines.slice(0, 4);
+  const notesHtml = shownNotes.length
+    ? '<ul class="tl-notes">' +
+      shownNotes.map((l) => '<li>' + escapeHtml(l) + '</li>').join('') +
+      (noteLines.length > shownNotes.length
+        ? '<li class="tl-notes-more">외 ' + (noteLines.length - shownNotes.length) + '개</li>'
+        : '') +
+      '</ul>'
+    : '';
+
+  // 사진 주소는 style 속성에 직접 끼워 넣지 않는다 — 따옴표·괄호가 섞이면 CSS가 깨지고,
+  // 이미 인코딩된 주소를 다시 인코딩하면(encodeURI) %23 → %2523이 되어 이미지가 안 뜬다.
+  // 값은 data-* 로만 넘기고 렌더 후 JS가 style에 넣는다.
+  const photo = stop.place?.photo_url
+    ? '<div class="tl-photo" data-photo="' + escapeHtml(stop.place.photo_url) + '"></div>'
+    : '';
+
+  const mapsUrl = stop.place?.google_place_id
+    ? 'https://www.google.com/maps/place/?q=place_id:' + stop.place.google_place_id
+    : stop.lat != null && stop.lng != null
+    ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(stop.lat + ',' + stop.lng)
+    : null;
+
   return [
-    '<li class="tl-row tl-stop' + (expanded ? ' is-open' : '') + '" data-key="' + stop.key + '" data-idx="' + i + '" draggable="true">',
+    '<li class="tl-row tl-stop' + (selected ? ' is-selected' : '') + '" data-key="' + stop.key + '" data-idx="' + i + '" draggable="true">',
+
     '  <div class="tl-col-time">',
     '    <input type="text" class="tl-time' + (fixed ? ' is-fixed' : '') + '" value="' + minToHHMM(s.arriveMin[i]) + '"' +
       ' data-key="' + stop.key + '" inputmode="numeric" maxlength="5" spellcheck="false"' +
       ' title="' + (fixed ? '직접 고정한 시각 · 비우면 자동 계산으로 돌아가요' : '앞 일정에서 자동 계산된 시각 · 입력하면 고정돼요') + '"' +
       ' aria-label="' + escapeHtml(stop.name) + ' 도착 시각" />',
+    dwell > 0 ? '    <span class="tl-dwell">' + fmtMin(dwell) + '</span>' : '',
+    dwell > 0 ? '    <span class="tl-out">' + minToHHMM(s.departMin[i]) + ' 출발</span>' : '',
+    fixed ? '    <button type="button" class="tl-unfix" data-key="' + stop.key + '" title="고정 해제 — 앞 일정에 맞춰 자동으로 계산해요">고정 해제</button>' : '',
     '  </div>',
+
     '  <div class="tl-col-spine"><span class="tl-dot" style="background:' + color + '"></span></div>',
+
     '  <div class="tl-col-card">',
-    '    <span class="tl-lead">',
+    '    <div class="tl-card">',
     '      <span class="tl-grip" title="드래그해서 순서 바꾸기">' + IC_GRIP + '</span>',
-    '      <span class="tl-idx">' + (i + 1) + '</span>',
-    '    </span>',
-    '    <span class="tl-cat" style="color:' + color + ';background:' + color + '14">' + CAT_ICON[stop.cat] + '</span>',
-    '    <span class="tl-name-col">',
-    '      <span class="tl-name-row">',
-    '        <span class="tl-name">' + escapeHtml(stop.name) + '</span>',
+    '      <span class="tl-pin" style="background:' + color + '">' + (i + 1) + '</span>',
+    '      <div class="tl-card-body">',
+    '        <div class="tl-card-titlerow">',
+    '          <span class="tl-cat" style="color:' + color + ';background:' + color + '14">' + CAT_ICON[stop.cat] + '</span>',
+    '          <h3 class="tl-name">' + escapeHtml(stop.name) + '</h3>',
     warn,
-    '      </span>',
-    sub ? '      <span class="tl-sub">' + sub + '</span>' : '',
-    '    </span>',
-    // 메모는 이름과 숫자 열 사이의 빈 공간을 채운다 — 새 열을 만들지 않고 한 줄 안에서 소화
-    // 메모가 없어도 같은 클래스의 빈 칸을 둔다 — 좁은 화면에서 이 열을 통째로 숨길 때
-    // 열 개수가 줄마다 달라지지 않도록(격자가 어긋나지 않도록) 하기 위해서.
-    '    <span class="tl-memo-inline"' + (stop.memo ? ' title="' + escapeHtml(stop.memo) + '">' + IC_NOTE + escapeHtml(stop.memo) : '>') + '</span>',
-    trackHtml(s, i),
-    '    <span class="tl-num">' + (dwell > 0 ? fmtMin(dwell) : '<i class="tl-dash-mark">—</i>') + '</span>',
-    '    <span class="tl-num tl-num-depart">' + (dwell > 0 ? minToHHMM(s.departMin[i]) : '<i class="tl-dash-mark">—</i>') + '</span>',
-    '    <button type="button" class="tl-expand" data-key="' + stop.key + '" aria-expanded="' + expanded + '"' +
-      ' aria-label="' + escapeHtml(stop.name) + ' 상세 ' + (expanded ? '접기' : '펼치기') + '">' + IC_CHEVRON_DOWN + '</button>',
+    '        </div>',
+    '        <div class="tl-sub">',
+    subParts.length ? '<span>' + escapeHtml(subParts.join(' · ')) + '</span>' : '',
+    rating != null ? '<span class="tl-rating">' + IC_STAR + rating.toFixed(1) + '</span>' : '',
+    stop.place?.address ? '<span class="tl-addr">' + IC_MAPPIN + escapeHtml(stop.place.address) + '</span>' : '',
+    '        </div>',
+    notesHtml,
+    '        <div class="tl-memo-row' + (stop.memo ? '' : ' is-empty') + '">',
+    '          <span class="tl-memo-ico">' + IC_NOTE + '</span>',
+    '          <input type="text" class="tl-memo" placeholder="메모 추가" value="' + escapeHtml(stop.memo ?? '') + '"' +
+      ' data-key="' + stop.key + '" aria-label="' + escapeHtml(stop.name) + ' 메모" />',
+    '        </div>',
+    '      </div>',
+    photo,
+    '      <div class="tl-card-tools">',
+    '        <button type="button" class="tl-tool tl-tool-map" data-key="' + stop.key + '" title="지도에서 이 일정 보기" aria-label="지도에서 보기">' + IC_PIN_SMALL + '</button>',
+    mapsUrl ? '        <a class="tl-tool" href="' + mapsUrl + '" target="_blank" rel="noopener noreferrer" title="Google 지도에서 열기" aria-label="Google 지도에서 열기">' + IC_EXTLINK + '</a>' : '',
+    '        <button type="button" class="tl-tool tl-tool-remove" data-key="' + stop.key + '" title="이 일정 빼기" aria-label="' + escapeHtml(stop.name) + ' 일정에서 빼기">' + IC_TRASH + '</button>',
+    '      </div>',
+    '    </div>',
     '  </div>',
-    expanded ? detailHtml(day, stop, i, s) : '',
     '</li>',
   ].join('');
 }
 
 /**
- * 줄마다 붙는 작은 시간 막대 — 이 정류지가 **하루 전체 중 어느 구간**을 차지하는지 보여준다.
- * 줄들이 쌓이면 그 자체로 하루의 모양(오전이 비었는지, 저녁까지 이어지는지)이 그려져서,
- * 진짜 시간 비례 캘린더처럼 세로 공간을 낭비하지 않고도 "시간 블록"을 읽을 수 있다.
+ * 이동 구간 — 누르면 그 자리에서 이동수단을 바꾼다.
+ * 이동수단은 "두 일정 사이"의 속성이라 카드 안이 아니라 여기에 두는 게 맞다.
  */
-function trackHtml(s: DaySchedule, i: number): string {
-  const span = Math.max(1, s.spanEndMin - s.spanStartMin);
-  const pos = (min: number) => ((min - s.spanStartMin) / span) * 100;
-  // 하루의 끝에 걸친 막대가 overflow에 잘려 아예 안 보이는 일이 없도록 오른쪽 끝에 붙인다
-  const clamp = (left: number, width: number) => Math.max(0, Math.min(left, 100 - width));
-  const stayWidth = Math.max(1.5, (s.dwellMin[i] / span) * 100);
-  const stayLeft = clamp(pos(s.arriveMin[i]), stayWidth);
-  const leg = s.legs[i];
-  const moveWidth = leg ? Math.max(0.8, (leg.min / span) * 100) : 0;
-  const moveHtml = leg
-    ? '<i class="tl-track-move" style="left:' + clamp(pos(s.departMin[i]), moveWidth) + '%;width:' + moveWidth + '%"></i>'
-    : '';
-  return (
-    '    <span class="tl-track" aria-hidden="true">' +
-    '<i class="tl-track-stay" style="left:' + stayLeft + '%;width:' + stayWidth + '%"></i>' +
-    moveHtml +
-    '</span>'
-  );
-}
-
 function legRowHtml(leg: Leg | null, to: TlStop, i: number): string {
   if (!leg) {
     return [
@@ -881,73 +918,34 @@ function legRowHtml(leg: Leg | null, to: TlStop, i: number): string {
       '</li>',
     ].join('');
   }
+
+  const open = openLegIndex === i;
   const manual = !!to.travelMode;
-  // 걸어서 가는 구간엔 요금이 없으므로 거리만 한 번 보여준다(거리를 두 번 적지 않기 위해)
+  // 걸어서 가는 구간엔 요금이 없으므로 거리만 한 번 보여준다
   const cost = leg.costTHB > 0 ? leg.costTHB.toLocaleString() + ' ' + (leg.fare?.currency ?? 'THB') : '';
+
+  const modeBtns = MODES.map((m) =>
+    '<button type="button" class="tl-modebtn' + (to.travelMode === m ? ' active' : '') + '"' +
+    ' data-mode="' + m + '" data-key="' + to.key + '">' + MODE_ICON[m] + '<span>' + modeLabel(m) + '</span></button>'
+  ).join('') +
+  (manual ? '<button type="button" class="tl-modebtn tl-modeauto" data-key="' + to.key + '">자동으로</button>' : '');
+
   return [
-    '<li class="tl-row tl-leg ' + modeColorClass(leg.mode) + '" data-leg-idx="' + i + '">',
+    '<li class="tl-row tl-leg ' + modeColorClass(leg.mode) + (open ? ' is-open' : '') + '" data-leg-idx="' + i + '">',
     '  <div class="tl-col-time"><span class="tl-leg-dur">' + fmtMin(leg.min) + '</span></div>',
     '  <div class="tl-col-spine"><span class="tl-spine-line"></span></div>',
     '  <div class="tl-col-card">',
-    '    <span class="tl-leg-body">',
+    '    <button type="button" class="tl-leg-body" data-leg-idx="' + i + '" aria-expanded="' + open + '" title="눌러서 이동수단 바꾸기">',
     '      <span class="tl-leg-ico">' + MODE_ICON[leg.mode] + '</span>',
     '      <span class="tl-leg-mode">' + modeLabel(leg.mode) + '</span>',
     '      <span class="tl-leg-sep">·</span><span class="tl-leg-dim">' + fmtKm(leg.km) + '</span>',
     cost ? '      <span class="tl-leg-sep">·</span><span class="tl-leg-dim">' + escapeHtml(cost) + '</span>' : '',
     !leg.real ? '      <span class="tl-est" title="실제 경로를 못 받아 직선거리로 추정한 값이에요">추정</span>' : '',
     manual ? '      <span class="tl-manual" title="직접 지정한 이동수단"></span>' : '',
-    '    </span>',
+    '    </button>',
+    open ? '    <div class="tl-modes">' + modeBtns + '</div>' : '',
     '  </div>',
     '</li>',
-  ].join('');
-}
-
-/**
- * 펼침 패널 — 한 줄에 넣기엔 긴 정보(메모·주소·이동수단 선택·바깥 링크)를 그 자리에서 처리한다.
- * 접힌 줄을 최대한 얇게 유지하기 위한 장치라, 여기에도 근거 없는 항목은 넣지 않는다.
- */
-function detailHtml(day: TlDay, stop: TlStop, i: number, s: DaySchedule): string {
-  const p = stop.place;
-  const modeBtns = MODES.map((m) => {
-    const active = stop.travelMode === m;
-    return '<button type="button" class="tl-modebtn' + (active ? ' active' : '') + '" data-mode="' + m + '" data-key="' + stop.key + '">' +
-      MODE_ICON[m] + '<span>' + modeLabel(m) + '</span></button>';
-  }).join('');
-
-  const mapsUrl = p?.google_place_id
-    ? 'https://www.google.com/maps/place/?q=place_id:' + p.google_place_id
-    : stop.lat != null && stop.lng != null
-    ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(stop.lat + ',' + stop.lng)
-    : null;
-
-  return [
-    '<div class="tl-detail">',
-    '  <div class="tl-detail-grid">',
-    '    <label class="tl-field tl-field-wide">',
-    '      <span class="tl-field-label">메모</span>',
-    '      <input type="text" class="tl-memo" placeholder="이 일정에 대한 메모" value="' + escapeHtml(stop.memo ?? '') + '"' +
-      ' data-key="' + stop.key + '" />',
-    '    </label>',
-    i > 0
-      ? '    <div class="tl-field"><span class="tl-field-label">여기까지 이동수단</span><div class="tl-modes">' + modeBtns +
-        (stop.travelMode ? '<button type="button" class="tl-modeauto" data-key="' + stop.key + '">자동</button>' : '') +
-        '</div></div>'
-      : '',
-    '  </div>',
-    p?.address ? '  <div class="tl-detail-line">' + IC_MAPPIN + '<span>' + escapeHtml(p.address) + '</span></div>' : '',
-    stop.arriveTime
-      ? '  <div class="tl-detail-line tl-detail-fixed">' + IC_CLOCK +
-        '<span>' + escapeHtml(stop.arriveTime) + ' 로 고정됨 — 앞 일정이 밀려도 이 시각은 유지돼요</span>' +
-        '<button type="button" class="tl-unfix" data-key="' + stop.key + '">고정 해제</button></div>'
-      : '',
-    s.slackMin[i] > 30 && !s.overrunMin[i]
-      ? '  <div class="tl-detail-line tl-detail-note">앞 일정이 끝나고 ' + fmtMin(s.slackMin[i]) + ' 정도 비어요</div>'
-      : '',
-    '  <div class="tl-detail-actions">',
-    mapsUrl ? '    <a class="tl-detail-link" href="' + mapsUrl + '" target="_blank" rel="noopener noreferrer">' + IC_EXTLINK + ' Google 지도</a>' : '',
-    '    <button type="button" class="tl-detail-remove" data-key="' + stop.key + '">' + IC_TRASH + ' 이 일정 빼기</button>',
-    '  </div>',
-    '</div>',
   ].join('');
 }
 
@@ -955,8 +953,8 @@ function detailHtml(day: TlDay, stop: TlStop, i: number, s: DaySchedule): string
 
 /**
  * 모든 DAY를 컬럼으로 나란히 — 하루씩 넘겨보지 않고 여행 전체의 리듬을 한 화면에서 본다.
- * "장소 간·날짜 간 비교가 어렵다"는 기존 일정표의 약점을 메우는 뷰라, 여기선 편집을 막고
- * 읽기에만 집중한다(수정은 하루 뷰에서).
+ * 컬럼마다 같은 24시간 축의 띠를 붙여, 어느 날이 이르게 시작하고 어느 날이 늦게까지
+ * 이어지는지 위치만으로 비교된다. 편집은 막고 읽기에만 집중한다(수정은 하루 보기에서).
  */
 function allDaysHtml(): string {
   const today = todayDayIndex();
@@ -967,7 +965,7 @@ function allDaysHtml(): string {
           .map((stop, j) => {
             const leg = s.legs[j];
             return [
-              '<div class="tl-allrow" data-day="' + i + '">',
+              '<div class="tl-allrow">',
               '  <span class="tl-alltime">' + minToHHMM(s.arriveMin[j]) + '</span>',
               '  <span class="tl-alldot" style="background:' + CAT_COLOR[stop.cat] + '"></span>',
               '  <span class="tl-allname">' + escapeHtml(stop.name) + '</span>',
@@ -986,9 +984,7 @@ function allDaysHtml(): string {
       '  <button type="button" class="tl-allhead" data-day="' + i + '" title="이 DAY를 하루 보기로 열기">',
       '    <span class="tl-allhead-label">' + escapeHtml(d.label) + '</span>',
       '    <span class="tl-allhead-date">' + escapeHtml(dateLabel(d.date)) + '</span>',
-      // 같은 24시간 축을 모든 컬럼이 공유하므로, 띠의 위치만 봐도 어느 날이 이르고
-      // 어느 날이 늦게까지 이어지는지 바로 비교된다 (이 뷰의 존재 이유)
-      '    ' + dayBandHtml(s, { compact: true }),
+      '    ' + dayBandHtml(s),
       '    <span class="tl-allhead-meta">' + (d.stops.length ? d.stops.length + '곳 · 이동 ' + fmtMin(s.totalMoveMin) : '—') + '</span>',
       '  </button>',
       '  <div class="tl-allbody">' + rows + '</div>',
@@ -999,145 +995,37 @@ function allDaysHtml(): string {
   return '<div class="tl-all">' + cols.join('') + '</div>';
 }
 
-/* ══════════════ 우측 요약 레일 ══════════════ */
-
-function railHtml(): string {
-  const day = activeDay();
-  if (!day) return '';
-  const s = scheduleFor(day);
-  const span = Math.max(1, s.spanEndMin - s.spanStartMin);
-  // 하루를 채운 시간 = 이동 + 머무름 + (고정 시각 때문에 생긴) 여유
-  const move = s.totalMoveMin;
-  const stay = s.totalDwellMin;
-  const idle = Math.max(0, span - move - stay);
-  const pct = (v: number) => Math.round((v / span) * 100);
-
-  const overruns = s.overrunMin.filter((m) => m > 0).length;
-  const bigSlacks = s.slackMin.filter((m) => m > 90).length;
-
-  const alerts: string[] = [];
-  if (overruns > 0) {
-    alerts.push(
-      '<div class="tl-alert tl-alert-warn">' + IC_ALERT +
-        '<span><b>' + overruns + '곳</b>이 고정 시각에 못 맞춰요. 앞 일정을 줄이거나 시각을 늦춰보세요.</span></div>'
-    );
-  }
-  if (bigSlacks > 0) {
-    alerts.push(
-      '<div class="tl-alert">' + IC_CLOCK +
-        '<span><b>' + bigSlacks + '군데</b>에 1시간 30분 넘는 여유가 있어요.</span></div>'
-    );
-  }
-  if (move > stay && stay > 0) {
-    alerts.push(
-      '<div class="tl-alert">' + IC_ROUTEPATH +
-        '<span>머무는 시간보다 <b>이동이 더 길어요</b>. ROUTE에서 순서를 정리하면 줄일 수 있어요.</span></div>'
-    );
-  }
-
-  const estNote =
-    s.legCount === 0
-      ? ''
-      : s.realLegCount === 0
-      ? '<span id="tl-legs-loading" class="tl-loading-inline" style="display:none">실제 경로 확인 중… </span>* 이동 정보는 직선거리 기반 추정치예요'
-      : s.realLegCount === s.legCount
-      ? '* 이동시간·거리는 실제 경로 기준 · 택시 요금은 추정치예요'
-      : '* ' + s.legCount + '개 구간 중 ' + s.realLegCount + '개만 실제 경로 기준이에요';
-
-  return [
-    '<div class="tl-rail-inner">',
-
-    '  <section class="tl-card">',
-    '    <div class="tl-card-head">',
-    '      <span class="tl-card-title">' + escapeHtml(day.label) + ' 리듬</span>',
-    '      <span class="tl-card-sub">' + minToHHMM(s.spanStartMin) + '–' + minToHHMM(s.spanEndMin) + ' · ' + fmtMin(span) + '</span>',
-    '    </div>',
-    '    <div class="tl-mix" role="img" aria-label="이동 ' + pct(move) + '퍼센트, 머무름 ' + pct(stay) + '퍼센트, 여유 ' + pct(idle) + '퍼센트">',
-    '      <i class="tl-mix-move" style="width:' + pct(move) + '%"></i>',
-    '      <i class="tl-mix-stay" style="width:' + pct(stay) + '%"></i>',
-    '      <i class="tl-mix-idle" style="width:' + pct(idle) + '%"></i>',
-    '    </div>',
-    '    <div class="tl-legend">',
-    '      <div class="tl-legend-item"><span class="tl-legend-dot move"></span><span class="tl-legend-label">이동</span><span class="tl-legend-value">' + fmtMin(move) + '</span></div>',
-    '      <div class="tl-legend-item"><span class="tl-legend-dot stay"></span><span class="tl-legend-label">머무름</span><span class="tl-legend-value">' + fmtMin(stay) + '</span></div>',
-    '      <div class="tl-legend-item"><span class="tl-legend-dot idle"></span><span class="tl-legend-label">여유</span><span class="tl-legend-value">' + fmtMin(idle) + '</span></div>',
-    '    </div>',
-    '  </section>',
-
-    '  <section class="tl-card">',
-    '    <div class="tl-card-head"><span class="tl-card-title">하루 분포</span></div>',
-    dayBandHtml(s),
-    '    <div class="tl-band-axis"><span>06</span><span>12</span><span>18</span><span>24</span></div>',
-    '  </section>',
-
-    alerts.length ? '  <section class="tl-card tl-card-alerts">' + alerts.join('') + '</section>' : '',
-
-    '  <section class="tl-card">',
-    '    <div class="tl-stats">',
-    '      <div class="tl-stat"><span class="tl-stat-label">일정</span><span class="tl-stat-value">' + day.stops.length + '곳</span></div>',
-    '      <div class="tl-stat"><span class="tl-stat-label">이동 거리</span><span class="tl-stat-value">' + totalKmOf(s).toFixed(1) + 'km</span></div>',
-    '      <div class="tl-stat"><span class="tl-stat-label">예상 교통비</span><span class="tl-stat-value">' + s.totalCost.toLocaleString() + ' ' + escapeHtml(s.currency) + '</span></div>',
-    '    </div>',
-    estNote ? '    <div class="tl-estnote">' + estNote + '</div>' : '',
-    '  </section>',
-
-    '</div>',
-  ].join('');
-}
-
-function totalKmOf(s: DaySchedule): number {
-  return s.legs.reduce((sum, l) => sum + (l?.km ?? 0), 0);
-}
-
-/**
- * 24시간 띠 위에 일정이 실제로 차지하는 구간을 그린다 — 숫자 대신 모양으로
- * "아침이 비었는지, 밤까지 이어지는지"를 즉시 읽게 하는 장치.
- */
-function dayBandHtml(s: DaySchedule, opts: { compact?: boolean } = {}): string {
+/** 24시간 축 위에 그 하루가 실제로 차지하는 구간을 그린 띠 */
+function dayBandHtml(s: DaySchedule): string {
   const segs: string[] = [];
   s.arriveMin.forEach((a, i) => {
     const d = s.departMin[i];
-    if (d <= a) return;
-    segs.push(
-      '<i class="tl-band-stay" style="left:' + (a / 1440) * 100 + '%;width:' + ((d - a) / 1440) * 100 + '%"></i>'
-    );
+    if (d > a) segs.push('<i class="tl-band-stay" style="left:' + (a / 1440) * 100 + '%;width:' + ((d - a) / 1440) * 100 + '%"></i>');
     const leg = s.legs[i];
-    if (leg) {
-      segs.push(
-        '<i class="tl-band-move" style="left:' + (d / 1440) * 100 + '%;width:' + (leg.min / 1440) * 100 + '%"></i>'
-      );
-    }
+    if (leg) segs.push('<i class="tl-band-move" style="left:' + (d / 1440) * 100 + '%;width:' + (leg.min / 1440) * 100 + '%"></i>');
   });
-  // 레일의 띠만 "지금" 표시를 갱신받으므로 id는 그쪽에만 붙인다
-  if (opts.compact) return '<span class="tl-band tl-band-compact">' + segs.join('') + '</span>';
-  return '<div class="tl-band" id="tl-band">' + segs.join('') + '<span class="tl-band-now" id="tl-band-now" hidden></span></div>';
+  return '<span class="tl-band">' + segs.join('') + '</span>';
 }
 
 /* ══════════════ "지금" 표시 (여행 중) ══════════════ */
 
 /**
- * 오늘이 이 DAY면 현재 시각선을 시각표에 끼워 넣고, 24시간 띠에도 같은 위치를 찍는다.
+ * 오늘이 이 DAY면 현재 시각선을 일정 사이에 끼워 넣는다.
  * 기기 시계라는 실제 근거가 있는 정보만 쓰고, "예상 도착까지 N분" 같은 추측은 하지 않는다.
  */
 function renderNowMarker(): void {
   if (!container) return;
   container.querySelector('.tl-nowline')?.remove();
-  const bandNow = container.querySelector('#tl-band-now') as HTMLElement | null;
 
   const day = activeDay();
-  const isToday = !!day && day.date === todayISO();
-  if (bandNow) {
-    bandNow.hidden = !isToday;
-    if (isToday) bandNow.style.left = (nowMinutes() / 1440) * 100 + '%';
-  }
-  if (!isToday || viewMode !== 'day' || !day || !day.stops.length) return;
+  if (!day || day.date !== todayISO() || viewMode !== 'day' || !day.stops.length) return;
 
   const s = scheduleFor(day);
   const now = nowMinutes();
   const list = container.querySelector('#tl-list') as HTMLElement | null;
   if (!list) return;
 
-  // 현재 시각 바로 다음에 오는 정류지 앞에 선을 넣는다. 하루가 이미 끝났으면 표시하지 않는다.
+  // 현재 시각 바로 다음에 오는 일정 앞에 선을 넣는다. 하루가 이미 끝났으면 표시하지 않는다.
   const nextIdx = s.arriveMin.findIndex((m) => m > now);
   if (nextIdx < 0) return;
 
@@ -1146,10 +1034,166 @@ function renderNowMarker(): void {
   marker.innerHTML =
     '<div class="tl-col-time"><span class="tl-nowline-time">' + minToHHMM(now) + '</span></div>' +
     '<div class="tl-col-spine"><span class="tl-nowline-dot"></span></div>' +
-    '<div class="tl-col-card"><span class="tl-nowline-bar"></span><span class="tl-nowline-label">지금</span></div>';
+    '<div class="tl-col-card"><span class="tl-nowline-label">지금</span><span class="tl-nowline-bar"></span></div>';
 
   const target = list.querySelector('.tl-stop[data-idx="' + nextIdx + '"]');
   if (target) list.insertBefore(marker, target.previousElementSibling ?? target);
+}
+
+/* ══════════════ 지도 ══════════════ */
+
+async function initMap(): Promise<void> {
+  const mapEl = container?.querySelector('#tl-map') as HTMLElement | null;
+  if (!mapEl) return;
+  try {
+    await loadGoogleMapsScript();
+  } catch {
+    mapEl.innerHTML = '<div class="tl-map-error">' + IC_ALERT + '<span>지도를 불러오지 못했어요</span></div>';
+    return;
+  }
+  const g = (window as any).google;
+  if (!g?.maps || !container) return;
+
+  mapInstance = new g.maps.Map(mapEl, {
+    center: { lat: 13.74, lng: 100.53 },
+    zoom: 12,
+    gestureHandling: 'greedy',
+    styles: MAP_STYLE,
+    clickableIcons: false,
+    zoomControl: false,
+    mapTypeControl: false,
+    streetViewControl: false,
+    fullscreenControl: false,
+    rotateControl: false,
+  });
+  // 지도 빈 곳 클릭 = 선택 해제 (원칙 3-3 — 명시적 해제 수단)
+  mapInstance.addListener('click', () => {
+    if (!selectedKey) return;
+    selectedKey = null;
+    render();
+  });
+  mapReady = true;
+  drawMap();
+}
+
+function clearMapOverlays(): void {
+  mapMarkers.forEach((m) => m.setMap(null));
+  mapLines.forEach((l) => l.setMap(null));
+  mapMarkers = [];
+  mapLines = [];
+}
+
+/** 번호가 박힌 물방울 핀 — 카드의 순번 배지와 같은 색·같은 숫자라 둘이 바로 이어진다 */
+function pinIcon(g: any, n: number, color: string, active: boolean): any {
+  const w = active ? 40 : 32;
+  const h = active ? 52 : 42;
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 32 42">' +
+    '<path d="M16 41C16 41 30 24.5 30 14.8A14 14 0 0 0 2 14.8C2 24.5 16 41 16 41Z" fill="' + color + '" stroke="#fff" stroke-width="2.5"/>' +
+    '<text x="16" y="20" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#fff">' + n + '</text>' +
+    '</svg>';
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new g.maps.Size(w, h),
+    anchor: new g.maps.Point(w / 2, h),
+  };
+}
+
+function drawMap(): void {
+  if (!mapReady || !mapInstance) return;
+  const g = (window as any).google;
+  clearMapOverlays();
+
+  const legendEl = container?.querySelector('#tl-map-legend') as HTMLElement | null;
+  const day = activeDay();
+  // 전체 보기에선 지도를 접으므로 그릴 것도 없다
+  if (viewMode === 'all' || !day || !day.stops.length) {
+    if (legendEl) legendEl.innerHTML = '';
+    return;
+  }
+
+  const s = scheduleFor(day);
+  const pts = day.stops
+    .map((stop, i) => ({ stop, i }))
+    .filter(({ stop }) => stop.lat != null && stop.lng != null);
+
+  // 구간 선 — 실제 도로 좌표가 있으면 그걸, 없으면 두 점을 잇는 점선(추정)
+  for (let k = 0; k < pts.length - 1; k++) {
+    const a = pts[k];
+    const b = pts[k + 1];
+    const leg = s.legs[a.i];
+    if (!leg) continue;
+    const path = leg.path?.length
+      ? leg.path
+      : [{ lat: a.stop.lat!, lng: a.stop.lng! }, { lat: b.stop.lat!, lng: b.stop.lng! }];
+    mapLines.push(
+      new g.maps.Polyline({
+        path,
+        map: mapInstance,
+        strokeColor: leg.mode === 'WALK' ? '#1D9E75' : leg.mode === 'TRANSIT' ? '#0B7CC4' : '#E08A1E',
+        strokeOpacity: leg.path?.length ? 0.85 : 0,
+        strokeWeight: 3.5,
+        // 실측 경로가 아니면 점선으로 그려서 "추정"임을 지도 위에서도 구분되게 (원칙 3-1)
+        icons: leg.path?.length
+          ? undefined
+          : [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 0.7, strokeWeight: 3, scale: 3 }, offset: '0', repeat: '12px' }],
+        zIndex: 1,
+      })
+    );
+  }
+
+  const bounds = new g.maps.LatLngBounds();
+  pts.forEach(({ stop, i }) => {
+    const pos = { lat: stop.lat!, lng: stop.lng! };
+    bounds.extend(pos);
+    const active = selectedKey === stop.key;
+    const marker = new g.maps.Marker({
+      position: pos,
+      map: mapInstance,
+      icon: pinIcon(g, i + 1, CAT_COLOR[stop.cat], active),
+      title: stop.name,
+      zIndex: active ? 999 : 10 + i,
+    });
+    // 지도 → 목록. 핀을 누르면 그 카드가 선택되고 화면에 보이도록 스크롤한다
+    marker.addListener('click', () => {
+      selectedKey = selectedKey === stop.key ? null : stop.key;
+      render();
+      if (selectedKey) {
+        container?.querySelector('.tl-stop[data-key="' + CSS.escape(stop.key) + '"]')
+          ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    });
+    mapMarkers.push(marker);
+  });
+
+  if (legendEl) {
+    legendEl.innerHTML =
+      '<span class="tl-map-legend-day">' + escapeHtml(activeDay()?.label ?? '') + '</span>' +
+      '<span class="tl-map-legend-sep">·</span>' +
+      '<span>' + pts.length + '곳</span>' +
+      (pts.length < day.stops.length
+        ? '<span class="tl-map-legend-warn">좌표 없는 일정 ' + (day.stops.length - pts.length) + '개는 표시 못 해요</span>'
+        : '');
+  }
+
+  // 같은 DAY를 보는 동안엔 사용자가 움직여 놓은 지도를 건드리지 않는다
+  const fitKey = day.dayIndex + ':' + pts.map((p) => p.stop.key).join(',');
+  if (pts.length && fitKey !== mapFitKey) {
+    mapFitKey = fitKey;
+    if (pts.length === 1) {
+      mapInstance.setCenter(bounds.getCenter());
+      mapInstance.setZoom(15);
+    } else {
+      mapInstance.fitBounds(bounds, { top: 56, right: 40, bottom: 40, left: 40 });
+    }
+  }
+}
+
+/** 카드 → 지도. 선택한 일정의 핀으로 부드럽게 이동 */
+function panToStop(stop: TlStop): void {
+  if (!mapReady || !mapInstance || stop.lat == null || stop.lng == null) return;
+  mapInstance.panTo({ lat: stop.lat, lng: stop.lng });
+  if (mapInstance.getZoom() < 14) mapInstance.setZoom(15);
 }
 
 /* ══════════════ 이벤트 ══════════════ */
@@ -1164,6 +1208,11 @@ function bindShell(): void {
       if (!v || v === viewMode) return;
       viewMode = v;
       render();
+      // 지도가 숨었다 다시 나타나면 크기를 다시 잡아줘야 회색 여백이 남지 않는다
+      if (v === 'day' && mapInstance) {
+        const g = (window as any).google;
+        setTimeout(() => { g?.maps?.event?.trigger(mapInstance, 'resize'); }, 60);
+      }
     });
   });
 
@@ -1172,16 +1221,12 @@ function bindShell(): void {
     if (idx < 0) return;
     activeDayIndex = idx;
     viewMode = 'day';
-    expandedKey = null;
+    selectedKey = null;
+    mapFitKey = '';
     render();
     void loadRealLegsForActiveDay();
     container?.querySelector('.tl-nowline')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
-}
-
-function bindRail(rail: HTMLElement): void {
-  // 레일은 지금은 읽기 전용 — 자리표시자 없이 비워둔다(불필요한 훅을 만들지 않음)
-  void rail;
 }
 
 function bindAllDays(main: HTMLElement): void {
@@ -1191,7 +1236,8 @@ function bindAllDays(main: HTMLElement): void {
       if (!Number.isFinite(idx)) return;
       activeDayIndex = idx;
       viewMode = 'day';
-      expandedKey = null;
+      selectedKey = null;
+      mapFitKey = '';
       render();
       void loadRealLegsForActiveDay();
     });
@@ -1209,17 +1255,34 @@ function findStop(key: string): { day: TlDay; stop: TlStop; index: number } | nu
 function bindDaySchedule(main: HTMLElement): void {
   main.querySelector('#tl-day-go-route')?.addEventListener('click', () => gotoGate('route'));
 
-  /* 펼치기 — 접힌 줄을 얇게 유지하기 위해 상세 편집은 전부 여기 안으로 */
-  main.querySelectorAll('.tl-expand').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const key = (btn as HTMLElement).dataset.key!;
-      expandedKey = expandedKey === key ? null : key;
+  main.querySelectorAll('.tl-photo').forEach((el) => {
+    const url = (el as HTMLElement).dataset.photo;
+    if (url) (el as HTMLElement).style.backgroundImage = 'url("' + url.replace(/"/g, '%22') + '")';
+  });
+
+  /* 카드 선택 — 지도의 핀과 짝을 이룬다. 같은 카드를 다시 누르면 해제(원칙 3-3) */
+  main.querySelectorAll('.tl-stop').forEach((row) => {
+    row.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('input, button, a')) return;
+      const key = (row as HTMLElement).dataset.key!;
+      const found = findStop(key);
+      selectedKey = selectedKey === key ? null : key;
       render();
+      if (selectedKey && found) panToStop(found.stop);
     });
   });
 
-  /* 도착 시각 고정 — 비우면 다시 자동 계산으로 돌아간다(명시적 해제 수단, 원칙 3-3) */
+  main.querySelectorAll('.tl-tool-map').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const found = findStop((btn as HTMLElement).dataset.key!);
+      if (!found) return;
+      selectedKey = found.stop.key;
+      render();
+      panToStop(found.stop);
+    });
+  });
+
+  /* 도착 시각 고정 — 비우면 다시 자동 계산으로 돌아간다 */
   main.querySelectorAll('.tl-time').forEach((input) => {
     const el = input as HTMLInputElement;
     const commit = () => {
@@ -1242,6 +1305,16 @@ function bindDaySchedule(main: HTMLElement): void {
     el.addEventListener('click', (e) => e.stopPropagation());
   });
 
+  main.querySelectorAll('.tl-unfix').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const found = findStop((btn as HTMLElement).dataset.key!);
+      if (!found) return;
+      found.stop.arriveTime = null;
+      scheduleSave(found.day.dayIndex);
+      render();
+    });
+  });
+
   /* 메모 — 입력 중 재렌더하면 포커스가 날아가므로 값만 갱신하고 저장만 예약한다 */
   main.querySelectorAll('.tl-memo').forEach((input) => {
     const el = input as HTMLInputElement;
@@ -1253,45 +1326,36 @@ function bindDaySchedule(main: HTMLElement): void {
     });
   });
 
-  /* 이동수단 수동 지정 / 자동으로 되돌리기 */
-  main.querySelectorAll('.tl-modebtn').forEach((btn) => {
+  /* 이동수단 — 구간을 눌러 펼치고, 켜진 걸 다시 누르면 자동 선택으로 되돌린다 */
+  main.querySelectorAll('.tl-leg-body').forEach((btn) => {
     btn.addEventListener('click', () => {
+      const idx = Number((btn as HTMLElement).dataset.legIdx);
+      if (!Number.isFinite(idx)) return;
+      openLegIndex = openLegIndex === idx ? null : idx;
+      render();
+    });
+  });
+  main.querySelectorAll('.tl-modebtn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
       const el = btn as HTMLElement;
       const found = findStop(el.dataset.key!);
       if (!found) return;
-      const mode = el.dataset.mode as TravelMode;
-      // 이미 켜진 걸 다시 누르면 자동 선택으로 되돌린다 (해제 수단을 항상 같은 자리에)
-      found.stop.travelMode = found.stop.travelMode === mode ? null : mode;
-      scheduleSave(found.day.dayIndex);
-      render();
-    });
-  });
-  main.querySelectorAll('.tl-modeauto').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const found = findStop((btn as HTMLElement).dataset.key!);
-      if (!found) return;
-      found.stop.travelMode = null;
+      const mode = el.dataset.mode as TravelMode | undefined;
+      found.stop.travelMode = !mode ? null : found.stop.travelMode === mode ? null : mode;
       scheduleSave(found.day.dayIndex);
       render();
     });
   });
 
-  main.querySelectorAll('.tl-unfix').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const found = findStop((btn as HTMLElement).dataset.key!);
-      if (!found) return;
-      found.stop.arriveTime = null;
-      scheduleSave(found.day.dayIndex);
-      render();
-    });
-  });
-
-  main.querySelectorAll('.tl-detail-remove').forEach((btn) => {
+  main.querySelectorAll('.tl-tool-remove').forEach((btn) => {
     btn.addEventListener('click', () => {
       const found = findStop((btn as HTMLElement).dataset.key!);
       if (!found) return;
       found.day.stops.splice(found.index, 1);
-      expandedKey = null;
+      if (selectedKey === found.stop.key) selectedKey = null;
+      openLegIndex = null;
+      mapFitKey = '';
       scheduleSave(found.day.dayIndex);
       render();
       void loadRealLegsForActiveDay();
@@ -1301,7 +1365,7 @@ function bindDaySchedule(main: HTMLElement): void {
   bindDragReorder(main);
 }
 
-/** 줄을 끌어 순서 바꾸기 — ROUTE 우측 패널과 같은 조작감 */
+/** 카드를 끌어 순서 바꾸기 */
 function bindDragReorder(main: HTMLElement): void {
   let dragKey: string | null = null;
 
@@ -1311,8 +1375,8 @@ function bindDragReorder(main: HTMLElement): void {
     el.addEventListener('dragstart', (e) => {
       dragKey = el.dataset.key ?? null;
       el.classList.add('dragging');
-      (e as DragEvent).dataTransfer?.setData('text/plain', dragKey ?? '');
-      if ((e as DragEvent).dataTransfer) (e as DragEvent).dataTransfer!.effectAllowed = 'move';
+      const dt = (e as DragEvent).dataTransfer;
+      if (dt) { dt.setData('text/plain', dragKey ?? ''); dt.effectAllowed = 'move'; }
     });
     el.addEventListener('dragend', () => {
       dragKey = null;
@@ -1340,6 +1404,7 @@ function bindDragReorder(main: HTMLElement): void {
 
       const [moved] = day.stops.splice(fromIdx, 1);
       day.stops.splice(toIdx, 0, moved);
+      openLegIndex = null;
       scheduleSave(day.dayIndex);
       render();
       void loadRealLegsForActiveDay();
