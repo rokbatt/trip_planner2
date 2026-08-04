@@ -1,0 +1,42 @@
+/* ============================================================
+   공항 입력(자동완성 + 시각) — trip-create/trip-edit 등 여러 모달에서 공용.
+   .tc-*(trip-create.css)와 같은 톤(Airport Lounge Premium Light)으로 맞춘다.
+   ============================================================ */
+
+.apk-row {
+  position: relative;
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 11px;
+  border: 1px solid #CDEBFB; border-radius: 10px;
+  background: #F8FBFE;
+}
+
+.apk-icon {
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 24px; height: 24px; border-radius: 7px; background: #fff;
+  font-size: 13px; line-height: 1;
+}
+
+.apk-airport, .apk-time {
+  border: none; background: none; outline: none; font-family: inherit;
+  font-size: 13px; color: #0B2A5C; font-weight: 500;
+}
+.apk-airport { flex: 1; min-width: 0; }
+.apk-airport::placeholder, .apk-time::placeholder { color: #A8B7C7; }
+.apk-time { width: 58px; text-align: right; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+
+.apk-ac {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
+  max-height: 220px; overflow-y: auto;
+  background: #fff; border: 1px solid #CDEBFB; border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(11,42,92,0.16); padding: 4px;
+}
+.apk-ac-item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  width: 100%; padding: 8px 10px; border: none; background: none; border-radius: 7px;
+  cursor: pointer; text-align: left; font-family: inherit;
+  transition: background 150ms ease;
+}
+.apk-ac-item:hover { background: #EAF6FD; }
+.apk-ac-main { font-size: 12.5px; font-weight: 700; color: #0B2A5C; }
+.apk-ac-sub { font-size: 10.5px; color: #64748B; }

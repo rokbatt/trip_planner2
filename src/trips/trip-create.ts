@@ -1,5 +1,8 @@
 import { supabase } from '../supabase';
 import { store } from '../store';
+import { createDestination } from './destinations';
+import { mountAirportPicker } from './airportPicker';
+import type { AirportValue } from './airportPicker';
 import './trip-create.css';
 
 const ICON_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6L18 18M6 18L18 6"/></svg>';
@@ -50,6 +53,14 @@ export function openCreateTripModal(onCreated: () => void): void {
     '        <input class="tc-input" id="tc-theme" type="text" placeholder="맛집투어" />',
     '      </div>',
     '    </div>',
+    '    <div class="tc-field">',
+    '      <label class="tc-field-label">항공편 (선택)</label>',
+    '      <div class="tc-airport-group">',
+    '        <div class="tc-airport-slot" id="tc-arrival-mount"></div>',
+    '        <div class="tc-airport-slot" id="tc-departure-mount"></div>',
+    '      </div>',
+    '      <p class="tc-airport-hint">여러 도시를 여행하면 입국은 첫 도시, 출국은 마지막 도시 기준으로 저장돼요. 나머지 이동 항공편은 여행 편집에서 추가할 수 있어요.</p>',
+    '    </div>',
     '    <p class="tc-error" id="tc-error"></p>',
     '    <div class="tc-actions">',
     '      <button type="button" class="tc-btn-cancel" id="tc-cancel">취소</button>',
@@ -61,6 +72,15 @@ export function openCreateTripModal(onCreated: () => void): void {
 
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('open'));
+
+  const arrivalPicker = mountAirportPicker(overlay.querySelector('#tc-arrival-mount') as HTMLElement, {
+    label: '입국',
+    placeholder: '입국 공항 (예: 수완나품 BKK)',
+  });
+  const departurePicker = mountAirportPicker(overlay.querySelector('#tc-departure-mount') as HTMLElement, {
+    label: '출국',
+    placeholder: '출국 공항 (예: 인천 ICN)',
+  });
 
   const close = () => {
     overlay.classList.remove('open');
@@ -84,7 +104,7 @@ export function openCreateTripModal(onCreated: () => void): void {
   const form = overlay.querySelector('#tc-form') as HTMLFormElement;
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    await handleSubmit(overlay, onCreated, close);
+    await handleSubmit(overlay, arrivalPicker.getValue(), departurePicker.getValue(), onCreated, close);
   });
 }
 
@@ -99,6 +119,8 @@ function generateInviteCode(): string {
 
 async function handleSubmit(
   overlay: HTMLElement,
+  arrival: AirportValue,
+  departure: AirportValue,
   onCreated: () => void,
   close: () => void
 ): Promise<void> {
@@ -155,6 +177,33 @@ async function handleSubmit(
       .single();
 
     if (tripError) throw tripError;
+
+    // 입국/출국 항공편을 입력했으면(또는 도시를 여러 곳 적었으면) 실제 trip_destinations 행을
+    // 바로 만든다 — arrival_*/departure_* 컬럼은 실제 여행지 행에만 있어서, 만들어두지 않으면
+    // 지금 입력한 항공편 정보를 저장할 곳이 없다. 도시를 안 적었어도 항공편만 입력했으면
+    // 여행 이름으로 여행지 1개를 만든다(여행 편집에서 이름은 나중에 바꿀 수 있음).
+    const destNames = destinations.length ? destinations : (arrival.airport || departure.airport ? [name] : []);
+    for (let i = 0; i < destNames.length; i++) {
+      const isFirst = i === 0;
+      const isLast = i === destNames.length - 1;
+      await createDestination(trip.id, destNames[i], {
+        sortOrder: i,
+        ...(isFirst
+          ? {
+              arrivalAirport: arrival.airport, arrivalTime: arrival.time,
+              arrivalLat: arrival.lat, arrivalLng: arrival.lng,
+              arrivalPhotoUrl: arrival.photoUrl, arrivalRating: arrival.rating,
+            }
+          : {}),
+        ...(isLast
+          ? {
+              departureAirport: departure.airport, departureTime: departure.time,
+              departureLat: departure.lat, departureLng: departure.lng,
+              departurePhotoUrl: departure.photoUrl, departureRating: departure.rating,
+            }
+          : {}),
+      });
+    }
 
     const metaFullName = user.user_metadata && user.user_metadata.full_name;
     const metaName = user.user_metadata && user.user_metadata.name;

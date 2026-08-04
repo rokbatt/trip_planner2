@@ -25,14 +25,11 @@ import {
 } from '../trips/destinations';
 import {
   loadGoogleMapsScript,
-  getAirportPredictions,
-  getPlaceDetails,
-  extractPlaceResult,
   searchPlacesByText,
   searchPlacesNearby,
   suggestGateFromCategory,
 } from '../utils/googleMaps';
-import type { PlacePrediction, GooglePlaceResult } from '../utils/googleMaps';
+import type { GooglePlaceResult } from '../utils/googleMaps';
 import { insertGooglePlace, rehostPhoto } from '../trips/addGooglePlace';
 import {
   loadRoutePlan,
@@ -2202,162 +2199,11 @@ function aiPlanNoticeHtml(): string {
     '</div>',
   ].join('');
 }
-
-type AirportKind = 'arrival' | 'departure';
-
-/**
- * DAY 1의 도착 공항 / 마지막 DAY의 출발 공항을 검색해서 넣는 칸 — 자동완성에서 실제로
- * 골라 좌표까지 받아오면(getPlaceDetails) 그 즉시 지도/타임라인의 진짜 정류지가 되고,
- * 이 칸은 사라진다(아래 rows에 정류지 카드로 나타남). 아직 안 골랐으면(이름만 타이핑)
- * 좌표가 없어 정류지로 못 만들므로 이 칸이 계속 남아있는다(원칙 3-1 — 좌표를 지어내지 않음).
- */
-function airportInfoHtml(kind: AirportKind): string {
-  const name = kind === 'arrival' ? activeDestArrivalAirport : activeDestDepartureAirport;
-  const time = kind === 'arrival' ? activeDestArrivalTime : activeDestDepartureTime;
-  const label = kind === 'arrival' ? '입국' : '출발';
-  return [
-    '<div class="rt-arrival" data-kind="' + kind + '">',
-    '  <span class="rt-arrival-icon" aria-hidden="true">✈️</span>',
-    '  <input type="text" class="rt-arrival-airport" id="rt-' + kind + '-airport" placeholder="' + label + ' 공항 (예: 수완나품 BKK)"' +
-      ' value="' + escapeHtml(name ?? '') + '" aria-label="' + label + ' 공항" />',
-    '  <input type="text" class="rt-arrival-time" id="rt-' + kind + '-time" placeholder="HH:MM"' +
-      ' value="' + escapeHtml(time ?? '') + '" inputmode="numeric" maxlength="5" spellcheck="false"' +
-      ' aria-label="' + label + ' 시각 (24시간 HH:MM)" />',
-    '</div>',
-  ].join('');
-}
-
-/** airportInfoHtml 입력의 변경을 저장 + 자동완성 처리. arrival/departure 둘 다 이 함수로 처리 */
-function bindAirportInfo(container: HTMLElement, kind: AirportKind): void {
-  const airportInput = container.querySelector('#rt-' + kind + '-airport') as HTMLInputElement | null;
-  const timeInput = container.querySelector('#rt-' + kind + '-time') as HTMLInputElement | null;
-  if (!airportInput || !timeInput) return;
-
-  const patchDest = (patch: Record<string, unknown>) => {
-    if (activeDestId) void updateDestination(activeDestId, patch);
-  };
-
-  // 좌표 없이 이름만 직접 타이핑해서 blur한 경우 — 정류지로는 못 만들고 이름만 저장
-  const commitNameOnly = () => {
-    const v = airportInput.value.trim();
-    const cur = kind === 'arrival' ? activeDestArrivalAirport : activeDestDepartureAirport;
-    if (v === (cur ?? '')) return;
-    if (kind === 'arrival') activeDestArrivalAirport = v || null;
-    else activeDestDepartureAirport = v || null;
-    patchDest(kind === 'arrival' ? { arrival_airport: activeDestArrivalAirport } : { departure_airport: activeDestDepartureAirport });
-  };
-  const commitTime = () => {
-    const parsed = parseTimeInput(timeInput.value);
-    const cur = kind === 'arrival' ? activeDestArrivalTime : activeDestDepartureTime;
-    if (parsed === (cur ?? null) && timeInput.value.trim() !== '') return;
-    const next = timeInput.value.trim() ? parsed : null;
-    if (kind === 'arrival') activeDestArrivalTime = next;
-    else activeDestDepartureTime = next;
-    patchDest(kind === 'arrival' ? { arrival_time: next } : { departure_time: next });
-    renderRightPanel(container); // 이 시각이 그 정류지의 초기 도착시각으로 다시 반영되도록
-  };
-
-  // ── 공항 이름 자동완성(스카이스캐너 스타일) — Google Places를 airport 타입으로만 좁혀 검색.
-  let acTimer: ReturnType<typeof setTimeout> | null = null;
-  let acPredictions: PlacePrediction[] = [];
-  const closeAc = () => {
-    (airportInput.closest('.rt-arrival') as HTMLElement | null)?.querySelector('.rt-arrival-ac')?.remove();
-    acPredictions = [];
-  };
-  // 드롭다운에서 실제로 골랐을 때만 좌표를 받아와 "진짜 정류지"로 승격시킨다
-  const selectAirport = async (p: PlacePrediction) => {
-    airportInput.value = p.mainText;
-    closeAc();
-    if (kind === 'arrival') activeDestArrivalAirport = p.mainText;
-    else activeDestDepartureAirport = p.mainText;
-
-    let lat: number | null = null;
-    let lng: number | null = null;
-    let photo: string | null = null;
-    let rating: number | null = null;
-    try {
-      const details = await getPlaceDetails(p.placeId);
-      const extracted = extractPlaceResult(details);
-      lat = extracted?.lat ?? null;
-      lng = extracted?.lng ?? null;
-      photo = extracted?.photoUrl ?? null;
-      rating = extracted?.rating ?? null;
-      // Google 원본 URL을 그대로 저장하면 볼 때마다 Google에 요청이 나가고(비용) 언젠가
-      // 만료된다 — 우리 Storage로 재호스팅해서 저장.
-      if (photo) photo = await rehostPhoto(photo, p.placeId);
-    } catch (e) {
-      console.error('[ROUTE] 공항 정보 조회 실패(이름만 저장):', (e as Error).message);
-    }
-    if (kind === 'arrival') {
-      activeDestArrivalLat = lat; activeDestArrivalLng = lng;
-      activeDestArrivalPhoto = photo; activeDestArrivalRating = rating;
-    } else {
-      activeDestDepartureLat = lat; activeDestDepartureLng = lng;
-      activeDestDeparturePhoto = photo; activeDestDepartureRating = rating;
-    }
-    patchDest(
-      kind === 'arrival'
-        ? { arrival_airport: p.mainText, arrival_lat: lat, arrival_lng: lng, arrival_photo_url: photo, arrival_rating: rating }
-        : { departure_airport: p.mainText, departure_lat: lat, departure_lng: lng, departure_photo_url: photo, departure_rating: rating }
-    );
-    refreshAll(container, { refit: true }); // 좌표가 생겼으면 이 칸 대신 실제 정류지 행이 나타남
-  };
-  const renderAc = () => {
-    const wrap = airportInput.closest('.rt-arrival') as HTMLElement | null;
-    if (!wrap) return;
-    wrap.querySelector('.rt-arrival-ac')?.remove();
-    if (acPredictions.length === 0) return;
-    const dd = document.createElement('div');
-    dd.className = 'rt-arrival-ac';
-    dd.innerHTML = acPredictions
-      .map(
-        (p, i) =>
-          '<button type="button" class="rt-arrival-ac-item" data-idx="' + i + '">' +
-          '<span class="rt-arrival-ac-main">' + escapeHtml(p.mainText) + '</span>' +
-          (p.secondaryText ? '<span class="rt-arrival-ac-sub">' + escapeHtml(p.secondaryText) + '</span>' : '') +
-          '</button>'
-      )
-      .join('');
-    dd.querySelectorAll('.rt-arrival-ac-item').forEach((btn) => {
-      // mousedown을 써야 input의 blur(그로 인한 드롭다운 닫힘)보다 먼저 선택이 처리된다
-      btn.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        const idx = Number((btn as HTMLElement).dataset.idx);
-        void selectAirport(acPredictions[idx]);
-      });
-    });
-    wrap.appendChild(dd);
-  };
-
-  airportInput.addEventListener('input', () => {
-    const q = airportInput.value.trim();
-    if (acTimer) clearTimeout(acTimer);
-    if (q.length < 2) { closeAc(); return; }
-    acTimer = setTimeout(async () => {
-      acPredictions = await getAirportPredictions(q);
-      renderAc();
-    }, 300);
-  });
-  airportInput.addEventListener('blur', () => {
-    commitNameOnly();
-    setTimeout(closeAc, 120); // mousedown 선택이 먼저 처리될 시간을 준 뒤 닫음
-  });
-  airportInput.addEventListener('keydown', (e) => {
-    if ((e as KeyboardEvent).key === 'Escape') closeAc();
-  });
-  airportInput.addEventListener('click', (e) => e.stopPropagation());
-
-  timeInput.addEventListener('change', commitTime);
-  timeInput.addEventListener('keydown', (e) => {
-    if ((e as KeyboardEvent).key === 'Enter') { e.preventDefault(); timeInput.blur(); }
-  });
-  timeInput.addEventListener('click', (e) => e.stopPropagation());
-}
-
 /**
  * 정류지가 된 공항의 ✕ 버튼 — 일반 삭제와 달리 stopIds에서 빼는 것만으론 부족하다(안 지우면
- * ensureDayAnchors가 다음 렌더에서 바로 다시 채워 넣음). 원본 도착/출발 정보 자체를 지워서
- * "공항 검색 칸"이 다시 나타나게 한다.
+ * ensureDayAnchors가 다음 렌더에서 바로 다시 채워 넣음). 원본 도착/출발 정보 자체를 지운다.
+ * 입국/출국은 이제 여행 생성/편집에서 입력하므로(ROUTE엔 입력 칸이 없음), 여기서 지우면
+ * 다시 넣으려면 여행 편집으로 가야 한다.
  */
 function clearAirportAnchor(id: string, container: HTMLElement): void {
   const isArrival = id === arrivalAirportId();
@@ -2485,10 +2331,16 @@ function renderRightPanel(container: HTMLElement): void {
     '  <button type="button" class="rt-panel-more" id="rt-panel-more" aria-label="이 DAY 메뉴">' + IC_DOTS + '</button>',
     '</div>',
     aiPlanNoticeHtml(),
-    // 좌표까지 받아온 진짜 정류지가 되면 이 검색 칸 대신 목록 안에 카드로 나타나므로,
-    // 아직 좌표가 없을 때만(=자동완성에서 실제로 고르기 전) 이 칸을 보여준다.
-    dayIndex === 0 && !arrivalAirportPlace() ? airportInfoHtml('arrival') : '',
-    dayIndex === days.length - 1 && !departureAirportPlace() ? airportInfoHtml('departure') : '',
+    // 이 DAY 하나에 대한 AI 세부 계획 — 예전엔 여기가 공항 정보 입력 칸이었는데, 입국/출국은
+    // 이제 여행 생성/편집에서 미리 받으므로(trips/trip-create.ts, trips/trip-edit.ts) 이 칸은
+    // 필요 없어졌고, 그 대신 DAY 진입 직후 바로 보이는 이 자리에 세부 계획 버튼을 둔다.
+    '<button type="button" class="rt-panel-detail rt-panel-detail-top" id="rt-panel-daydetail"' +
+      (s.visitCount === 0 || dayDetailBusy ? ' disabled' : '') +
+      ' title="이 DAY의 동선을 보고 장소별 추천 체류시간·팁·예상 예산을 정리해요">' +
+      (dayDetailBusy
+        ? '<span class="rt-ai-spinner"></span><span>세부 계획 만드는 중…</span>'
+        : IC_NOTE + '<span>이 DAY 세부 계획</span><span class="rt-panel-detail-badge">PRO 예정</span>') +
+      '</button>',
     '<div class="rt-panel-list" id="rt-panel-list">',
     stops.length
       // 숙소/공항 앵커만 있고 그 사이에 담은 곳이 없어도(예: 공항→숙소만 있는 여유로운 날,
@@ -2520,14 +2372,6 @@ function renderRightPanel(container: HTMLElement): void {
     '  <button type="button" class="rt-panel-action primary" id="rt-panel-optimize"' + (s.visitCount < 2 ? ' disabled' : '') +
       ' title="' + (s.visitCount < 2 ? '장소가 2곳 이상일 때 정렬할 수 있어요' : '가까운 순서로 다시 정렬해요') + '">' + IC_SPARK + ' 순서 정리</button>',
     '</div>',
-    // 이 DAY 하나에 대한 심화 기능이라 DAY 단위 액션(장소 추가/순서 정리) 바로 아래에 둔다.
-    '<button type="button" class="rt-panel-detail" id="rt-panel-daydetail"' +
-      (s.visitCount === 0 || dayDetailBusy ? ' disabled' : '') +
-      ' title="이 DAY의 동선을 보고 장소별 추천 체류시간·팁·예상 예산을 정리해요">' +
-      (dayDetailBusy
-        ? '<span class="rt-ai-spinner"></span><span>세부 계획 만드는 중…</span>'
-        : IC_NOTE + '<span>이 DAY 세부 계획</span><span class="rt-panel-detail-badge">PRO 예정</span>') +
-      '</button>',
   ].join('\n');
 
   bindRightPanelEvents(container, el);
@@ -2535,8 +2379,6 @@ function renderRightPanel(container: HTMLElement): void {
 }
 
 function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
-  bindAirportInfo(container, 'arrival');
-  bindAirportInfo(container, 'departure');
   el.querySelectorAll('.rt-panel-remove').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
