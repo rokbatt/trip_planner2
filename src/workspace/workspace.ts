@@ -421,6 +421,7 @@ function buildAiDemoContent(): string {
 let boardModuleRef: { teardownBoard: () => void } | null = null;
 let shortlistModuleRef: { teardownShortlist: () => void } | null = null;
 let routeModuleRef: { teardownRoute: () => void } | null = null;
+let timelineModuleRef: { teardownTimeline: () => void } | null = null;
 let linksModuleRef: { teardownLinks: () => void } | null = null;
 let expenseModuleRef: { teardownExpense: () => void } | null = null;
 let navigateGateHandlerRef: EventListener | null = null;
@@ -439,6 +440,10 @@ async function renderGate(body: HTMLElement, tripId: string, gate: string): Prom
   if (gate !== 'route' && routeModuleRef) {
     routeModuleRef.teardownRoute();
     routeModuleRef = null;
+  }
+  if (gate !== 'timeline' && timelineModuleRef) {
+    timelineModuleRef.teardownTimeline();
+    timelineModuleRef = null;
   }
   if (gate !== 'links' && linksModuleRef) {
     linksModuleRef.teardownLinks();
@@ -461,6 +466,10 @@ async function renderGate(body: HTMLElement, tripId: string, gate: string): Prom
     const mod = await import('../route/route');
     routeModuleRef = mod;
     await mod.renderRouteContent(body, tripId);
+  } else if (gate === 'timeline') {
+    const mod = await import('../timeline/timeline');
+    timelineModuleRef = mod;
+    await mod.renderTimelineContent(body, tripId);
   } else if (gate === 'links') {
     const mod = await import('../links/links');
     linksModuleRef = mod;
@@ -512,6 +521,8 @@ function bindEvents(page: HTMLElement, tripId: string): void {
     shortlistModuleRef = null;
     routeModuleRef?.teardownRoute();
     routeModuleRef = null;
+    timelineModuleRef?.teardownTimeline();
+    timelineModuleRef = null;
     linksModuleRef?.teardownLinks();
     linksModuleRef = null;
     expenseModuleRef?.teardownExpense();

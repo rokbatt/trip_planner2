@@ -32,7 +32,7 @@
 | Brainstorm (IDEAS) | 자유 수집 | ✅ 완성 |
 | Shortlist | Departure Hall → Immigration Counter → Boarding Pass | ✅ 완성 (Step1 지역선택 / Step2 숙소선택 / Step3 확정) |
 | Route | 동선 최적화 | 🚧 플레이스홀더 |
-| Timeline | 날짜별 일정 | 🚧 미구현 |
+| Timeline | 날짜별 일정 | ✅ 1차 완성 (시각표 · 5-3 참고) |
 
 Shortlist 3단계 세부 컨셉:
 - **Step1 (지역 선택)** = Departure Hall — "우리 여행의 중심 지역이 어디냐"만 결정
@@ -210,15 +210,69 @@ Light" 컨셉 유지, 배치·형태만 차용): **예산 요약 / 지출 내역
 
 ---
 
+## 5-3. Timeline 아키텍처 (1차 완성, 참고용)
+
+ROUTE가 만든 동선을 **시간축 위에 올려 다듬는** 화면. 공항 메타포에서는 "운항 시각표
+(FLIGHT SCHEDULE)" — 전광판처럼 한 정류지가 한 줄에 다 들어오도록 밀도를 최우선으로 잡았다.
+
+```
+ROUTE     = 어디를 어떤 순서로 (공간, 지도가 주인공)
+TIMELINE  = 몇 시에 얼마나     (시간, 시각표가 주인공)
+```
+
+### 데이터 — 새 테이블 없음
+`route_days` / `route_stops`를 ROUTE와 **그대로 공유**한다(마이그레이션 불필요).
+ROUTE가 숙소·공항 앵커까지 전부 순서대로 저장해 두므로, Timeline은 앵커를 다시 계산하지 않고
+저장된 순서를 그대로 신뢰한다 — 두 화면의 일정이 어긋날 여지를 원천 차단.
+저장은 `routeStore.saveRouteDay`(그 DAY 통째로 교체)를 재사용하고, 실시간 동기화도
+`subscribeRoutePlan`을 그대로 쓴다.
+
+### `src/utils/travelEstimate.ts` — 숫자의 단일 기준 (중요)
+같은 구간인데 ROUTE는 "18분", TIMELINE은 "20분"으로 보이면 그 자체가 버그다. 그래서
+**화면에 뜨는 숫자를 만들어내는 순수 함수는 전부 이 파일 하나에** 모으고 두 모듈이 import 한다
+(haversine / 모드별 소요시간·요금 / 실측→Leg 변환 / 폴리라인 디코딩 / 이동수단 자동선택 /
+방문 유형 판정 / 체류시간 / 시각 파싱·포맷). 아이콘·색·마크업 같은 표현 계층만 각 모듈이 따로 갖는다.
+> 이동시간·체류시간 계산식을 손볼 일이 생기면 **반드시 이 파일에서만** 고칠 것.
+
+### 화면
+- **DAY 스트립**(상단): 날짜별 밀도를 막대로 나란히 비교 — 탭을 옮겨 다니지 않고도 어느 날이
+  비었고 어느 날이 빡빡한지 한 줄에서 읽힌다(기존 일정표 앱에 없는 "날짜 간 비교")
+- **시각표**(좌): `시각 / 스파인 / 정류지` 3열 격자를 모든 줄이 공유해 숫자 열이 세로로 딱 맞는다.
+  줄마다 붙는 작은 시간 막대가 "하루 중 이 일정이 차지하는 구간"을 그려서, 세로 공간을 낭비하는
+  진짜 비례 캘린더 없이도 하루의 모양이 보인다. 길어지는 정보(메모·이동수단·주소·링크)는 전부
+  펼침 패널로 밀어 넣어 접힌 줄을 얇게 유지
+- **요약 레일**(우): 하루 리듬(이동·머무름·여유 비율), 24시간 분포 띠, 주의 신호, 예상 교통비
+- **전체 보기**: 모든 DAY를 컬럼으로 나란히. 컬럼마다 같은 24시간 축의 띠를 붙여 날짜 간 비교가
+  목적인 뷰라, 편집은 막고 읽기에만 집중(수정은 하루 보기에서)
+- **여행 중**: 오늘이 여행 기간 안이면 그 DAY로 바로 열리고, 시각표에 현재 시각선이 뜬다
+
+### 시각 계산 규칙
+09:00에서 출발해 `체류 + 이동`을 누적하고, 사용자가 고정한 도착 시각을 만나면 시계를 그 시각으로
+맞춘다(ROUTE의 `computeStopTimes`와 같은 규칙). 여기에 더해 고정 시각과 자연스러운 도착 시각의
+차이를 따로 남겨 **겹침(overrun, 앞 일정을 다 하면 못 맞춤)** 과 **여유(slack)** 를 구분해 표시한다 —
+단순 나열이 아니라 "이 일정이 실제로 가능한가"를 알려주기 위한 값.
+
+### 원칙 3-1·3-2 적용
+- 이동시간/거리는 활성 DAY만 `/api/route-matrix`로 실측 조회(ROUTE와 같은 "활성 DAY만, 이미 받은
+  구간은 다시 묻지 않음" 전략). 못 받으면 직선거리 추정치를 쓰고 구간마다 "추정" 배지를 붙인다
+- 체류시간은 방문 유형별 기본값(추정) — 사용자가 도착 시각을 직접 입력하면 그게 우선
+- 날씨·혼잡도·예약 상태·버전 히스토리처럼 **근거 데이터가 없는 정보는 아예 만들지 않았다**
+
+---
+
 ## 6. 파일 구조
 
 ```
 src/
   board/board.ts, board.css          ← Brainstorm 게이트
   shortlist/shortlist.ts, shortlist.css  ← Shortlist 게이트 (Step1/2/3 전부 이 안에)
+  route/route.ts, route.css          ← Route 게이트 (지도 위 동선 편집)
+  route/routeStore.ts                ← route_days/route_stops 영속화 + 실시간 (Route/Timeline 공용)
+  timeline/timeline.ts, timeline.css ← Timeline 게이트 (날짜별 시각표, 5-3 참고)
   expense/expense.ts, expense.css    ← Expense 게이트 (예산·지출·도넛 차트·정산, 5-2 참고)
   workspace/workspace.ts             ← 게이트 라우팅, 사이드바
   utils/googleMaps.ts                ← Google Maps 로더, GooglePlaceResult 추출/카테고리 매핑 (공유 유틸)
+  utils/travelEstimate.ts            ← 이동시간·거리·요금·체류시간 계산의 단일 기준 (Route/Timeline 공용, 5-3 참고)
   types/database.ts                  ← Supabase 테이블 타입
 
 api/                                  ← Vercel 서버리스 함수 (각각 완전 자립형)
@@ -246,7 +300,11 @@ api/                                  ← Vercel 서버리스 함수 (각각 완
 ## 7. 다음에 할 일 (미완성/개선 대상)
 
 1. **Route 게이트** — 아직 플레이스홀더. Shortlist가 `mongsil:navigateGate` 이벤트로 넘기지만 갈 곳이 없음. 확정된 권역+숙소+장소를 기준으로 동선 최적화(Google Routes API)를 만들어야 함
-2. **Timeline 게이트** — 미구현. 날짜별 일정 배치
+2. **Timeline 게이트** — 1차 완성(5-3). 다음 단계 후보:
+   - 협업: 정류지별 댓글/투표를 시각표 안에서 바로(현재는 `src/comments`가 장소 카드에만 붙어 있음)
+   - 여행 중: 실제 도착 시각 기록 → 이후 일정 자동 밀기
+   - 내보내기: 캘린더(ics)·이미지로 공유
+   - 장소별 예상 비용: `trip_expenses`와 연결(지금은 근거 데이터가 없어 표시하지 않음)
 3. **Checklist 탭** — 미구현. **Links 탭**은 채팅 링크를 자동 수집 + og:title/og:image 미리보기 + STAY/PLACE/FOOD/ACTIVITY/VIDEO/ARTICLE/OTHER 자동분류(애매하면 OTHER, 드래그로 수동 재분류 가능)까지 구현됨(`src/links/links.ts`, `src/trips/addLink.ts`, `api/cache-photo.ts`의 `kind:'link-preview'`, `supabase/trip_links.sql`) — 직접 추가 UI는 없음(채팅이 유일한 입력 경로). **Expense 탭**은 구현됨(아래 5-2 참고) — `supabase/trip_expenses.sql` 마이그레이션을 Supabase에서 실행해야 동작
 4. **`google.maps.Marker` → `AdvancedMarkerElement` 마이그레이션** — 지금은 폐기 예정 경고만 뜨는 상태, 급하진 않음 (최소 12개월 유예)
 5. **방콕 외 도시의 `stay_zones` 큐레이션** — 현재 방콕만 실제 조사된 데이터, 나머지 도시는 AI 폴백 상태
