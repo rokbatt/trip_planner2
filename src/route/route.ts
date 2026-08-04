@@ -2578,9 +2578,9 @@ function refreshAll(container: HTMLElement, opts: { refit: boolean } = { refit: 
 const AERO_BLUE = '#2F86D6';
 // 리스트 배지 등 옅은 틴트 배경이 필요한 곳에서 쓰는, AERO_BLUE를 10% 불투명도로 깐 버전.
 const AERO_BLUE_TINT = 'rgba(47,134,214,0.1)';
-// "다음 장소"를 가리킬 때 쓰는 강조색 — "Galaxy"(새 팔레트의 짙은 네이비-인디고)로 교체.
-// 핀·경로선이 전부 Aero Blue 계열이라, 밝기 차이가 뚜렷한 짙은 톤이라야 옆에서 바로 구분된다.
-const ROUTE_NEXT = '#0B0F5C';
+// "다음 장소"를 가리킬 때 쓰는 강조색 — 짙은 남색. 처음 시도한 값(#0B0F5C)이 남색보다
+// 검정에 가까워 보인다는 피드백으로, 이 앱 전체에서 이미 쓰는 네이비(--rt-navy)로 교체.
+const ROUTE_NEXT = '#0B2A5C';
 const ROUTE_GRAY = '#9AA7B8';
 
 /**
@@ -3498,7 +3498,8 @@ const MAP_STYLE_LIGHT = [
   { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#A6D2EA' }] },
   { featureType: 'water', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#F5F6F1' }] },
-  // 건물 등 인공 지형을 육지보다 뚜렷이 다른 톤으로 — "여기 건물이 있다"는 감각이 확대해도
-  // 보이도록 대비를 크게 준다(이전엔 육지와 거의 안 보일 정도로 톤 차이가 작았음).
-  { featureType: 'landscape.man_made', elementType: 'geometry', stylers: [{ color: '#D5DBE3' }] },
+  // 건물 등 인공 지형을 육지보다 살짝 다른 톤으로 — "여기 건물이 있다"는 감각만 남긴다.
+  // (대비를 더 키워봤지만 구글 원본 타일에 건물 폴리곤 데이터가 없는 지역(교외/외곽)에는
+  // 애초에 칠할 대상이 없어 색만 튀고 실효가 없었음 — 롤백)
+  { featureType: 'landscape.man_made', elementType: 'geometry', stylers: [{ color: '#EAEDF2' }] },
 ];
