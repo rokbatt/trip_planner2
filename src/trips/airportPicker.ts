@@ -164,7 +164,12 @@ export function mountAirportPicker(container: HTMLElement, opts: AirportPickerOp
     commitNameOnly();
     setTimeout(closeAc, 120); // mousedown 선택이 먼저 처리될 시간을 준 뒤 닫음
   };
-  const onKeydown = (e: KeyboardEvent) => { if (e.key === 'Escape') closeAc(); };
+  // Enter는 특히 중요 — 막지 않으면 폼이 그대로 제출되면서(브라우저 기본 동작) blur가 먼저
+  // 발생하지 않아 commitNameOnly()가 안 불리고, 방금 타이핑한 이름이 그대로 유실된다.
+  const onKeydown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') closeAc();
+    else if (e.key === 'Enter') { e.preventDefault(); airportInput.blur(); }
+  };
   const onClickStop = (e: MouseEvent) => e.stopPropagation();
   const onTimeKeydown = (e: KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); timeInput.blur(); } };
 
