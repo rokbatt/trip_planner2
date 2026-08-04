@@ -320,6 +320,7 @@
 .ex-qa-field { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 0; }
 .ex-qa-label { font-size: 11px; font-weight: 600; color: var(--al-text-secondary); }
 .ex-qa-label em { font-style: normal; font-weight: 400; color: var(--al-text-tertiary); }
+.ex-qa-label-hint { font-size: 10px; color: var(--al-text-tertiary); margin-left: 4px; }
 .ex-qa-input {
   padding: 8px 10px;
   border: 1px solid var(--al-divider);
@@ -836,6 +837,7 @@
 .ex-field { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
 .ex-field-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: var(--al-text-secondary); }
 .ex-field-label em { font-style: normal; font-weight: 400; color: var(--al-text-tertiary); }
+.ex-field-label-hint { font-size: 10px; font-weight: 400; letter-spacing: 0; color: var(--al-text-tertiary); margin-left: 4px; }
 .ex-field-input {
   padding: 10px 12px;
   border: 1px solid var(--al-divider);

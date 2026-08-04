@@ -700,7 +700,7 @@ function quickAddFormHtml(): string {
     '    <button type="button" class="ex-splitmode-btn" data-mode="PERSONAL">개인 지출</button>',
     '  </div>',
     '</div>',
-    '<div class="ex-qa-field"><span class="ex-qa-label">결제한 사람</span><div class="ex-qa-members" id="qa-payer">' + payerChips + '</div></div>',
+    '<div class="ex-qa-field"><span class="ex-qa-label">결제한 사람</span><span class="ex-qa-label-hint" id="qa-payer-hint"></span><div class="ex-qa-members" id="qa-payer">' + payerChips + '</div></div>',
     '<div class="ex-qa-field" id="qa-split-wrap"><span class="ex-qa-label">나눠 낼 사람</span><div class="ex-qa-members" id="qa-split">' + splitChips + '</div></div>',
     '<div class="ex-qa-row">',
     '  <label class="ex-qa-paid-row"><span class="ex-qa-label">결제 완료</span><button type="button" class="ex-paid-toggle is-on" id="qa-paid" role="switch" aria-checked="true"><span class="ex-paid-knob"></span></button></label>',
@@ -803,7 +803,8 @@ function renderQuickAddBody(container: HTMLElement): void {
   bodyEl.innerHTML = quickAddFormHtml();
 
   let splitMode: SplitMode = 'SHARED';
-  let payer: string | null = store.get('user')?.id ?? (members[0]?.user_id ?? null);
+  const defaultPayer = store.get('user')?.id ?? (members[0]?.user_id ?? null);
+  const payerSet = new Set<string>(defaultPayer ? [defaultPayer] : []);
   let isPaid = true;
   const split = new Set<string>(members.map((m) => m.user_id));
 
@@ -823,23 +824,52 @@ function renderQuickAddBody(container: HTMLElement): void {
   currencySel.addEventListener('change', () => void updateFxHint());
 
   const splitWrap = bodyEl.querySelector('#qa-split-wrap') as HTMLElement;
+  const payerHintEl = bodyEl.querySelector('#qa-payer-hint') as HTMLElement;
   const updateSplitVisibility = (): void => {
     splitWrap.style.display = splitMode === 'SHARED' ? '' : 'none';
+    payerHintEl.textContent = splitMode === 'PERSONAL' ? '(각자 결제했다면 여러 명 선택 가능)' : '';
   };
   updateSplitVisibility();
+
+  const setPayerActive = (): void => {
+    bodyEl.querySelectorAll('#qa-payer .ex-qa-member').forEach((b) => {
+      b.classList.toggle('is-active', payerSet.has((b as HTMLElement).dataset.uid!));
+    });
+  };
 
   bodyEl.querySelectorAll('#qa-splitmode .ex-splitmode-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       splitMode = (btn as HTMLElement).dataset.mode as SplitMode;
       bodyEl.querySelectorAll('#qa-splitmode .ex-splitmode-btn').forEach((b) => b.classList.toggle('is-active', b === btn));
       updateSplitVisibility();
+      // 공동 지출로 돌아가면 실제로 결제한 한 사람만 남기고 정리(개인 지출에서 여러 명을 골랐을 수 있음)
+      if (splitMode === 'SHARED' && payerSet.size > 1) {
+        const keep = payerSet.values().next().value as string;
+        payerSet.clear();
+        payerSet.add(keep);
+        setPayerActive();
+      }
     });
   });
 
+  // 결제한 사람 — 공동 지출은 실제로 결제한 한 명만(라디오), 개인 지출은 "각자 결제"를
+  // 한 번에 배치 입력할 수 있게 여러 명 선택 가능(체크박스). 예: 개인 항공권처럼 나눠 낼
+  // 필요는 없지만 인원수만큼 따로따로 입력하기 귀찮은 경우를 위함
   bodyEl.querySelectorAll('#qa-payer .ex-qa-member').forEach((btn) => {
     btn.addEventListener('click', () => {
-      payer = (btn as HTMLElement).dataset.uid!;
-      bodyEl.querySelectorAll('#qa-payer .ex-qa-member').forEach((b) => b.classList.toggle('is-active', b === btn));
+      const uid = (btn as HTMLElement).dataset.uid!;
+      if (splitMode === 'PERSONAL') {
+        if (payerSet.has(uid)) {
+          if (payerSet.size <= 1) return; // 최소 1명은 남겨야 함
+          payerSet.delete(uid);
+        } else {
+          payerSet.add(uid);
+        }
+      } else {
+        payerSet.clear();
+        payerSet.add(uid);
+      }
+      setPayerActive();
     });
   });
 
@@ -884,25 +914,45 @@ function renderQuickAddBody(container: HTMLElement): void {
     if (!category) { alert('카테고리를 선택해주세요.'); return; }
     if (!title) { alert('내용을 입력해주세요.'); return; }
     if (!Number.isFinite(amount) || amount <= 0) { alert('금액을 입력해주세요.'); return; }
+    if (payerSet.size === 0) { alert('결제한 사람을 선택해주세요.'); return; }
 
     saveBtn.disabled = true;
     saveBtn.textContent = '저장 중...';
     lastUsedCurrency = currency;
 
-    const payload = await buildExpensePayload({ category, title, amount, currency, expenseDate: dateVal, isPaid, splitMode, payer, split, memo });
-    const { data, error } = await supabase.from('trip_expenses').insert(payload).select().single();
+    const payerIds = Array.from(payerSet);
 
-    saveBtn.disabled = false;
-    saveBtn.textContent = '저장';
-
-    if (error) {
-      console.error('지출 추가 실패:', error.message);
-      alert('저장에 실패했어요. supabase/trip_expenses.sql 마이그레이션이 실행됐는지 확인해주세요.');
-      return;
+    if (splitMode === 'PERSONAL' && payerIds.length > 1) {
+      // 개인 지출을 여러 명 배치 입력 — 선택한 인원 수만큼 각자의 개인 지출로 나눠서 저장
+      // (같은 금액을 n빵하는 게 아니라, 각자 같은 금액을 따로 결제한 것으로 기록)
+      const payloads = await Promise.all(
+        payerIds.map((uid) => buildExpensePayload({ category, title, amount, currency, expenseDate: dateVal, isPaid, splitMode, payer: uid, split: new Set([uid]), memo }))
+      );
+      const { data, error } = await supabase.from('trip_expenses').insert(payloads).select();
+      saveBtn.disabled = false;
+      saveBtn.textContent = '저장';
+      if (error) {
+        console.error('지출 추가 실패:', error.message);
+        alert('저장에 실패했어요. supabase/trip_expenses.sql 마이그레이션이 실행됐는지 확인해주세요.');
+        return;
+      }
+      if (data) expenses.push(...(data as TripExpense[]));
+      resetForm();
+      flashEl.textContent = payloads.length + '건 저장했어요';
+    } else {
+      const payload = await buildExpensePayload({ category, title, amount, currency, expenseDate: dateVal, isPaid, splitMode, payer: payerIds[0] ?? null, split, memo });
+      const { data, error } = await supabase.from('trip_expenses').insert(payload).select().single();
+      saveBtn.disabled = false;
+      saveBtn.textContent = '저장';
+      if (error) {
+        console.error('지출 추가 실패:', error.message);
+        alert('저장에 실패했어요. supabase/trip_expenses.sql 마이그레이션이 실행됐는지 확인해주세요.');
+        return;
+      }
+      if (data) expenses.push(data as TripExpense);
+      resetForm();
+      flashEl.textContent = '저장했어요';
     }
-    if (data) expenses.push(data as TripExpense);
-    resetForm();
-    flashEl.textContent = '저장했어요';
     setTimeout(() => { flashEl.textContent = ''; }, 1500);
     renderOverviewData();
   });
@@ -1339,7 +1389,7 @@ function openSheet(editing: TripExpense | null): void {
     '      <button type="button" class="ex-paid-toggle' + (editing?.is_paid ? ' is-on' : '') + '" id="ex-f-paid" role="switch" aria-checked="' + (editing?.is_paid ? 'true' : 'false') + '"><span class="ex-paid-knob"></span></button>',
     '    </label>',
     '  </div>',
-    '  <div class="ex-field"><span class="ex-field-label">결제한 사람</span>',
+    '  <div class="ex-field"><span class="ex-field-label">결제한 사람</span><span class="ex-field-label-hint" id="ex-f-payer-hint"></span>',
     '    <div class="ex-sheet-members" id="ex-f-payer">' + payerChips + '</div>',
     '  </div>',
     '  <div class="ex-field" id="ex-f-split-wrap"><span class="ex-field-label">함께 나눌 멤버 <em>(정산에 사용)</em></span>',
@@ -1356,13 +1406,19 @@ function openSheet(editing: TripExpense | null): void {
   sheet.classList.add('is-open');
 
   let category = selectedCategory;
-  let payer = selectedPayer;
+  const payerSet = new Set<string>(selectedPayer ? [selectedPayer] : []);
   let isPaid = editing?.is_paid ?? false;
   let splitMode = selectedMode;
   const split = selectedSplit;
+  // 기존 항목 수정은 항상 1개 행만 바꾸므로 결제자 다중 선택(배치 입력)은 새로 추가할 때만 허용
+  const allowMultiPayer = !editing;
 
   const splitWrap = sheet.querySelector('#ex-f-split-wrap') as HTMLElement;
-  const updateSplitVisibility = (): void => { splitWrap.style.display = splitMode === 'SHARED' ? '' : 'none'; };
+  const payerHintEl = sheet.querySelector('#ex-f-payer-hint') as HTMLElement;
+  const updateSplitVisibility = (): void => {
+    splitWrap.style.display = splitMode === 'SHARED' ? '' : 'none';
+    payerHintEl.textContent = allowMultiPayer && splitMode === 'PERSONAL' ? '(각자 결제했다면 여러 명 선택 가능)' : '';
+  };
   updateSplitVisibility();
 
   const fxHint = sheet.querySelector('#ex-f-fxhint') as HTMLElement;
@@ -1393,19 +1449,43 @@ function openSheet(editing: TripExpense | null): void {
     });
   });
 
+  const setPayerActive = (): void => {
+    sheet.querySelectorAll('#ex-f-payer .ex-sheet-member').forEach((b) => {
+      b.classList.toggle('is-active', payerSet.has((b as HTMLElement).dataset.uid!));
+    });
+  };
+
   sheet.querySelectorAll('#ex-f-splitmode .ex-splitmode-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       splitMode = (btn as HTMLElement).dataset.mode as SplitMode;
       sheet.querySelectorAll('#ex-f-splitmode .ex-splitmode-btn').forEach((b) => b.classList.toggle('is-active', b === btn));
       updateSplitVisibility();
+      if (splitMode === 'SHARED' && payerSet.size > 1) {
+        const keep = payerSet.values().next().value as string;
+        payerSet.clear();
+        payerSet.add(keep);
+        setPayerActive();
+      }
     });
   });
 
+  // 결제한 사람 — 새로 추가할 때의 개인 지출은 "각자 결제"를 배치 입력할 수 있게 여러 명
+  // 선택 가능(체크박스). 그 외(공동 지출, 또는 기존 항목 수정)는 한 명만(라디오)
   sheet.querySelectorAll('#ex-f-payer .ex-sheet-member').forEach((btn) => {
     btn.addEventListener('click', () => {
-      payer = (btn as HTMLElement).dataset.uid!;
-      sheet.querySelectorAll('#ex-f-payer .ex-sheet-member').forEach((b) => b.classList.remove('is-active'));
-      btn.classList.add('is-active');
+      const uid = (btn as HTMLElement).dataset.uid!;
+      if (allowMultiPayer && splitMode === 'PERSONAL') {
+        if (payerSet.has(uid)) {
+          if (payerSet.size <= 1) return;
+          payerSet.delete(uid);
+        } else {
+          payerSet.add(uid);
+        }
+      } else {
+        payerSet.clear();
+        payerSet.add(uid);
+      }
+      setPayerActive();
     });
   });
 
@@ -1450,14 +1530,16 @@ function openSheet(editing: TripExpense | null): void {
 
     if (!title) { alert('내용을 입력해주세요.'); return; }
     if (!Number.isFinite(amount) || amount <= 0) { alert('금액을 입력해주세요.'); return; }
+    if (payerSet.size === 0) { alert('결제한 사람을 선택해주세요.'); return; }
 
     saveBtn.disabled = true;
     saveBtn.textContent = '저장 중...';
     lastUsedCurrency = currency;
 
-    const payload = await buildExpensePayload({ category, title, amount, currency, expenseDate: dateVal, isPaid, splitMode, payer, split, memo });
+    const payerIds = Array.from(payerSet);
 
     if (editing) {
+      const payload = await buildExpensePayload({ category, title, amount, currency, expenseDate: dateVal, isPaid, splitMode, payer: payerIds[0] ?? null, split, memo });
       const { data, error } = await supabase.from('trip_expenses').update(payload).eq('id', editing.id).select().single();
       if (error) {
         console.error('지출 수정 실패:', error.message);
@@ -1468,7 +1550,22 @@ function openSheet(editing: TripExpense | null): void {
       }
       const idx = expenses.findIndex((x) => x.id === editing.id);
       if (idx !== -1 && data) expenses[idx] = data as TripExpense;
+    } else if (splitMode === 'PERSONAL' && payerIds.length > 1) {
+      // 개인 지출을 여러 명 배치 입력 — n빵이 아니라 각자 같은 금액을 따로 결제한 것으로 기록
+      const payloads = await Promise.all(
+        payerIds.map((uid) => buildExpensePayload({ category, title, amount, currency, expenseDate: dateVal, isPaid, splitMode, payer: uid, split: new Set([uid]), memo }))
+      );
+      const { data, error } = await supabase.from('trip_expenses').insert(payloads).select();
+      if (error) {
+        console.error('지출 추가 실패:', error.message);
+        alert('저장에 실패했어요. supabase/trip_expenses.sql 마이그레이션이 실행됐는지 확인해주세요.');
+        saveBtn.disabled = false;
+        saveBtn.textContent = '추가하기';
+        return;
+      }
+      if (data) expenses.push(...(data as TripExpense[]));
     } else {
+      const payload = await buildExpensePayload({ category, title, amount, currency, expenseDate: dateVal, isPaid, splitMode, payer: payerIds[0] ?? null, split, memo });
       const { data, error } = await supabase.from('trip_expenses').insert(payload).select().single();
       if (error) {
         console.error('지출 추가 실패:', error.message);
