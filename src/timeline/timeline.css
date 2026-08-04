@@ -1,0 +1,664 @@
+/* ============================================================
+   몽실이 — TIMELINE (Flight Schedule)
+   "Airport Lounge Premium Light" 디자인 시스템 준수.
+
+   설계 기준: 밀도.
+   한 정류지 = 한 줄. 세로 여백 대신 정렬과 색으로 정보를 나눈다.
+   길어지는 정보(메모·이동수단·링크)는 전부 펼침 패널 안으로 밀어 넣어
+   접힌 상태의 목록이 전광판처럼 촘촘하게 읽히도록 했다.
+   ============================================================ */
+
+.tl-shell {
+  /* 디자인 토큰 — route/shortlist/board와 동일 팔레트 */
+  --tl-navy: #0B2A5C;
+  --tl-blue: #0B7CC4;
+  --tl-sky: #8FD8F8;
+  --tl-ice: #EAF6FD;
+  --tl-mist: #F1F6FB;
+  --tl-line: rgba(130,150,170,0.18);
+  --tl-line-strong: rgba(130,150,170,0.30);
+  --tl-dash: 1px dashed rgba(130,150,170,0.22);
+  --tl-ink: #0B2A5C;
+  --tl-ink-2: #64748B;
+  --tl-ink-3: #94A3B8;
+  --tl-ink-4: #B6C0CC;
+  --tl-glass: rgba(255,255,255,0.82);
+  --tl-blur: saturate(140%) blur(6px);
+  --tl-shadow-sm: 0 1px 3px rgba(11,42,92,0.04);
+  --tl-shadow-md: 0 6px 18px rgba(11,42,92,0.10);
+  --tl-warn: #C0392B;
+  --tl-warn-bg: #FDEEEC;
+  --tl-ease: 150ms ease;
+
+  /* 시각표 3열 격자 — 시각 / 스파인 / 카드. 모든 줄이 같은 격자를 공유해서
+     시각·점·이름이 세로로 딱 맞아떨어진다(전광판 느낌의 핵심). */
+  --tl-col-time: 60px;
+  --tl-col-spine: 18px;
+  /* 정류지 줄 안쪽 열 — 손잡이·번호 / 유형 / 이름 / 메모 / 체류 / 출발 / 펼침.
+     메모 열을 고정 폭으로 잡아 둔 건, 메모가 없는 줄에서도 숫자 열의 세로줄이
+     흐트러지지 않게 하기 위해서다(전광판처럼 읽히려면 열이 흔들리면 안 된다). */
+  --tl-tracks: 30px 24px minmax(140px, 260px) minmax(0, 170px) minmax(150px, 1fr) 58px 50px 22px;
+
+  max-width: 1512px;
+  margin: 0 auto;
+  padding: clamp(12px, 1.2vw, 18px) clamp(18px, 2.6vw, 40px) 24px;
+  box-sizing: border-box;
+  display: flex; flex-direction: column; min-width: 0;
+}
+
+.tl-shell :focus-visible { outline: 2px solid var(--tl-blue); outline-offset: 2px; border-radius: 8px; }
+
+/* ══════════════ 로딩 · 빈 상태 ══════════════ */
+
+.tl-loading {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; height: 360px; color: var(--tl-ink-3); font-size: 13px;
+}
+.tl-loading-spinner {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 2px solid rgba(11,124,196,0.18); border-top-color: var(--tl-blue);
+  animation: tl-spin 720ms linear infinite;
+}
+@keyframes tl-spin { to { transform: rotate(360deg); } }
+.tl-loading-inline { color: var(--tl-ink-3); }
+
+.tl-empty, .tl-dayempty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 72px 24px; text-align: center;
+}
+.tl-empty-icon, .tl-dayempty-icon {
+  width: 44px; height: 44px; display: grid; place-items: center;
+  border-radius: 14px; background: var(--tl-ice); color: var(--tl-blue);
+}
+.tl-empty-icon svg, .tl-dayempty-icon svg { width: 22px; height: 22px; }
+.tl-empty-title, .tl-dayempty-title {
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-size: 21px; color: var(--tl-ink); letter-spacing: -0.01em;
+}
+.tl-empty-hint, .tl-dayempty-hint { font-size: 12.5px; color: var(--tl-ink-3); line-height: 1.7; }
+.tl-empty-btn {
+  margin-top: 8px; display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 16px; border-radius: 10px; border: 1px solid var(--tl-line-strong);
+  background: #fff; color: var(--tl-ink); font-size: 12.5px; font-weight: 700;
+  font-family: inherit; cursor: pointer; transition: all var(--tl-ease);
+}
+.tl-empty-btn:hover { border-color: var(--tl-blue); color: var(--tl-blue); box-shadow: var(--tl-shadow-sm); }
+.tl-empty-btn svg { width: 15px; height: 15px; }
+
+/* ══════════════ 상단 바 ══════════════ */
+
+.tl-topbar {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 16px; margin-bottom: 12px; min-width: 0;
+}
+
+/* ── DAY 스트립 — 날짜별 밀도를 막대로 나란히 비교 ── */
+.tl-daystrip {
+  /* "오늘" 배지가 칩 위로 살짝 걸치므로 위쪽 여백을 함께 확보 */
+  display: flex; gap: 6px; min-width: 0; overflow-x: auto;
+  padding: 8px 2px 2px; margin: -8px -2px -2px;
+  scrollbar-width: thin;
+}
+.tl-daystrip::-webkit-scrollbar { height: 4px; }
+.tl-daystrip::-webkit-scrollbar-thumb { background: var(--tl-line-strong); border-radius: 2px; }
+
+.tl-daychip {
+  position: relative; flex: 0 0 auto;
+  display: flex; flex-direction: column; gap: 5px; align-items: stretch;
+  min-width: 112px; padding: 8px 10px 7px;
+  border: 1px solid var(--tl-line); border-radius: 11px;
+  background: rgba(255,255,255,0.6); cursor: pointer;
+  font-family: inherit; text-align: left;
+  transition: border-color var(--tl-ease), background var(--tl-ease), box-shadow var(--tl-ease);
+}
+.tl-daychip:hover { border-color: var(--tl-line-strong); background: #fff; }
+.tl-daychip.active { border-color: var(--tl-navy); background: #fff; box-shadow: var(--tl-shadow-sm); }
+.tl-daychip.is-empty { opacity: 0.62; }
+
+.tl-daychip-row { display: flex; align-items: baseline; gap: 6px; justify-content: space-between; }
+.tl-daychip-label { font-size: 11.5px; font-weight: 800; color: var(--tl-ink-2); letter-spacing: 0.02em; }
+.tl-daychip.active .tl-daychip-label { color: var(--tl-ink); }
+.tl-daychip-date { font-size: 10px; font-weight: 600; color: var(--tl-ink-3); white-space: nowrap; }
+
+/* 하루의 상대 밀도 — 이 여행에서 가장 긴 하루를 100%로 잡은 비율 */
+.tl-daychip-bar { display: block; height: 3px; border-radius: 2px; background: var(--tl-mist); overflow: hidden; }
+.tl-daychip-bar i { display: block; height: 100%; background: var(--tl-sky); border-radius: 2px; }
+.tl-daychip.active .tl-daychip-bar i { background: var(--tl-blue); }
+
+.tl-daychip-meta { font-size: 9.5px; font-weight: 600; color: var(--tl-ink-4); letter-spacing: 0.01em; }
+.tl-daychip-today {
+  position: absolute; top: -6px; right: 6px;
+  padding: 1px 6px; border-radius: 999px;
+  background: var(--tl-navy); color: #fff;
+  font-size: 8.5px; font-weight: 800; letter-spacing: 0.04em;
+}
+.tl-daychip.is-today { border-color: rgba(11,42,92,0.35); }
+
+/* ── 우측 액션 ── */
+.tl-topbar-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+.tl-segmented {
+  display: flex; padding: 2px; border-radius: 9px;
+  background: var(--tl-mist); border: 1px solid var(--tl-line);
+}
+.tl-segment {
+  padding: 5px 12px; border: none; border-radius: 7px; background: none;
+  font-family: inherit; font-size: 11.5px; font-weight: 700; color: var(--tl-ink-3);
+  cursor: pointer; transition: all var(--tl-ease);
+}
+.tl-segment:hover { color: var(--tl-ink-2); }
+.tl-segment.active { background: #fff; color: var(--tl-ink); box-shadow: var(--tl-shadow-sm); }
+
+.tl-nowbtn, .tl-routebtn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 11px; border-radius: 9px; border: 1px solid var(--tl-line-strong);
+  background: #fff; color: var(--tl-ink-2); font-family: inherit;
+  font-size: 11.5px; font-weight: 700; cursor: pointer; white-space: nowrap;
+  transition: all var(--tl-ease);
+}
+.tl-nowbtn svg, .tl-routebtn svg { width: 14px; height: 14px; }
+.tl-nowbtn:hover, .tl-routebtn:hover { border-color: var(--tl-blue); color: var(--tl-blue); }
+.tl-nowbtn { border-color: rgba(11,42,92,0.28); color: var(--tl-navy); }
+
+/* ══════════════ 본문 레이아웃 ══════════════ */
+
+.tl-body {
+  display: grid; grid-template-columns: minmax(0, 1fr) 268px;
+  gap: 18px; align-items: start; min-width: 0;
+}
+/* 전체 보기는 가로 폭이 전부 필요하므로 레일을 접는다 */
+.tl-body.tl-view-all { grid-template-columns: minmax(0, 1fr); }
+.tl-body.tl-view-all .tl-rail { display: none; }
+
+.tl-main { min-width: 0; }
+
+/* ══════════════ 하루 시각표 ══════════════ */
+
+.tl-day {
+  border: 1px solid var(--tl-line); border-radius: 14px;
+  background: var(--tl-glass); backdrop-filter: var(--tl-blur);
+  box-shadow: var(--tl-shadow-sm); overflow: hidden;
+}
+
+.tl-dayhead {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 11px 14px; border-bottom: 1px solid var(--tl-line);
+  background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(241,246,251,0.5));
+}
+.tl-dayhead-left { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.tl-dayhead-label {
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-size: 19px; color: var(--tl-ink); letter-spacing: -0.01em;
+}
+.tl-dayhead-date { font-size: 11.5px; font-weight: 600; color: var(--tl-ink-3); }
+.tl-dayhead-right { display: flex; align-items: baseline; gap: 6px; flex-shrink: 0; }
+.tl-dayhead-span {
+  font-size: 11.5px; font-weight: 700; color: var(--tl-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.tl-dayhead-dot { color: var(--tl-ink-4); }
+.tl-dayhead-count { font-size: 11.5px; font-weight: 600; color: var(--tl-ink-3); }
+
+.tl-list { list-style: none; margin: 0; padding: 2px 0 8px; }
+
+/* 모든 줄이 공유하는 3열 격자 */
+.tl-row {
+  display: grid;
+  grid-template-columns: var(--tl-col-time) var(--tl-col-spine) minmax(0, 1fr);
+  align-items: stretch; column-gap: 8px;
+}
+
+.tl-col-time {
+  display: flex; flex-direction: column; align-items: flex-end; justify-content: center;
+  padding-left: 12px; gap: 1px;
+}
+.tl-col-spine { position: relative; display: flex; align-items: center; justify-content: center; }
+.tl-col-card { min-width: 0; padding-right: 12px; }
+
+/* ── 열 이름 줄 — 아래 정류지 줄과 완전히 같은 격자를 써서 숫자 열이 정확히 맞물린다 ── */
+.tl-colhead {
+  padding: 6px 0 5px; border-bottom: 1px solid var(--tl-line);
+  font-size: 8.5px; font-weight: 800; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--tl-ink-4);
+}
+.tl-colhead .tl-col-time { justify-content: center; }
+.tl-colhead .tl-col-card {
+  display: grid; align-items: center;
+  grid-template-columns: var(--tl-tracks); column-gap: 8px;
+  padding-left: 6px;
+}
+/* 이름 열은 lead/아이콘/이름/메모 4칸을 한꺼번에 덮는다 */
+.tl-ch-name { grid-column: 1 / 5; }
+.tl-ch-num { text-align: right; }
+/* 시간 막대 열의 눈금 — 그 하루의 시작·끝 시각을 양 끝에 적어 막대의 기준을 알려준다 */
+.tl-ch-track { display: flex; align-items: center; gap: 5px; letter-spacing: 0.04em; }
+.tl-ch-track i { flex: 1; height: 1px; background: var(--tl-line); }
+
+/* ── 스파인(세로 축) — 점과 점선으로 하루가 이어져 있음을 표현 ── */
+.tl-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  box-shadow: 0 0 0 3px #fff, 0 0 0 4px rgba(130,150,170,0.16);
+  z-index: 1;
+}
+.tl-spine-line {
+  width: 0; height: 100%; min-height: 22px;
+  border-left: 1px dashed rgba(130,150,170,0.45);
+}
+
+/* ── 정류지 줄 ── */
+.tl-stop { position: relative; }
+.tl-stop .tl-col-card {
+  display: grid; align-items: center;
+  grid-template-columns: var(--tl-tracks); column-gap: 8px;
+  min-height: 40px; padding: 5px 12px 5px 6px;
+  border-radius: 10px; border-bottom: var(--tl-dash);
+  transition: background var(--tl-ease), box-shadow var(--tl-ease);
+}
+.tl-lead { display: flex; align-items: center; gap: 2px; }
+.tl-stop:hover .tl-col-card { background: rgba(255,255,255,0.9); box-shadow: inset 2px 0 0 var(--tl-blue); }
+.tl-stop.is-open .tl-col-card { background: #fff; box-shadow: inset 2px 0 0 var(--tl-navy); border-bottom-color: transparent; }
+.tl-stop.dragging { opacity: 0.42; }
+.tl-stop.drag-over .tl-col-card { box-shadow: inset 0 2px 0 var(--tl-blue); }
+
+/* 도착 시각 입력 — 평소엔 그냥 텍스트처럼 보이고, 손대면 입력칸이 된다 */
+.tl-time {
+  width: 100%; border: none; background: none; text-align: right;
+  font-family: inherit; font-size: 12.5px; font-weight: 800; color: var(--tl-ink);
+  font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+  padding: 2px 3px; border-radius: 6px; cursor: text;
+  transition: background var(--tl-ease), color var(--tl-ease);
+}
+.tl-time:hover, .tl-time:focus { background: var(--tl-mist); outline: none; }
+/* 사용자가 직접 고정한 시각은 색으로 구분 — 자동 계산값과 섞이지 않게 */
+.tl-time.is-fixed { color: var(--tl-blue); }
+
+.tl-grip {
+  display: flex; align-items: center; color: var(--tl-ink-4);
+  cursor: grab; opacity: 0; transition: opacity var(--tl-ease);
+}
+.tl-grip svg { width: 13px; height: 13px; }
+.tl-stop:hover .tl-grip { opacity: 1; }
+.tl-stop:active .tl-grip { cursor: grabbing; }
+
+.tl-idx {
+  width: 14px; text-align: right;
+  font-size: 10px; font-weight: 800; color: var(--tl-ink-4);
+  font-variant-numeric: tabular-nums;
+}
+.tl-cat {
+  width: 24px; height: 24px; border-radius: 8px;
+  display: grid; place-items: center;
+}
+.tl-cat svg { width: 13px; height: 13px; }
+
+.tl-name-col { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.tl-name-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.tl-name {
+  font-size: 12.5px; font-weight: 700; color: var(--tl-ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tl-sub {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10px; color: var(--tl-ink-3); min-width: 0;
+}
+.tl-sub > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-rating { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.tl-rating svg { width: 9px; height: 9px; color: #F5A623; }
+
+/* 메모 — 이름과 숫자 열 사이의 여백을 채우는 한 줄 미리보기 (전문은 펼침 패널에) */
+.tl-memo-inline {
+  display: flex; align-items: center; gap: 4px; min-width: 0;
+  font-size: 10.5px; color: var(--tl-ink-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tl-memo-inline svg { width: 11px; height: 11px; flex-shrink: 0; color: var(--tl-ink-4); }
+
+/* 줄마다의 시간 막대 — 하루 전체(첫 도착~마지막 출발) 안에서의 위치와 길이 */
+.tl-track {
+  position: relative; height: 20px; border-radius: 5px;
+  background: linear-gradient(90deg, rgba(130,150,170,0.10), rgba(130,150,170,0.10));
+  overflow: hidden;
+}
+.tl-track i { position: absolute; top: 6px; height: 8px; border-radius: 2px; }
+.tl-track-stay { background: var(--tl-sky); }
+.tl-track-move { background: var(--tl-blue); opacity: 0.45; }
+.tl-stop:hover .tl-track-stay { background: var(--tl-blue); }
+
+/* 숫자 열 — 오른쪽 정렬 + 고정폭 숫자로 세로줄이 흔들리지 않게 */
+.tl-num {
+  text-align: right; font-size: 11px; font-weight: 700; color: var(--tl-ink-2);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.tl-num-depart { color: var(--tl-ink-3); font-weight: 600; }
+.tl-dash-mark { color: var(--tl-ink-4); font-style: normal; }
+
+/* 시간이 안 맞거나 크게 비는 지점 — 색으로 즉시 눈에 띄게 */
+.tl-flag {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 6px; border-radius: 999px;
+  font-size: 9.5px; font-weight: 800; white-space: nowrap;
+}
+.tl-flag svg { width: 10px; height: 10px; }
+.tl-flag-over { background: var(--tl-warn-bg); color: var(--tl-warn); }
+.tl-flag-slack { background: var(--tl-mist); color: var(--tl-ink-3); }
+
+.tl-expand {
+  width: 22px; height: 22px; border: none; border-radius: 7px;
+  background: none; color: var(--tl-ink-4); cursor: pointer;
+  display: grid; place-items: center; transition: all var(--tl-ease);
+}
+.tl-expand svg { width: 14px; height: 14px; transition: transform 180ms ease; }
+.tl-expand:hover { background: var(--tl-mist); color: var(--tl-ink-2); }
+.tl-stop.is-open .tl-expand svg { transform: rotate(180deg); }
+
+/* ── 이동 구간 줄 ── */
+.tl-leg .tl-col-time { justify-content: center; }
+.tl-leg-dur {
+  font-size: 10px; font-weight: 700; color: var(--tl-ink-4);
+  font-variant-numeric: tabular-nums;
+}
+.tl-leg .tl-col-card { display: flex; align-items: center; padding: 3px 12px 3px 6px; }
+.tl-leg-body {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10.5px; font-weight: 600; color: var(--tl-ink-2);
+  padding: 2px 8px 2px 5px; border-radius: 999px; background: rgba(241,246,251,0.75);
+}
+.tl-leg-ico { display: flex; color: currentColor; }
+.tl-leg-ico svg { width: 12px; height: 12px; }
+.tl-leg-mode { font-weight: 700; }
+.tl-leg-sep { color: var(--tl-ink-4); }
+.tl-leg-dim { color: var(--tl-ink-3); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* 이동수단별 색 — ROUTE의 구간 색과 같은 기준 */
+.tl-leg.walk .tl-leg-body { color: #1D9E75; background: rgba(29,158,117,0.08); }
+.tl-leg.transit .tl-leg-body { color: #0B7CC4; background: rgba(11,124,196,0.08); }
+.tl-leg.taxi .tl-leg-body { color: #E08A1E; background: rgba(245,166,35,0.10); }
+.tl-leg-unknown .tl-leg-body { color: var(--tl-ink-3); font-style: italic; }
+
+/* 원칙 3-1 — 추정치는 반드시 눈에 보이게 구분 */
+.tl-est {
+  padding: 1px 5px; border-radius: 999px; background: rgba(130,150,170,0.16);
+  color: var(--tl-ink-3); font-size: 8.5px; font-weight: 800; letter-spacing: 0.02em;
+}
+.tl-manual { width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: 0.7; }
+
+/* ══════════════ 펼침 상세 ══════════════ */
+
+.tl-detail {
+  grid-column: 3; margin: 0 12px 8px 6px;
+  padding: 11px 12px; border-radius: 10px;
+  background: var(--tl-mist); border: 1px solid var(--tl-line);
+  display: flex; flex-direction: column; gap: 9px;
+}
+.tl-detail-grid { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
+.tl-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+/* 메모 칸이 화면 끝까지 늘어나면 이동수단 버튼이 저 멀리 떨어져 한 눈에 안 들어온다 */
+.tl-field-wide { flex: 0 1 440px; }
+.tl-field-label {
+  font-size: 9.5px; font-weight: 800; color: var(--tl-ink-3);
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.tl-memo {
+  border: 1px solid var(--tl-line); border-radius: 8px; background: #fff;
+  padding: 6px 9px; font-family: inherit; font-size: 12px; color: var(--tl-ink);
+  outline: none; transition: border-color var(--tl-ease);
+}
+.tl-memo::placeholder { color: var(--tl-ink-4); }
+.tl-memo:focus { border-color: var(--tl-sky); }
+
+.tl-modes { display: flex; gap: 4px; }
+.tl-modebtn, .tl-modeauto {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 9px; border-radius: 8px; border: 1px solid var(--tl-line);
+  background: #fff; color: var(--tl-ink-2); font-family: inherit;
+  font-size: 10.5px; font-weight: 700; cursor: pointer; white-space: nowrap;
+  transition: all var(--tl-ease);
+}
+.tl-modebtn svg { width: 12px; height: 12px; }
+.tl-modebtn:hover, .tl-modeauto:hover { border-color: var(--tl-line-strong); color: var(--tl-ink); }
+.tl-modebtn.active { border-color: var(--tl-navy); background: var(--tl-navy); color: #fff; }
+.tl-modeauto { color: var(--tl-ink-3); }
+
+.tl-detail-line {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--tl-ink-2); line-height: 1.5;
+}
+.tl-detail-line svg { width: 13px; height: 13px; flex-shrink: 0; color: var(--tl-ink-3); }
+.tl-detail-line span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tl-detail-fixed { color: var(--tl-blue); }
+.tl-detail-fixed svg { color: var(--tl-blue); }
+.tl-detail-note { color: var(--tl-ink-3); font-size: 10.5px; }
+.tl-unfix {
+  margin-left: auto; flex-shrink: 0;
+  padding: 3px 8px; border-radius: 7px; border: 1px solid var(--tl-line);
+  background: #fff; color: var(--tl-ink-2); font-family: inherit;
+  font-size: 10px; font-weight: 700; cursor: pointer; transition: all var(--tl-ease);
+}
+.tl-unfix:hover { border-color: var(--tl-blue); color: var(--tl-blue); }
+
+.tl-detail-actions {
+  display: flex; align-items: center; gap: 8px;
+  padding-top: 7px; border-top: var(--tl-dash);
+}
+.tl-detail-link, .tl-detail-remove {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: 8px; border: 1px solid var(--tl-line);
+  background: #fff; color: var(--tl-ink-2); font-family: inherit;
+  font-size: 11px; font-weight: 700; cursor: pointer; text-decoration: none;
+  transition: all var(--tl-ease);
+}
+.tl-detail-link svg, .tl-detail-remove svg { width: 13px; height: 13px; }
+.tl-detail-link:hover { border-color: var(--tl-blue); color: var(--tl-blue); }
+.tl-detail-remove { margin-left: auto; }
+.tl-detail-remove:hover { border-color: var(--tl-warn); color: var(--tl-warn); background: var(--tl-warn-bg); }
+
+/* ══════════════ "지금" 선 (여행 중) ══════════════ */
+
+.tl-nowline { margin: 2px 0; }
+.tl-nowline .tl-col-time { justify-content: center; }
+.tl-nowline-time {
+  font-size: 10px; font-weight: 800; color: #E2564A;
+  font-variant-numeric: tabular-nums;
+}
+.tl-nowline-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: #E2564A;
+  box-shadow: 0 0 0 3px #fff, 0 0 0 5px rgba(226,86,74,0.18);
+  z-index: 2;
+}
+.tl-nowline .tl-col-card { display: flex; align-items: center; gap: 7px; padding-left: 6px; }
+.tl-nowline-bar { flex: 1; height: 1px; background: linear-gradient(90deg, #E2564A, rgba(226,86,74,0.08)); }
+.tl-nowline-label {
+  order: -1; padding: 1px 7px; border-radius: 999px;
+  background: #E2564A; color: #fff; font-size: 8.5px; font-weight: 800; letter-spacing: 0.04em;
+}
+
+/* ══════════════ 전체 보기 (모든 DAY 나란히) ══════════════ */
+
+.tl-all {
+  display: grid; grid-auto-flow: column;
+  grid-auto-columns: minmax(196px, 1fr);
+  gap: 10px; overflow-x: auto; padding-bottom: 8px;
+  scrollbar-width: thin;
+}
+.tl-all::-webkit-scrollbar { height: 6px; }
+.tl-all::-webkit-scrollbar-thumb { background: var(--tl-line-strong); border-radius: 3px; }
+
+.tl-allcol {
+  border: 1px solid var(--tl-line); border-radius: 12px;
+  background: var(--tl-glass); backdrop-filter: var(--tl-blur);
+  overflow: hidden; display: flex; flex-direction: column; min-width: 0;
+}
+.tl-allcol.active { border-color: var(--tl-navy); box-shadow: var(--tl-shadow-sm); }
+.tl-allcol.is-today { border-color: rgba(11,42,92,0.35); }
+
+.tl-allhead {
+  display: flex; flex-direction: column; gap: 1px; align-items: flex-start;
+  padding: 9px 11px; border-bottom: 1px solid var(--tl-line);
+  background: rgba(241,246,251,0.5); border-radius: 0;
+  font-family: inherit; text-align: left; cursor: pointer; border-left: none;
+  border-right: none; border-top: none; width: 100%;
+  transition: background var(--tl-ease);
+}
+.tl-allhead:hover { background: var(--tl-ice); }
+.tl-allhead-label { font-size: 11.5px; font-weight: 800; color: var(--tl-ink); letter-spacing: 0.02em; }
+.tl-allhead-date { font-size: 10px; font-weight: 600; color: var(--tl-ink-3); }
+.tl-allhead-meta { font-size: 9.5px; font-weight: 600; color: var(--tl-ink-4); margin-top: 3px; }
+/* 컬럼 머리의 24시간 띠 — 모든 DAY가 같은 축을 쓰므로 위치만으로 하루의 시작·끝이 비교된다 */
+.tl-band-compact {
+  display: block; width: 100%; height: 9px; margin-top: 5px; border-radius: 3px;
+}
+.tl-band-compact i { top: 2px; height: 5px; }
+
+.tl-allbody { padding: 6px 0 8px; display: flex; flex-direction: column; }
+.tl-allrow {
+  display: grid; grid-template-columns: 38px 8px minmax(0, 1fr);
+  align-items: center; gap: 6px; padding: 4px 10px;
+}
+.tl-alltime {
+  font-size: 10px; font-weight: 700; color: var(--tl-ink-3);
+  font-variant-numeric: tabular-nums; text-align: right;
+}
+.tl-alldot { width: 6px; height: 6px; border-radius: 50%; }
+.tl-allname {
+  font-size: 11.5px; font-weight: 600; color: var(--tl-ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tl-allleg {
+  display: inline-flex; align-items: center; gap: 3px;
+  margin: 0 10px 0 52px; padding: 1px 0;
+  font-size: 9.5px; font-weight: 700; color: var(--tl-ink-4);
+}
+.tl-allleg-ico { display: flex; }
+.tl-allleg-ico svg { width: 10px; height: 10px; }
+.tl-allleg.walk { color: #1D9E75; }
+.tl-allleg.transit { color: #0B7CC4; }
+.tl-allleg.taxi { color: #E08A1E; }
+.tl-allempty { padding: 18px 10px; text-align: center; font-size: 10.5px; color: var(--tl-ink-4); }
+
+/* ══════════════ 우측 요약 레일 ══════════════ */
+
+.tl-rail { position: sticky; top: 8px; min-width: 0; }
+.tl-rail-inner { display: flex; flex-direction: column; gap: 10px; }
+
+.tl-card {
+  border: 1px solid var(--tl-line); border-radius: 12px;
+  background: var(--tl-glass); backdrop-filter: var(--tl-blur);
+  padding: 12px 13px; display: flex; flex-direction: column; gap: 9px;
+}
+.tl-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.tl-card-title { font-size: 11.5px; font-weight: 800; color: var(--tl-ink); letter-spacing: 0.01em; }
+.tl-card-sub {
+  font-size: 10px; font-weight: 600; color: var(--tl-ink-3);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+/* ── 하루 리듬 스택바 ── */
+.tl-mix { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--tl-mist); }
+.tl-mix i { display: block; height: 100%; }
+.tl-mix-move { background: #0B7CC4; }
+.tl-mix-stay { background: #8FD8F8; }
+.tl-mix-idle { background: rgba(130,150,170,0.22); }
+
+.tl-legend { display: flex; flex-direction: column; gap: 4px; }
+.tl-legend-item { display: flex; align-items: center; gap: 6px; }
+.tl-legend-dot { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
+.tl-legend-dot.move { background: #0B7CC4; }
+.tl-legend-dot.stay { background: #8FD8F8; }
+.tl-legend-dot.idle { background: rgba(130,150,170,0.35); }
+.tl-legend-label { font-size: 10.5px; color: var(--tl-ink-2); flex: 1; }
+.tl-legend-value {
+  font-size: 10.5px; font-weight: 700; color: var(--tl-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 24시간 분포 띠 ── */
+.tl-band {
+  position: relative; height: 20px; border-radius: 6px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--tl-mist) 0, var(--tl-mist) calc(100% / 24 - 1px),
+    rgba(255,255,255,0.9) calc(100% / 24 - 1px), rgba(255,255,255,0.9) calc(100% / 24)
+  );
+  overflow: hidden;
+}
+.tl-band i { position: absolute; top: 4px; height: 12px; border-radius: 3px; }
+.tl-band-stay { background: #8FD8F8; }
+.tl-band-move { background: #0B7CC4; opacity: 0.55; }
+.tl-band-now {
+  position: absolute; top: 0; width: 1.5px; height: 100%;
+  background: #E2564A; z-index: 2;
+}
+.tl-band-axis {
+  display: flex; justify-content: space-between;
+  font-size: 8.5px; font-weight: 700; color: var(--tl-ink-4);
+  padding: 0 0 0 25%; font-variant-numeric: tabular-nums;
+}
+
+/* ── 주의 신호 ── */
+.tl-card-alerts { gap: 7px; }
+.tl-alert {
+  display: flex; align-items: flex-start; gap: 6px;
+  font-size: 10.5px; line-height: 1.55; color: var(--tl-ink-2);
+}
+.tl-alert svg { width: 13px; height: 13px; flex-shrink: 0; margin-top: 1px; color: var(--tl-ink-3); }
+.tl-alert b { color: var(--tl-ink); font-weight: 800; }
+.tl-alert-warn { color: var(--tl-warn); }
+.tl-alert-warn svg { color: var(--tl-warn); }
+.tl-alert-warn b { color: var(--tl-warn); }
+
+/* ── 수치 요약 ── */
+.tl-stats { display: flex; flex-direction: column; gap: 6px; }
+.tl-stat {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  padding-bottom: 5px; border-bottom: var(--tl-dash);
+}
+.tl-stat:last-child { border-bottom: none; padding-bottom: 0; }
+.tl-stat-label { font-size: 10.5px; color: var(--tl-ink-2); }
+.tl-stat-value {
+  font-size: 12px; font-weight: 800; color: var(--tl-ink);
+  font-variant-numeric: tabular-nums;
+}
+.tl-estnote { font-size: 9.5px; color: var(--tl-ink-4); line-height: 1.6; }
+
+/* ══════════════ 반응형 ══════════════ */
+
+@media (max-width: 1024px) {
+  .tl-body { grid-template-columns: minmax(0, 1fr); }
+  .tl-rail { position: static; }
+  /* 레일이 본문 아래로 내려가면 카드를 가로로 늘어놓는다 */
+  .tl-rail-inner { flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
+  .tl-rail-inner > .tl-card { flex: 1 1 220px; }
+}
+
+/* 시간 막대까지는 유지하되 메모 열을 접는 구간 */
+@media (max-width: 900px) {
+  .tl-shell { --tl-tracks: 30px 24px minmax(120px, 1fr) minmax(110px, 1fr) 58px 50px 22px; }
+  .tl-memo-inline { display: none; }
+  .tl-ch-name { grid-column: 1 / 4; }
+}
+
+@media (max-width: 720px) {
+  /* 한 줄에 꼭 필요한 것만 — 시각 / 유형 / 이름 / 체류. 나머지는 펼침 패널에서 본다 */
+  .tl-shell {
+    --tl-col-time: 54px; --tl-col-spine: 16px;
+    --tl-tracks: 18px 22px minmax(0, 1fr) 52px 20px;
+    padding-left: 12px; padding-right: 12px;
+  }
+  .tl-col-time { padding-left: 8px; }
+  .tl-time { font-size: 12px; padding: 2px 1px; }
+  .tl-track, .tl-num-depart, .tl-ch-track, .tl-ch-depart { display: none; }
+  .tl-topbar { flex-direction: column; align-items: stretch; gap: 10px; }
+  .tl-topbar-actions { justify-content: flex-end; }
+  .tl-daychip { min-width: 96px; }
+  .tl-grip { display: none; }
+  .tl-idx { width: 100%; text-align: center; }
+  .tl-name { font-size: 12px; }
+  /* 좁은 화면에선 장소 이름이 먼저다 — 참고용 "여유"는 접고, 일정이 안 맞는 경고만 남긴다 */
+  .tl-flag-slack { display: none; }
+  /* flex-basis는 세로 방향에선 "높이"가 되어 카드가 통째로 늘어난다 — 반드시 되돌릴 것 */
+  .tl-detail-grid { flex-direction: column; align-items: stretch; }
+  .tl-detail-grid > .tl-field { flex: 0 0 auto; }
+  /* 세로로 쌓을 땐 폭을 꽉 채워야 한다 — 가로 배치용 flex-basis/정렬을 되돌린다 */
+  .tl-rail-inner { flex-direction: column; align-items: stretch; }
+  .tl-rail-inner > .tl-card { flex: 0 0 auto; }
+}

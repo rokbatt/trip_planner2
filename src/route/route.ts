@@ -46,6 +46,25 @@ import {
 import type { StoredStop } from './routeStore';
 import { requestRoutePlan, requestDayDetail } from './aiPlan';
 import type { AiPlanPlace, AiRoutePlanResult, AiDayDetailResult, AiStaySegment } from './aiPlan';
+// 화면에 뜨는 숫자(이동시간·거리·요금·체류시간)는 TIMELINE과 반드시 같아야 하므로
+// 순수 계산은 전부 공용 모듈 하나에서만 가져온다 — utils/travelEstimate.ts 상단 설명 참고.
+import {
+  haversineKm,
+  estimateLegBetween,
+  toApiMode,
+  legKey,
+  catKeyFor,
+  dwellMinutes,
+  modeLabel,
+  modeColorClass,
+  fmtMin,
+  fmtKm,
+  minToHHMM,
+  parseTimeInput,
+  CAT_COLOR,
+  STRAIGHT_TO_ROAD,
+} from '../utils/travelEstimate';
+import type { Leg, RealLeg, CatKey } from '../utils/travelEstimate';
 import type { Database, StaySegment } from '../types/database';
 import './route.css';
 
@@ -88,10 +107,6 @@ const IC_REDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const IC_ALERT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>';
 const IC_ROUTEPATH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H14a3.5 3.5 0 0 0 0-7h-4a3.5 3.5 0 0 1 0-7h5.5"/></svg>';
 
-type CatKey = 'VISIT' | 'FOOD' | 'ACTIVITY' | 'SHOPPING' | 'STAY' | 'AIRPORT';
-const CAT_COLOR: Record<CatKey, string> = {
-  VISIT: '#E24B4A', FOOD: '#1D9E75', ACTIVITY: '#7F77DD', SHOPPING: '#F5A623', STAY: '#0B2A5C', AIRPORT: '#2E86C1',
-};
 const CAT_ICON: Record<CatKey, string> = { VISIT: IC_LANDMARK, FOOD: IC_FORK, ACTIVITY: IC_TARGET, SHOPPING: IC_BAG, STAY: IC_BED, AIRPORT: IC_PLANE };
 /** 좌측 패널 카테고리 필터 칩 — 후보 목록에 실제로 나타나는 4개 게이트만(숙소 제외) */
 const CAT_FILTERS: Array<{ key: CatKey; label: string }> = [
@@ -100,7 +115,6 @@ const CAT_FILTERS: Array<{ key: CatKey; label: string }> = [
   { key: 'ACTIVITY', label: '액티비티' },
   { key: 'SHOPPING', label: '쇼핑' },
 ];
-const SHOPPING_KEYWORDS = ['쇼핑', '마켓', '시장', '백화점', 'mall', 'market', 'shopping'];
 
 /**
  * DAY마다 다른 블루 계열 색조를 줘서(전부 같은 파랑이 아니라) 우측 패널·DAY 탭에서 "지금 몇
@@ -128,27 +142,6 @@ interface RouteDay {
   id: string;
   label: string;
   stopIds: string[]; // basecamp 다음의 방문 순서(장소 id들)
-}
-
-interface Leg {
-  mode: 'WALK' | 'TRANSIT' | 'TAXI';
-  km: number;
-  min: number;
-  costTHB: number;
-  /** true면 Routes API 실측, false면 직선거리 기반 추정치 (원칙 3-1 — 화면에 구분 표기) */
-  real: boolean;
-  /** 실측 대중교통 요금이 있을 때만 (통화 포함) */
-  fare?: { units: number; currency: string };
-  /** 실제 도로를 따라가는 좌표(있을 때만) — 없으면 지도에 두 지점을 잇는 직선으로 대체 */
-  path?: Array<{ lat: number; lng: number }>;
-}
-
-/** /api/route-matrix(구간 비교 모드) 응답의 모드별 실측값 */
-interface RealLeg {
-  meters: number;
-  seconds: number;
-  fare?: { units: number; currency: string };
-  polyline?: string;
 }
 
 interface Pt { lat: number; lng: number }
@@ -324,156 +317,28 @@ function escapeHtml(str: string): string {
   return div.innerHTML;
 }
 
-/* ── 거리·이동수단 추정 (직선거리 기반, API 호출 없음) ── */
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function legForMode(km: number, mode: Leg['mode']): Leg {
-  if (mode === 'WALK') return { mode, km, min: Math.max(2, Math.round(km * 13)), costTHB: 0, real: false };
-  if (mode === 'TRANSIT') return { mode, km, min: Math.max(6, Math.round((km / 18) * 60) + 6), costTHB: Math.min(62, 20 + Math.round(km) * 6), real: false };
-  return { mode, km, min: Math.max(8, Math.round((km / 24) * 60)), costTHB: 35 + Math.round(km * 6.5), real: false };
-}
-
-/** 앱 내부 모드 ↔ Routes API travelMode */
-function toApiMode(mode: Leg['mode']): string {
-  return mode === 'TAXI' ? 'DRIVE' : mode;
-}
-
-/** 실측 데이터를 Leg로 변환. 택시 요금은 Routes API가 주지 않으므로 거리 기반 추정 유지 */
 /**
- * Google 인코딩 폴리라인(base64 유사 가변길이 인코딩) 디코딩 — 표준 알고리즘.
- * google.maps의 geometry 라이브러리를 추가로 로드하지 않기 위해 직접 구현.
- */
-function decodePolyline(encoded: string): Array<{ lat: number; lng: number }> {
-  const points: Array<{ lat: number; lng: number }> = [];
-  let index = 0;
-  let lat = 0;
-  let lng = 0;
-
-  while (index < encoded.length) {
-    let shift = 0;
-    let result = 0;
-    let byte: number;
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20);
-    lat += result & 1 ? ~(result >> 1) : result >> 1;
-
-    shift = 0;
-    result = 0;
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20);
-    lng += result & 1 ? ~(result >> 1) : result >> 1;
-
-    points.push({ lat: lat / 1e5, lng: lng / 1e5 });
-  }
-  return points;
-}
-
-function realToLeg(mode: Leg['mode'], r: RealLeg): Leg {
-  const km = r.meters / 1000;
-  const min = Math.max(1, Math.round(r.seconds / 60));
-  const path = r.polyline ? decodePolyline(r.polyline) : undefined;
-  if (mode === 'TRANSIT') {
-    // 실측 요금이 있으면 그 값을, 없으면 거리 기반 추정치를 쓴다(추정 여부는 fare 유무로 구분).
-    const costTHB = r.fare ? Math.round(r.fare.units) : Math.min(62, 20 + Math.round(km) * 6);
-    return { mode, km, min, costTHB, real: true, fare: r.fare, path };
-  }
-  if (mode === 'WALK') return { mode, km, min, costTHB: 0, real: true, path };
-  return { mode, km, min, costTHB: 35 + Math.round(km * 6.5), real: true, path };
-}
-
-/**
- * 두 지점 사이의 이동 leg.
- * 실측 데이터(Routes API)가 도착해 있으면 그걸 쓰고, 없으면 직선거리 기반 추정치로 폴백한다.
- * 모드는 수동 지정이 있으면 그것을, 없으면 실측 소요시간(없으면 거리)으로 자동 판단한다.
+ * 두 지점 사이의 이동 leg — 공용 추정기(utils/travelEstimate)에 이 화면이 들고 있는
+ * 실측 캐시(realLegs)를 얹어서 호출한다.
  */
 function estimateLegWithOverride(a: Place, b: Place, override?: Leg['mode']): Leg {
-  const straightKm = haversineKm(a.lat!, a.lng!, b.lat!, b.lng!) * 1.25; // 직선→실주행 보정
-  const measured = realLegs.get(legKey(a.id, b.id));
-
-  const mode: Leg['mode'] = override ?? pickAutoMode(straightKm, measured);
-  const r = measured?.[toApiMode(mode)];
-  if (r) return realToLeg(mode, r);
-  return legForMode(straightKm, mode);
-}
-
-/**
- * 이동수단 자동 선택. 실측이 있으면 "도보 15분 이내면 걷고, 아니면 대중교통이 택시보다
- * 심하게 느리지 않은 한 대중교통"이라는 실제 여행자 기준으로 고른다.
- */
-function pickAutoMode(straightKm: number, measured?: Record<string, RealLeg>): Leg['mode'] {
-  if (!measured) return straightKm <= 1.0 ? 'WALK' : straightKm <= 6 ? 'TRANSIT' : 'TAXI';
-  const walk = measured.WALK;
-  const transit = measured.TRANSIT;
-  const drive = measured.DRIVE;
-  if (walk && walk.seconds <= 15 * 60) return 'WALK';
-  if (transit && (!drive || transit.seconds <= drive.seconds * 1.6)) return 'TRANSIT';
-  if (drive) return 'TAXI';
-  if (transit) return 'TRANSIT';
-  if (walk) return 'WALK';
-  return straightKm <= 1.0 ? 'WALK' : straightKm <= 6 ? 'TRANSIT' : 'TAXI';
+  return estimateLegBetween(
+    { lat: a.lat!, lng: a.lng! },
+    { lat: b.lat!, lng: b.lng! },
+    override,
+    realLegs.get(legKey(a.id, b.id))
+  );
 }
 
 function modeIcon(mode: Leg['mode']): string {
   return mode === 'WALK' ? IC_WALK : mode === 'TRANSIT' ? IC_TRANSIT : IC_TAXI;
 }
-function modeLabel(mode: Leg['mode']): string {
-  return mode === 'WALK' ? '도보' : mode === 'TRANSIT' ? 'BTS·지하철' : '택시';
-}
-function modeColorClass(mode: Leg['mode']): string {
-  return mode === 'WALK' ? 'walk' : mode === 'TRANSIT' ? 'transit' : 'taxi';
-}
-
-function fmtMin(min: number): string {
-  if (min < 60) return min + '분';
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return m === 0 ? h + '시간' : h + '시간 ' + m + '분';
-}
-function fmtKm(km: number): string {
-  return km >= 1 ? km.toFixed(1) + 'km' : Math.round(km * 1000) + 'm';
-}
-
-function legKey(fromId: string, toId: string): string {
-  return fromId + '>' + toId;
-}
 
 /* ── 카테고리(방문 유형) → 색상·아이콘 ── */
 function categoryMeta(p: Place, isBasecamp: boolean): { key: CatKey; color: string; icon: string } {
-  if (isBasecamp) return { key: 'STAY', color: CAT_COLOR.STAY, icon: CAT_ICON.STAY };
-  if (p.id === arrivalAirportId() || p.id === departureAirportId()) {
-    return { key: 'AIRPORT', color: CAT_COLOR.AIRPORT, icon: CAT_ICON.AIRPORT };
-  }
-  const cat = (p.category || '').toLowerCase();
-  if (SHOPPING_KEYWORDS.some((k) => cat.includes(k))) return { key: 'SHOPPING', color: CAT_COLOR.SHOPPING, icon: CAT_ICON.SHOPPING };
-  if (p.mood === '먹고싶어') return { key: 'FOOD', color: CAT_COLOR.FOOD, icon: CAT_ICON.FOOD };
-  if (p.mood === '하고싶어') return { key: 'ACTIVITY', color: CAT_COLOR.ACTIVITY, icon: CAT_ICON.ACTIVITY };
-  return { key: 'VISIT', color: CAT_COLOR.VISIT, icon: CAT_ICON.VISIT };
-}
-
-function dwellMinutes(key: CatKey): number {
-  switch (key) {
-    case 'FOOD': return 75;
-    case 'ACTIVITY': return 120;
-    case 'SHOPPING': return 60;
-    case 'STAY': return 0;
-    // 입국심사·수하물 수취(도착) 또는 체크인·보안검색(출발) 여유 — 추정치
-    case 'AIRPORT': return 60;
-    default: return 60;
-  }
+  const isAirport = p.id === arrivalAirportId() || p.id === departureAirportId();
+  const key = catKeyFor(p.mood, p.category, { isBasecamp, isAirport });
+  return { key, color: CAT_COLOR[key], icon: CAT_ICON[key] };
 }
 
 /* ── 현재 활성 DAY / 순서대로 이어진 정류지(출발 숙소 포함) ── */
@@ -1797,45 +1662,6 @@ function estimateNoteHtml(legs: Leg[]): string {
 /* ── 시간 계산 (수동 오버라이드가 있으면 그 시각을 기준으로 이어서 계산) ── */
 function timeKey(dayId: string, placeId: string): string {
   return dayId + '|' + placeId;
-}
-
-/**
- * 사용자가 친 시각 문자열을 24시간 "HH:MM"으로 정규화. "930"·"9:30"·"09:30" 모두 허용하고,
- * 범위를 벗어나거나 해석할 수 없으면 null(→ 호출부가 계산값으로 되돌림).
- */
-function parseTimeInput(raw: string): string | null {
-  const s = raw.trim();
-  if (!s) return null;
-  const digits = s.replace(/[^0-9]/g, '');
-  if (!digits) return null; // "abc"처럼 숫자가 하나도 없으면 Number('')===0에 걸리지 않도록 먼저 차단
-  let h: number;
-  let m: number;
-  if (s.includes(':')) {
-    const [hs, ms] = s.split(':');
-    h = Number(hs);
-    m = Number(ms);
-  } else if (digits.length === 3) {
-    h = Number(digits.slice(0, 1));
-    m = Number(digits.slice(1));
-  } else if (digits.length === 4) {
-    h = Number(digits.slice(0, 2));
-    m = Number(digits.slice(2));
-  } else if (digits.length <= 2) {
-    h = Number(digits);
-    m = 0;
-  } else {
-    return null;
-  }
-  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
-  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
-  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
-}
-
-function minToHHMM(min: number): string {
-  const m = ((min % 1440) + 1440) % 1440;
-  const h = Math.floor(m / 60);
-  const mm = m % 60;
-  return String(h).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
 }
 
 function computeStopTimes(day: RouteDay, stops: Place[], legs: Leg[]): string[] {
