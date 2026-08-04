@@ -110,6 +110,10 @@
 
 .tc-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
+/* ── 항공편(입국/출국) ── */
+.tc-airport-group { display: flex; flex-direction: column; gap: 8px; }
+.tc-airport-hint { margin: 7px 0 0; font-size: 11px; color: #94A3B8; line-height: 1.55; }
+
 /* ── 목적지 이미지 미리보기 ── */
 .tc-preview {
   display: none;

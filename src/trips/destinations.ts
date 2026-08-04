@@ -282,7 +282,27 @@ export async function repairOrphanPlaces(firstDestId: string, orphanIds: string[
 export async function createDestination(
   tripId: string,
   name: string,
-  opts: { lat?: number | null; lng?: number | null; startDate?: string | null; endDate?: string | null; sortOrder?: number } = {}
+  opts: {
+    lat?: number | null;
+    lng?: number | null;
+    startDate?: string | null;
+    endDate?: string | null;
+    sortOrder?: number;
+    // 여행 생성/편집 시점에 이미 입국/출국(또는 여행지 간 이동) 항공편을 입력받은 경우 —
+    // 나중에 updateDestination으로 따로 덧붙이지 않고 insert 한 번에 같이 저장한다.
+    arrivalAirport?: string | null;
+    arrivalTime?: string | null;
+    arrivalLat?: number | null;
+    arrivalLng?: number | null;
+    arrivalPhotoUrl?: string | null;
+    arrivalRating?: number | null;
+    departureAirport?: string | null;
+    departureTime?: string | null;
+    departureLat?: number | null;
+    departureLng?: number | null;
+    departurePhotoUrl?: string | null;
+    departureRating?: number | null;
+  } = {}
 ): Promise<TripDestination | null> {
   const { data, error } = await supabase
     .from('trip_destinations')
@@ -294,6 +314,18 @@ export async function createDestination(
       start_date: opts.startDate ?? null,
       end_date: opts.endDate ?? null,
       sort_order: opts.sortOrder ?? 0,
+      arrival_airport: opts.arrivalAirport ?? null,
+      arrival_time: opts.arrivalTime ?? null,
+      arrival_lat: opts.arrivalLat ?? null,
+      arrival_lng: opts.arrivalLng ?? null,
+      arrival_photo_url: opts.arrivalPhotoUrl ?? null,
+      arrival_rating: opts.arrivalRating ?? null,
+      departure_airport: opts.departureAirport ?? null,
+      departure_time: opts.departureTime ?? null,
+      departure_lat: opts.departureLat ?? null,
+      departure_lng: opts.departureLng ?? null,
+      departure_photo_url: opts.departurePhotoUrl ?? null,
+      departure_rating: opts.departureRating ?? null,
     })
     .select()
     .single();

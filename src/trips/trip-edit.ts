@@ -7,6 +7,8 @@ import {
   deleteDestination,
   isSyntheticDestination,
 } from './destinations';
+import { mountAirportPicker, EMPTY_AIRPORT_VALUE } from './airportPicker';
+import type { AirportValue } from './airportPicker';
 import type { Trip } from '../types/database';
 import './trip-create.css';
 import './trip-edit.css';
@@ -96,6 +98,17 @@ interface WorkingDest {
   name: string;
   start: string; // <input type=date> value, '' 허용
   end: string;
+  /** 이 여행지로 "들어오는" 항공편 — 첫 여행지는 입국(국제선), 중간 여행지는 이전 여행지에서
+   *  옮겨오는 이동 항공편(있으면). */
+  arrival: AirportValue;
+  /** 이 여행지에서 "나가는" 항공편 — 마지막 여행지는 출국(국제선), 중간 여행지는 다음
+   *  여행지로 옮겨가는 이동 항공편(있으면). */
+  departure: AirportValue;
+}
+
+/** 이름/시각 중 하나라도 있으면 "입력된 항공편"으로 친다 */
+function hasAirportInfo(a: AirportValue): boolean {
+  return !!(a.airport || a.time);
 }
 
 /**
@@ -125,9 +138,17 @@ export function openEditTripModal(trip: Trip, onSaved: () => void): void {
     '      <input class="tc-input" id="te-headcount" type="number" min="1" placeholder="2" value="' + (trip.headcount ?? '') + '" />',
     '    </div>',
     '    <div class="tc-field">',
+    '      <label class="tc-field-label">입국</label>',
+    '      <div class="te-airport-slot" id="te-arrival-mount"></div>',
+    '    </div>',
+    '    <div class="tc-field">',
     '      <label class="tc-field-label">여행지</label>',
     '      <div class="te-dest-list" id="te-dest-list"></div>',
     '      <button type="button" class="te-dest-add" id="te-dest-add">' + ICON_PLUS + ' 여행지 추가</button>',
+    '    </div>',
+    '    <div class="tc-field">',
+    '      <label class="tc-field-label">출국</label>',
+    '      <div class="te-airport-slot" id="te-departure-mount"></div>',
     '    </div>',
     '    <p class="tc-error" id="te-error"></p>',
     '    <div class="te-danger-row">',
@@ -171,12 +192,37 @@ export function openEditTripModal(trip: Trip, onSaved: () => void): void {
   /* ── 여행지 목록 (로드 후 채움 — 합성/실제 모두 loadDestinations가 통일해서 줌) ── */
   let working: WorkingDest[] = [];
   const listEl = overlay.querySelector('#te-dest-list') as HTMLElement;
+  const arrivalMount = overlay.querySelector('#te-arrival-mount') as HTMLElement;
+  const departureMount = overlay.querySelector('#te-departure-mount') as HTMLElement;
+  // 여행지 사이 "이동 항공편" 칸을 펼쳐둔 갭(gap) 인덱스 — DB에 저장하는 값이 아니라
+  // 이 모달이 열려있는 동안만 기억하는 UI 상태(이미 값이 있는 갭은 항상 펼쳐짐).
+  const openGaps = new Set<number>();
+
+  /** 맨 위 "입국"(첫 여행지로 들어오는 항공편) / 맨 아래 "출국"(마지막 여행지에서 나가는
+   *  항공편) 칸 — 여행지가 추가/삭제되면 첫/마지막이 바뀌므로 목록과 함께 다시 그린다. */
+  function renderAirportEdges(): void {
+    arrivalMount.innerHTML = '';
+    departureMount.innerHTML = '';
+    if (working.length === 0) return;
+    mountAirportPicker(arrivalMount, {
+      label: '입국',
+      placeholder: '입국 공항 (예: 수완나품 BKK)',
+      initial: working[0].arrival,
+      onChange: (v) => { working[0].arrival = v; },
+    });
+    mountAirportPicker(departureMount, {
+      label: '출국',
+      placeholder: '출국 공항 (예: 인천 ICN)',
+      initial: working[working.length - 1].departure,
+      onChange: (v) => { working[working.length - 1].departure = v; },
+    });
+  }
 
   function renderDestRows(): void {
     listEl.innerHTML = working
       .map((w, i) => {
         const canRemove = working.length > 1;
-        return [
+        const row = [
           '<div class="te-dest-row" data-idx="' + i + '">',
           '  <input class="te-dest-input te-dest-name" type="text" placeholder="예: 치앙마이" value="' + escapeHtml(w.name) + '" data-idx="' + i + '" />',
           '  <input class="te-dest-input te-dest-date" type="date" value="' + w.start + '" data-idx="' + i + '" data-field="start" />',
@@ -185,6 +231,21 @@ export function openEditTripModal(trip: Trip, onSaved: () => void): void {
           canRemove ? '  <button type="button" class="te-dest-remove" data-idx="' + i + '" title="여행지 삭제">' + ICON_CLOSE + '</button>' : '<span class="te-dest-remove-spacer"></span>',
           '</div>',
         ].join('');
+
+        // 마지막 행 다음엔 갭이 없다(마지막 여행지의 "나가는" 항공편은 위의 "출국" 칸이 담당)
+        if (i === working.length - 1) return row;
+        const next = working[i + 1];
+        const expanded = openGaps.has(i) || hasAirportInfo(w.departure) || hasAirportInfo(next.arrival);
+        const gap = expanded
+          ? [
+              '<div class="te-gap te-gap-open" data-gap-idx="' + i + '">',
+              '  <div class="te-gap-label">이동 항공편<button type="button" class="te-gap-collapse" data-gap-idx="' + i + '" title="이동 항공편 지우기">' + ICON_CLOSE + '</button></div>',
+              '  <div class="te-gap-mount" data-role="dep" data-gap-idx="' + i + '"></div>',
+              '  <div class="te-gap-mount" data-role="arr" data-gap-idx="' + i + '"></div>',
+              '</div>',
+            ].join('')
+          : '<button type="button" class="te-gap-add" data-gap-idx="' + i + '">' + ICON_PLUS + ' 이동 항공편 추가</button>';
+        return row + gap;
       })
       .join('');
 
@@ -207,6 +268,40 @@ export function openEditTripModal(trip: Trip, onSaved: () => void): void {
         const idx = Number((el as HTMLElement).dataset.idx);
         working.splice(idx, 1);
         renderDestRows();
+        renderAirportEdges();
+      });
+    });
+    listEl.querySelectorAll('.te-gap-add').forEach((el) => {
+      el.addEventListener('click', () => {
+        openGaps.add(Number((el as HTMLElement).dataset.gapIdx));
+        renderDestRows();
+      });
+    });
+    listEl.querySelectorAll('.te-gap-collapse').forEach((el) => {
+      el.addEventListener('click', () => {
+        const idx = Number((el as HTMLElement).dataset.gapIdx);
+        openGaps.delete(idx);
+        working[idx].departure = { ...EMPTY_AIRPORT_VALUE };
+        working[idx + 1].arrival = { ...EMPTY_AIRPORT_VALUE };
+        renderDestRows();
+      });
+    });
+    listEl.querySelectorAll('.te-gap-mount[data-role="dep"]').forEach((el) => {
+      const idx = Number((el as HTMLElement).dataset.gapIdx);
+      mountAirportPicker(el as HTMLElement, {
+        label: (working[idx].name || '이전 여행지') + ' 출발',
+        placeholder: '출발 공항',
+        initial: working[idx].departure,
+        onChange: (v) => { working[idx].departure = v; },
+      });
+    });
+    listEl.querySelectorAll('.te-gap-mount[data-role="arr"]').forEach((el) => {
+      const idx = Number((el as HTMLElement).dataset.gapIdx); // 갭 인덱스 i → 도착지는 working[i+1]
+      mountAirportPicker(el as HTMLElement, {
+        label: (working[idx + 1].name || '다음 여행지') + ' 도착',
+        placeholder: '도착 공항',
+        initial: working[idx + 1].arrival,
+        onChange: (v) => { working[idx + 1].arrival = v; },
       });
     });
   }
@@ -215,8 +310,9 @@ export function openEditTripModal(trip: Trip, onSaved: () => void): void {
     // 센스있는 기본값: 새 여행지의 시작일을 직전 여행지의 종료일로 자동 세팅
     // (예: 방콕 7.21~7.25 다음에 추가하면 새 여행지가 7.25부터 시작하도록 이어붙임)
     const prevEnd = working[working.length - 1]?.end || '';
-    working.push({ realId: null, name: '', start: prevEnd, end: '' });
+    working.push({ realId: null, name: '', start: prevEnd, end: '', arrival: { ...EMPTY_AIRPORT_VALUE }, departure: { ...EMPTY_AIRPORT_VALUE } });
     renderDestRows();
+    renderAirportEdges();
     const inputs = listEl.querySelectorAll('.te-dest-name');
     (inputs[inputs.length - 1] as HTMLInputElement)?.focus();
   });
@@ -227,8 +323,19 @@ export function openEditTripModal(trip: Trip, onSaved: () => void): void {
       name: d.name,
       start: d.start_date ?? '',
       end: d.end_date ?? '',
+      arrival: {
+        airport: d.arrival_airport ?? null, time: d.arrival_time ?? null,
+        lat: d.arrival_lat ?? null, lng: d.arrival_lng ?? null,
+        photoUrl: d.arrival_photo_url ?? null, rating: d.arrival_rating ?? null,
+      },
+      departure: {
+        airport: d.departure_airport ?? null, time: d.departure_time ?? null,
+        lat: d.departure_lat ?? null, lng: d.departure_lng ?? null,
+        photoUrl: d.departure_photo_url ?? null, rating: d.departure_rating ?? null,
+      },
     }));
     renderDestRows();
+    renderAirportEdges();
   });
 
   const form = overlay.querySelector('#te-form') as HTMLFormElement;
@@ -285,9 +392,13 @@ async function handleSave(
 
     const original = await loadDestinations(trip);
     const originalIsSynthetic = original.length === 1 && isSyntheticDestination(original[0].id);
+    // 항공편을 하나라도 입력했으면 legacy 컬럼(trips.destinations)엔 저장할 곳이 없으므로
+    // (arrival_*/departure_*는 실제 trip_destinations 행에만 있음) 반드시 실제 행을 만들어야 한다.
+    const singleWithoutAirport =
+      cleaned.length === 1 && !hasAirportInfo(cleaned[0].arrival) && !hasAirportInfo(cleaned[0].departure);
 
-    if (originalIsSynthetic && cleaned.length === 1 && cleaned[0].realId === null) {
-      // 아직 여행지를 1개만 쓰는 여행 — trip_destinations 테이블을 만들 필요 없이
+    if (originalIsSynthetic && singleWithoutAirport && cleaned[0].realId === null) {
+      // 아직 여행지를 1개만 쓰고 항공편도 없는 여행 — trip_destinations 테이블을 만들 필요 없이
       // 기존 legacy 컬럼만 갱신(불필요한 스키마 전환을 피함).
       await supabase
         .from('trips')
@@ -298,7 +409,7 @@ async function handleSave(
         })
         .eq('id', trip.id);
     } else {
-      // 여행지가 여러 곳이 되는 순간부터는 전부 실제 trip_destinations 행으로 통일.
+      // 여행지가 여러 곳이거나 항공편을 입력한 순간부터는 전부 실제 trip_destinations 행으로 통일.
       // (synthetic이었던 첫 여행지도 여기서 함께 실제 행으로 만들어짐 — 안 그러면
       //  다음 로드 때 trip_destinations가 비어있지 않아 그 여행지 정보가 사라짐)
       const keepIds = new Set<string>();
@@ -309,14 +420,31 @@ async function handleSave(
       // 기존 장소가 새 여행지에도 새로 추가한 여행지에도 안 속하게 돼버림)
       let migratedSyntheticDestId: string | null = null;
       for (const w of cleaned) {
+        const airportFields = {
+          arrivalAirport: w.arrival.airport, arrivalTime: w.arrival.time,
+          arrivalLat: w.arrival.lat, arrivalLng: w.arrival.lng,
+          arrivalPhotoUrl: w.arrival.photoUrl, arrivalRating: w.arrival.rating,
+          departureAirport: w.departure.airport, departureTime: w.departure.time,
+          departureLat: w.departure.lat, departureLng: w.departure.lng,
+          departurePhotoUrl: w.departure.photoUrl, departureRating: w.departure.rating,
+        };
         if (w.realId) {
-          await updateDestination(w.realId, { name: w.name, start_date: w.start || null, end_date: w.end || null, sort_order: sortOrder });
+          await updateDestination(w.realId, {
+            name: w.name, start_date: w.start || null, end_date: w.end || null, sort_order: sortOrder,
+            arrival_airport: airportFields.arrivalAirport, arrival_time: airportFields.arrivalTime,
+            arrival_lat: airportFields.arrivalLat, arrival_lng: airportFields.arrivalLng,
+            arrival_photo_url: airportFields.arrivalPhotoUrl, arrival_rating: airportFields.arrivalRating,
+            departure_airport: airportFields.departureAirport, departure_time: airportFields.departureTime,
+            departure_lat: airportFields.departureLat, departure_lng: airportFields.departureLng,
+            departure_photo_url: airportFields.departurePhotoUrl, departure_rating: airportFields.departureRating,
+          });
           keepIds.add(w.realId);
         } else {
           const created = await createDestination(trip.id, w.name, {
             startDate: w.start || null,
             endDate: w.end || null,
             sortOrder,
+            ...airportFields,
           });
           if (created) {
             keepIds.add(created.id);
