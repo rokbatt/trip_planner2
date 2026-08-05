@@ -72,8 +72,6 @@ const IC_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const IC_GRIP = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>';
 const IC_EXTLINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>';
 const IC_PIN_SMALL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.5 7-11.5A7 7 0 0 0 5 9.5C5 14.5 12 21 12 21Z"/></svg>';
-/** 지도 열기/닫기 토글에만 쓰는 아이콘 — 카드의 "지도에서 보기"(IC_PIN_SMALL)와 구분 */
-const IC_MAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3 3 5v16l6-2 6 2 6-2V3l-6 2-6-2Z"/><path d="M9 3v16M15 5v16"/></svg>';
 const IC_STAR = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.8 5.9 20.4 7.2 13.7 2.2 9l6.8-.8z"/></svg>';
 const IC_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
 
@@ -721,12 +719,14 @@ function shellHtml(): string {
     '        <button type="button" class="tl-segment" data-view="all">전체</button>',
     '      </div>',
     '      <button type="button" class="tl-nowbtn" id="tl-now-btn" hidden>' + IC_CLOCK + '<span>지금</span></button>',
-    '      <button type="button" class="tl-mapbtn" id="tl-map-toggle" aria-pressed="true" title="지도 열기/닫기">' + IC_MAP + '<span>지도</span></button>',
     '      <button type="button" class="tl-routebtn" id="tl-to-route">' + IC_ARROW_BACK + ' 동선 수정</button>',
     '    </div>',
     '  </div>',
     '  <div class="tl-body" id="tl-body">',
     '    <div class="tl-main" id="tl-main"></div>',
+    '    <div class="tl-map-handle-col">',
+    '      <button type="button" class="tl-map-handle" id="tl-map-toggle" aria-pressed="true" title="지도 열기/닫기">' + IC_CHEVRON_DOWN + '</button>',
+    '    </div>',
     '    <div class="tl-mapcol" id="tl-mapcol">',
     '      <div class="tl-map" id="tl-map"></div>',
     '      <div class="tl-map-legend" id="tl-map-legend"></div>',
@@ -1184,19 +1184,50 @@ function clearMapOverlays(): void {
   mapLines = [];
 }
 
-/** 번호가 박힌 물방울 핀 — 카드의 순번 배지와 같은 색·같은 숫자라 둘이 바로 이어진다 */
+const PIN_TAIL_RATIO = 1.5;
+
+/** 반지름 r인 원(중심 cx,cy)에 외부 접선 두 개를 그어 tip에서 만나는 "물방울(핀)" 윤곽 경로.
+ *  ROUTE의 지도 핀(buildMarkerV2)과 같은 모양 — 두 화면의 핀이 한 눈에 같은 것으로 읽히도록. */
+function pinTearPath(cx: number, cy: number, r: number, tipY: number): string {
+  const d = tipY - cy;
+  const phi = Math.acos(r / d);
+  const a1 = Math.PI / 2 - phi;
+  const a2 = Math.PI / 2 + phi;
+  const t1x = cx + r * Math.cos(a1);
+  const t1y = cy + r * Math.sin(a1);
+  const t2x = cx + r * Math.cos(a2);
+  const t2y = cy + r * Math.sin(a2);
+  return 'M' + t1x + ' ' + t1y + ' A' + r + ' ' + r + ' 0 1 0 ' + t2x + ' ' + t2y + ' L' + cx + ' ' + tipY + ' Z';
+}
+
+/** 번호가 박힌 물방울 핀 — ROUTE 지도 핀과 같은 모양: 색 채운 물방울 위에 살짝 작은 흰 원을 얹어
+ *  위쪽만 링처럼 보이고, 그 흰 원 안에 순번을 핀 색으로 적는다. 카드의 순번 배지와 같은 숫자라
+ *  둘이 바로 이어진다. */
 function pinIcon(g: any, n: number, color: string, active: boolean): any {
-  const w = active ? 40 : 32;
-  const h = active ? 52 : 42;
+  const r = active ? 15 : 12;
+  const pad = 10;
+  const tail = r * PIN_TAIL_RATIO;
+  const w = Math.ceil(r * 2 + pad);
+  const h = Math.ceil(r + tail + pad);
+  const cx = w / 2;
+  const tipY = h - pad / 2;
+  const headCy = tipY - tail;
+  const ringWidth = r * 0.24;
+  const whiteR = r - ringWidth;
+  const shadow =
+    '<ellipse cx="' + cx + '" cy="' + (tipY + r * 0.1) + '" rx="' + r * 0.42 + '" ry="' + r * 0.15 + '" fill="rgba(11,42,92,0.18)"/>';
   const svg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 32 42">' +
-    '<path d="M16 41C16 41 30 24.5 30 14.8A14 14 0 0 0 2 14.8C2 24.5 16 41 16 41Z" fill="' + color + '" stroke="#fff" stroke-width="2.5"/>' +
-    '<text x="16" y="20" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#fff">' + n + '</text>' +
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+    shadow +
+    '<path d="' + pinTearPath(cx, headCy, r, tipY) + '" fill="' + color + '"/>' +
+    '<circle cx="' + cx + '" cy="' + headCy + '" r="' + whiteR + '" fill="#FFFFFF"/>' +
+    '<text x="' + cx + '" y="' + (headCy + 4.2) + '" text-anchor="middle" font-family="system-ui,sans-serif" font-size="' +
+    Math.round(active ? 13 : 11) + '" font-weight="800" fill="' + color + '">' + n + '</text>' +
     '</svg>';
   return {
     url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
     scaledSize: new g.maps.Size(w, h),
-    anchor: new g.maps.Point(w / 2, h),
+    anchor: new g.maps.Point(cx, tipY),
   };
 }
 
