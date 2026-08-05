@@ -3468,38 +3468,37 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
 }
 
 /**
- * "소프트 스탠다드" 테마 — 구글 기본 지도에 가까운 익숙한 배색(크림 육지·파란 물·초록 공원)
- * 이면서, 채도를 낮춰서 Route(경로선)가 확실히 위로 떠오르게 한다. 지하철 노선 같은 세부
- * 정보나 동네/지역 이름 같은 글자 소음은 다 끄고, 건물(landscape.man_made)·공원·물 정도만
- * 색으로 구분되게 한다. 업체 POI 아이콘/라벨은 전부 끈다.
+ * "구글 기본 지도"를 베이스로 한 테마 — 색은 구글 지도를 열었을 때 보이는 배색(크림 육지·
+ * 파란 물·초록 공원·앰버 톤 대로) 그대로 두되, 채도/명도를 흰색 쪽으로 10%가량 섞어서
+ * 살짝 더 부드럽게 눌렀다(원색 그대로면 Route 경로선과 경쟁해서 튐).
+ * 글자는 "Reduced" 밀도 — 대표 지역명(행정동 단위)과 관광명소(POI attraction) 이름만
+ * 남기고, 동네 세부 이름·업체(카페/식당 등) POI·잔도로 이름은 다 끈다.
  */
 const MAP_STYLE_LIGHT = [
-  { elementType: 'geometry', stylers: [{ color: '#F5F6F1' }] },
+  { elementType: 'geometry', stylers: [{ color: '#F3F0EB' }] },
   { elementType: 'labels.text.fill', stylers: [{ color: '#A9B4C2' }] },
   { elementType: 'labels.text.stroke', stylers: [{ color: '#FFFFFF' }, { weight: 2 }] },
   { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-  // POI는 전부 숨기고 공원 지형만 남겨 위치 감각을 돕는다
+  // 업체 POI(카페·식당 등)는 숨기고, 공원 지형과 관광명소 이름만 다시 켠다
   { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#C9E0B7' }, { visibility: 'on' }] },
+  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#CBEABE' }, { visibility: 'on' }] },
+  { featureType: 'poi.attraction', elementType: 'labels', stylers: [{ visibility: 'on' }] },
   { featureType: 'administrative', elementType: 'geometry', stylers: [{ visibility: 'off' }] },
-  // 동네/지역 이름은 지도를 채우는 가장 큰 글자 소음이라 완전히 끈다(위치 감각은 도로망으로 충분)
-  { featureType: 'administrative.locality', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+  // 대표 지역명(행정동/구 단위)은 위치 감각에 도움되니 남기고, 동네 세부 이름만 끈다
+  { featureType: 'administrative.locality', elementType: 'labels', stylers: [{ visibility: 'on' }] },
   { featureType: 'administrative.neighborhood', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   // 도로는 유지하되 흰색~아주 연한 회색으로 (동선과 최대 대비)
   { featureType: 'road', elementType: 'geometry.fill', stylers: [{ color: '#FFFFFF' }] },
-  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#E1E4E8' }] },
-  { featureType: 'road.highway', elementType: 'geometry.fill', stylers: [{ color: '#FBFCFA' }] },
-  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#D3D9DF' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#E7E5E0' }] },
+  { featureType: 'road.highway', elementType: 'geometry.fill', stylers: [{ color: '#FFF9E4' }] },
+  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#E8C76C' }] },
   { featureType: 'road.highway', elementType: 'labels.text.fill', stylers: [{ color: '#B7C1CD' }] },
   { featureType: 'road.local', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   // 잔도로 이름까지는 필요 없음 — 주요 도로(고속도로)만 이름을 남긴다
   { featureType: 'road.arterial', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#A6D2EA' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#B3DEFF' }] },
   { featureType: 'water', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-  { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#F5F6F1' }] },
-  // 건물 등 인공 지형을 육지보다 살짝 다른 톤으로 — "여기 건물이 있다"는 감각만 남긴다.
-  // (대비를 더 키워봤지만 구글 원본 타일에 건물 폴리곤 데이터가 없는 지역(교외/외곽)에는
-  // 애초에 칠할 대상이 없어 색만 튀고 실효가 없었음 — 롤백)
-  { featureType: 'landscape.man_made', elementType: 'geometry', stylers: [{ color: '#EAEDF2' }] },
+  { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#F3F0EB' }] },
 ];
+
