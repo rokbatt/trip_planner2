@@ -847,148 +847,154 @@
 .rt-ai-modal {
   width: min(520px, 100%); max-height: min(78vh, 760px);
   display: flex; flex-direction: column;
-  background: #fff; border-radius: 18px; border: 1px solid var(--rt-line);
+  background: #fff; border-radius: 18px; border: 1px solid var(--rt-line, rgba(130,150,170,0.18));
   box-shadow: 0 24px 60px rgba(11,42,92,0.24);
   overflow: hidden;
 }
 .rt-ai-modal-head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
-  padding: 18px 20px 14px; border-bottom: var(--rt-dash); flex-shrink: 0;
+  padding: 18px 20px 14px; border-bottom: var(--rt-dash, 1px dashed rgba(130,150,170,0.22)); flex-shrink: 0;
 }
 .rt-ai-modal-eyebrow {
   font-size: 10px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--rt-blue);
+  color: var(--rt-blue, #0B7CC4);
 }
-.rt-ai-modal-title { margin-top: 3px; font-size: 17px; font-weight: 800; color: var(--rt-ink); }
+.rt-ai-modal-title { margin-top: 3px; font-size: 17px; font-weight: 800; color: var(--rt-ink, #0B2A5C); }
 .rt-ai-modal-close {
   border: none; background: none; cursor: pointer; padding: 4px;
-  color: var(--rt-ink-3); font-size: 15px; line-height: 1; font-family: inherit; flex-shrink: 0;
+  color: var(--rt-ink-3, #94A3B8); font-size: 15px; line-height: 1; font-family: inherit; flex-shrink: 0;
 }
-.rt-ai-modal-close:hover { color: var(--rt-ink); }
+.rt-ai-modal-close:hover { color: var(--rt-ink, #0B2A5C); }
 .rt-ai-modal-body { padding: 16px 20px 20px; overflow-y: auto; }
 .rt-ai-overview {
-  font-size: 12.5px; color: var(--rt-ink-2); line-height: 1.7;
-  padding-bottom: 14px; border-bottom: var(--rt-dash);
+  font-size: 12.5px; color: var(--rt-ink-2, #64748B); line-height: 1.7;
+  padding-bottom: 14px; border-bottom: var(--rt-dash, 1px dashed rgba(130,150,170,0.22));
 }
 .rt-ai-section-title {
   display: flex; align-items: center; gap: 6px;
-  margin: 18px 0 9px; font-size: 12px; font-weight: 800; color: var(--rt-ink);
+  margin: 18px 0 9px; font-size: 12px; font-weight: 800; color: var(--rt-ink, #0B2A5C);
 }
 .rt-ai-badge-est {
-  padding: 2px 6px; border-radius: 999px; background: var(--rt-mist);
-  color: var(--rt-ink-3); font-size: 9px; font-weight: 800;
+  padding: 2px 6px; border-radius: 999px; background: var(--rt-mist, #F1F6FB);
+  color: var(--rt-ink-3, #94A3B8); font-size: 9px; font-weight: 800;
 }
-.rt-ai-stop { padding: 13px 0; border-bottom: var(--rt-dash); }
+.rt-ai-stop { padding: 13px 0; border-bottom: var(--rt-dash, 1px dashed rgba(130,150,170,0.22)); }
 .rt-ai-stop-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.rt-ai-stop-name { font-size: 13px; font-weight: 800; color: var(--rt-ink); }
+.rt-ai-stop-name { font-size: 13px; font-weight: 800; color: var(--rt-ink, #0B2A5C); }
 .rt-ai-chip {
-  padding: 3px 8px; border-radius: 999px; background: var(--rt-ice);
-  color: var(--rt-blue); font-size: 10px; font-weight: 700;
+  padding: 3px 8px; border-radius: 999px; background: var(--rt-ice, #EAF6FD);
+  color: var(--rt-blue, #0B7CC4); font-size: 10px; font-weight: 700;
 }
 .rt-ai-list { margin: 8px 0 0; padding-left: 17px; }
-.rt-ai-list li { font-size: 11.5px; color: var(--rt-ink-2); line-height: 1.7; }
+.rt-ai-list li { font-size: 11.5px; color: var(--rt-ink-2, #64748B); line-height: 1.7; }
 .rt-ai-tip {
   display: flex; align-items: flex-start; gap: 6px; margin-top: 8px;
-  padding: 8px 10px; border-radius: 9px; background: var(--rt-mist);
-  font-size: 11.5px; color: var(--rt-ink-2); line-height: 1.6;
+  padding: 8px 10px; border-radius: 9px; background: var(--rt-mist, #F1F6FB);
+  font-size: 11.5px; color: var(--rt-ink-2, #64748B); line-height: 1.6;
 }
-.rt-ai-tip svg { width: 12px; height: 12px; flex-shrink: 0; margin-top: 2px; color: var(--rt-blue); }
+.rt-ai-tip svg { width: 12px; height: 12px; flex-shrink: 0; margin-top: 2px; color: var(--rt-blue, #0B7CC4); }
 .rt-ai-extras { display: flex; flex-direction: column; gap: 9px; }
 .rt-ai-extra { display: flex; align-items: flex-start; gap: 10px; }
 .rt-ai-extra-time {
   flex-shrink: 0; min-width: 42px; font-size: 11px; font-weight: 800;
-  color: var(--rt-blue); font-variant-numeric: tabular-nums;
+  color: var(--rt-blue, #0B7CC4); font-variant-numeric: tabular-nums;
 }
-.rt-ai-extra-title { font-size: 12px; font-weight: 700; color: var(--rt-ink); }
-.rt-ai-extra-detail { margin-top: 2px; font-size: 11.5px; color: var(--rt-ink-3); line-height: 1.6; }
-.rt-ai-budget { border: 1px solid var(--rt-line); border-radius: 11px; overflow: hidden; }
+.rt-ai-extra-title { font-size: 12px; font-weight: 700; color: var(--rt-ink, #0B2A5C); }
+.rt-ai-extra-detail { margin-top: 2px; font-size: 11.5px; color: var(--rt-ink-3, #94A3B8); line-height: 1.6; }
+.rt-ai-budget { border: 1px solid var(--rt-line, rgba(130,150,170,0.18)); border-radius: 11px; overflow: hidden; }
 .rt-ai-budget-row {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 9px 12px; font-size: 11.5px; color: var(--rt-ink-2);
-  border-bottom: 1px solid var(--rt-line);
+  padding: 9px 12px; font-size: 11.5px; color: var(--rt-ink-2, #64748B);
+  border-bottom: 1px solid var(--rt-line, rgba(130,150,170,0.18));
 }
 .rt-ai-budget-row:last-child { border-bottom: none; }
-.rt-ai-budget-row b { color: var(--rt-ink); font-weight: 800; font-variant-numeric: tabular-nums; }
-.rt-ai-budget-row.total { background: var(--rt-mist); }
+.rt-ai-budget-row b { color: var(--rt-ink, #0B2A5C); font-weight: 800; font-variant-numeric: tabular-nums; }
+.rt-ai-budget-row.total { background: var(--rt-mist, #F1F6FB); }
 .rt-ai-disclaimer {
   margin-top: 18px; padding: 10px 12px; border-radius: 10px;
-  background: var(--rt-mist); color: var(--rt-ink-3);
+  background: var(--rt-mist, #F1F6FB); color: var(--rt-ink-3, #94A3B8);
   font-size: 10.5px; line-height: 1.65;
 }
 
 /* ── AI 일정 짜기 요청사항 모달 ── */
 .rt-ai-notes-modal { width: min(460px, 100%); }
 .rt-ai-notes-hint {
-  font-size: 11.5px; color: var(--rt-ink-3); line-height: 1.65; margin-bottom: 10px;
+  font-size: 11.5px; color: var(--rt-ink-3, #94A3B8); line-height: 1.65; margin-bottom: 10px;
 }
 .rt-ai-notes-input {
   width: 100%; box-sizing: border-box; resize: vertical; min-height: 84px;
-  padding: 10px 12px; border: 1px solid var(--rt-line); border-radius: 10px;
-  font-family: inherit; font-size: 12.5px; color: var(--rt-ink); line-height: 1.6;
-  background: var(--rt-mist);
+  padding: 10px 12px; border: 1px solid var(--rt-line, rgba(130,150,170,0.18)); border-radius: 10px;
+  font-family: inherit; font-size: 12.5px; color: var(--rt-ink, #0B2A5C); line-height: 1.6;
+  background: var(--rt-mist, #F1F6FB);
 }
-.rt-ai-notes-input:focus { outline: none; border-color: var(--rt-blue); background: #fff; }
-.rt-ai-notes-input::placeholder { color: var(--rt-ink-4); }
+.rt-ai-notes-input:focus { outline: none; border-color: var(--rt-blue, #0B7CC4); background: #fff; }
+.rt-ai-notes-input::placeholder { color: var(--rt-ink-4, #B0BAC5); }
 .rt-ai-notes-actions {
   display: flex; justify-content: flex-end; gap: 8px;
-  padding: 14px 20px 18px; border-top: var(--rt-dash);
+  padding: 14px 20px 18px; border-top: var(--rt-dash, 1px dashed rgba(130,150,170,0.22));
 }
 .rt-ai-notes-cancel {
-  padding: 9px 14px; border-radius: 10px; border: 1px solid var(--rt-line); background: #fff;
-  color: var(--rt-ink-2); font-size: 12px; font-weight: 700; font-family: inherit; cursor: pointer;
+  padding: 9px 14px; border-radius: 10px; border: 1px solid var(--rt-line, rgba(130,150,170,0.18)); background: #fff;
+  color: var(--rt-ink-2, #64748B); font-size: 12px; font-weight: 700; font-family: inherit; cursor: pointer;
 }
-.rt-ai-notes-cancel:hover { background: var(--rt-mist); }
+.rt-ai-notes-cancel:hover { background: var(--rt-mist, #F1F6FB); }
 .rt-ai-notes-start {
   display: flex; align-items: center; gap: 6px;
-  padding: 9px 16px; border-radius: 10px; border: none; background: var(--rt-blue);
+  padding: 9px 16px; border-radius: 10px; border: none; background: var(--rt-blue, #0B7CC4);
   color: #fff; font-size: 12px; font-weight: 800; font-family: inherit; cursor: pointer;
 }
 .rt-ai-notes-start:hover { filter: brightness(1.06); }
 .rt-ai-notes-start svg { width: 13px; height: 13px; }
 
-/* ── "숙소 들르기" 목적 입력 모달 ── */
+/* ── "숙소 들르기" 목적 입력 모달 ──
+   이 모달은 document.body에 직접 붙는데(오버레이라 .rt-shell 바깥), 디자인 토큰(--rt-*)은
+   .rt-shell에서만 정의돼 있어 상속되지 않는다 — 그래서 아래 모든 var()에 리터럴 폴백값을
+   같이 적어서, 토큰이 안 잡혀도(테두리 없음/버튼 흰 글씨 안 보임 등) 깨지지 않게 한다. */
 .rt-revisit-modal { width: min(420px, 100%); }
 .rt-revisit-presets { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
 .rt-revisit-chip {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 9px 14px; border-radius: 999px; border: 1px solid var(--rt-line);
-  background: #fff; color: var(--rt-ink-2);
+  padding: 9px 14px; border-radius: 999px; border: 1px solid var(--rt-line, rgba(130,150,170,0.18));
+  background: #fff; color: var(--rt-ink-2, #64748B);
   font-size: 12.5px; font-weight: 700; font-family: inherit; cursor: pointer;
-  transition: border-color var(--rt-ease), color var(--rt-ease), background var(--rt-ease);
+  transition: border-color var(--rt-ease, 150ms ease), color var(--rt-ease, 150ms ease), background var(--rt-ease, 150ms ease);
 }
 .rt-revisit-chip-icon { display: flex; width: 15px; height: 15px; flex-shrink: 0; }
 .rt-revisit-chip-icon svg { width: 100%; height: 100%; }
-.rt-revisit-chip:hover { border-color: var(--rt-blue); color: var(--rt-blue); }
-.rt-revisit-chip.active { border-color: var(--rt-blue); background: var(--rt-ice); color: var(--rt-blue); }
+.rt-revisit-chip:hover { border-color: var(--rt-blue, #0B7CC4); color: var(--rt-blue, #0B7CC4); }
+.rt-revisit-chip.active {
+  border-color: var(--rt-blue, #0B7CC4); background: var(--rt-ice, #EAF6FD); color: var(--rt-blue, #0B7CC4);
+}
 .rt-revisit-field-label {
-  display: block; font-size: 11.5px; font-weight: 700; color: var(--rt-ink-3); margin-bottom: 8px;
+  display: block; font-size: 11.5px; font-weight: 700; color: var(--rt-ink-3, #94A3B8); margin-bottom: 8px;
 }
 .rt-revisit-input-row {
   display: flex; align-items: center; gap: 8px;
-  border: 1px solid var(--rt-line); border-radius: 10px; padding: 10px 12px;
-  background: var(--rt-mist); transition: border-color var(--rt-ease), background var(--rt-ease);
+  border: 1px solid var(--rt-line, rgba(130,150,170,0.18)); border-radius: 10px; padding: 10px 12px;
+  background: var(--rt-mist, #F1F6FB);
+  transition: border-color var(--rt-ease, 150ms ease), background var(--rt-ease, 150ms ease);
 }
-.rt-revisit-input-row:focus-within { border-color: var(--rt-blue); background: #fff; }
+.rt-revisit-input-row:focus-within { border-color: var(--rt-blue, #0B7CC4); background: #fff; }
 .rt-revisit-input {
   flex: 1; min-width: 0; border: none; background: none; padding: 0;
-  font-family: inherit; font-size: 12.5px; color: var(--rt-ink);
+  font-family: inherit; font-size: 12.5px; color: var(--rt-ink, #0B2A5C);
 }
 .rt-revisit-input:focus { outline: none; }
-.rt-revisit-input::placeholder { color: var(--rt-ink-4); }
+.rt-revisit-input::placeholder { color: var(--rt-ink-4, #B0BAC5); }
 .rt-revisit-counter {
-  flex-shrink: 0; font-size: 10.5px; color: var(--rt-ink-4); font-variant-numeric: tabular-nums;
+  flex-shrink: 0; font-size: 10.5px; color: var(--rt-ink-4, #B0BAC5); font-variant-numeric: tabular-nums;
 }
 .rt-revisit-actions {
   display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0;
-  padding: 14px 20px 18px; border-top: var(--rt-dash);
+  padding: 14px 20px 18px; border-top: var(--rt-dash, 1px dashed rgba(130,150,170,0.22));
 }
 .rt-revisit-cancel {
-  padding: 9px 16px; border-radius: 10px; border: 1px solid var(--rt-line); background: #fff;
-  color: var(--rt-ink-2); font-size: 12px; font-weight: 700; font-family: inherit; cursor: pointer;
+  padding: 9px 16px; border-radius: 10px; border: 1px solid var(--rt-line, rgba(130,150,170,0.18)); background: #fff;
+  color: var(--rt-ink-2, #64748B); font-size: 12px; font-weight: 700; font-family: inherit; cursor: pointer;
 }
-.rt-revisit-cancel:hover { background: var(--rt-mist); }
+.rt-revisit-cancel:hover { background: var(--rt-mist, #F1F6FB); }
 .rt-revisit-confirm {
-  padding: 9px 20px; border-radius: 10px; border: none; background: var(--rt-navy);
+  padding: 9px 20px; border-radius: 10px; border: none; background: var(--rt-navy, #0B2A5C);
   color: #fff; font-size: 12px; font-weight: 800; font-family: inherit; cursor: pointer;
 }
 .rt-revisit-confirm:hover { filter: brightness(1.1); }
