@@ -3468,37 +3468,25 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
 }
 
 /**
- * "구글 기본 지도"를 베이스로 한 테마 — 색은 구글 지도를 열었을 때 보이는 배색(크림 육지·
- * 파란 물·초록 공원·앰버 톤 대로) 그대로 두되, 채도/명도를 흰색 쪽으로 10%가량 섞어서
- * 살짝 더 부드럽게 눌렀다(원색 그대로면 Route 경로선과 경쟁해서 튐).
- * 글자는 "Reduced" 밀도 — 대표 지역명(행정동 단위)과 관광명소(POI attraction) 이름만
- * 남기고, 동네 세부 이름·업체(카페/식당 등) POI·잔도로 이름은 다 끈다.
+ * "구글 기본 지도" 그대로 — 색은 아예 건드리지 않는다(geometry color styler 없음).
+ * 커스텀 색을 섞어봤더니 실제 구글 지도와 미묘하게 달라 보인다는 피드백이 있어서,
+ * 색은 구글이 렌더링하는 원본 그대로 두고 라벨(글자) 노출만 "Reduced" 밀도로 줄인다 —
+ * 대표 지역명(행정동 단위)과 관광명소(POI attraction) 이름만 남기고, 동네 세부 이름·
+ * 업체(카페/식당 등) POI·잔도로 이름·지하철 노선은 다 끈다.
  */
 const MAP_STYLE_LIGHT = [
-  { elementType: 'geometry', stylers: [{ color: '#F3F0EB' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#A9B4C2' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#FFFFFF' }, { weight: 2 }] },
-  { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-  // 업체 POI(카페·식당 등)는 숨기고, 공원 지형과 관광명소 이름만 다시 켠다
+  // 업체 POI(카페·식당 등)는 숨기고, 공원과 관광명소 이름만 다시 켠다(색은 구글 기본 그대로)
   { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#CBEABE' }, { visibility: 'on' }] },
+  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ visibility: 'on' }] },
   { featureType: 'poi.attraction', elementType: 'labels', stylers: [{ visibility: 'on' }] },
   { featureType: 'administrative', elementType: 'geometry', stylers: [{ visibility: 'off' }] },
   // 대표 지역명(행정동/구 단위)은 위치 감각에 도움되니 남기고, 동네 세부 이름만 끈다
   { featureType: 'administrative.locality', elementType: 'labels', stylers: [{ visibility: 'on' }] },
   { featureType: 'administrative.neighborhood', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-  // 도로는 유지하되 흰색~아주 연한 회색으로 (동선과 최대 대비)
-  { featureType: 'road', elementType: 'geometry.fill', stylers: [{ color: '#FFFFFF' }] },
-  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#E7E5E0' }] },
-  { featureType: 'road.highway', elementType: 'geometry.fill', stylers: [{ color: '#FFF9E4' }] },
-  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#E8C76C' }] },
-  { featureType: 'road.highway', elementType: 'labels.text.fill', stylers: [{ color: '#B7C1CD' }] },
   { featureType: 'road.local', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   // 잔도로 이름까지는 필요 없음 — 주요 도로(고속도로)만 이름을 남긴다
   { featureType: 'road.arterial', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#B3DEFF' }] },
   { featureType: 'water', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-  { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#F3F0EB' }] },
 ];
 
