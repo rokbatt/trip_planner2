@@ -247,8 +247,7 @@
 }
 .tl-dayhead-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .tl-dayhead-label {
-  font-family: 'Instrument Serif', Georgia, serif;
-  font-size: 26px; color: var(--tl-ink); letter-spacing: -0.015em; line-height: 1.1;
+  font-size: 22px; font-weight: 800; color: var(--tl-ink); letter-spacing: -0.01em; line-height: 1.1;
 }
 .tl-dayhead-date { font-size: 13px; font-weight: 700; color: var(--tl-ink-2); }
 .tl-dayhead-span {

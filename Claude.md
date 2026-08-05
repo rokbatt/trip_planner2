@@ -248,6 +248,11 @@ ROUTE의 `makeAnchorPlace`처럼 Timeline도 `buildAirportPlaceMap`으로 이름
 
 - **DAY 스트립**(상단): 날짜별 밀도를 막대로 나란히 비교 — 탭을 옮겨 다니지 않고도 어느 날이
   비었고 어느 날이 빡빡한지 한 줄에서 읽힌다(기존 일정표 앱에 없는 "날짜 간 비교")
+- **DAY 헤더의 "DAY N" 라벨**(`.tl-dayhead-label`)은 Instrument Serif가 아니라 **굵은 시스템
+  폰트**(`font-weight:800`)를 쓴다 — "제목=세리프" 규칙(2장)은 empty-state 같은 1회성 히어로
+  문구에 적용하는 것이고, 매 DAY마다 반복되는 이 라벨은 ROUTE의 `.rt-daytab-label`(굵은 sans)과
+  똑같은 취급이어야 한다. 세리프를 쓰면 얇고 화면마다 다르게 느껴져 "갑자기 폰트가 바뀐 것"처럼
+  보인다 — 실제로 사용자가 이 불일치를 발견해 되돌렸다.
 - **일정 카드**(좌): "Airport Lounge Boarding-Pass" 레퍼런스를 그대로 따른 구조.
   **사진이 카드 왼쪽 끝에서 위아래로 꽉 차고**(`.tl-card`는 `padding:0` + `overflow:hidden`이라
   왼쪽 모서리만 카드 radius대로 깎인다), 그 오른쪽 본문이
