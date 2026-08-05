@@ -70,6 +70,53 @@ const IC_ATM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 const IC_CART = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.2 11.2a1.5 1.5 0 0 0 1.5 1.2h8.3a1.5 1.5 0 0 0 1.5-1.2L21 8H6"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg>';
 const IC_STAR = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.3 6.9.7-5.1 4.6 1.4 6.8L12 17.6 5.9 20.4l1.4-6.8L2.2 9l6.9-.7L12 2z"/></svg>';
 
+/** Step1 지도 핀 전용 아이콘 세트 — ROUTE(route.ts)의 후보 핀과 똑같은 선(stroke) 스타일로
+ *  보이도록 그 파일의 아이콘 원본을 그대로 옮겨왔다(위의 IC_BED/IC_PLANE 등은 다른 UI에서도
+ *  쓰고 있어서 겹치지 않게 PIN_IC_ 접두사로 분리). */
+const PIN_IC_LANDMARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M4 21V10M20 21V10M2 10l10-6 10 6M6 10v7M10 10v7M14 10v7M18 10v7"/></svg>';
+const PIN_IC_FORK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v7a2 2 0 0 0 2 2v11M7 2v7M9 2v7M11 2v7M16 2c-1.5 0-3 1.5-3 4s1.5 4 3 4v10"/></svg>';
+const PIN_IC_TARGET = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/></svg>';
+const PIN_IC_BED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6M3 18v2M21 18v2M3 12V8a2 2 0 0 1 2-2h4v6"/></svg>';
+const PIN_IC_BAG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l1 12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L6 8Z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>';
+const PIN_IC_PLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 19.5l19-7.5-19-7.5 4 7.5-4 7.5z"/></svg>';
+const PIN_IC_COFFEE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13v6a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V8Z"/><path d="M17 9h1.5a2.5 2.5 0 0 1 0 5H17"/><path d="M8 2v2M11 2v2M14 2v2"/></svg>';
+const PIN_IC_BREAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c-4 0-9 3-9 8 0 6 5 10 9 10s9-4 9-10c0-5-5-8-9-8Z"/><path d="M7 14c1-2 2-3 5-3s4 1 5 3"/></svg>';
+const PIN_IC_GLASS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14l-7 9-7-9Z"/><path d="M12 12v9M8 21h8"/></svg>';
+const PIN_IC_TREE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 7 9h3l-4 6h4l-3 5h10l-3-5h4l-4-6h3L12 2Z"/><path d="M12 22v-4"/></svg>';
+const PIN_IC_TEMPLE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v3M12 5l8 6H4l8-6Z"/><path d="M5 11v9h14v-9"/><path d="M10 20v-5h4v5"/></svg>';
+const PIN_IC_FERRIS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16M6.3 6.3l11.4 11.4M17.7 6.3 6.3 17.7"/></svg>';
+
+/** place.category → 핀 선 아이콘. ROUTE의 SEARCH_CATEGORY_ICON과 같은 매핑(핀 스타일을
+ *  똑같이 맞추기 위해). 없으면 mood 4종으로 폴백. */
+const PIN_CATEGORY_ICON: Record<string, string> = {
+  '카페': PIN_IC_COFFEE,
+  '음식점': PIN_IC_FORK,
+  '베이커리': PIN_IC_BREAD,
+  '바': PIN_IC_GLASS,
+  '나이트라이프': PIN_IC_GLASS,
+  '관광명소': PIN_IC_LANDMARK,
+  '박물관': PIN_IC_LANDMARK,
+  '미술관': PIN_IC_LANDMARK,
+  '공원': PIN_IC_TREE,
+  '종교시설': PIN_IC_TEMPLE,
+  '명소': PIN_IC_LANDMARK,
+  '테마파크': PIN_IC_FERRIS,
+  '쇼핑': PIN_IC_BAG,
+  '숙소': PIN_IC_BED,
+  '공항': PIN_IC_PLANE,
+};
+const PIN_MOOD_ICON: Record<string, string> = {
+  '가고싶어': PIN_IC_LANDMARK,
+  '먹고싶어': PIN_IC_FORK,
+  '하고싶어': PIN_IC_TARGET,
+  '숙소': PIN_IC_BED,
+};
+/** ROUTE route.ts의 iconInner()와 동일 — 아이콘 svg에서 <svg> 껍데기만 벗겨 내부 마크업만 남긴다.
+ *  색/굵기는 감싸는 <g>에서 한 번에 지정(=핀 색상과 통일하기 위해). */
+function pinIconInner(svg: string): string {
+  return svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
+}
+
 const MOOD_LABEL: Record<string, string> = {
   '가고싶어': 'VISIT',
   '먹고싶어': 'FOOD',
@@ -466,7 +513,7 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
   currentTripId = tripId;
   slContainer = container;
 
-  container.innerHTML = '<div class="sl-loading">Shortlist 준비 중...</div>';
+  container.innerHTML = '<div class="sl-loading">STAY 준비 중...</div>';
 
   const [trip, places] = await Promise.all([loadTrip(tripId), loadPlaces(tripId)]);
   currentTrip = trip;
@@ -2219,14 +2266,17 @@ function pinTearPath(cx: number, cy: number, r: number, tipY: number): string {
 }
 
 const STEP1_PIN_HEAD_R = 12;
-const STEP1_PIN_FONT_SIZE = 16;
 const STEP1_PIN_TAIL_RATIO = 1.5;
-/** 회색이 아니라 mood(4개 게이트)별 색으로 채운 물방울 모양 핀 — ROUTE 핀과 같은 실루엣.
+/** 회색이 아니라 mood(4개 게이트)별 색으로 채운 물방울 모양 핀 — ROUTE의 "아직 담지 않은 후보"
+ *  핀과 같은 실루엣·아이콘 스타일(선 아이콘 + 그림자)을 쓰되, 색은 회청색이 아니라 이 화면이
+ *  원래 쓰던 mood색을, 크기도 이 화면 크기(STEP1_PIN_HEAD_R) 그대로 유지한다.
  *  Step1 지도(Brainstorm에서 담긴 장소 전체 조망)에서만 쓰고, Step2/3의 buildCategoryIcon(배경
  *  없는 순수 이모지)은 그대로 둔다 — 두 화면의 핀 스타일이 서로 다른 의미(전부 다 보기 vs
  *  후보 비교)를 갖고 있어 일부러 구분. */
 function buildStep1GatePin(g: any, mood: string | null, category?: string | null, name?: string | null): any {
-  const icon = isAirportPlace(name, category) ? '✈️' : CATEGORY_ICON[category ?? ''] || MOOD_ICON[mood ?? ''] || '📍';
+  const iconSvg = isAirportPlace(name, category)
+    ? PIN_IC_PLANE
+    : PIN_CATEGORY_ICON[category ?? ''] || PIN_MOOD_ICON[mood ?? ''] || PIN_IC_LANDMARK;
   const color = MOOD_COLOR[mood ?? ''] ?? '#6B7A93'; // mood 없는 경우(이론상 없음)만 대비한 slate 폴백
   const r = STEP1_PIN_HEAD_R;
   const tail = r * STEP1_PIN_TAIL_RATIO;
@@ -2238,11 +2288,18 @@ function buildStep1GatePin(g: any, mood: string | null, category?: string | null
   const headCy = tipY - tail;
   const whiteR = r - r * 0.24;
 
+  const shadow =
+    '<ellipse cx="' + cx + '" cy="' + (tipY + r * 0.1) + '" rx="' + r * 0.42 + '" ry="' + r * 0.15 + '" fill="rgba(11,42,92,0.18)"/>';
+  const inner =
+    '<g transform="translate(' + (cx - 5.5) + ',' + (headCy - 5.5) + ') scale(0.46)" fill="none" stroke="' + color +
+    '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + pinIconInner(iconSvg) + '</g>';
+
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+    shadow +
     '<path d="' + pinTearPath(cx, headCy, r, tipY) + '" fill="' + color + '"/>' +
     '<circle cx="' + cx + '" cy="' + headCy + '" r="' + whiteR + '" fill="#FFFFFF"/>' +
-    '<text x="' + cx + '" y="' + headCy + '" font-size="' + STEP1_PIN_FONT_SIZE + '" text-anchor="middle" dominant-baseline="central">' + icon + '</text>' +
+    inner +
     '</svg>';
 
   return {
