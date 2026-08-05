@@ -227,6 +227,14 @@ ROUTE가 숙소·공항 앵커까지 전부 순서대로 저장해 두므로, Ti
 저장은 `routeStore.saveRouteDay`(그 DAY 통째로 교체)를 재사용하고, 실시간 동기화도
 `subscribeRoutePlan`을 그대로 쓴다.
 
+**공항 정류지의 사진/평점**: 트립 설정에서 자동완성으로 공항을 고르면 사진은 이미
+`trip_destinations.arrival_photo_url`/`departure_photo_url`(+`_rating`/`_lat`/`_lng`)에
+캐싱되어 있다(구글 API를 다시 부르지 않음, 원칙 3-2). 공항 정류지는 `places` 테이블에
+행이 없으므로(`placeId: null`, `customName`만 저장) 이 캐시를 직접 읽어야 한다 —
+ROUTE의 `makeAnchorPlace`처럼 Timeline도 `buildAirportPlaceMap`으로 이름별 합성 `Place`
+객체(사진·평점 포함)를 만들어 `toStop()`에서 공항 정류지에 붙인다. 이 매핑을 빼먹으면
+공항 카드만 사진이 안 뜨는 버그가 난다(place가 항상 null이 되어서).
+
 ### `src/utils/travelEstimate.ts` — 숫자의 단일 기준 (중요)
 같은 구간인데 ROUTE는 "18분", TIMELINE은 "20분"으로 보이면 그 자체가 버그다. 그래서
 **화면에 뜨는 숫자를 만들어내는 순수 함수는 전부 이 파일 하나에** 모으고 두 모듈이 import 한다

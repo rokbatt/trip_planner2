@@ -181,7 +181,10 @@ let activeDestId: string | null = null;
 let staySegments: StaySegment[] = [];
 let placeById = new Map<string, Place>();
 let basecampIds = new Set<string>();
-let airportNames = new Set<string>();
+/** 공항 이름 -> 합성 Place(사진/평점 포함). ROUTE의 makeAnchorPlace와 같은 목적 —
+ * 자동완성에서 실제로 고른 공항의 사진/평점은 trip_destinations에 이미 캐싱되어 있으므로
+ * 여기서 다시 구글 API를 부르지 않고 그대로 읽어 쓴다(원칙 3-2). */
+let airportPlaceByName = new Map<string, Place>();
 
 let days: TlDay[] = [];
 let activeDayIndex = 0;
@@ -232,7 +235,7 @@ export function teardownTimeline(): void {
   staySegments = [];
   placeById = new Map();
   basecampIds = new Set();
-  airportNames = new Set();
+  airportPlaceByName = new Map();
   days = [];
   activeDayIndex = 0;
   viewMode = 'day';
@@ -306,6 +309,62 @@ async function loadPlaces(tripId: string): Promise<Place[]> {
   return data ?? [];
 }
 
+/** 공항 이름/좌표로 실제 Place 객체를 만든다 — ROUTE의 makeAnchorPlace와 동일한 목적.
+ * 사진/평점은 트립 설정에서 자동완성으로 공항을 고를 때 이미 trip_destinations에
+ * 캐싱되어 있으므로 그대로 넘겨받는다(원칙 3-1 — 없으면 null로 둔다). */
+function makeAnchorPlace(
+  tripId: string,
+  name: string,
+  lat: number,
+  lng: number,
+  photoUrl: string | null,
+  rating: number | null
+): Place {
+  return {
+    id: 'airport:' + name,
+    trip_id: tripId,
+    name,
+    lat,
+    lng,
+    address: null,
+    photo_url: photoUrl,
+    category: '공항',
+    notes: null,
+    added_by: null,
+    created_at: new Date().toISOString(),
+    likes_count: 0,
+    google_place_id: null,
+    google_rating: rating,
+    photo_ref: null,
+    opening_hours: null,
+    mood: null,
+    status: 'idea',
+    is_idea: false,
+    sort_order: 0,
+    destination_id: null,
+    group_id: null,
+    group_name: null,
+    group_order: null,
+  } as Place;
+}
+
+function buildAirportPlaceMap(trip: Trip, dest: TripDestination | null): Map<string, Place> {
+  const map = new Map<string, Place>();
+  if (dest?.arrival_airport && dest.arrival_lat != null && dest.arrival_lng != null) {
+    map.set(
+      dest.arrival_airport,
+      makeAnchorPlace(trip.id, dest.arrival_airport, dest.arrival_lat, dest.arrival_lng, dest.arrival_photo_url ?? null, dest.arrival_rating ?? null)
+    );
+  }
+  if (dest?.departure_airport && dest.departure_lat != null && dest.departure_lng != null) {
+    map.set(
+      dest.departure_airport,
+      makeAnchorPlace(trip.id, dest.departure_airport, dest.departure_lat, dest.departure_lng, dest.departure_photo_url ?? null, dest.departure_rating ?? null)
+    );
+  }
+  return map;
+}
+
 /**
  * 저장된 동선(route_days/route_stops)을 일정 모델로 변환한다.
  * ROUTE가 숙소·공항 앵커까지 전부 순서대로 저장해 두므로, 여기서 앵커를 다시 계산하지 않고
@@ -327,9 +386,7 @@ async function buildDays(trip: Trip): Promise<void> {
       (id): id is string => !!id
     )
   );
-  airportNames = new Set(
-    [dest?.arrival_airport, dest?.departure_airport].filter((n): n is string => !!n)
-  );
+  airportPlaceByName = buildAirportPlaceMap(trip, dest);
 
   // DAY 개수 = 숙박 일수 + 1 (ROUTE와 같은 계산 — 마지막 출국일도 하나의 DAY다)
   const start = dest?.start_date ?? trip.start_date;
@@ -370,10 +427,11 @@ function shiftDate(iso: string, plusDays: number): string {
 }
 
 function toStop(s: StoredStop, dayIndex: number, order: number): TlStop {
-  const place = s.placeId ? placeById.get(s.placeId) ?? null : null;
+  const airportPlace = !s.placeId && s.customName ? airportPlaceByName.get(s.customName) ?? null : null;
+  const place = s.placeId ? placeById.get(s.placeId) ?? null : airportPlace;
   const name = place?.name ?? s.customName ?? '이름 없는 지점';
   const isBasecamp = !!s.placeId && basecampIds.has(s.placeId);
-  const isAirport = !s.placeId && airportNames.has(s.customName ?? '');
+  const isAirport = !!airportPlace;
   const mode = s.travelMode && (MODES as string[]).includes(s.travelMode) ? (s.travelMode as TravelMode) : null;
   return {
     key: 'd' + dayIndex + '-' + order + '-' + (s.placeId ?? s.customName ?? 'x'),
