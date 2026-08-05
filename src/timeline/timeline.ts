@@ -28,6 +28,7 @@ import {
   loadStaySegments,
   isSyntheticDestination,
   dayNumberOffsetFor,
+  setActiveDestinationId,
 } from '../trips/destinations';
 import {
   loadRoutePlan,
@@ -77,6 +78,10 @@ const IC_PIN_SMALL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 const IC_LODGING = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V6a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v15"/><path d="M15 21v-8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v8"/><path d="M7.5 7.5h1M7.5 11h1M7.5 14.5h1M11.5 7.5h1M11.5 11h1M11.5 14.5h1M17.5 14.5h1M17.5 17.5h1"/><path d="M2 21h20"/></svg>';
 const IC_STAR = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.8 5.9 20.4 7.2 13.7 2.2 9l6.8-.8z"/></svg>';
 const IC_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+// "여행지 변경" 전용 — Board/Shortlist의 같은 아이콘과 통일
+const IC_SWAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3L3 7l4 4M3 7h13a4 4 0 0 1 4 4v1M17 21l4-4-4-4M21 17H8a4 4 0 0 1-4-4v-1"/></svg>';
+const IC_PLANE_SM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12L22 5L15 22L11 14L2 12Z"/></svg>';
+const IC_CHECK_SM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
 
 const MODE_ICON: Record<TravelMode, string> = { WALK: IC_WALK, TRANSIT: IC_TRANSIT, TAXI: IC_TAXI };
 const MODES: TravelMode[] = ['WALK', 'TRANSIT', 'TAXI'];
@@ -182,6 +187,8 @@ let container: HTMLElement | null = null;
 let currentTripId = '';
 let currentTrip: Trip | null = null;
 let activeDestId: string | null = null;
+/** 이 트립의 전체 여행지 목록 — 상단 "여행지 변경" 드롭다운에서 고를 목록으로 쓴다 */
+let allDestinations: TripDestination[] = [];
 let staySegments: StaySegment[] = [];
 let placeById = new Map<string, Place>();
 let basecampIds = new Set<string>();
@@ -226,6 +233,7 @@ export function teardownTimeline(): void {
     void flushSave();
   }
   if (nowTimer) { clearInterval(nowTimer); nowTimer = null; }
+  closeDestSwitcher();
   unsubscribeRoutePlan();
   resetRouteStorageProbe();
   clearMapOverlays();
@@ -236,6 +244,7 @@ export function teardownTimeline(): void {
   container = null;
   currentTrip = null;
   activeDestId = null;
+  allDestinations = [];
   staySegments = [];
   placeById = new Map();
   basecampIds = new Set();
@@ -379,6 +388,7 @@ async function buildDays(trip: Trip): Promise<void> {
   placeById = new Map(places.map((p) => [p.id, p]));
 
   const dests = await loadDestinations(trip);
+  allDestinations = dests;
   const dest: TripDestination | null = resolveActiveDestination(trip.id, dests) ?? null;
   activeDestId = dest && !isSyntheticDestination(dest.id) ? dest.id : null;
 
@@ -669,7 +679,8 @@ export async function renderTimelineContent(host: HTMLElement, tripId: string): 
   await buildDays(trip);
 
   if (!days.some((d) => d.stops.length > 0)) {
-    host.innerHTML = emptyStateHtml();
+    host.innerHTML = '<div class="tl-dest-bar-wrap" id="tl-dest-bar-wrap"></div>' + emptyStateHtml();
+    renderDestBar(host, tripId);
     host.querySelector('#tl-go-route')?.addEventListener('click', () => gotoGate('route'));
     return;
   }
@@ -679,7 +690,8 @@ export async function renderTimelineContent(host: HTMLElement, tripId: string): 
   const today = todayDayIndex();
   activeDayIndex = today >= 0 ? today : firstFilledDay();
 
-  host.innerHTML = shellHtml();
+  host.innerHTML = '<div class="tl-dest-bar-wrap" id="tl-dest-bar-wrap"></div>' + shellHtml();
+  renderDestBar(host, tripId);
   render();
   bindShell();
 
@@ -689,6 +701,103 @@ export async function renderTimelineContent(host: HTMLElement, tripId: string): 
 
   // "지금" 표시는 분 단위로만 움직이면 충분하다
   nowTimer = setInterval(() => { if (todayDayIndex() >= 0) renderNowMarker(); }, 60_000);
+}
+
+/** "N박 · 10.26–11.01" — Board/Shortlist의 여행지 변경 목록과 같은 형식 */
+function destMetaLabel(d: TripDestination): string {
+  if (!d.start_date || !d.end_date) return '';
+  const s = new Date(d.start_date);
+  const e = new Date(d.end_date);
+  const nights = Math.max(0, Math.round((e.getTime() - s.getTime()) / 86400000));
+  const fmt = (dt: Date) => dt.getMonth() + 1 + '.' + dt.getDate();
+  return (nights > 0 ? nights + '박 · ' : '') + fmt(s) + '–' + fmt(e);
+}
+
+/**
+ * 상단 "여행지 변경" 바 — Board/Shortlist와 같은 위치(우측 상단)·같은 역할(전환만).
+ * 마이그레이션 전(합성 단일 여행지)이면 렌더하지 않아 기존 화면과 동일.
+ */
+function renderDestBar(host: HTMLElement, tripId: string): void {
+  const wrap = host.querySelector('#tl-dest-bar-wrap') as HTMLElement | null;
+  if (!wrap) return;
+
+  if (!activeDestId) {
+    wrap.innerHTML = '';
+    return;
+  }
+
+  wrap.innerHTML = [
+    '<div class="tl-dest-bar">',
+    '  <button type="button" class="tl-dest-switch" id="tl-dest-switch">' + IC_SWAP + ' 여행지 변경</button>',
+    '</div>',
+  ].join('');
+
+  wrap.querySelector('#tl-dest-switch')?.addEventListener('click', (e) => {
+    openDestSwitcher(host, tripId, e.currentTarget as HTMLElement);
+  });
+}
+
+let destSwitcherEl: HTMLElement | null = null;
+let destSwitcherDismiss: ((e: MouseEvent) => void) | null = null;
+
+function closeDestSwitcher(): void {
+  if (destSwitcherEl) { destSwitcherEl.remove(); destSwitcherEl = null; }
+  if (destSwitcherDismiss) { document.removeEventListener('mousedown', destSwitcherDismiss); destSwitcherDismiss = null; }
+}
+
+/** "여행지 변경" 드롭다운 — 이미 정해진 여행지 중에서 고르기만 함(추가/편집/삭제 없음).
+ *  고르면 이 여행지의 DAY·정류지가 전부 새로 바뀌므로, renderTimelineContent를 처음부터
+ *  다시 돌려 안전하게 새로 그린다(ROUTE의 openRouteDestSwitcher와 같은 방식). */
+function openDestSwitcher(host: HTMLElement, tripId: string, anchor: HTMLElement): void {
+  closeDestSwitcher();
+
+  const items = allDestinations
+    .filter((d) => !isSyntheticDestination(d.id))
+    .map((d) => {
+      const active = d.id === activeDestId;
+      const meta = destMetaLabel(d);
+      return [
+        '<button type="button" class="tl-dest-switch-item' + (active ? ' active' : '') + '" data-dest-id="' + d.id + '">',
+        '  <span class="tl-dest-switch-plane">' + IC_PLANE_SM + '</span>',
+        '  <span class="tl-dest-switch-text">',
+        '    <span class="tl-dest-switch-name">' + escapeHtml(d.name) + '</span>',
+        meta ? '    <span class="tl-dest-switch-meta">' + escapeHtml(meta) + '</span>' : '',
+        '  </span>',
+        active ? '  <span class="tl-dest-switch-check">' + IC_CHECK_SM + '</span>' : '',
+        '</button>',
+      ].join('');
+    })
+    .join('');
+
+  const pop = document.createElement('div');
+  pop.className = 'tl-dest-switcher';
+  pop.innerHTML = '<div class="tl-dest-switch-title">여행지 변경</div><div class="tl-dest-switch-list">' + items + '</div>';
+  document.body.appendChild(pop);
+  destSwitcherEl = pop;
+
+  const r = anchor.getBoundingClientRect();
+  const popW = 220;
+  let left = r.right - popW;
+  if (left < 12) left = 12;
+  pop.style.top = r.bottom + 8 + 'px';
+  pop.style.left = left + 'px';
+
+  pop.querySelectorAll('.tl-dest-switch-item').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = (btn as HTMLElement).dataset.destId;
+      closeDestSwitcher();
+      if (!id || id === activeDestId) return;
+      setActiveDestinationId(tripId, id);
+      void renderTimelineContent(host, tripId);
+    });
+  });
+
+  destSwitcherDismiss = (e: MouseEvent) => {
+    if (destSwitcherEl && !destSwitcherEl.contains(e.target as Node) && !anchor.contains(e.target as Node)) {
+      closeDestSwitcher();
+    }
+  };
+  setTimeout(() => document.addEventListener('mousedown', destSwitcherDismiss!), 0);
 }
 
 function firstFilledDay(): number {

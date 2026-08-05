@@ -112,6 +112,55 @@
 .tl-empty-btn:hover { border-color: var(--tl-blue); color: var(--tl-blue); box-shadow: var(--tl-shadow-sm); }
 .tl-empty-btn svg { width: 15px; height: 15px; }
 
+/* ── 다중 여행지 바 (Board/Shortlist와 같은 위치·역할 — 전환만) ──
+   .tl-shell 바깥(형제)에 놓이는 래퍼라 .tl-shell에서만 정의된 --tl-* 토큰을 상속받지
+   못한다 — Board/Shortlist도 이 컴포넌트는 var() 대신 리터럴 색을 그대로 쓴다. */
+.tl-dest-bar-wrap { width: 100%; }
+.tl-dest-bar-wrap:empty { display: none; }
+.tl-dest-bar { display: flex; align-items: center; justify-content: flex-end; padding: 0 0 12px; }
+.tl-dest-switch {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 8px 12px; border-radius: 12px; border: 1px solid rgba(130,150,170,0.24);
+  background: rgba(255,255,255,0.65); color: #0B2A5C;
+  font-size: 12px; font-weight: 700; font-family: inherit; cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.tl-dest-switch:hover { border-color: #8FD8F8; background: #fff; }
+.tl-dest-switch svg { width: 13px; height: 13px; color: #0B7CC4; }
+
+.tl-dest-switcher {
+  position: fixed; z-index: 90; width: 220px; box-sizing: border-box;
+  background: #fff; border: 1px solid rgba(130,150,170,0.18); border-radius: 14px;
+  box-shadow: 0 12px 30px rgba(11,42,92,0.14); padding: 8px;
+  animation: tl-dest-pop-in 140ms ease-out;
+}
+@keyframes tl-dest-pop-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.tl-dest-switch-title {
+  padding: 4px 8px 8px; font-size: 10px; font-weight: 800; letter-spacing: 0.04em;
+  text-transform: uppercase; color: #94A3B8;
+}
+.tl-dest-switch-list { display: flex; flex-direction: column; gap: 2px; }
+.tl-dest-switch-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  padding: 8px; border-radius: 10px; border: none; background: none; cursor: pointer;
+  font-family: inherit;
+}
+.tl-dest-switch-item:hover { background: #F1F6FB; }
+.tl-dest-switch-item.active { background: #EAF6FD; }
+.tl-dest-switch-plane { display: inline-flex; width: 15px; height: 15px; color: #0B7CC4; flex-shrink: 0; }
+.tl-dest-switch-plane svg { width: 100%; height: 100%; }
+.tl-dest-switch-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.tl-dest-switch-name {
+  font-size: 12.5px; font-weight: 700; color: #0B2A5C;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tl-dest-switch-meta { font-size: 10px; font-weight: 600; color: #94A3B8; }
+.tl-dest-switch-check { display: inline-flex; width: 14px; height: 14px; color: #0B7CC4; flex-shrink: 0; }
+.tl-dest-switch-check svg { width: 100%; height: 100%; }
+
 /* ══════════════ 상단 바 ══════════════ */
 
 .tl-topbar {
