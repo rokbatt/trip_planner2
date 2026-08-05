@@ -1027,8 +1027,8 @@ export async function renderRouteContent(container: HTMLElement, tripId: string)
       '  <div class="rt-empty">',
       '    <span class="rt-empty-icon">' + IC_BED + '</span>',
       '    <div class="rt-empty-title">아직 숙소를 확정하지 않았어요</div>',
-      '    <div class="rt-empty-hint">SHORTLIST에서 숙소를 여행의 중심으로 확정하면, 그 숙소를 출발점으로 하루 동선을 만들 수 있어요.</div>',
-      '    <button type="button" class="rt-empty-btn" id="rt-go-shortlist">' + IC_ARROW + ' SHORTLIST로 이동</button>',
+      '    <div class="rt-empty-hint">STAY에서 숙소를 여행의 중심으로 확정하면, 그 숙소를 출발점으로 하루 동선을 만들 수 있어요.</div>',
+      '    <button type="button" class="rt-empty-btn" id="rt-go-shortlist">' + IC_ARROW + ' STAY로 이동</button>',
       '  </div>',
       '</div>',
     ].join('\n');

@@ -59,7 +59,7 @@ interface NavItem {
 
 const MAIN_NAV: NavItem[] = [
   { key: 'ideas',     label: 'IDEAS',     icon: IC.ideas,     step: '01' },
-  { key: 'shortlist', label: 'SHORTLIST', icon: IC.shortlist, step: '02' },
+  { key: 'shortlist', label: 'STAY', icon: IC.shortlist, step: '02' },
   { key: 'route',     label: 'ROUTE',     icon: IC.route,     step: '03' },
   { key: 'timeline',  label: 'TIMELINE',  icon: IC.timeline,  step: '04' },
 ];

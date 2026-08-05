@@ -513,7 +513,7 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
   currentTripId = tripId;
   slContainer = container;
 
-  container.innerHTML = '<div class="sl-loading">Shortlist 준비 중...</div>';
+  container.innerHTML = '<div class="sl-loading">STAY 준비 중...</div>';
 
   const [trip, places] = await Promise.all([loadTrip(tripId), loadPlaces(tripId)]);
   currentTrip = trip;
