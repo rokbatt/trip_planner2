@@ -23,6 +23,7 @@ import {
   placeBelongsToDestination,
   updateDestination,
   dayNumberOffsetFor,
+  setActiveDestinationId,
 } from '../trips/destinations';
 import {
   loadGoogleMapsScript,
@@ -63,7 +64,7 @@ import {
   STRAIGHT_TO_ROAD,
 } from '../utils/travelEstimate';
 import type { Leg, RealLeg, CatKey } from '../utils/travelEstimate';
-import type { Database, StaySegment } from '../types/database';
+import type { Database, StaySegment, TripDestination } from '../types/database';
 import './route.css';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -100,6 +101,8 @@ const IC_DOTS = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy=
 const IC_PIN_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21C12 21 19 14.5 19 9.5C19 5.9 15.9 3 12 3C8.1 3 5 5.9 5 9.5C5 14.5 12 21 12 21Z"/><path d="M12 6.5v6M9 9.5h6"/></svg>';
 const IC_NOTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 const IC_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2m-8 0 1 13a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-13"/></svg>';
+// "여행지 변경" 전용 — Board/Shortlist의 같은 아이콘과 통일
+const IC_SWAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3L3 7l4 4M3 7h13a4 4 0 0 1 4 4v1M17 21l4-4-4-4M21 17H8a4 4 0 0 1-4-4v-1"/></svg>';
 const IC_UNDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-2"/></svg>';
 const IC_REDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h2"/></svg>';
 const IC_ALERT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>';
@@ -225,6 +228,8 @@ let activeDestName = '';
 /** 이 여행지 앞에 오는(날짜순) 다른 여행지들의 DAY 수 합 — DAY 라벨이 여행 전체 기준으로
  *  이어지도록(예: 방콕 3일 뒤 푸켓은 DAY 4부터) 더해준다. dest.destinationDayCount 참고. */
 let dayNumberOffset = 0;
+/** 이 트립의 전체 여행지 목록 — 옵션 메뉴의 "여행지 변경"에서 고를 목록으로 쓴다 */
+let allDestinations: TripDestination[] = [];
 
 /* ── AI 일정 추천 상태 ── */
 let aiPlanBusy = false;
@@ -278,6 +283,7 @@ export function teardownRoute(): void {
   activeDestId = null;
   activeDestName = '';
   dayNumberOffset = 0;
+  allDestinations = [];
   aiPlanBusy = false;
   aiPlanProgressLabel = null;
   aiPlanNotice = null;
@@ -712,6 +718,7 @@ async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
   placeById = new Map(places.map((p) => [p.id, p]));
 
   const dests = await loadDestinations(trip);
+  allDestinations = dests;
   const activeDest = resolveActiveDestination(trip.id, dests);
   activeDestId = activeDest && !isSyntheticDestination(activeDest.id) ? activeDest.id : null;
   activeDestName = activeDest?.name ?? '';
@@ -1503,6 +1510,9 @@ function bindOptionsMenu(container: HTMLElement): void {
     menu.innerHTML = [
       '<button type="button" id="rt-opt-fit">' + IC_TARGET + ' 전체 동선 화면에 맞추기</button>',
       '<button type="button" id="rt-opt-satellite">' + IC_SPARK + ' 위성 지도 전환</button>',
+      activeDestId
+        ? '<div class="rt-options-divider"></div><button type="button" id="rt-opt-switch-dest">' + IC_SWAP + ' 여행지 변경</button>'
+        : '',
       '<div class="rt-options-divider"></div>',
       '<button type="button" class="danger" id="rt-opt-reset">' + IC_TRASH + ' 모든 DAY 동선 초기화</button>',
     ].join('');
@@ -1518,6 +1528,10 @@ function bindOptionsMenu(container: HTMLElement): void {
     menu.querySelector('#rt-opt-satellite')?.addEventListener('click', () => {
       toggleSatellite();
       menu.remove();
+    });
+    menu.querySelector('#rt-opt-switch-dest')?.addEventListener('click', () => {
+      menu.remove();
+      openRouteDestSwitcher(container, btn);
     });
     menu.querySelector('#rt-opt-reset')?.addEventListener('click', () => {
       if (!confirm('이 여행지의 모든 DAY 동선을 초기화할까요?')) { menu.remove(); return; }
@@ -1539,6 +1553,69 @@ function bindOptionsMenu(container: HTMLElement): void {
     };
     setTimeout(() => document.addEventListener('mousedown', dismiss), 0);
   });
+}
+
+/** "N박 · 10.26–11.01" — Board/Shortlist의 여행지 변경 목록과 같은 형식 */
+function destMetaLabel(d: TripDestination): string {
+  if (!d.start_date || !d.end_date) return '';
+  const s = new Date(d.start_date);
+  const e = new Date(d.end_date);
+  const nights = Math.max(0, Math.round((e.getTime() - s.getTime()) / 86400000));
+  const fmt = (dt: Date) => dt.getMonth() + 1 + '.' + dt.getDate();
+  return (nights > 0 ? nights + '박 · ' : '') + fmt(s) + '–' + fmt(e);
+}
+
+/** "여행지 변경" 드롭다운 — Board/Shortlist와 같은 목적(전환만, 추가/편집/삭제는 없음).
+ *  고르면 이 여행지의 candidatePlaces/basecamp/DAY가 전부 새로 바뀌므로, 부분 갱신 대신
+ *  renderRouteContent를 처음부터 다시 돌려 안전하게 새로 그린다. */
+function openRouteDestSwitcher(container: HTMLElement, anchor: HTMLElement): void {
+  document.querySelectorAll('.rt-dest-switcher').forEach((el) => el.remove());
+
+  const items = allDestinations
+    .filter((d) => !isSyntheticDestination(d.id))
+    .map((d) => {
+      const active = d.id === activeDestId;
+      const meta = destMetaLabel(d);
+      return [
+        '<button type="button" class="rt-dest-switch-item' + (active ? ' active' : '') + '" data-dest-id="' + d.id + '">',
+        '  <span class="rt-dest-switch-plane">' + IC_PLANE + '</span>',
+        '  <span class="rt-dest-switch-text">',
+        '    <span class="rt-dest-switch-name">' + escapeHtml(d.name) + '</span>',
+        meta ? '    <span class="rt-dest-switch-meta">' + escapeHtml(meta) + '</span>' : '',
+        '  </span>',
+        active ? '  <span class="rt-dest-switch-check">' + IC_CHECK + '</span>' : '',
+        '</button>',
+      ].join('');
+    })
+    .join('');
+
+  const pop = document.createElement('div');
+  pop.className = 'rt-dest-switcher';
+  pop.innerHTML = '<div class="rt-dest-switch-title">여행지 변경</div><div class="rt-dest-switch-list">' + items + '</div>';
+  document.body.appendChild(pop);
+
+  const r = anchor.getBoundingClientRect();
+  const popW = 220;
+  pop.style.top = r.bottom + 8 + 'px';
+  pop.style.left = Math.max(12, r.right - popW) + 'px';
+
+  pop.querySelectorAll('.rt-dest-switch-item').forEach((b) => {
+    b.addEventListener('click', () => {
+      const id = (b as HTMLElement).dataset.destId;
+      pop.remove();
+      if (!id || id === activeDestId || !currentTripId) return;
+      setActiveDestinationId(currentTripId, id);
+      void renderRouteContent(container, currentTripId);
+    });
+  });
+
+  const dismiss = (ev: MouseEvent) => {
+    if (!pop.contains(ev.target as Node) && ev.target !== anchor) {
+      pop.remove();
+      document.removeEventListener('mousedown', dismiss);
+    }
+  };
+  setTimeout(() => document.addEventListener('mousedown', dismiss), 0);
 }
 
 function toggleSatellite(): void {
