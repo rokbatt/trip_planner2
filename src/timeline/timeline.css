@@ -169,20 +169,16 @@
 .tl-segment:hover { color: var(--tl-ink-2); }
 .tl-segment.active { background: #fff; color: var(--tl-ink); box-shadow: var(--tl-shadow-sm); }
 
-.tl-nowbtn, .tl-routebtn, .tl-mapbtn {
+.tl-nowbtn, .tl-routebtn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 7px 12px; border-radius: 9px; border: 1px solid var(--tl-line-strong);
   background: #fff; color: var(--tl-ink-2); font-family: inherit;
   font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;
   transition: all var(--tl-ease);
 }
-.tl-nowbtn svg, .tl-routebtn svg, .tl-mapbtn svg { width: 14px; height: 14px; }
-.tl-nowbtn:hover, .tl-routebtn:hover, .tl-mapbtn:hover { border-color: var(--tl-blue); color: var(--tl-blue); }
+.tl-nowbtn svg, .tl-routebtn svg { width: 14px; height: 14px; }
+.tl-nowbtn:hover, .tl-routebtn:hover { border-color: var(--tl-blue); color: var(--tl-blue); }
 .tl-nowbtn { border-color: rgba(11,42,92,0.28); color: var(--tl-navy); }
-/* 지도 열기/닫기 — 항상 누를 수 있는 토글이라, 켜져 있을 때는 눌린 상태임을 색으로 알린다 */
-.tl-mapbtn.active { border-color: var(--tl-blue); background: var(--tl-ice); color: var(--tl-blue); }
-.tl-mapbtn:disabled { opacity: 0.4; cursor: default; }
-.tl-mapbtn:disabled:hover { border-color: var(--tl-line-strong); color: var(--tl-ink-2); }
 
 /* ══════════════ 본문 레이아웃 — 일정 | 지도 ══════════════ */
 
@@ -190,16 +186,38 @@
  * 지도는 화면 폭이 아니라 사용자의 토글(#tl-map-toggle)로만 열리고 닫힌다 — 기본값은
  * "닫힘"(1열)이고, JS가 mapOpen 상태에 따라 .tl-map-open 클래스를 붙였다 뗀다.
  * 전체 보기(.tl-view-all)에선 그 상태와 무관하게 항상 접힌다.
+ * 상단 버튼이 아니라, 목록과 지도 "경계선" 위에 붙는 손잡이(.tl-map-handle-col)로
+ * 열고 닫는다 — 지도가 닫혀 있을 때도 이 열은 그대로 남아 목록의 오른쪽 끝에 붙어,
+ * 지도가 열렸을 때와 같은 자리(지도의 가장 왼쪽 선)에서 손잡이를 누를 수 있다.
  */
 .tl-body {
-  display: grid; grid-template-columns: minmax(0, 1fr);
-  gap: 16px; align-items: start; min-width: 0;
+  display: grid; grid-template-columns: minmax(0, 1fr) 20px 0px;
+  gap: 0; align-items: start; min-width: 0;
 }
-.tl-body.tl-map-open { grid-template-columns: minmax(0, 1fr) minmax(320px, 40%); }
+.tl-body.tl-map-open { grid-template-columns: minmax(0, 1fr) 20px minmax(320px, 40%); }
 
-.tl-main { min-width: 0; }
+.tl-main { min-width: 0; margin-right: 14px; }
 
-.tl-mapcol { display: none; }
+.tl-map-handle-col {
+  display: flex; align-items: center; justify-content: center;
+  position: sticky; top: 8px;
+  height: calc(100vh - 210px); min-height: 460px;
+}
+.tl-map-handle {
+  width: 20px; height: 56px; padding: 0; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--tl-line-strong); background: #fff; color: var(--tl-ink-2);
+  cursor: pointer; box-shadow: var(--tl-shadow-sm); transition: all var(--tl-ease);
+}
+.tl-map-handle:hover { border-color: var(--tl-blue); color: var(--tl-blue); }
+.tl-map-handle.active { border-color: var(--tl-blue); background: var(--tl-ice); color: var(--tl-blue); }
+.tl-map-handle:disabled { opacity: 0.35; cursor: default; }
+.tl-map-handle:disabled:hover { border-color: var(--tl-line-strong); color: var(--tl-ink-2); }
+/* 닫힘 = 오른쪽(펼치기), 열림 = 왼쪽(접기) 방향을 가리키는 화살표 */
+.tl-map-handle svg { width: 13px; height: 13px; transform: rotate(-90deg); transition: transform var(--tl-ease); }
+.tl-body.tl-map-open .tl-map-handle svg { transform: rotate(90deg); }
+
+.tl-mapcol { display: none; margin-left: 14px; }
 .tl-body.tl-map-open .tl-mapcol {
   display: block;
   position: sticky; top: 8px;
@@ -208,11 +226,20 @@
   border: 1px solid var(--tl-line); background: var(--tl-mist);
   box-shadow: var(--tl-shadow-sm);
 }
-/* 좁은 화면에선 사이드바로 붙이지 않고 목록 위에 한 블록으로 펼친다(아래 반응형 참고) */
+/* 좁은 화면에선 사이드바로 붙이지 않고 목록 위에 한 블록으로 펼친다 — 손잡이도 가로 막대로
+   바뀌어 지도와 목록 "사이"(위쪽 경계선)에 그대로 남는다 */
 @media (max-width: 1080px) {
-  .tl-body.tl-map-open { grid-template-columns: minmax(0, 1fr); }
+  .tl-body, .tl-body.tl-map-open { grid-template-columns: minmax(0, 1fr); }
+  .tl-main { margin-right: 0; order: 0; }
+  .tl-map-handle-col {
+    position: static; height: auto; min-height: 0; order: -1; margin-bottom: 10px;
+  }
+  .tl-map-handle { width: 56px; height: 20px; }
+  .tl-map-handle svg { transform: rotate(0deg); }
+  .tl-body.tl-map-open .tl-map-handle svg { transform: rotate(180deg); }
+  .tl-mapcol { margin-left: 0; }
   .tl-body.tl-map-open .tl-mapcol {
-    position: static; order: -1; height: 320px; min-height: 260px;
+    position: static; order: -2; height: 320px; min-height: 260px;
   }
 }
 .tl-map { width: 100%; height: 100%; }
