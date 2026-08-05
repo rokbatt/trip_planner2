@@ -56,6 +56,11 @@
   --tl-c-transit-icon: #0A5B90;
   --tl-c-staybox-bg: #FCFDFF;
   --tl-card-shadow: 0 1px 2px rgba(23,33,43,0.04);
+  /* "숙소 들르기"(짐 두기 등 재방문 스탑) 전용 — ROUTE의 LODGING_REVISIT_COLOR와 짝을 맞춘 바이올렛 */
+  --tl-c-revisit-bg: #F4F1FE;
+  --tl-c-revisit-line: rgba(124,92,252,0.28);
+  --tl-c-revisit-circle: rgba(124,92,252,0.16);
+  --tl-c-revisit-icon: #7C5CFC;
 
   /* 시각표 3열 격자 — 시각 / 스파인 / 카드. 모든 줄이 공유해서 세로줄이 정확히 맞물린다.
      시각 폰트를 20% 키운 만큼(15px→18px) 칸도 넉넉히 늘려야 "09:00"이 잘리지 않는다 */
@@ -542,6 +547,15 @@
 .tl-leg.walk .tl-legcard-icon { background: var(--tl-c-walk-circle); color: var(--tl-c-walk-icon); }
 .tl-leg.transit .tl-legcard { background: var(--tl-c-transit-bg); border-color: var(--tl-c-transit-line); }
 .tl-leg.transit .tl-legcard-icon { background: var(--tl-c-transit-circle); color: var(--tl-c-transit-icon); }
+
+/* "숙소 들르기" 스탑 — tl-legcard 모양을 빌리되(장소 카드 아님) 전용 바이올렛 톤 */
+.tl-revisitcard { background: var(--tl-c-revisit-bg); border-color: var(--tl-c-revisit-line); }
+.tl-revisit-icon { background: var(--tl-c-revisit-circle); color: var(--tl-c-revisit-icon); }
+.tl-revisit-icon svg { width: 22px; height: 22px; }
+.tl-revisitcard .tl-legcard-mode { color: var(--tl-c-revisit-icon); }
+.tl-revisitcard .tl-legcard-info { align-items: flex-start; }
+.tl-revisitcard .tl-tool-remove { margin-left: 6px; }
+.tl-dot-revisit i { background: var(--tl-c-revisit-icon); }
 
 /* 수단 이름은 아이콘 바로 옆에, 숫자는 오른쪽 끝(도착 예정 앞)에 — 레퍼런스 배치 */
 .tl-legcard-mode {

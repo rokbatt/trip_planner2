@@ -27,6 +27,7 @@ import {
   resolveActiveDestination,
   loadStaySegments,
   isSyntheticDestination,
+  dayNumberOffsetFor,
 } from '../trips/destinations';
 import {
   loadRoutePlan,
@@ -72,6 +73,8 @@ const IC_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const IC_GRIP = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>';
 const IC_EXTLINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>';
 const IC_PIN_SMALL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.5 7-11.5A7 7 0 0 0 5 9.5C5 14.5 12 21 12 21Z"/></svg>';
+// "숙소 들르기"(재방문 스탑) 전용 — ROUTE의 IC_SUITCASE와 동일
+const IC_SUITCASE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M9 8V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v3"/><path d="M4 13h16"/><path d="M10 13v2M14 13v2"/></svg>';
 const IC_STAR = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.8 5.9 20.4 7.2 13.7 2.2 9l6.8-.8z"/></svg>';
 const IC_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
 
@@ -133,6 +136,9 @@ interface TlStop {
   memo: string | null;
   /** 이 정류지로 **들어오는** 구간의 수동 이동수단 (저장 스키마가 도착지 기준) */
   travelMode: TravelMode | null;
+  /** 비어있으면 일반 정류지, 있으면 "숙소 들르기"처럼 목적만 있는 특수 스탑(예: 짐 두기) —
+   *  이럴 땐 일반 장소 카드가 아니라 구간(leg) 카드에 가까운 전용 스타일로 그린다. */
+  purpose: string | null;
   /* 표시용 파생값 */
   name: string;
   cat: CatKey;
@@ -396,9 +402,13 @@ async function buildDays(trip: Trip): Promise<void> {
   }
   const dayCount = Math.max(2, Math.min(nights, 10) + 1);
 
+  // ROUTE와 같은 계산 — 이 여행지 앞에 다른 여행지가 있으면 그만큼 DAY 번호를 밀어서
+  // 여행 전체 기준으로 이어지는 번호를 보여준다(예: 방콕 DAY1~3 다음 푸켓은 DAY4부터).
+  const dayOffset = activeDestId ? dayNumberOffsetFor(dests, activeDestId, trip) : 0;
+
   days = Array.from({ length: dayCount }, (_, i) => ({
     dayIndex: i,
-    label: 'DAY ' + (i + 1),
+    label: 'DAY ' + (dayOffset + i + 1),
     date: start ? shiftDate(start, i) : null,
     stops: [] as TlStop[],
   }));
@@ -435,6 +445,7 @@ function toStop(s: StoredStop, dayIndex: number, order: number): TlStop {
     key: 'd' + dayIndex + '-' + order + '-' + (s.placeId ?? s.customName ?? 'x'),
     placeId: s.placeId,
     customName: s.customName,
+    purpose: s.purpose,
     lat: place?.lat ?? s.customLat,
     lng: place?.lng ?? s.customLng,
     arriveTime: s.arriveTime,
@@ -605,6 +616,7 @@ function toStoredStops(day: TlDay): StoredStop[] {
     arriveTime: s.arriveTime,
     memo: s.memo || null,
     travelMode: s.travelMode,
+    purpose: s.purpose,
   }));
 }
 
@@ -899,6 +911,9 @@ function stopCardHtml(stop: TlStop, i: number, s: DaySchedule, dateISO: string |
   const selected = selectedKey === stop.key;
   const fixed = !!stop.arriveTime;
   const dwell = s.dwellMin[i];
+  // "숙소 들르기" — 실제 장소가 아니라 목적만 있는 재방문 스탑이라, 사진·평점·영업시간 같은
+  // 장소 카드 요소를 다 빼고 구간(leg) 카드에 가까운 전용 스타일로 압축해서 보여준다.
+  if (stop.purpose) return revisitStopCardHtml(stop, i, s, selected, fixed, dwell);
   const place = stop.place;
 
   const warn =
@@ -988,6 +1003,42 @@ function stopCardHtml(stop: TlStop, i: number, s: DaySchedule, dateISO: string |
     mapsUrl ? '        <a class="tl-tool" href="' + mapsUrl + '" target="_blank" rel="noopener noreferrer" title="Google 지도에서 열기" aria-label="Google 지도에서 열기">' + IC_EXTLINK + '</a>' : '',
     '        <button type="button" class="tl-tool tl-tool-remove" data-key="' + stop.key + '" title="이 일정 빼기" aria-label="' + escapeHtml(stop.name) + ' 일정에서 빼기">' + IC_TRASH + '</button>',
     '      </div>',
+    '    </div>',
+    '  </div>',
+    '</li>',
+  ].join('');
+}
+
+/**
+ * "숙소 들르기"(예: 짐 두기) 전용 카드 — 일반 장소 카드(사진/평점/카테고리)가 아니라
+ * legRowHtml의 구간 카드에 가까운 압축된 스타일. 전용 색(바이올렛) + 아이콘 + 목적 텍스트만
+ * 보여주고, 그래도 실제 정류지라 시각 편집/드래그 순서 변경/삭제는 그대로 된다.
+ */
+function revisitStopCardHtml(
+  stop: TlStop,
+  i: number,
+  s: DaySchedule,
+  selected: boolean,
+  fixed: boolean,
+  dwell: number
+): string {
+  return [
+    '<li class="tl-row tl-stop tl-stop-revisit' + (selected ? ' is-selected' : '') + '" data-key="' + stop.key + '" data-idx="' + i + '" draggable="true">',
+    '  <div class="tl-col-time">',
+    '    <input type="text" class="tl-time' + (fixed ? ' is-fixed' : '') + '" value="' + minToHHMM(s.arriveMin[i]) + '"' +
+      ' data-key="' + stop.key + '" inputmode="numeric" maxlength="5" spellcheck="false"' +
+      ' title="' + (fixed ? '직접 고정한 시각 · 비우면 자동 계산으로 돌아가요' : '앞 일정에서 자동 계산된 시각 · 입력하면 고정돼요') + '"' +
+      ' aria-label="' + escapeHtml(stop.purpose ?? '') + ' 도착 시각" />',
+    dwell > 0 ? '    <span class="tl-dwell">' + fmtMin(dwell) + '</span>' : '',
+    fixed ? '    <button type="button" class="tl-unfix" data-key="' + stop.key + '" title="고정 해제 — 앞 일정에 맞춰 자동으로 계산해요">고정 해제</button>' : '',
+    '  </div>',
+    '  <div class="tl-col-spine"><span class="tl-spine-line"></span><span class="tl-dot tl-dot-revisit"><i></i></span></div>',
+    '  <div class="tl-col-card">',
+    '    <div class="tl-legcard tl-revisitcard">',
+    '      <span class="tl-legcard-icon tl-revisit-icon">' + IC_SUITCASE + '</span>',
+    '      <span class="tl-legcard-mode">숙소 들르기</span>',
+    '      <div class="tl-legcard-info"><span class="tl-legcard-stats"><b>' + escapeHtml(stop.purpose ?? '') + '</b></span></div>',
+    '      <button type="button" class="tl-tool tl-tool-remove" data-key="' + stop.key + '" title="일정에서 빼기" aria-label="' + escapeHtml(stop.purpose ?? '') + ' 빼기">' + IC_TRASH + '</button>',
     '    </div>',
     '  </div>',
     '</li>',

@@ -263,6 +263,40 @@ export function placeBelongsToDestination(
   return place.destination_id === destination.id;
 }
 
+/* ────────────────────────────────────────────────────────────
+ * 여행지별 DAY 수 / 여행 전체 기준 DAY 번호 이어붙이기
+ * ROUTE·TIMELINE이 각자 "그 여행지만의 DAY 1"부터 다시 세던 걸, 여행 전체 기준으로
+ * 이어지게(예: 방콕 3일 뒤 푸켓은 DAY 4부터) 보여주기 위한 계산.
+ * ──────────────────────────────────────────────────────────── */
+
+/** 이 여행지의 체류 일수 기준 DAY 개수(숙박 일수+1, 마지막 출국일도 하루로 침).
+ *  숙소가 아직 확정 안 됐어도(=start_date/end_date만 있어도) 계산 가능 — Shortlist 확정
+ *  여부와 무관하게 트립/여행지 생성 시점에 이미 들어있는 날짜만 쓰기 때문. */
+export function destinationDayCount(dest: TripDestination | null, trip: Trip): number {
+  const start = dest?.start_date ?? trip.start_date;
+  const end = dest?.end_date ?? trip.end_date;
+  let nights = 1;
+  if (start && end) {
+    const d = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000);
+    nights = Math.max(1, d);
+  }
+  return Math.max(2, Math.min(nights, 10) + 1);
+}
+
+/**
+ * activeDest 앞에 오는(날짜순) 다른 "진짜" 여행지들의 DAY 수를 모두 더한 값 — 이 값을
+ * activeDest의 DAY 라벨에 더하면 여행 전체 기준으로 이어지는 번호가 된다.
+ * 날짜가 비어 있는 여행지가 있어도(아직 계획 중) 에러 없이 그냥 1일치로 계산해 넘어간다.
+ */
+export function dayNumberOffsetFor(dests: TripDestination[], activeDestId: string | null, trip: Trip): number {
+  if (!activeDestId) return 0;
+  const real = dests.filter((d) => !isSyntheticDestination(d.id));
+  const sorted = [...real].sort((a, b) => (a.start_date ?? '').localeCompare(b.start_date ?? ''));
+  const activeIdx = sorted.findIndex((d) => d.id === activeDestId);
+  if (activeIdx <= 0) return 0;
+  return sorted.slice(0, activeIdx).reduce((sum, d) => sum + destinationDayCount(d, trip), 0);
+}
+
 /**
  * 과거 버그(여행지를 추가해 synthetic → 실제로 전환될 때 기존 장소를 새 여행지에 배정하는
  * 걸 놓침) 때문에 이미 destination_id가 null로 저장돼버린 장소를 복구.

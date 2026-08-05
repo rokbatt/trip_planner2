@@ -22,6 +22,7 @@ import {
   isSyntheticDestination,
   placeBelongsToDestination,
   updateDestination,
+  dayNumberOffsetFor,
 } from '../trips/destinations';
 import {
   loadGoogleMapsScript,
@@ -103,6 +104,8 @@ const IC_UNDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const IC_REDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h2"/></svg>';
 const IC_ALERT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>';
 const IC_ROUTEPATH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H14a3.5 3.5 0 0 0 0-7h-4a3.5 3.5 0 0 1 0-7h5.5"/></svg>';
+// "숙소 들르기"(재방문 스탑) 전용 — 캐리어 모양으로 짐 두기 등 목적을 바로 연상되게
+const IC_SUITCASE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M9 8V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v3"/><path d="M4 13h16"/><path d="M10 13v2M14 13v2"/></svg>';
 
 const CAT_ICON: Record<CatKey, string> = { VISIT: IC_LANDMARK, FOOD: IC_FORK, ACTIVITY: IC_TARGET, SHOPPING: IC_BAG, STAY: IC_BED, AIRPORT: IC_PLANE };
 /** 좌측 패널 카테고리 필터 칩 — 후보 목록에 실제로 나타나는 4개 게이트만(숙소 제외) */
@@ -208,9 +211,15 @@ let historyByDay = new Map<string, HistoryState>();
 const memoStore = new Map<string, string>();
 const timeOverride = new Map<string, string>();
 const legModeOverride = new Map<string, Leg['mode']>();
+/** "숙소 들르기"로 하루 중간에 되돌아온 지점(예: 짐 두기) — 실제 candidatePlaces에는 없는
+ *  합성 Place라, 이 id로 조회되면 일반 방문이 아니라 이 목적 텍스트로 특별히 그린다. */
+const lodgingRevisitPurpose = new Map<string, string>();
 
 let activeDestId: string | null = null;
 let activeDestName = '';
+/** 이 여행지 앞에 오는(날짜순) 다른 여행지들의 DAY 수 합 — DAY 라벨이 여행 전체 기준으로
+ *  이어지도록(예: 방콕 3일 뒤 푸켓은 DAY 4부터) 더해준다. dest.destinationDayCount 참고. */
+let dayNumberOffset = 0;
 
 /* ── AI 일정 추천 상태 ── */
 let aiPlanBusy = false;
@@ -263,6 +272,7 @@ export function teardownRoute(): void {
   document.querySelector('.rt-ai-modal-backdrop')?.remove();
   activeDestId = null;
   activeDestName = '';
+  dayNumberOffset = 0;
   aiPlanBusy = false;
   aiPlanProgressLabel = null;
   aiPlanNotice = null;
@@ -306,6 +316,7 @@ export function teardownRoute(): void {
   memoStore.clear();
   timeOverride.clear();
   legModeOverride.clear();
+  lodgingRevisitPurpose.clear();
   mapInstance = null;
   mapMarkers = [];
   routePolylines = [];
@@ -420,9 +431,9 @@ async function persistActiveDay(): Promise<void> {
     const p = placeById.get(id);
     const idx = seq.findIndex((s) => s.id === id);
     const prev = idx > 0 ? seq[idx - 1] : null;
-    // 공항 앵커도 실제 places 테이블 행이 없는 합성 Place라 adhoc과 같은 방식(customName/lat/lng)으로
-    // 저장한다 — 그래야 place_id FK 없이도 route_stops에 들어갈 수 있다.
-    const isAdhoc = id.startsWith('adhoc-') || id === arrivalId || id === departureId;
+    // 공항 앵커/숙소 재방문도 실제 places 테이블 행이 없는 합성 Place라 adhoc과 같은 방식
+    // (customName/lat/lng)으로 저장한다 — 그래야 place_id FK 없이도 route_stops에 들어갈 수 있다.
+    const isAdhoc = id.startsWith('adhoc-') || isRevisitId(id) || id === arrivalId || id === departureId;
     return {
       placeId: isAdhoc ? null : id,
       customName: isAdhoc ? p?.name ?? '직접 추가한 장소' : null,
@@ -431,6 +442,7 @@ async function persistActiveDay(): Promise<void> {
       arriveTime: timeOverride.get(timeKey(day.id, id)) ?? null,
       memo: memoStore.get(id) || null,
       travelMode: prev ? legModeOverride.get(legKey(prev.id, id)) ?? null : null,
+      purpose: lodgingRevisitPurpose.get(id) ?? null,
     };
   });
 
@@ -495,6 +507,13 @@ function applyStoredPlan(stored: Awaited<ReturnType<typeof loadRoutePlan>>): boo
           id = arrivalAirportId();
         } else if (isDepartureMatch && departureAirportPlace()) {
           id = departureAirportId();
+        } else if (s.purpose) {
+          // "숙소 들르기"로 저장된 재방문 지점 — purpose가 있는 건 이 종류뿐이라(일반 adhoc
+          // 핀/공항은 항상 null) 좌표 매칭 없이 purpose 유무만으로 확실히 구분된다.
+          const base = makeAdhocPlace(s.customName || '숙소', s.customLat, s.customLng);
+          const p = makeRevisitPlace(base, s.purpose);
+          placeById.set(p.id, p);
+          id = p.id;
         } else {
           // 지도에 직접 찍었던 일반 지점 복원
           const p = makeAdhocPlace(s.customName || '직접 추가한 장소', s.customLat, s.customLng);
@@ -611,6 +630,24 @@ function makeAdhocPlace(name: string, lat: number, lng: number): Place {
   };
 }
 
+/* ── "숙소 들르기" — 하루 중간에 숙소로 되돌아오는 지점(짐 두기 등) ──
+ * 실제 candidatePlaces에 없는 합성 Place라, id를 'revisit-'로 구분해 adhoc과 같은 방식
+ * (place_id 없이 좌표만)으로 저장한다. 좌표는 그 순간 기준 숙소와 동일해 이동시간 계산이
+ * 실제 거리로 정확히 되고, 이름도 숙소 이름을 그대로 써서 지도/타임라인에서 "그 숙소"임을
+ * 바로 알아볼 수 있게 한다. */
+const REVISIT_PREFIX = 'revisit-';
+let revisitSeq = 0;
+function isRevisitId(id: string): boolean {
+  return id.startsWith(REVISIT_PREFIX);
+}
+function makeRevisitPlace(basecampPlace: Place, purpose: string): Place {
+  revisitSeq += 1;
+  const id = REVISIT_PREFIX + Date.now() + '-' + revisitSeq;
+  const p: Place = { ...basecampPlace, id };
+  lodgingRevisitPurpose.set(id, purpose);
+  return p;
+}
+
 /** 구글 검색 결과 1건을 지도에 임시로 찍을 Place로 변환 — google_place_id가 있는 "진짜"
  * 장소라 makeAdhocPlace(이름만 있는 가짜 핀)와 다르다. Brainstorm에 담기 전까지만 쓰는
  * 임시 id('search-'+place_id)라 담고 나면 실제 DB row의 id로 교체된다. */
@@ -720,9 +757,14 @@ async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
   // (예: 26~30일, 4박인데 DAY1~4까지만 생기고 30일이 아예 안 잡히는) 버그가 있었다.
   const dayCount = Math.max(2, Math.min(nights, 10) + 1);
 
+  // 이 여행지 앞에 다른 여행지가 있으면(날짜순) 그만큼 DAY 번호를 밀어서, 여행 전체 기준으로
+  // 이어지는 번호를 보여준다(예: 방콕 DAY1~3 다음 푸켓은 DAY4부터). 날짜가 비어 있는 여행지가
+  // 섞여 있어도(아직 계획 중) 에러 없이 1일치로 계산해 넘어간다.
+  dayNumberOffset = activeDestId ? dayNumberOffsetFor(dests, activeDestId, trip) : 0;
+
   days = Array.from({ length: dayCount }, (_, i) => ({
     id: 'day-' + (i + 1),
-    label: 'DAY ' + (i + 1),
+    label: 'DAY ' + (dayNumberOffset + i + 1),
     stopIds: [],
   }));
   activeDayId = days[0].id;
@@ -1223,7 +1265,7 @@ function renderDayTabs(container: HTMLElement): void {
   });
   el.querySelector('#rt-day-add')?.addEventListener('click', () => {
     const n = days.length + 1;
-    days.push({ id: 'day-' + n, label: 'DAY ' + n, stopIds: [] });
+    days.push({ id: 'day-' + n, label: 'DAY ' + (dayNumberOffset + n), stopIds: [] });
     activeDayId = 'day-' + n;
     searchResultPlaces = [];
     refreshAll(container, { refit: true });
@@ -2026,6 +2068,78 @@ function openAiPlanNotesModal(container: HTMLElement): void {
   (backdrop.querySelector('#rt-ai-notes-input') as HTMLTextAreaElement)?.focus();
 }
 
+/** 자주 쓰는 목적 프리셋 — 눌러서 바로 채우고, 없는 목적은 아래 입력칸에 직접 적는다 */
+const LODGING_REVISIT_PRESETS = ['짐 두기', '휴식', '옷 갈아입기', '샤워'];
+
+/** "숙소 들르기" 목적 입력 모달 — 확정하면 그 순간 기준 이 DAY의 숙소를 목적지로 하는
+ *  재방문 스탑을 만들어 끝 앵커 바로 앞에 끼워 넣는다(appendStopBeforeEndAnchor와 동일한
+ *  자리 규칙 — "장소 추가"와 똑같이 자연스럽게 시작/끝 숙소 사이에 들어감). */
+function openLodgingRevisitModal(container: HTMLElement): void {
+  const day = activeDay();
+  const dayIndex = days.findIndex((d) => d.id === day.id);
+  const lodging = basecampForDay(dayIndex);
+  if (!lodging) return;
+
+  document.querySelector('.rt-ai-modal-backdrop')?.remove();
+  const backdrop = document.createElement('div');
+  backdrop.className = 'rt-ai-modal-backdrop';
+  backdrop.innerHTML = [
+    '<div class="rt-ai-modal rt-revisit-modal" role="dialog" aria-modal="true" aria-label="숙소 들르기">',
+    '  <div class="rt-ai-modal-head">',
+    '    <div><div class="rt-ai-modal-eyebrow">' + escapeHtml(lodging.name) + '</div>',
+    '    <div class="rt-ai-modal-title">잠깐 들르는 목적이 뭔가요?</div></div>',
+    '    <button type="button" class="rt-ai-modal-close" id="rt-revisit-close" aria-label="닫기">✕</button>',
+    '  </div>',
+    '  <div class="rt-ai-modal-body">',
+    '    <div class="rt-revisit-presets">',
+    LODGING_REVISIT_PRESETS.map(
+      (p) => '<button type="button" class="rt-revisit-chip" data-purpose="' + escapeHtml(p) + '">' + escapeHtml(p) + '</button>'
+    ).join(''),
+    '    </div>',
+    '    <input type="text" class="rt-revisit-input" id="rt-revisit-input" placeholder="예: 짐 두기" maxlength="30" value="짐 두기" />',
+    '  </div>',
+    '  <div class="rt-ai-notes-actions">',
+    '    <button type="button" class="rt-ai-notes-cancel" id="rt-revisit-cancel">취소</button>',
+    '    <button type="button" class="rt-ai-notes-start" id="rt-revisit-start">' + IC_SUITCASE + ' 추가</button>',
+    '  </div>',
+    '</div>',
+  ].join('\n');
+
+  const close = () => {
+    backdrop.remove();
+    document.removeEventListener('keydown', onKey);
+  };
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+  const input = () => backdrop.querySelector('#rt-revisit-input') as HTMLInputElement;
+
+  backdrop.querySelector('#rt-revisit-close')?.addEventListener('click', close);
+  backdrop.querySelector('#rt-revisit-cancel')?.addEventListener('click', close);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+  document.addEventListener('keydown', onKey);
+
+  backdrop.querySelectorAll('.rt-revisit-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      input().value = (chip as HTMLElement).dataset.purpose ?? '';
+      input().focus();
+    });
+  });
+
+  backdrop.querySelector('#rt-revisit-start')?.addEventListener('click', () => {
+    const purpose = input().value.trim().slice(0, 30) || '잠깐 들르기';
+    close();
+    const p = makeRevisitPlace(lodging, purpose);
+    placeById.set(p.id, p);
+    pushHistory();
+    appendStopBeforeEndAnchor(activeDay(), p.id);
+    refreshAll(container, { refit: false });
+    void persistActiveDay();
+  });
+
+  document.body.appendChild(backdrop);
+  input().focus();
+  input().select();
+}
+
 async function runDayDetail(container: HTMLElement): Promise<void> {
   if (dayDetailBusy) return;
   if (!canUseDayDetail()) return;
@@ -2268,9 +2382,10 @@ function renderRightPanel(container: HTMLElement): void {
     const isBasecamp = isBasecampPlace(p, dayIndex);
     const isAirport = isAirportAnchorPlace(p);
     const isAnchor = isBasecamp || isAirport; // 삭제는 금지하되, 순서는 자유롭게 바꿀 수 있음
+    const revisitPurpose = lodgingRevisitPurpose.get(p.id) ?? null;
     const memo = memoStore.get(p.id) ?? '';
     const highlighted = p.id === highlightedPlaceId;
-    const cardColor = stopIdentityColor();
+    const cardColor = revisitPurpose ? LODGING_REVISIT_COLOR : stopIdentityColor();
 
     const manualTime = timeOverride.has(timeKey(day.id, p.id));
     // 예상 체류시간(참고용 추정치) 대신, 그 시각에 실제로 도착하는 시각(HH:MM)을 보여준다 —
@@ -2284,9 +2399,13 @@ function renderRightPanel(container: HTMLElement): void {
       [
         // 앵커(숙소/공항)도 이제 순서를 자유롭게 바꿀 수 있다 — draggable="false"였던 고정을 풂.
         // "순서 정리" 버튼(optimizedOrder)을 누르면 그때만 다시 양 끝으로 고정된다.
-        '<div class="rt-panel-stop' + (highlighted ? ' rt-highlighted' : '') + '" draggable="true" data-place-id="' + p.id + '" title="드래그해서 순서 바꾸기">',
-        '  <span class="rt-panel-badge" style="background:' + AERO_BLUE_TINT + ';color:' + cardColor + '">' + (i + 1) + '</span>',
-        '  <div class="rt-panel-name-col"><div class="rt-panel-name">' + escapeHtml(p.name) + '</div><div class="rt-panel-sub">' + escapeHtml(p.category || (isBasecamp ? '숙소' : '')) + '</div></div>',
+        '<div class="rt-panel-stop' + (highlighted ? ' rt-highlighted' : '') + (revisitPurpose ? ' rt-panel-stop-revisit' : '') +
+          '" draggable="true" data-place-id="' + p.id + '" title="드래그해서 순서 바꾸기">',
+        revisitPurpose
+          ? '  <span class="rt-panel-badge" style="background:' + LODGING_REVISIT_TINT + ';color:' + LODGING_REVISIT_COLOR + '">' + IC_SUITCASE + '</span>'
+          : '  <span class="rt-panel-badge" style="background:' + AERO_BLUE_TINT + ';color:' + cardColor + '">' + (i + 1) + '</span>',
+        '  <div class="rt-panel-name-col"><div class="rt-panel-name">' + escapeHtml(p.name) + '</div><div class="rt-panel-sub">' +
+          escapeHtml(revisitPurpose ? '잠깐 들르기 · ' + revisitPurpose : p.category || (isBasecamp ? '숙소' : '')) + '</div></div>',
         timeOrDwellHtml,
         !isAnchor
           ? '  <button type="button" class="rt-panel-remove" data-place-id="' + p.id + '" title="동선에서 빼기" aria-label="' + escapeHtml(p.name) + ' 동선에서 빼기">✕</button>'
@@ -2368,6 +2487,10 @@ function renderRightPanel(container: HTMLElement): void {
     '<div class="rt-panel-estimate-note">' + estimateNoteHtml(legs) + '</div>',
     '<div class="rt-panel-actions">',
     '  <button type="button" class="rt-panel-action" id="rt-panel-add">' + IC_PLUS + ' 장소 추가</button>',
+    '  <button type="button" class="rt-panel-action" id="rt-panel-add-revisit"' +
+      (basecampForDay(dayIndex) ? '' : ' disabled') +
+      ' title="낮에 숙소에 짐을 두거나 쉬러 잠깐 들르는 것처럼, 하루 중간에 숙소로 돌아오는 지점을 추가해요">' +
+      IC_SUITCASE + ' 숙소 들르기</button>',
     '  <button type="button" class="rt-panel-action primary" id="rt-panel-optimize"' + (s.visitCount < 2 ? ' disabled' : '') +
       ' title="' + (s.visitCount < 2 ? '장소가 2곳 이상일 때 정렬할 수 있어요' : '가까운 순서로 다시 정렬해요') + '">' + IC_SPARK + ' 순서 정리</button>',
     '</div>',
@@ -2480,6 +2603,7 @@ function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
   el.querySelector('#rt-panel-add')?.addEventListener('click', () => {
     (container.querySelector('#rt-float-search-input') as HTMLElement | null)?.focus();
   });
+  el.querySelector('#rt-panel-add-revisit')?.addEventListener('click', () => openLodgingRevisitModal(container));
   el.querySelector('#rt-panel-daydetail')?.addEventListener('click', () => void runDayDetail(container));
   el.querySelector('#rt-ai-notice-close')?.addEventListener('click', () => {
     aiPlanNotice = null;
@@ -2585,6 +2709,10 @@ const ROUTE_GRAY = '#9AA7B8';
 // 동선(경로선) 색 — 지도가 구글 기본색(파란 물 포함)이라 핀과 같은 파랑을 쓰면 배경에
 // 묻혀서, 핀은 계속 Aero Blue를 쓰고 "길" 자체만 Tangerine(주황)으로 분리했다.
 const ROUTE_LINE_COLOR = '#F4801F';
+// "숙소 들르기"(짐 두기 등 목적만 있는 재방문 스탑) 전용색 — 다른 어떤 카테고리/강조색과도
+// 안 겹치는 바이올렛. 우측 패널 배지·타임라인 카드가 이 색 하나로 서로 짝을 맞춘다.
+const LODGING_REVISIT_COLOR = '#7C5CFC';
+const LODGING_REVISIT_TINT = 'rgba(124,92,252,0.12)';
 
 /**
  * 지도 핀과 우측 패널 배지가 항상 같은 색을 쓰도록 하는 단일 기준 — "이 핀 = 이 카드"가
@@ -3244,7 +3372,10 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
   const tipY = h - pad / 2;
   const headCy = tipY - tail;
 
-  const borderColor = opts.included ? phaseColor(phase, opts.baseColor ?? AERO_BLUE) : 'rgba(107,122,147,0.85)';
+  // "숙소 들르기" 재방문 스탑은 진행 상태색 대신 항상 전용 바이올렛 — 진짜 숙소 핀과
+  // 헷갈리지 않도록 번호 대신 캐리어 아이콘을 보여준다.
+  const isRevisit = lodgingRevisitPurpose.has(p.id);
+  const borderColor = isRevisit ? LODGING_REVISIT_COLOR : opts.included ? phaseColor(phase, opts.baseColor ?? AERO_BLUE) : 'rgba(107,122,147,0.85)';
   const numberColor = borderColor;
   // 위쪽에서만 링처럼 보이도록, 흰 원은 머리 반지름보다 살짝 작게(그 차이만큼이 링 두께)
   const ringWidth = r * 0.24;
@@ -3259,12 +3390,13 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
   const shadow =
     '<ellipse cx="' + cx + '" cy="' + (tipY + r * 0.1) + '" rx="' + r * 0.42 + '" ry="' + r * 0.15 + '" fill="rgba(11,42,92,0.18)"/>';
 
-  const inner = opts.included
-    ? '<text x="' + cx + '" y="' + (headCy + 4.2) + '" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="' +
-      Math.round(12 * scale) + '" font-weight="800" fill="' + numberColor + '">' + (opts.num ?? '') + '</text>'
-    : '<g transform="translate(' + (cx - 5.5) + ',' + (headCy - 5.5) + ') scale(0.46)" color="' + numberColor +
-      '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-      iconInner(meta.icon) + '</g>';
+  const inner =
+    opts.included && !isRevisit
+      ? '<text x="' + cx + '" y="' + (headCy + 4.2) + '" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="' +
+        Math.round(12 * scale) + '" font-weight="800" fill="' + numberColor + '">' + (opts.num ?? '') + '</text>'
+      : '<g transform="translate(' + (cx - 5.5) + ',' + (headCy - 5.5) + ') scale(0.46)" color="' + numberColor +
+        '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+        iconInner(isRevisit ? IC_SUITCASE : meta.icon) + '</g>';
 
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
