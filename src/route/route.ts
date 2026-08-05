@@ -2582,6 +2582,9 @@ const AERO_BLUE_TINT = 'rgba(47,134,214,0.1)';
 // 검정에 가까워 보인다는 피드백으로, 이 앱 전체에서 이미 쓰는 네이비(--rt-navy)로 교체.
 const ROUTE_NEXT = '#0B2A5C';
 const ROUTE_GRAY = '#9AA7B8';
+// 동선(경로선) 색 — 지도가 구글 기본색(파란 물 포함)이라 핀과 같은 파랑을 쓰면 배경에
+// 묻혀서, 핀은 계속 Aero Blue를 쓰고 "길" 자체만 Tangerine(주황)으로 분리했다.
+const ROUTE_LINE_COLOR = '#F4801F';
 
 /**
  * 지도 핀과 우측 패널 배지가 항상 같은 색을 쓰도록 하는 단일 기준 — "이 핀 = 이 카드"가
@@ -3452,7 +3455,7 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
   }
   if (opts.overlapIndex > 0) path = offsetPath(path, opts.overlapIndex * 28);
 
-  const color = opts.dimmed ? ROUTE_GRAY : AERO_BLUE;
+  const color = opts.dimmed ? ROUTE_GRAY : ROUTE_LINE_COLOR;
   const opacity = opts.dimmed ? 0.5 : opts.selected ? 1 : 0.85;
   const weight = opts.selected ? style.weight + 1 : style.weight;
 
