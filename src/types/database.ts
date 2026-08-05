@@ -294,6 +294,8 @@ export interface Database {
           custom_name: string | null;
           custom_lat: number | null;
           custom_lng: number | null;
+          /** 비어있지 않으면 "숙소 들르기"처럼 일반 방문이 아닌 특수 목적 스탑(예: 짐 두기) — supabase/route_stop_purpose.sql */
+          stop_purpose: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -309,6 +311,7 @@ export interface Database {
           custom_name?: string | null;
           custom_lat?: number | null;
           custom_lng?: number | null;
+          stop_purpose?: string | null;
           created_at?: string;
           updated_at?: string;
         };

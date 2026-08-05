@@ -31,6 +31,8 @@ export interface StoredStop {
   arriveTime: string | null;
   memo: string | null;
   travelMode: string | null;
+  /** 비어있으면 일반 정류지, 있으면 "숙소 들르기" 같은 특수 목적 스탑의 목적 텍스트 */
+  purpose: string | null;
 }
 
 export interface StoredDay {
@@ -48,6 +50,14 @@ export function isRouteStorageReady(): boolean {
 function isMissingTable(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false;
   return error.code === '42P01' || /relation .* does not exist/i.test(error.message ?? '');
+}
+
+/** PostgREST "스키마 캐시에 그 컬럼이 없음" — route_stop_purpose.sql 마이그레이션 전임을 뜻함
+ *  (supabase/destination_arrival.sql 때 겪었던 것과 같은 에러 모양). 이 컬럼 하나가 없다고
+ *  저장 전체를 실패시키지 않고, 그 필드만 빼고 재시도한다. */
+function isMissingColumn(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return /Could not find the '.*' column/i.test(error.message ?? '');
 }
 
 /* ══════════════ 불러오기 ══════════════ */
@@ -98,6 +108,7 @@ export async function loadRoutePlan(destinationId: string): Promise<StoredDay[] 
       arriveTime: s.arrive_time,
       memo: s.memo,
       travelMode: s.travel_mode,
+      purpose: s.stop_purpose ?? null,
     });
     byDay.set(s.route_day_id, list);
   });
@@ -191,10 +202,23 @@ export async function saveRouteDay(
     custom_name: s.placeId ? null : s.customName,
     custom_lat: s.placeId ? null : s.customLat,
     custom_lng: s.placeId ? null : s.customLng,
+    stop_purpose: s.purpose,
   }));
 
   const { error: insErr } = await supabase.from('route_stops').insert(rows);
   if (insErr) {
+    // stop_purpose 컬럼 마이그레이션 전이면 그 필드만 빼고 재시도 — "숙소 들르기" 목적 텍스트만
+    // 빠질 뿐 나머지 동선 저장은 그대로 되게(원칙: 마이그레이션 전에도 앱은 동작해야 함).
+    if (isMissingColumn(insErr)) {
+      const fallbackRows = rows.map(({ stop_purpose: _stop_purpose, ...rest }) => rest);
+      const { error: retryErr } = await supabase.from('route_stops').insert(fallbackRows);
+      if (retryErr) {
+        console.error('[Route] route_stops 저장 실패(재시도):', retryErr.message);
+        return false;
+      }
+      markSelfWrite();
+      return true;
+    }
     console.error('[Route] route_stops 저장 실패:', insErr.message);
     return false;
   }

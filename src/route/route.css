@@ -644,6 +644,10 @@
 .rt-panel-stop.dragging { opacity: 0.4; box-shadow: var(--rt-shadow-md); transform: scale(1.02); }
 .rt-panel-stop.drag-over { box-shadow: inset 0 2px 0 var(--rt-blue); }
 .rt-panel-stop.rt-highlighted { background: var(--rt-ice); box-shadow: inset 0 0 0 1px rgba(11,124,196,0.18); }
+/* "숙소 들르기" 재방문 스탑 — 전용 바이올렛 톤으로 일반 방문지와 한눈에 구분 */
+.rt-panel-stop.rt-panel-stop-revisit { background: rgba(124,92,252,0.05); }
+.rt-panel-stop.rt-panel-stop-revisit:hover { background: rgba(124,92,252,0.09); box-shadow: inset 2px 0 0 #7C5CFC; }
+.rt-panel-stop.rt-panel-stop-revisit.rt-highlighted { background: rgba(124,92,252,0.1); box-shadow: inset 0 0 0 1px rgba(124,92,252,0.25); }
 
 /* 배경/글자색은 항상 JS(stopIdentityColor)가 인라인 style로 지정 — Aero Blue 틴트 배경 +
    Aero Blue 굵은 숫자. 여기 값은 그게 아직 안 붙었을 때의 안전한 기본값일 뿐.
@@ -941,6 +945,24 @@
 }
 .rt-ai-notes-start:hover { filter: brightness(1.06); }
 .rt-ai-notes-start svg { width: 13px; height: 13px; }
+
+/* ── "숙소 들르기" 목적 입력 모달 ── */
+.rt-revisit-modal { width: min(400px, 100%); }
+.rt-revisit-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.rt-revisit-chip {
+  padding: 7px 12px; border-radius: 999px; border: 1px solid rgba(124,92,252,0.3);
+  background: rgba(124,92,252,0.07); color: #7C5CFC;
+  font-size: 12px; font-weight: 700; font-family: inherit; cursor: pointer;
+  transition: background var(--rt-ease);
+}
+.rt-revisit-chip:hover { background: rgba(124,92,252,0.16); }
+.rt-revisit-input {
+  width: 100%; box-sizing: border-box; padding: 10px 12px;
+  border: 1px solid var(--rt-line); border-radius: 10px;
+  font-family: inherit; font-size: 12.5px; color: var(--rt-ink);
+  background: var(--rt-mist);
+}
+.rt-revisit-input:focus { outline: none; border-color: #7C5CFC; background: #fff; }
 
 /* ── 이동수단 변경 팝오버 ── */
 .rt-mode-popover {
