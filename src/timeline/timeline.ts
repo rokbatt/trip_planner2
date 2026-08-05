@@ -73,8 +73,8 @@ const IC_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const IC_GRIP = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>';
 const IC_EXTLINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>';
 const IC_PIN_SMALL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.5 7-11.5A7 7 0 0 0 5 9.5C5 14.5 12 21 12 21Z"/></svg>';
-// "숙소 들르기"(재방문 스탑) 전용 — ROUTE의 IC_SUITCASE와 동일
-const IC_SUITCASE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M9 8V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v3"/><path d="M4 13h16"/><path d="M10 13v2M14 13v2"/></svg>';
+// "숙소 들르기"(재방문 스탑) 전용 — ROUTE의 IC_LODGING(=Expense 화면 숙소 아이콘)과 동일
+const IC_LODGING = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V6a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v15"/><path d="M15 21v-8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v8"/><path d="M7.5 7.5h1M7.5 11h1M7.5 14.5h1M11.5 7.5h1M11.5 11h1M11.5 14.5h1M17.5 14.5h1M17.5 17.5h1"/><path d="M2 21h20"/></svg>';
 const IC_STAR = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.8 5.9 20.4 7.2 13.7 2.2 9l6.8-.8z"/></svg>';
 const IC_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
 
@@ -1035,7 +1035,7 @@ function revisitStopCardHtml(
     '  <div class="tl-col-spine"><span class="tl-spine-line"></span><span class="tl-dot tl-dot-revisit"><i></i></span></div>',
     '  <div class="tl-col-card">',
     '    <div class="tl-legcard tl-revisitcard">',
-    '      <span class="tl-legcard-icon tl-revisit-icon">' + IC_SUITCASE + '</span>',
+    '      <span class="tl-legcard-icon tl-revisit-icon">' + IC_LODGING + '</span>',
     '      <span class="tl-legcard-mode">숙소 들르기</span>',
     '      <div class="tl-legcard-info"><span class="tl-legcard-stats"><b>' + escapeHtml(stop.purpose ?? '') + '</b></span></div>',
     '      <button type="button" class="tl-tool tl-tool-remove" data-key="' + stop.key + '" title="일정에서 빼기" aria-label="' + escapeHtml(stop.purpose ?? '') + ' 빼기">' + IC_TRASH + '</button>',

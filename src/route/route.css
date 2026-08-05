@@ -947,22 +947,51 @@
 .rt-ai-notes-start svg { width: 13px; height: 13px; }
 
 /* ── "숙소 들르기" 목적 입력 모달 ── */
-.rt-revisit-modal { width: min(400px, 100%); }
-.rt-revisit-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.rt-revisit-modal { width: min(420px, 100%); }
+.rt-revisit-presets { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
 .rt-revisit-chip {
-  padding: 7px 12px; border-radius: 999px; border: 1px solid rgba(124,92,252,0.3);
-  background: rgba(124,92,252,0.07); color: #7C5CFC;
-  font-size: 12px; font-weight: 700; font-family: inherit; cursor: pointer;
-  transition: background var(--rt-ease);
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 9px 14px; border-radius: 999px; border: 1px solid var(--rt-line);
+  background: #fff; color: var(--rt-ink-2);
+  font-size: 12.5px; font-weight: 700; font-family: inherit; cursor: pointer;
+  transition: border-color var(--rt-ease), color var(--rt-ease), background var(--rt-ease);
 }
-.rt-revisit-chip:hover { background: rgba(124,92,252,0.16); }
+.rt-revisit-chip-icon { display: flex; width: 15px; height: 15px; flex-shrink: 0; }
+.rt-revisit-chip-icon svg { width: 100%; height: 100%; }
+.rt-revisit-chip:hover { border-color: var(--rt-blue); color: var(--rt-blue); }
+.rt-revisit-chip.active { border-color: var(--rt-blue); background: var(--rt-ice); color: var(--rt-blue); }
+.rt-revisit-field-label {
+  display: block; font-size: 11.5px; font-weight: 700; color: var(--rt-ink-3); margin-bottom: 8px;
+}
+.rt-revisit-input-row {
+  display: flex; align-items: center; gap: 8px;
+  border: 1px solid var(--rt-line); border-radius: 10px; padding: 10px 12px;
+  background: var(--rt-mist); transition: border-color var(--rt-ease), background var(--rt-ease);
+}
+.rt-revisit-input-row:focus-within { border-color: var(--rt-blue); background: #fff; }
 .rt-revisit-input {
-  width: 100%; box-sizing: border-box; padding: 10px 12px;
-  border: 1px solid var(--rt-line); border-radius: 10px;
+  flex: 1; min-width: 0; border: none; background: none; padding: 0;
   font-family: inherit; font-size: 12.5px; color: var(--rt-ink);
-  background: var(--rt-mist);
 }
-.rt-revisit-input:focus { outline: none; border-color: #7C5CFC; background: #fff; }
+.rt-revisit-input:focus { outline: none; }
+.rt-revisit-input::placeholder { color: var(--rt-ink-4); }
+.rt-revisit-counter {
+  flex-shrink: 0; font-size: 10.5px; color: var(--rt-ink-4); font-variant-numeric: tabular-nums;
+}
+.rt-revisit-actions {
+  display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0;
+  padding: 14px 20px 18px; border-top: var(--rt-dash);
+}
+.rt-revisit-cancel {
+  padding: 9px 16px; border-radius: 10px; border: 1px solid var(--rt-line); background: #fff;
+  color: var(--rt-ink-2); font-size: 12px; font-weight: 700; font-family: inherit; cursor: pointer;
+}
+.rt-revisit-cancel:hover { background: var(--rt-mist); }
+.rt-revisit-confirm {
+  padding: 9px 20px; border-radius: 10px; border: none; background: var(--rt-navy);
+  color: #fff; font-size: 12px; font-weight: 800; font-family: inherit; cursor: pointer;
+}
+.rt-revisit-confirm:hover { filter: brightness(1.1); }
 
 /* ── 이동수단 변경 팝오버 ── */
 .rt-mode-popover {
