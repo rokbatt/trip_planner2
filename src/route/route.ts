@@ -104,8 +104,13 @@ const IC_UNDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const IC_REDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h2"/></svg>';
 const IC_ALERT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>';
 const IC_ROUTEPATH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H14a3.5 3.5 0 0 0 0-7h-4a3.5 3.5 0 0 1 0-7h5.5"/></svg>';
-// "숙소 들르기"(재방문 스탑) 전용 — 캐리어 모양으로 짐 두기 등 목적을 바로 연상되게
-const IC_SUITCASE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M9 8V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v3"/><path d="M4 13h16"/><path d="M10 13v2M14 13v2"/></svg>';
+// "숙소 들르기"(재방문 스탑) 전용 — Expense 화면의 숙소 카테고리 아이콘(IC_HOTEL)과 동일한
+// 건물 모양이라, "이건 숙소 관련 스탑"이라는 게 앱 전체에서 일관되게 읽힌다.
+const IC_LODGING = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V6a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v15"/><path d="M15 21v-8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v8"/><path d="M7.5 7.5h1M7.5 11h1M7.5 14.5h1M11.5 7.5h1M11.5 11h1M11.5 14.5h1M17.5 14.5h1M17.5 17.5h1"/><path d="M2 21h20"/></svg>';
+// 목적 프리셋 칩 아이콘 — 휴식(소파)/옷 갈아입기(옷걸이)/샤워(샤워기). 짐 두기는 기존 IC_BED 재사용.
+const IC_SOFA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v4"/><path d="M3 12h18v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5Z"/><path d="M5 18v2M19 18v2"/></svg>';
+const IC_HANGER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a2 2 0 0 1 2 2c0 1-1 1.6-2 2.2"/><path d="M12 7.2 3 13.5a1.2 1.2 0 0 0 .7 2.2h16.6a1.2 1.2 0 0 0 .7-2.2L12 7.2Z"/><path d="M6 19h12"/></svg>';
+const IC_SHOWER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8a4 4 0 0 1 4-4h1"/><circle cx="15" cy="8" r="3"/><path d="M9 9v11M13 13v1M17 13v1M9 17h4M15 17h2"/></svg>';
 
 const CAT_ICON: Record<CatKey, string> = { VISIT: IC_LANDMARK, FOOD: IC_FORK, ACTIVITY: IC_TARGET, SHOPPING: IC_BAG, STAY: IC_BED, AIRPORT: IC_PLANE };
 /** 좌측 패널 카테고리 필터 칩 — 후보 목록에 실제로 나타나는 4개 게이트만(숙소 제외) */
@@ -2068,8 +2073,14 @@ function openAiPlanNotesModal(container: HTMLElement): void {
   (backdrop.querySelector('#rt-ai-notes-input') as HTMLTextAreaElement)?.focus();
 }
 
-/** 자주 쓰는 목적 프리셋 — 눌러서 바로 채우고, 없는 목적은 아래 입력칸에 직접 적는다 */
-const LODGING_REVISIT_PRESETS = ['짐 두기', '휴식', '옷 갈아입기', '샤워'];
+/** 자주 쓰는 목적 프리셋 — 눌러서 바로 고르고, 없는 목적은 아래 입력칸에 직접 적는다 */
+const LODGING_REVISIT_PRESETS: Array<{ label: string; icon: string }> = [
+  { label: '짐 두기', icon: IC_BED },
+  { label: '휴식', icon: IC_SOFA },
+  { label: '옷 갈아입기', icon: IC_HANGER },
+  { label: '샤워', icon: IC_SHOWER },
+];
+const LODGING_REVISIT_MAXLEN = 40;
 
 /** "숙소 들르기" 목적 입력 모달 — 확정하면 그 순간 기준 이 DAY의 숙소를 목적지로 하는
  *  재방문 스탑을 만들어 끝 앵커 바로 앞에 끼워 넣는다(appendStopBeforeEndAnchor와 동일한
@@ -2079,6 +2090,9 @@ function openLodgingRevisitModal(container: HTMLElement): void {
   const dayIndex = days.findIndex((d) => d.id === day.id);
   const lodging = basecampForDay(dayIndex);
   if (!lodging) return;
+
+  // 프리셋 칩 선택(눌러서 고르기)과 직접 입력은 서로 배타적 — 하나를 쓰면 다른 쪽 선택은 풀린다.
+  let selectedPreset: string | null = LODGING_REVISIT_PRESETS[0].label;
 
   document.querySelector('.rt-ai-modal-backdrop')?.remove();
   const backdrop = document.createElement('div');
@@ -2093,14 +2107,20 @@ function openLodgingRevisitModal(container: HTMLElement): void {
     '  <div class="rt-ai-modal-body">',
     '    <div class="rt-revisit-presets">',
     LODGING_REVISIT_PRESETS.map(
-      (p) => '<button type="button" class="rt-revisit-chip" data-purpose="' + escapeHtml(p) + '">' + escapeHtml(p) + '</button>'
+      (p, i) =>
+        '<button type="button" class="rt-revisit-chip' + (i === 0 ? ' active' : '') + '" data-purpose="' + escapeHtml(p.label) + '">' +
+        '<span class="rt-revisit-chip-icon">' + p.icon + '</span><span>' + escapeHtml(p.label) + '</span></button>'
     ).join(''),
     '    </div>',
-    '    <input type="text" class="rt-revisit-input" id="rt-revisit-input" placeholder="예: 짐 두기" maxlength="30" value="짐 두기" />',
+    '    <label class="rt-revisit-field-label" for="rt-revisit-input">직접 입력 (선택)</label>',
+    '    <div class="rt-revisit-input-row">',
+    '      <input type="text" class="rt-revisit-input" id="rt-revisit-input" placeholder="예) 짐 보관 후 시내 관광" maxlength="' + LODGING_REVISIT_MAXLEN + '" />',
+    '      <span class="rt-revisit-counter" id="rt-revisit-counter">0/' + LODGING_REVISIT_MAXLEN + '</span>',
+    '    </div>',
     '  </div>',
-    '  <div class="rt-ai-notes-actions">',
-    '    <button type="button" class="rt-ai-notes-cancel" id="rt-revisit-cancel">취소</button>',
-    '    <button type="button" class="rt-ai-notes-start" id="rt-revisit-start">' + IC_SUITCASE + ' 추가</button>',
+    '  <div class="rt-revisit-actions">',
+    '    <button type="button" class="rt-revisit-cancel" id="rt-revisit-cancel">취소</button>',
+    '    <button type="button" class="rt-revisit-confirm" id="rt-revisit-start">확인</button>',
     '  </div>',
     '</div>',
   ].join('\n');
@@ -2111,6 +2131,7 @@ function openLodgingRevisitModal(container: HTMLElement): void {
   };
   const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
   const input = () => backdrop.querySelector('#rt-revisit-input') as HTMLInputElement;
+  const counter = () => backdrop.querySelector('#rt-revisit-counter') as HTMLElement;
 
   backdrop.querySelector('#rt-revisit-close')?.addEventListener('click', close);
   backdrop.querySelector('#rt-revisit-cancel')?.addEventListener('click', close);
@@ -2119,13 +2140,23 @@ function openLodgingRevisitModal(container: HTMLElement): void {
 
   backdrop.querySelectorAll('.rt-revisit-chip').forEach((chip) => {
     chip.addEventListener('click', () => {
-      input().value = (chip as HTMLElement).dataset.purpose ?? '';
-      input().focus();
+      selectedPreset = (chip as HTMLElement).dataset.purpose ?? null;
+      backdrop.querySelectorAll('.rt-revisit-chip').forEach((c) => c.classList.toggle('active', c === chip));
+      input().value = '';
+      counter().textContent = '0/' + LODGING_REVISIT_MAXLEN;
     });
   });
 
+  input().addEventListener('input', () => {
+    if (input().value) {
+      selectedPreset = null;
+      backdrop.querySelectorAll('.rt-revisit-chip').forEach((c) => c.classList.remove('active'));
+    }
+    counter().textContent = input().value.length + '/' + LODGING_REVISIT_MAXLEN;
+  });
+
   backdrop.querySelector('#rt-revisit-start')?.addEventListener('click', () => {
-    const purpose = input().value.trim().slice(0, 30) || '잠깐 들르기';
+    const purpose = input().value.trim() || selectedPreset || LODGING_REVISIT_PRESETS[0].label;
     close();
     const p = makeRevisitPlace(lodging, purpose);
     placeById.set(p.id, p);
@@ -2136,8 +2167,6 @@ function openLodgingRevisitModal(container: HTMLElement): void {
   });
 
   document.body.appendChild(backdrop);
-  input().focus();
-  input().select();
 }
 
 async function runDayDetail(container: HTMLElement): Promise<void> {
@@ -2402,7 +2431,7 @@ function renderRightPanel(container: HTMLElement): void {
         '<div class="rt-panel-stop' + (highlighted ? ' rt-highlighted' : '') + (revisitPurpose ? ' rt-panel-stop-revisit' : '') +
           '" draggable="true" data-place-id="' + p.id + '" title="드래그해서 순서 바꾸기">',
         revisitPurpose
-          ? '  <span class="rt-panel-badge" style="background:' + LODGING_REVISIT_TINT + ';color:' + LODGING_REVISIT_COLOR + '">' + IC_SUITCASE + '</span>'
+          ? '  <span class="rt-panel-badge" style="background:' + LODGING_REVISIT_TINT + ';color:' + LODGING_REVISIT_COLOR + '">' + IC_LODGING + '</span>'
           : '  <span class="rt-panel-badge" style="background:' + AERO_BLUE_TINT + ';color:' + cardColor + '">' + (i + 1) + '</span>',
         '  <div class="rt-panel-name-col"><div class="rt-panel-name">' + escapeHtml(p.name) + '</div><div class="rt-panel-sub">' +
           escapeHtml(revisitPurpose ? '잠깐 들르기 · ' + revisitPurpose : p.category || (isBasecamp ? '숙소' : '')) + '</div></div>',
@@ -2486,11 +2515,10 @@ function renderRightPanel(container: HTMLElement): void {
     // 원칙 3-1 — 실측/추정을 섞어 쓰므로 어느 쪽인지 반드시 구분해 표기
     '<div class="rt-panel-estimate-note">' + estimateNoteHtml(legs) + '</div>',
     '<div class="rt-panel-actions">',
-    '  <button type="button" class="rt-panel-action" id="rt-panel-add">' + IC_PLUS + ' 장소 추가</button>',
     '  <button type="button" class="rt-panel-action" id="rt-panel-add-revisit"' +
       (basecampForDay(dayIndex) ? '' : ' disabled') +
       ' title="낮에 숙소에 짐을 두거나 쉬러 잠깐 들르는 것처럼, 하루 중간에 숙소로 돌아오는 지점을 추가해요">' +
-      IC_SUITCASE + ' 숙소 들르기</button>',
+      IC_LODGING + ' 숙소 들르기</button>',
     '  <button type="button" class="rt-panel-action primary" id="rt-panel-optimize"' + (s.visitCount < 2 ? ' disabled' : '') +
       ' title="' + (s.visitCount < 2 ? '장소가 2곳 이상일 때 정렬할 수 있어요' : '가까운 순서로 다시 정렬해요') + '">' + IC_SPARK + ' 순서 정리</button>',
     '</div>',
@@ -2599,9 +2627,6 @@ function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
     e.stopPropagation();
     showCostInKRW = !showCostInKRW;
     renderRightPanel(container);
-  });
-  el.querySelector('#rt-panel-add')?.addEventListener('click', () => {
-    (container.querySelector('#rt-float-search-input') as HTMLElement | null)?.focus();
   });
   el.querySelector('#rt-panel-add-revisit')?.addEventListener('click', () => openLodgingRevisitModal(container));
   el.querySelector('#rt-panel-daydetail')?.addEventListener('click', () => void runDayDetail(container));
@@ -3396,7 +3421,7 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
         Math.round(12 * scale) + '" font-weight="800" fill="' + numberColor + '">' + (opts.num ?? '') + '</text>'
       : '<g transform="translate(' + (cx - 5.5) + ',' + (headCy - 5.5) + ') scale(0.46)" color="' + numberColor +
         '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-        iconInner(isRevisit ? IC_SUITCASE : meta.icon) + '</g>';
+        iconInner(isRevisit ? IC_LODGING : meta.icon) + '</g>';
 
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
