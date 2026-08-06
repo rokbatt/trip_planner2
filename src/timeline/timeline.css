@@ -117,7 +117,7 @@
    못한다 — Board/Shortlist도 이 컴포넌트는 var() 대신 리터럴 색을 그대로 쓴다. */
 .tl-dest-bar-wrap { width: 100%; }
 .tl-dest-bar-wrap:empty { display: none; }
-.tl-dest-bar { display: flex; align-items: center; justify-content: flex-end; padding: 0 0 12px; }
+.tl-dest-bar { display: flex; align-items: center; justify-content: flex-end; padding: 14px 24px 12px; }
 .tl-dest-switch {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 8px 12px; border-radius: 12px; border: 1px solid rgba(130,150,170,0.24);
