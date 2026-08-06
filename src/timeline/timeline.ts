@@ -87,6 +87,7 @@ const IC_PD_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 const IC_PD_MAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3 3 5v16l6-2 6 2 6-2V3l-6 2-6-2Z"/><path d="M9 3v16M15 5v16"/></svg>';
 const IC_PD_WEB = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a13 13 0 0 1 0 18M12 3a13 13 0 0 0 0 18"/></svg>';
 const IC_PD_BOOK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0 0 4h13"/></svg>';
+const IC_PD_PLAY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="4"/><path d="M10.5 9.5v5l4.5-2.5z"/></svg>';
 const IC_PD_SPARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/></svg>';
 
 const MODE_ICON: Record<TravelMode, string> = { WALK: IC_WALK, TRANSIT: IC_TRANSIT, TAXI: IC_TAXI };
@@ -213,8 +214,9 @@ let openLegIndex: number | null = null;
 /** 지도 자리에 장소 상세 패널을 띄워 놓은 정류지 — null이면 그 자리는 원래 지도.
  *  실제 장소 데이터(place)가 없는 정류지(숙소 들르기 등)는 보여줄 게 없어 대상이 될 수 없다. */
 let detailKey: string | null = null;
-/** 상세 패널의 "리뷰" 탭 선택 상태 — "지도" 탭은 탭이 아니라 실제 지도로 돌아가는 동작이라 상태가 없다 */
-let detailTab: 'overview' | 'review' = 'overview';
+/** 상세 패널 탭 — Overview(이해) / Guide(준비 정보) / Reviews(후기) */
+type PdTab = 'overview' | 'guide' | 'reviews';
+let detailTab: PdTab = 'overview';
 
 /** legKey → 모드별 실측. 없으면 직선거리 추정치 (ROUTE와 같은 캐시 전략) */
 let realLegs = new Map<string, Record<string, RealLeg>>();
@@ -1525,7 +1527,7 @@ function resizeMapSoon(after?: () => void): void {
 
 /**
  * place_id가 있으면 정확히 그 장소로, 없으면 좌표(그마저 없으면 이름)로 검색 링크를 조합한다.
- * API를 새로 부르지 않고 URL만 만드는 거라 원칙 3-2와 무관하다(워크스페이스 상세 Drawer와 같은 방식).
+ * API를 새로 부르지 않고 URL만 만드는 거라 원칙 3-2와 무관하다.
  */
 function pdMapsUrl(place: Place, stop: TlStop): string {
   if (place.google_place_id) return 'https://www.google.com/maps/place/?q=place_id:' + place.google_place_id;
@@ -1535,159 +1537,211 @@ function pdMapsUrl(place: Place, stop: TlStop): string {
   return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(place.name);
 }
 
+/** 요일별 영업시간 7줄을 그대로 돌려준다. 형식이 다르거나 없으면 null(지어내지 않는다 — 원칙 3-1) */
+function pdHoursLines(place: Place): string[] | null {
+  const lines = place.opening_hours;
+  if (!Array.isArray(lines) || lines.length !== 7 || !lines.every((l) => typeof l === 'string')) return null;
+  return lines.map((l) => String(l));
+}
+
 /**
- * "Place Brief" — AI 요약은 다음 단계에서 연결한다(원칙 3-1, 근거 없는 설명을 지어내지 않음).
- * 지금 당장 정직하게 보여줄 수 있는 건 실제 링크(Google 지도·Wikipedia 검색)와
- * 이미 앱 전체가 쓰는 체류시간 추정치·카테고리뿐이라 그것만 칩으로 놓는다.
+ * 머리 — 큰 Hero 사진 + 그 아래 "이름 / 평점 / 카테고리 / 예상 체류" 한 줄.
+ * 문서 제목이 아니라 여행 서비스의 장소 페이지처럼 보이도록 사진을 가장 크게 쓴다.
  */
-function pdBriefSectionHtml(stop: TlStop): string {
+function pdHeroHtml(stop: TlStop): string {
   const place = stop.place!;
   const name = stop.name || place.name;
-  const mapsUrl = pdMapsUrl(place, stop);
-  const wikiUrl = 'https://ko.wikipedia.org/w/index.php?search=' + encodeURIComponent(name);
   const catParts = [CAT_LABEL[stop.cat], place.category ?? ''].filter(Boolean);
-  const dwell = dwellMinutes(stop.cat);
+  const rating = typeof place.google_rating === 'number'
+    ? '<span class="tl-pd-fact tl-pd-fact-rating">' + IC_STAR + '<b>' + place.google_rating.toFixed(1) + '</b></span>'
+    : '';
+  const hero = place.photo_url
+    ? '<div class="tl-pd-hero" data-photo="' + escapeHtml(place.photo_url) + '"></div>'
+    : '<div class="tl-pd-hero tl-pd-hero-empty">' + IC_PD_MAP + '</div>';
   return [
-    '<div class="tl-pd-card tl-pd-brief">',
-    '  <div class="tl-pd-brief-top">',
-    '    <div class="tl-pd-brief-main">',
-    '      <div class="tl-pd-card-title">' + IC_PD_SPARK + '<span>Place Brief</span></div>',
-    '      <p class="tl-pd-brief-stub">AI 요약은 다음 단계에서 연결돼요.</p>',
-    '    </div>',
-    '    <div class="tl-pd-linkrow">',
-    '      <a class="tl-pd-link" href="' + mapsUrl + '" target="_blank" rel="noopener noreferrer">' + IC_PD_MAP + '<span>Google Maps</span></a>',
-    '      <a class="tl-pd-link" href="' + wikiUrl + '" target="_blank" rel="noopener noreferrer">' + IC_PD_WEB + '<span>Wikipedia</span></a>',
-    '    </div>',
-    '  </div>',
-    '  <div class="tl-pd-chips">',
-    '    <span class="tl-pd-chip">' + IC_CLOCK + '<span>예상 체류 ' + fmtMin(dwell) + '</span></span>',
-    catParts.length ? '    <span class="tl-pd-chip">' + escapeHtml(catParts.join(' · ')) + '</span>' : '',
+    '<div class="tl-pd-herowrap">',
+    hero,
+    '  <button type="button" class="tl-pd-close" id="tl-pd-close" title="상세 닫기" aria-label="닫기">' + IC_PD_CLOSE + '</button>',
+    '</div>',
+    '<div class="tl-pd-ident">',
+    '  <h2 class="tl-pd-name">' + escapeHtml(name) + '</h2>',
+    '  <div class="tl-pd-facts">',
+    rating,
+    catParts.length ? '<span class="tl-pd-fact">' + escapeHtml(catParts.join(' · ')) + '</span>' : '',
+    '    <span class="tl-pd-fact">' + IC_CLOCK + '<span>예상 체류 ' + fmtMin(dwellMinutes(stop.cat)) + '</span></span>',
     '  </div>',
     '</div>',
   ].join('\n');
 }
 
-/** 실제 opening_hours가 있을 때만 요일별 7줄을 그대로 보여준다(지어낸 "입장 마감" 같은 값 없음) */
-function pdHoursTileHtml(place: Place, dateISO: string | null): string {
-  const lines = place.opening_hours;
-  if (!Array.isArray(lines) || lines.length !== 7 || !lines.every((l) => typeof l === 'string')) {
-    return [
-      '<div class="tl-pd-bygo-tile tl-pd-stub">',
-      '  <div class="tl-pd-bygo-tile-title">' + IC_CLOCK + '<span>운영시간</span></div>',
-      '  <div class="tl-pd-bygo-tile-desc">아직 확인된 영업시간 정보가 없어요.</div>',
-      '</div>',
-    ].join('');
-  }
-  const todayIdx = dateISO ? (new Date(dateISO + 'T00:00:00').getDay() + 6) % 7 : -1;
-  const rows = lines
-    .map((l, i) => '<div class="tl-pd-hours-line' + (i === todayIdx ? ' is-today' : '') + '">' + escapeHtml(String(l)) + '</div>')
-    .join('');
+/**
+ * 💡 한눈에 보기 — 이 패널에서 가장 먼저 읽히는 자리라 카드로 가두지 않고 배경 위에 그대로 얹는다.
+ * AI 요약은 아직 연결 전이라 지어낸 설명을 채우는 대신(원칙 3-1) 생성 버튼 하나만 둔다.
+ */
+function pdAboutSectionHtml(): string {
   return [
-    '<div class="tl-pd-bygo-tile tl-pd-hours-tile">',
-    '  <div class="tl-pd-bygo-tile-title">' + IC_CLOCK + '<span>운영시간</span></div>',
-    '  <div class="tl-pd-hours-list">' + rows + '</div>',
-    '</div>',
-  ].join('');
+    '<section class="tl-pd-sec tl-pd-sec-lead">',
+    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">💡</span>한눈에 보기</h3>',
+    '  <div class="tl-pd-lead-empty">',
+    '    <button type="button" class="tl-pd-genbtn" id="tl-pd-gen-about">' + IC_PD_SPARK + '<span>AI 요약 생성</span></button>',
+    '    <span class="tl-pd-genhint" id="tl-pd-gen-about-hint" role="status"></span>',
+    '  </div>',
+    '</section>',
+  ].join('\n');
 }
 
-/** 복장 규정·준비물 등 나머지 "Before You Go" 항목은 전부 AI 추천이라 지금은 정직한 스텁 하나로 묶는다 */
-function pdBeforeGoSectionHtml(stop: TlStop, dateISO: string | null): string {
+/**
+ * ⭐ Don't Miss — 두 번째로 중요한 자리. AI 추천 목록은 아직 없지만, "직접 찾아보는 통로"는
+ * 지금도 진짜로 만들 수 있어서(검색 URL 조합뿐이라 API 비용 0) 그것만 먼저 놓는다.
+ */
+function pdDontMissSectionHtml(stop: TlStop): string {
   const place = stop.place!;
+  const name = stop.name || place.name;
+  const q = encodeURIComponent(name);
   return [
-    '<div class="tl-pd-row2">',
-    '  <div class="tl-pd-card tl-pd-bygo">',
-    '    <div class="tl-pd-card-title"><span>Before You Go</span></div>',
-    '    <div class="tl-pd-bygo-grid">',
-    pdHoursTileHtml(place, dateISO),
-    '      <div class="tl-pd-bygo-tile tl-pd-stub">',
-    '        <div class="tl-pd-bygo-tile-title">' + IC_PD_SPARK + '<span>방문 팁</span></div>',
-    '        <div class="tl-pd-bygo-tile-desc">복장 규정·준비물·이동 팁은 AI 단계에서 채워질 예정이에요.</div>',
+    '<section class="tl-pd-sec">',
+    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">⭐</span>Don’t Miss</h3>',
+    '  <div class="tl-pd-miss">',
+    '    <button type="button" class="tl-pd-genbtn" id="tl-pd-gen-miss">' + IC_PD_SPARK + '<span>추천 포인트 생성</span></button>',
+    '    <span class="tl-pd-genhint" id="tl-pd-gen-miss-hint" role="status"></span>',
+    '    <div class="tl-pd-explore">',
+    '      <span class="tl-pd-explore-label">직접 찾아보기</span>',
+    '      <div class="tl-pd-explore-links">',
+    '        <a class="tl-pd-link" href="' + pdMapsUrl(place, stop) + '" target="_blank" rel="noopener noreferrer">' + IC_PD_MAP + '<span>Google Maps</span></a>',
+    '        <a class="tl-pd-link" href="https://www.youtube.com/results?search_query=' + q + '" target="_blank" rel="noopener noreferrer">' + IC_PD_PLAY + '<span>YouTube</span></a>',
+    '        <a class="tl-pd-link" href="https://search.naver.com/search.naver?query=' + encodeURIComponent(name + ' 여행 후기') + '" target="_blank" rel="noopener noreferrer">' + IC_PD_BOOK + '<span>블로그 후기</span></a>',
     '      </div>',
     '    </div>',
     '  </div>',
-    '  <div class="tl-pd-note">',
-    '    <div class="tl-pd-note-title">' + IC_PD_BOOK + '<span>개인 메모</span></div>',
-    '    <textarea class="tl-pd-note-input" id="tl-pd-memo" placeholder="이 장소에 대해 기억할 걸 적어두세요">' + escapeHtml(stop.memo ?? '') + '</textarea>',
-    '  </div>',
-    '</div>',
+    '</section>',
   ].join('\n');
 }
 
-/** "이 장소에서 놓치지 말 것" — 지금은 추천 데이터가 없어 자리만 잡아 둔 정직한 스텁 카드 하나뿐이다 */
-function pdDontMissSectionHtml(): string {
+/** 체크리스트 한 줄 — 실제 값이 있으면 체크, 없으면 옅은 물음표로 "아직 모른다"를 그대로 보여준다 */
+function pdCheckRow(icon: string, label: string, value: string | null): string {
+  const known = !!value;
   return [
-    '<div class="tl-pd-card tl-pd-dontmiss">',
-    '  <div class="tl-pd-card-title"><span>Don’t Miss</span></div>',
-    '  <div class="tl-pd-dontmiss-track">',
-    '    <div class="tl-pd-dontmiss-stub">',
-    '      <div class="tl-pd-dontmiss-stub-title">포토스팟 · 맛집 · 야경 포인트</div>',
-    '      <div class="tl-pd-dontmiss-stub-desc">AI 추천은 다음 단계에서 연결돼요.</div>',
-    '    </div>',
-    '  </div>',
-    '</div>',
-  ].join('\n');
-}
-
-/** "리뷰" 탭 — 실제 리뷰 텍스트를 모아오는 기능이 아직 없어(원칙 3-1), 있는 평점만 보여주고
- *  나머지는 Google로 보낸다. 링크만 조합하는 거라 API 비용은 들지 않는다. */
-function pdReviewTabHtml(stop: TlStop): string {
-  const place = stop.place!;
-  const name = stop.name || place.name;
-  const mapsUrl = pdMapsUrl(place, stop);
-  const searchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(name + ' 리뷰');
-  const rating = typeof place.google_rating === 'number'
-    ? '<span class="tl-pd-rating tl-pd-rating-lg">' + IC_STAR + '<b>' + place.google_rating.toFixed(1) + '</b></span>'
-    : '';
-  return [
-    '<div class="tl-pd-card tl-pd-review-empty">',
-    rating,
-    '  <p class="tl-pd-review-msg">아직 리뷰 데이터를 모아오지 않았어요. Google에서 실제 리뷰를 확인해 보세요.</p>',
-    '  <div class="tl-pd-linkrow">',
-    '    <a class="tl-pd-link" href="' + mapsUrl + '" target="_blank" rel="noopener noreferrer">' + IC_PD_MAP + '<span>Google 지도에서 보기</span></a>',
-    '    <a class="tl-pd-link" href="' + searchUrl + '" target="_blank" rel="noopener noreferrer">' + IC_PD_WEB + '<span>Google에서 검색</span></a>',
-    '  </div>',
-    '</div>',
-  ].join('\n');
+    '<li class="tl-pd-check' + (known ? '' : ' is-unknown') + '">',
+    '  <span class="tl-pd-check-mark">' + (known ? IC_CHECK_SM : '?') + '</span>',
+    '  <span class="tl-pd-check-label">' + icon + escapeHtml(label) + '</span>',
+    '  <span class="tl-pd-check-value">' + (known ? escapeHtml(value!) : '확인 필요') + '</span>',
+    '</li>',
+  ].join('');
 }
 
 /**
- * 지도 자리에 뜨는 장소 상세 패널 본문. 사진은 지금 장소당 1장만 캐싱돼 있어(원칙 3-1) 여러 장
- * 캐러셀 대신 큰 사진 1장만 보여준다 — 나중에 사진을 여러 장 받아오게 되면 이 자리에 그대로
- * 캐러셀 인디케이터를 얹으면 된다.
+ * 🧳 Before You Go — 보조 정보라 여기서부터 카드 스타일을 준다(위 두 섹션과 위계를 벌린다).
+ * 우리 DB에 실제로 있는 값만 채우고, 없는 항목은 "확인 필요"로 남긴다 — 예약 여부·복장 규정·
+ * 현금 결제 가능 여부는 근거 데이터가 없어 지어내지 않는다(원칙 3-1).
  */
-function placeDetailHtml(stop: TlStop, dateISO: string | null): string {
+function pdBeforeGoSectionHtml(stop: TlStop, dateISO: string | null): string {
+  const place = stop.place!;
+  const hours = todaysHoursLine(place, dateISO);
+  const rows = [
+    pdCheckRow('🕒 ', '운영시간', hours),
+    pdCheckRow('📍 ', '위치', place.address),
+    pdCheckRow('⏳ ', '예상 체류', fmtMin(dwellMinutes(stop.cat))),
+    pdCheckRow('🎟️ ', '예약·입장', null),
+    pdCheckRow('👕 ', '복장 규정', null),
+    pdCheckRow('💵 ', '현금 필요 여부', null),
+  ].join('');
+  return [
+    '<section class="tl-pd-sec">',
+    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">🧳</span>Before You Go</h3>',
+    '  <ul class="tl-pd-card tl-pd-checklist">' + rows + '</ul>',
+    '</section>',
+  ].join('\n');
+}
+
+/** 📝 개인 메모 — 카드 목록의 한 줄 메모(route_stops.memo)와 같은 값. 짧게 적는 칸이라 낮게 둔다 */
+function pdMemoSectionHtml(stop: TlStop): string {
+  return [
+    '<section class="tl-pd-sec">',
+    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">📝</span>개인 메모</h3>',
+    '  <textarea class="tl-pd-memo" id="tl-pd-memo" rows="2" placeholder="이 장소에서 기억할 것을 적어두세요">' + escapeHtml(stop.memo ?? '') + '</textarea>',
+    '</section>',
+  ].join('\n');
+}
+
+/** Guide 탭 — 요일별 영업시간 전체와 위치. 지도로 건너뛰는 버튼도 여기 있다 */
+function pdGuideTabHtml(stop: TlStop, dateISO: string | null): string {
+  const place = stop.place!;
+  const lines = pdHoursLines(place);
+  const todayIdx = dateISO ? (new Date(dateISO + 'T00:00:00').getDay() + 6) % 7 : -1;
+  const hoursBlock = lines
+    ? '<ul class="tl-pd-card tl-pd-hours">' +
+      lines
+        .map((l, i) => '<li class="tl-pd-hours-line' + (i === todayIdx ? ' is-today' : '') + '">' + escapeHtml(l) + '</li>')
+        .join('') +
+      '</ul>'
+    : '<div class="tl-pd-card tl-pd-blank">아직 확인된 영업시간 정보가 없어요.</div>';
+  const addrBlock = place.address
+    ? '<div class="tl-pd-card tl-pd-addr">' + escapeHtml(place.address) + '</div>'
+    : '<div class="tl-pd-card tl-pd-blank">저장된 주소가 없어요.</div>';
+  return [
+    '<section class="tl-pd-sec">',
+    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">🕒</span>운영시간</h3>',
+    hoursBlock,
+    '</section>',
+    '<section class="tl-pd-sec">',
+    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">📍</span>위치</h3>',
+    addrBlock,
+    '  <div class="tl-pd-explore-links">',
+    '    <button type="button" class="tl-pd-link" id="tl-pd-tomap">' + IC_PIN_SMALL + '<span>지도에서 보기</span></button>',
+    '    <a class="tl-pd-link" href="' + pdMapsUrl(place, stop) + '" target="_blank" rel="noopener noreferrer">' + IC_EXTLINK + '<span>Google 지도에서 열기</span></a>',
+    '  </div>',
+    '</section>',
+  ].join('\n');
+}
+
+/** Reviews 탭 — 리뷰 본문을 모아오는 기능이 아직 없어 평점만 보여주고 나머지는 Google로 보낸다 */
+function pdReviewsTabHtml(stop: TlStop): string {
   const place = stop.place!;
   const name = stop.name || place.name;
-  const catParts = [CAT_LABEL[stop.cat], place.category ?? ''].filter(Boolean);
   const rating = typeof place.google_rating === 'number'
-    ? '<span class="tl-pd-rating">' + IC_STAR + '<b>' + place.google_rating.toFixed(1) + '</b></span>'
-    : '';
-  const photo = place.photo_url
-    ? '<div class="tl-pd-photo" data-photo="' + escapeHtml(place.photo_url) + '"></div>'
-    : '<div class="tl-pd-photo tl-pd-photo-empty">' + IC_PD_MAP + '</div>';
-
-  const body =
-    detailTab === 'review'
-      ? pdReviewTabHtml(stop)
-      : pdBriefSectionHtml(stop) + pdBeforeGoSectionHtml(stop, dateISO) + pdDontMissSectionHtml();
-
+    ? '<div class="tl-pd-bigrate">' + IC_STAR + '<b>' + place.google_rating.toFixed(1) + '</b><span>Google 평점</span></div>'
+    : '<div class="tl-pd-blank tl-pd-card">저장된 평점이 없어요.</div>';
   return [
-    '<div class="tl-pd-head">',
-    '  <div class="tl-pd-head-text">',
-    '    <h2 class="tl-pd-name">' + escapeHtml(name) + '</h2>',
-    '    <div class="tl-pd-headmeta">',
-    catParts.length ? '<span class="tl-pd-cat">' + escapeHtml(catParts.join(' · ')) + '</span>' : '',
+    '<section class="tl-pd-sec">',
+    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">💬</span>리뷰</h3>',
     rating,
-    '    </div>',
+    '  <p class="tl-pd-note">리뷰 본문은 아직 가져오지 않아요. Google에서 실제 후기를 확인해 보세요.</p>',
+    '  <div class="tl-pd-explore-links">',
+    '    <a class="tl-pd-link" href="' + pdMapsUrl(place, stop) + '" target="_blank" rel="noopener noreferrer">' + IC_PD_MAP + '<span>Google 지도 리뷰</span></a>',
+    '    <a class="tl-pd-link" href="https://www.google.com/search?q=' + encodeURIComponent(name + ' 리뷰') + '" target="_blank" rel="noopener noreferrer">' + IC_PD_WEB + '<span>Google에서 검색</span></a>',
     '  </div>',
-    photo,
-    '  <button type="button" class="tl-pd-close" id="tl-pd-close" title="상세 패널 닫기" aria-label="닫기">' + IC_PD_CLOSE + '</button>',
-    '</div>',
-    '<div class="tl-pd-tabs">',
-    '  <button type="button" class="tl-pd-tab' + (detailTab === 'overview' ? ' active' : '') + '" data-tab="overview">개요</button>',
-    '  <button type="button" class="tl-pd-tab" data-tab="map" title="실제 지도로 전환">지도</button>',
-    '  <button type="button" class="tl-pd-tab' + (detailTab === 'review' ? ' active' : '') + '" data-tab="review">리뷰</button>',
-    '</div>',
+    '</section>',
+  ].join('\n');
+}
+
+const PD_TABS: Array<{ key: PdTab; label: string }> = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'guide', label: 'Guide' },
+  { key: 'reviews', label: 'Reviews' },
+];
+
+/**
+ * 장소를 "이해 → 준비 → 기록" 순서로 읽도록 짠 패널.
+ * 위계는 카드 개수가 아니라 **배경 차이**로 만든다 — 가장 중요한 한눈에 보기·Don't Miss는
+ * 배경 위에 그대로 얹고, 보조 정보(Before You Go 체크리스트 등)만 카드로 감싼다.
+ */
+function placeDetailHtml(stop: TlStop, dateISO: string | null): string {
+  let body: string;
+  if (detailTab === 'guide') body = pdGuideTabHtml(stop, dateISO);
+  else if (detailTab === 'reviews') body = pdReviewsTabHtml(stop);
+  else {
+    body =
+      pdAboutSectionHtml() +
+      pdDontMissSectionHtml(stop) +
+      pdBeforeGoSectionHtml(stop, dateISO) +
+      pdMemoSectionHtml(stop);
+  }
+  const tabs = PD_TABS.map(
+    (t) => '<button type="button" class="tl-pd-tab' + (detailTab === t.key ? ' active' : '') + '" data-tab="' + t.key + '">' + t.label + '</button>'
+  ).join('');
+  return [
+    pdHeroHtml(stop),
+    '<div class="tl-pd-tabs">' + tabs + '</div>',
     '<div class="tl-pd-body">' + body + '</div>',
   ].join('\n');
 }
@@ -1707,11 +1761,20 @@ function renderPlaceDetailPanel(): void {
   bindPlaceDetail(el, found.stop, found.day);
 }
 
-function bindPlaceDetail(el: HTMLElement, stop: TlStop, day: TlDay): void {
-  el.querySelectorAll('.tl-pd-photo').forEach((photoEl) => {
-    const url = (photoEl as HTMLElement).dataset.photo;
-    if (url) (photoEl as HTMLElement).style.backgroundImage = 'url("' + url.replace(/"/g, '%22') + '")';
+/** 아직 AI가 붙지 않은 생성 버튼 — 눌러도 아무 반응이 없으면 고장으로 보이므로 상태만 알려준다 */
+function bindGenButton(el: HTMLElement, btnId: string, hintId: string): void {
+  const btn = el.querySelector('#' + btnId) as HTMLButtonElement | null;
+  const hint = el.querySelector('#' + hintId) as HTMLElement | null;
+  if (!btn || !hint) return;
+  btn.addEventListener('click', () => {
+    hint.textContent = 'AI 연동은 다음 단계에서 열려요.';
   });
+}
+
+function bindPlaceDetail(el: HTMLElement, stop: TlStop, day: TlDay): void {
+  const hero = el.querySelector('.tl-pd-hero') as HTMLElement | null;
+  const heroUrl = hero?.dataset.photo;
+  if (hero && heroUrl) hero.style.backgroundImage = 'url("' + heroUrl.replace(/"/g, '%22') + '")';
 
   el.querySelector('#tl-pd-close')?.addEventListener('click', () => {
     detailKey = null;
@@ -1720,24 +1783,26 @@ function bindPlaceDetail(el: HTMLElement, stop: TlStop, day: TlDay): void {
 
   el.querySelectorAll('.tl-pd-tab').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const tab = (btn as HTMLElement).dataset.tab;
-      // "지도" 탭은 상태가 아니라 동작 — 패널을 닫고 실제 지도에서 이 정류지로 이동한다
-      if (tab === 'map') {
-        selectedKey = stop.key;
-        detailKey = null;
-        const wasClosed = !mapOpen;
-        mapOpen = true;
-        render();
-        if (wasClosed) resizeMapSoon(() => panToStop(stop));
-        else panToStop(stop);
-        return;
-      }
-      if (tab === 'overview' || tab === 'review') {
-        detailTab = tab;
-        render();
-      }
+      const tab = (btn as HTMLElement).dataset.tab as PdTab | undefined;
+      if (!tab || tab === detailTab) return;
+      detailTab = tab;
+      render();
     });
   });
+
+  // Guide 탭의 "지도에서 보기" — 패널을 닫고 실제 하루 지도에서 이 정류지로 이동한다
+  el.querySelector('#tl-pd-tomap')?.addEventListener('click', () => {
+    selectedKey = stop.key;
+    detailKey = null;
+    const wasClosed = !mapOpen;
+    mapOpen = true;
+    render();
+    if (wasClosed) resizeMapSoon(() => panToStop(stop));
+    else panToStop(stop);
+  });
+
+  bindGenButton(el, 'tl-pd-gen-about', 'tl-pd-gen-about-hint');
+  bindGenButton(el, 'tl-pd-gen-miss', 'tl-pd-gen-miss-hint');
 
   // 메모는 카드 목록의 한 줄 입력과 같은 값을 공유한다 — 입력 중 전체를 다시 그리면 포커스가
   // 날아가므로 값만 갱신하고, 카드 쪽 입력창도 DOM에서 직접 맞춰준다(scheduleSave 패턴과 동일)
@@ -1751,7 +1816,6 @@ function bindPlaceDetail(el: HTMLElement, stop: TlStop, day: TlDay): void {
     });
   }
 }
-
 /* ══════════════ 이벤트 ══════════════ */
 
 function bindShell(): void {
