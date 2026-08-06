@@ -327,6 +327,12 @@
   background: #fff; overflow-y: auto;
   display: flex; flex-direction: column;
 }
+/* [hidden] 속성은 브라우저 기본 스타일(display:none)로 처리되지만, 위 .tl-pd 규칙이
+   author stylesheet에서 display:flex를 못박아 두면 origin 우선순위상 그게 항상 이긴다
+   (특정도가 같아도 author가 user-agent를 이긴다) — 그래서 장소 상세를 안 띄운 상태에서도
+   빈 .tl-pd가 흰 배경으로 지도를 통째로 덮어 "지도가 안 보이는" 버그가 났다. 명시적으로
+   되살려준다. */
+.tl-pd[hidden] { display: none; }
 .tl-pd-head {
   position: relative; flex-shrink: 0;
   display: flex; align-items: flex-start; gap: 14px;
