@@ -82,6 +82,12 @@ const IC_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
 const IC_SWAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3L3 7l4 4M3 7h13a4 4 0 0 1 4 4v1M17 21l4-4-4-4M21 17H8a4 4 0 0 1-4-4v-1"/></svg>';
 const IC_PLANE_SM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12L22 5L15 22L11 14L2 12Z"/></svg>';
 const IC_CHECK_SM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+// 장소 상세 패널 전용 아이콘
+const IC_PD_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+const IC_PD_MAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3 3 5v16l6-2 6 2 6-2V3l-6 2-6-2Z"/><path d="M9 3v16M15 5v16"/></svg>';
+const IC_PD_WEB = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a13 13 0 0 1 0 18M12 3a13 13 0 0 0 0 18"/></svg>';
+const IC_PD_BOOK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0 0 4h13"/></svg>';
+const IC_PD_SPARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/></svg>';
 
 const MODE_ICON: Record<TravelMode, string> = { WALK: IC_WALK, TRANSIT: IC_TRANSIT, TAXI: IC_TAXI };
 const MODES: TravelMode[] = ['WALK', 'TRANSIT', 'TAXI'];
@@ -204,6 +210,11 @@ let viewMode: ViewMode = 'day';
 let selectedKey: string | null = null;
 /** 이동수단을 바꾸려고 펼쳐 놓은 구간 번호 (한 번에 하나) */
 let openLegIndex: number | null = null;
+/** 지도 자리에 장소 상세 패널을 띄워 놓은 정류지 — null이면 그 자리는 원래 지도.
+ *  실제 장소 데이터(place)가 없는 정류지(숙소 들르기 등)는 보여줄 게 없어 대상이 될 수 없다. */
+let detailKey: string | null = null;
+/** 상세 패널의 "리뷰" 탭 선택 상태 — "지도" 탭은 탭이 아니라 실제 지도로 돌아가는 동작이라 상태가 없다 */
+let detailTab: 'overview' | 'review' = 'overview';
 
 /** legKey → 모드별 실측. 없으면 직선거리 추정치 (ROUTE와 같은 캐시 전략) */
 let realLegs = new Map<string, Record<string, RealLeg>>();
@@ -254,6 +265,8 @@ export function teardownTimeline(): void {
   viewMode = 'day';
   selectedKey = null;
   openLegIndex = null;
+  detailKey = null;
+  detailTab = 'overview';
   realLegs = new Map();
   realLegPending = false;
   storageReady = false;
@@ -851,6 +864,7 @@ function shellHtml(): string {
     '    <div class="tl-mapcol" id="tl-mapcol">',
     '      <div class="tl-map" id="tl-map"></div>',
     '      <div class="tl-map-legend" id="tl-map-legend"></div>',
+    '      <div class="tl-pd" id="tl-pd" hidden></div>',
     '    </div>',
     '  </div>',
     '</div>',
@@ -873,6 +887,7 @@ function render(): void {
   }
   renderNowMarker();
   drawMap();
+  renderPlaceDetailPanel();
 }
 
 function renderViewMode(): void {
@@ -942,6 +957,7 @@ function renderDayStrip(): void {
       activeDayIndex = idx;
       selectedKey = null;
       openLegIndex = null;
+      detailKey = null; // 다른 DAY의 정류지를 보여주던 상세 패널은 의미가 없어 닫는다
       mapFitKey = ''; // DAY가 바뀌면 지도를 그 하루에 맞춰 다시 잡는다
       viewMode = 'day';
       render();
@@ -1505,6 +1521,237 @@ function resizeMapSoon(after?: () => void): void {
   }, 60);
 }
 
+/* ══════════════ 장소 상세 패널 (지도 자리에 뜬다) ══════════════ */
+
+/**
+ * place_id가 있으면 정확히 그 장소로, 없으면 좌표(그마저 없으면 이름)로 검색 링크를 조합한다.
+ * API를 새로 부르지 않고 URL만 만드는 거라 원칙 3-2와 무관하다(워크스페이스 상세 Drawer와 같은 방식).
+ */
+function pdMapsUrl(place: Place, stop: TlStop): string {
+  if (place.google_place_id) return 'https://www.google.com/maps/place/?q=place_id:' + place.google_place_id;
+  if (stop.lat != null && stop.lng != null) {
+    return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(stop.lat + ',' + stop.lng);
+  }
+  return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(place.name);
+}
+
+/**
+ * "Place Brief" — AI 요약은 다음 단계에서 연결한다(원칙 3-1, 근거 없는 설명을 지어내지 않음).
+ * 지금 당장 정직하게 보여줄 수 있는 건 실제 링크(Google 지도·Wikipedia 검색)와
+ * 이미 앱 전체가 쓰는 체류시간 추정치·카테고리뿐이라 그것만 칩으로 놓는다.
+ */
+function pdBriefSectionHtml(stop: TlStop): string {
+  const place = stop.place!;
+  const name = stop.name || place.name;
+  const mapsUrl = pdMapsUrl(place, stop);
+  const wikiUrl = 'https://ko.wikipedia.org/w/index.php?search=' + encodeURIComponent(name);
+  const catParts = [CAT_LABEL[stop.cat], place.category ?? ''].filter(Boolean);
+  const dwell = dwellMinutes(stop.cat);
+  return [
+    '<div class="tl-pd-card tl-pd-brief">',
+    '  <div class="tl-pd-brief-top">',
+    '    <div class="tl-pd-brief-main">',
+    '      <div class="tl-pd-card-title">' + IC_PD_SPARK + '<span>Place Brief</span></div>',
+    '      <p class="tl-pd-brief-stub">AI 요약은 다음 단계에서 연결돼요.</p>',
+    '    </div>',
+    '    <div class="tl-pd-linkrow">',
+    '      <a class="tl-pd-link" href="' + mapsUrl + '" target="_blank" rel="noopener noreferrer">' + IC_PD_MAP + '<span>Google Maps</span></a>',
+    '      <a class="tl-pd-link" href="' + wikiUrl + '" target="_blank" rel="noopener noreferrer">' + IC_PD_WEB + '<span>Wikipedia</span></a>',
+    '    </div>',
+    '  </div>',
+    '  <div class="tl-pd-chips">',
+    '    <span class="tl-pd-chip">' + IC_CLOCK + '<span>예상 체류 ' + fmtMin(dwell) + '</span></span>',
+    catParts.length ? '    <span class="tl-pd-chip">' + escapeHtml(catParts.join(' · ')) + '</span>' : '',
+    '  </div>',
+    '</div>',
+  ].join('\n');
+}
+
+/** 실제 opening_hours가 있을 때만 요일별 7줄을 그대로 보여준다(지어낸 "입장 마감" 같은 값 없음) */
+function pdHoursTileHtml(place: Place, dateISO: string | null): string {
+  const lines = place.opening_hours;
+  if (!Array.isArray(lines) || lines.length !== 7 || !lines.every((l) => typeof l === 'string')) {
+    return [
+      '<div class="tl-pd-bygo-tile tl-pd-stub">',
+      '  <div class="tl-pd-bygo-tile-title">' + IC_CLOCK + '<span>운영시간</span></div>',
+      '  <div class="tl-pd-bygo-tile-desc">아직 확인된 영업시간 정보가 없어요.</div>',
+      '</div>',
+    ].join('');
+  }
+  const todayIdx = dateISO ? (new Date(dateISO + 'T00:00:00').getDay() + 6) % 7 : -1;
+  const rows = lines
+    .map((l, i) => '<div class="tl-pd-hours-line' + (i === todayIdx ? ' is-today' : '') + '">' + escapeHtml(String(l)) + '</div>')
+    .join('');
+  return [
+    '<div class="tl-pd-bygo-tile tl-pd-hours-tile">',
+    '  <div class="tl-pd-bygo-tile-title">' + IC_CLOCK + '<span>운영시간</span></div>',
+    '  <div class="tl-pd-hours-list">' + rows + '</div>',
+    '</div>',
+  ].join('');
+}
+
+/** 복장 규정·준비물 등 나머지 "Before You Go" 항목은 전부 AI 추천이라 지금은 정직한 스텁 하나로 묶는다 */
+function pdBeforeGoSectionHtml(stop: TlStop, dateISO: string | null): string {
+  const place = stop.place!;
+  return [
+    '<div class="tl-pd-row2">',
+    '  <div class="tl-pd-card tl-pd-bygo">',
+    '    <div class="tl-pd-card-title"><span>Before You Go</span></div>',
+    '    <div class="tl-pd-bygo-grid">',
+    pdHoursTileHtml(place, dateISO),
+    '      <div class="tl-pd-bygo-tile tl-pd-stub">',
+    '        <div class="tl-pd-bygo-tile-title">' + IC_PD_SPARK + '<span>방문 팁</span></div>',
+    '        <div class="tl-pd-bygo-tile-desc">복장 규정·준비물·이동 팁은 AI 단계에서 채워질 예정이에요.</div>',
+    '      </div>',
+    '    </div>',
+    '  </div>',
+    '  <div class="tl-pd-note">',
+    '    <div class="tl-pd-note-title">' + IC_PD_BOOK + '<span>개인 메모</span></div>',
+    '    <textarea class="tl-pd-note-input" id="tl-pd-memo" placeholder="이 장소에 대해 기억할 걸 적어두세요">' + escapeHtml(stop.memo ?? '') + '</textarea>',
+    '  </div>',
+    '</div>',
+  ].join('\n');
+}
+
+/** "이 장소에서 놓치지 말 것" — 지금은 추천 데이터가 없어 자리만 잡아 둔 정직한 스텁 카드 하나뿐이다 */
+function pdDontMissSectionHtml(): string {
+  return [
+    '<div class="tl-pd-card tl-pd-dontmiss">',
+    '  <div class="tl-pd-card-title"><span>Don’t Miss</span></div>',
+    '  <div class="tl-pd-dontmiss-track">',
+    '    <div class="tl-pd-dontmiss-stub">',
+    '      <div class="tl-pd-dontmiss-stub-title">포토스팟 · 맛집 · 야경 포인트</div>',
+    '      <div class="tl-pd-dontmiss-stub-desc">AI 추천은 다음 단계에서 연결돼요.</div>',
+    '    </div>',
+    '  </div>',
+    '</div>',
+  ].join('\n');
+}
+
+/** "리뷰" 탭 — 실제 리뷰 텍스트를 모아오는 기능이 아직 없어(원칙 3-1), 있는 평점만 보여주고
+ *  나머지는 Google로 보낸다. 링크만 조합하는 거라 API 비용은 들지 않는다. */
+function pdReviewTabHtml(stop: TlStop): string {
+  const place = stop.place!;
+  const name = stop.name || place.name;
+  const mapsUrl = pdMapsUrl(place, stop);
+  const searchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(name + ' 리뷰');
+  const rating = typeof place.google_rating === 'number'
+    ? '<span class="tl-pd-rating tl-pd-rating-lg">' + IC_STAR + '<b>' + place.google_rating.toFixed(1) + '</b></span>'
+    : '';
+  return [
+    '<div class="tl-pd-card tl-pd-review-empty">',
+    rating,
+    '  <p class="tl-pd-review-msg">아직 리뷰 데이터를 모아오지 않았어요. Google에서 실제 리뷰를 확인해 보세요.</p>',
+    '  <div class="tl-pd-linkrow">',
+    '    <a class="tl-pd-link" href="' + mapsUrl + '" target="_blank" rel="noopener noreferrer">' + IC_PD_MAP + '<span>Google 지도에서 보기</span></a>',
+    '    <a class="tl-pd-link" href="' + searchUrl + '" target="_blank" rel="noopener noreferrer">' + IC_PD_WEB + '<span>Google에서 검색</span></a>',
+    '  </div>',
+    '</div>',
+  ].join('\n');
+}
+
+/**
+ * 지도 자리에 뜨는 장소 상세 패널 본문. 사진은 지금 장소당 1장만 캐싱돼 있어(원칙 3-1) 여러 장
+ * 캐러셀 대신 큰 사진 1장만 보여준다 — 나중에 사진을 여러 장 받아오게 되면 이 자리에 그대로
+ * 캐러셀 인디케이터를 얹으면 된다.
+ */
+function placeDetailHtml(stop: TlStop, dateISO: string | null): string {
+  const place = stop.place!;
+  const name = stop.name || place.name;
+  const catParts = [CAT_LABEL[stop.cat], place.category ?? ''].filter(Boolean);
+  const rating = typeof place.google_rating === 'number'
+    ? '<span class="tl-pd-rating">' + IC_STAR + '<b>' + place.google_rating.toFixed(1) + '</b></span>'
+    : '';
+  const photo = place.photo_url
+    ? '<div class="tl-pd-photo" data-photo="' + escapeHtml(place.photo_url) + '"></div>'
+    : '<div class="tl-pd-photo tl-pd-photo-empty">' + IC_PD_MAP + '</div>';
+
+  const body =
+    detailTab === 'review'
+      ? pdReviewTabHtml(stop)
+      : pdBriefSectionHtml(stop) + pdBeforeGoSectionHtml(stop, dateISO) + pdDontMissSectionHtml();
+
+  return [
+    '<div class="tl-pd-head">',
+    '  <div class="tl-pd-head-text">',
+    '    <h2 class="tl-pd-name">' + escapeHtml(name) + '</h2>',
+    '    <div class="tl-pd-headmeta">',
+    catParts.length ? '<span class="tl-pd-cat">' + escapeHtml(catParts.join(' · ')) + '</span>' : '',
+    rating,
+    '    </div>',
+    '  </div>',
+    photo,
+    '  <button type="button" class="tl-pd-close" id="tl-pd-close" title="상세 패널 닫기" aria-label="닫기">' + IC_PD_CLOSE + '</button>',
+    '</div>',
+    '<div class="tl-pd-tabs">',
+    '  <button type="button" class="tl-pd-tab' + (detailTab === 'overview' ? ' active' : '') + '" data-tab="overview">개요</button>',
+    '  <button type="button" class="tl-pd-tab" data-tab="map" title="실제 지도로 전환">지도</button>',
+    '  <button type="button" class="tl-pd-tab' + (detailTab === 'review' ? ' active' : '') + '" data-tab="review">리뷰</button>',
+    '</div>',
+    '<div class="tl-pd-body">' + body + '</div>',
+  ].join('\n');
+}
+
+function renderPlaceDetailPanel(): void {
+  const el = container?.querySelector('#tl-pd') as HTMLElement | null;
+  if (!el) return;
+  const found = detailKey ? findStop(detailKey) : null;
+  if (!found || !found.stop.place) {
+    detailKey = null;
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
+  el.hidden = false;
+  el.innerHTML = placeDetailHtml(found.stop, found.day.date);
+  bindPlaceDetail(el, found.stop, found.day);
+}
+
+function bindPlaceDetail(el: HTMLElement, stop: TlStop, day: TlDay): void {
+  el.querySelectorAll('.tl-pd-photo').forEach((photoEl) => {
+    const url = (photoEl as HTMLElement).dataset.photo;
+    if (url) (photoEl as HTMLElement).style.backgroundImage = 'url("' + url.replace(/"/g, '%22') + '")';
+  });
+
+  el.querySelector('#tl-pd-close')?.addEventListener('click', () => {
+    detailKey = null;
+    render();
+  });
+
+  el.querySelectorAll('.tl-pd-tab').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tab = (btn as HTMLElement).dataset.tab;
+      // "지도" 탭은 상태가 아니라 동작 — 패널을 닫고 실제 지도에서 이 정류지로 이동한다
+      if (tab === 'map') {
+        selectedKey = stop.key;
+        detailKey = null;
+        const wasClosed = !mapOpen;
+        mapOpen = true;
+        render();
+        if (wasClosed) resizeMapSoon(() => panToStop(stop));
+        else panToStop(stop);
+        return;
+      }
+      if (tab === 'overview' || tab === 'review') {
+        detailTab = tab;
+        render();
+      }
+    });
+  });
+
+  // 메모는 카드 목록의 한 줄 입력과 같은 값을 공유한다 — 입력 중 전체를 다시 그리면 포커스가
+  // 날아가므로 값만 갱신하고, 카드 쪽 입력창도 DOM에서 직접 맞춰준다(scheduleSave 패턴과 동일)
+  const memo = el.querySelector('#tl-pd-memo') as HTMLTextAreaElement | null;
+  if (memo) {
+    memo.addEventListener('input', () => {
+      stop.memo = memo.value;
+      scheduleSave(day.dayIndex);
+      const cardInput = container?.querySelector('.tl-memo[data-key="' + stop.key + '"]') as HTMLInputElement | null;
+      if (cardInput && cardInput.value !== memo.value) cardInput.value = memo.value;
+    });
+  }
+}
+
 /* ══════════════ 이벤트 ══════════════ */
 
 function bindShell(): void {
@@ -1535,6 +1782,7 @@ function bindShell(): void {
     activeDayIndex = idx;
     viewMode = 'day';
     selectedKey = null;
+    detailKey = null;
     mapFitKey = '';
     render();
     void loadRealLegsForActiveDay();
@@ -1550,6 +1798,7 @@ function bindAllDays(main: HTMLElement): void {
       activeDayIndex = idx;
       viewMode = 'day';
       selectedKey = null;
+      detailKey = null;
       mapFitKey = '';
       render();
       void loadRealLegsForActiveDay();
@@ -1573,15 +1822,33 @@ function bindDaySchedule(main: HTMLElement): void {
     if (url) (el as HTMLElement).style.backgroundImage = 'url("' + url.replace(/"/g, '%22') + '")';
   });
 
-  /* 카드 선택 — 지도의 핀과 짝을 이룬다. 같은 카드를 다시 누르면 해제(원칙 3-3) */
+  /* 카드 클릭 — 실제 장소 데이터가 있으면 지도 자리를 "이 장소 상세 패널"로 바꾼다.
+   * 같은 카드를 다시 누르면 해제(원칙 3-3). 보여줄 장소 데이터가 없는 정류지(숙소 들르기 등)는
+   * 예전처럼 선택 표시 + 지도 이동만 한다. */
   main.querySelectorAll('.tl-stop').forEach((row) => {
     row.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('input, button, a')) return;
       const key = (row as HTMLElement).dataset.key!;
       const found = findStop(key);
-      selectedKey = selectedKey === key ? null : key;
+      if (!found) return;
+      if (!found.stop.place) {
+        selectedKey = selectedKey === key ? null : key;
+        render();
+        if (selectedKey) panToStop(found.stop);
+        return;
+      }
+      if (detailKey === key) {
+        detailKey = null;
+        render();
+        return;
+      }
+      selectedKey = key;
+      detailKey = key;
+      detailTab = 'overview';
+      const wasClosed = !mapOpen;
+      mapOpen = true; // 상세 패널도 지도 칸에 뜨는 거라, 접혀 있었다면 열어준다
       render();
-      if (selectedKey && found) panToStop(found.stop);
+      if (wasClosed) resizeMapSoon();
     });
   });
 
@@ -1590,6 +1857,7 @@ function bindDaySchedule(main: HTMLElement): void {
       const found = findStop((btn as HTMLElement).dataset.key!);
       if (!found) return;
       selectedKey = found.stop.key;
+      detailKey = null; // "지도에서 보기"는 상세 패널이 아니라 실제 지도를 보러 온 것
       const wasClosed = !mapOpen;
       mapOpen = true; // "지도에서 보기"는 지도를 보러 온 거니 닫혀 있었다면 열어준다
       render();
@@ -1670,6 +1938,7 @@ function bindDaySchedule(main: HTMLElement): void {
       if (!found) return;
       found.day.stops.splice(found.index, 1);
       if (selectedKey === found.stop.key) selectedKey = null;
+      if (detailKey === found.stop.key) detailKey = null;
       openLegIndex = null;
       mapFitKey = '';
       scheduleSave(found.day.dayIndex);

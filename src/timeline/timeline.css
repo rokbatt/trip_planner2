@@ -317,6 +317,159 @@
 .tl-map-legend-sep { color: var(--tl-ink-4); }
 .tl-map-legend-warn { color: var(--tl-warn); font-weight: 600; }
 
+/* ══════════════ 장소 상세 패널 — 지도 자리에 뜬다 ══════════════
+   카드를 클릭하면 이 패널이 지도를 완전히 덮는다(.tl-mapcol이 position:sticky/relative라
+   absolute 자식의 기준이 되어 준다). "지도" 탭은 상태가 아니라 실제 지도로 돌아가는 동작이라
+   여기엔 지도 탭 콘텐츠가 없다. 색은 새로 만들지 않고 기존 Airport Lounge 토큰을 그대로 쓴다:
+   Navy 강조는 --tl-c-primary, 링크 Blue는 --tl-blue, 테두리는 --tl-c-card-border. */
+.tl-pd {
+  position: absolute; inset: 0; z-index: 5;
+  background: #fff; overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+.tl-pd-head {
+  position: relative; flex-shrink: 0;
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 18px 44px 14px 18px;
+  border-bottom: 1px solid var(--tl-c-card-border);
+}
+.tl-pd-head-text { flex: 1; min-width: 0; }
+.tl-pd-name {
+  margin: 0; font-size: 18px; font-weight: 800; color: var(--tl-c-title);
+  line-height: 1.3;
+}
+.tl-pd-headmeta { display: flex; align-items: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
+.tl-pd-cat { font-size: 12px; font-weight: 600; color: var(--tl-c-secondary); }
+.tl-pd-rating { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; color: var(--tl-c-rating); }
+.tl-pd-rating svg { width: 13px; height: 13px; }
+.tl-pd-rating b { font-weight: 800; color: var(--tl-c-title); }
+.tl-pd-rating-lg { font-size: 15px; }
+.tl-pd-rating-lg svg { width: 16px; height: 16px; }
+/* 사진은 지금 장소당 1장뿐이라 캐러셀 없이 16:9 사진 1장만 — 여러 장을 받아오게 되면
+   여기 인디케이터(예: "1/12")를 얹을 자리다 */
+.tl-pd-photo {
+  flex-shrink: 0; width: 168px; aspect-ratio: 16/9; border-radius: 12px;
+  background-size: cover; background-position: center; background-color: var(--tl-mist);
+}
+.tl-pd-photo-empty {
+  display: grid; place-items: center; color: var(--tl-ink-4);
+}
+.tl-pd-photo-empty svg { width: 24px; height: 24px; }
+.tl-pd-close {
+  position: absolute; top: 14px; right: 14px;
+  width: 28px; height: 28px; border-radius: 50%; padding: 0;
+  display: grid; place-items: center;
+  border: 1px solid var(--tl-c-card-border); background: #fff; color: var(--tl-ink-2);
+  cursor: pointer; transition: all var(--tl-ease);
+}
+.tl-pd-close:hover { border-color: var(--tl-blue); color: var(--tl-blue); }
+.tl-pd-close svg { width: 13px; height: 13px; }
+
+.tl-pd-tabs {
+  flex-shrink: 0; display: flex; gap: 4px;
+  padding: 0 18px; border-bottom: 1px solid var(--tl-c-card-border);
+}
+.tl-pd-tab {
+  padding: 10px 6px; border: none; border-bottom: 2px solid transparent;
+  background: none; font-family: inherit; font-size: 13px; font-weight: 700;
+  color: var(--tl-c-secondary); cursor: pointer; transition: all var(--tl-ease);
+}
+.tl-pd-tab:hover { color: var(--tl-c-title); }
+.tl-pd-tab.active { color: var(--tl-c-primary); border-bottom-color: var(--tl-c-primary); }
+
+.tl-pd-body { flex: 1; min-width: 0; padding: 16px 18px 22px; display: flex; flex-direction: column; gap: 14px; }
+
+.tl-pd-card {
+  border: 1px solid var(--tl-c-card-border); border-radius: 16px; background: #fff;
+  box-shadow: var(--tl-card-shadow); padding: 14px 16px;
+}
+.tl-pd-card-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 800; color: var(--tl-c-title);
+}
+.tl-pd-card-title svg { width: 14px; height: 14px; color: var(--tl-c-primary); }
+
+/* Place Brief */
+.tl-pd-brief-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.tl-pd-brief-main { min-width: 0; }
+.tl-pd-brief-stub { margin: 6px 0 0; font-size: 12.5px; color: var(--tl-c-secondary); line-height: 1.6; }
+.tl-pd-linkrow { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
+.tl-pd-link {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 10px; border-radius: 8px; border: 1px solid var(--tl-c-card-border);
+  background: var(--tl-mist); color: var(--tl-blue); font-size: 11.5px; font-weight: 700;
+  text-decoration: none; white-space: nowrap; transition: all var(--tl-ease);
+}
+.tl-pd-link:hover { border-color: var(--tl-blue); background: var(--tl-ice); }
+.tl-pd-link svg { width: 12px; height: 12px; }
+.tl-pd-chips { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.tl-pd-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: 999px; background: var(--tl-mist);
+  font-size: 11px; font-weight: 700; color: var(--tl-c-body);
+}
+.tl-pd-chip svg { width: 12px; height: 12px; color: var(--tl-c-secondary); }
+
+/* Before You Go + 개인 메모 */
+.tl-pd-row2 { display: flex; gap: 14px; align-items: stretch; flex-wrap: wrap; }
+.tl-pd-bygo { flex: 1 1 320px; min-width: 0; }
+.tl-pd-bygo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.tl-pd-bygo-tile {
+  border: 1px solid var(--tl-c-card-border); border-radius: 12px; background: var(--tl-c-staybox-bg);
+  padding: 10px 12px;
+}
+.tl-pd-bygo-tile-title {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11.5px; font-weight: 800; color: var(--tl-c-title);
+}
+.tl-pd-bygo-tile-title svg { width: 12px; height: 12px; color: var(--tl-c-primary); }
+.tl-pd-bygo-tile-desc { margin-top: 4px; font-size: 11px; color: var(--tl-c-secondary); line-height: 1.5; }
+/* 아직 실제 데이터가 없는 타일 — 점선 테두리로 "채워질 자리"임을 구분한다 */
+.tl-pd-stub { border-style: dashed; background: #fff; }
+.tl-pd-hours-list { margin-top: 4px; display: flex; flex-direction: column; gap: 1px; }
+.tl-pd-hours-line { font-size: 10.5px; color: var(--tl-c-secondary); line-height: 1.6; }
+.tl-pd-hours-line.is-today { color: var(--tl-c-title); font-weight: 700; }
+/* 개인 메모 — 노란 포스트잇이 아니라 아주 연한 Warm Gray */
+.tl-pd-note {
+  flex: 1 1 200px; min-width: 180px;
+  border: 1px solid var(--tl-c-card-border); border-radius: 16px; background: #FAF9F7;
+  padding: 14px 16px; display: flex; flex-direction: column;
+}
+.tl-pd-note-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 800; color: var(--tl-c-title);
+}
+.tl-pd-note-title svg { width: 14px; height: 14px; color: var(--tl-c-secondary); }
+.tl-pd-note-input {
+  flex: 1; min-height: 96px; margin-top: 10px; resize: none;
+  border: none; background: none; font-family: inherit; font-size: 12.5px;
+  color: var(--tl-c-body); line-height: 1.6;
+}
+.tl-pd-note-input::placeholder { color: var(--tl-ink-4); }
+.tl-pd-note-input:focus { outline: none; }
+
+/* Don't Miss — 지금은 정직한 스텁 카드 1장, 나중에 추천이 생기면 이 트랙에 카드가 늘어난다 */
+.tl-pd-dontmiss-track { display: flex; gap: 10px; margin-top: 10px; overflow-x: auto; }
+.tl-pd-dontmiss-stub {
+  flex-shrink: 0; width: 220px; padding: 16px;
+  border: 1px dashed var(--tl-c-card-border); border-radius: 14px; background: var(--tl-mist);
+}
+.tl-pd-dontmiss-stub-title { font-size: 12.5px; font-weight: 700; color: var(--tl-c-title); }
+.tl-pd-dontmiss-stub-desc { margin-top: 4px; font-size: 11px; color: var(--tl-c-secondary); line-height: 1.5; }
+
+/* 리뷰 탭 */
+.tl-pd-review-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.tl-pd-review-msg { margin: 0; font-size: 12.5px; color: var(--tl-c-secondary); line-height: 1.6; }
+
+@media (max-width: 720px) {
+  .tl-pd-head { padding: 14px 40px 12px 14px; }
+  .tl-pd-photo { width: 96px; }
+  .tl-pd-name { font-size: 16px; }
+  .tl-pd-body { padding: 12px 14px 18px; }
+  .tl-pd-row2 { flex-direction: column; }
+  .tl-pd-bygo-grid { grid-template-columns: 1fr; }
+}
+
 /* ══════════════ 하루 일정 ══════════════ */
 
 /* 레퍼런스는 하루 전체를 감싸는 카드 틀이 없다 — DAY 헤더와 카드들이 페이지 배경 위에
