@@ -948,7 +948,7 @@ const PLACE_BRIEF_SCHEMA = {
       items: {
         type: 'OBJECT',
         properties: { title: { type: 'STRING' }, detail: { type: 'STRING' } },
-        required: ['title'],
+        required: ['title', 'detail'],
       },
     },
     beforeYouGo: {
@@ -959,9 +959,10 @@ const PLACE_BRIEF_SCHEMA = {
         cash: { type: 'STRING' },
         tips: { type: 'ARRAY', items: { type: 'STRING' } },
       },
+      required: ['booking', 'dress', 'cash', 'tips'],
     },
   },
-  required: ['summary'],
+  required: ['summary', 'keywords', 'bestTime', 'dontMiss', 'beforeYouGo'],
 };
 
 async function handlePlaceBrief(req: VercelRequest, res: VercelResponse) {
@@ -984,8 +985,11 @@ async function handlePlaceBrief(req: VercelRequest, res: VercelResponse) {
   const identity = googlePlaceId || name + '|' + address;
   const cacheKey = 'place-brief:' + stableHash(identity);
 
+  // refresh=true면 캐시를 건너뛰고 새로 생성한다 — 예전 응답이 일부 비어 있던 경우
+  // (모델이 필드를 빼먹은 결과가 캐시에 박힌 경우) 사용자가 다시 생성할 수 있어야 한다.
+  const refresh = body.refresh === true;
   const supabase = makeSupabase();
-  const cached = await readPlanCache(supabase, cacheKey);
+  const cached = refresh ? null : await readPlanCache(supabase, cacheKey);
   if (cached) {
     res.status(200).json({ ...cached, cached: true });
     return;
@@ -1023,6 +1027,9 @@ async function handlePlaceBrief(req: VercelRequest, res: VercelResponse) {
     '중요: 너는 실시간 정보에 접근할 수 없어. 요금·운영시간·예약 정책은 자주 바뀌니까',
     '확실하지 않은 걸 확정된 사실처럼 쓰지 마. 모르면 "현장 확인 권장"처럼 솔직하게 적어.',
     '이 장소에 대해 아는 게 거의 없으면 없는 내용을 만들어내지 말고 짧게만 써.',
+    '',
+    '위 항목(summary, keywords, bestTime, dontMiss, beforeYouGo)은 하나도 빠뜨리지 말고 전부 채워.',
+    '정말 쓸 내용이 없는 항목이라도 빈 배열/빈 문자열로 두지 말고 "현장 확인 권장"처럼 한 줄이라도 적어.',
   ]
     .filter(Boolean)
     .join('\n');

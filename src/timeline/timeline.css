@@ -325,12 +325,15 @@
      · 보조 정보(체크리스트·영업시간·주소)만 흰 카드로 감싼다
    그래서 흰 박스가 세로로 반복되던 이전 버전보다 훨씬 가볍게 보인다. */
 .tl-pd {
-  --pd-navy: #1E3A6D;
-  --pd-blue: #2F86D6;
-  --pd-bg: #F8FAFC;
-  --pd-line: #E9EEF5;
-  --pd-body: #4A5768;
-  --pd-muted: #8A97A8;
+  /* 색은 이 패널만의 값을 새로 만들지 않고 앱 전체 팔레트를 그대로 쓴다 —
+     패널에만 따로 Navy/Blue를 두면 같은 화면 안에서 남색·파랑이 두 종류가 되어
+     "컨셉과 살짝 다른" 느낌이 난다(실제로 그렇게 보여서 되돌렸다). */
+  --pd-navy: var(--tl-ink);            /* #0B2A5C — 제목 */
+  --pd-blue: var(--tl-blue);           /* #0B7CC4 — 유일한 강조/액션 */
+  --pd-bg: #F8FBFE;                    /* 앱 배경과 동일 */
+  --pd-line: var(--tl-c-card-border);  /* #E9EEF5 */
+  --pd-body: var(--tl-c-body);         /* #334155 */
+  --pd-muted: var(--tl-c-secondary);   /* #7A8798 */
 
   position: absolute; inset: 0; z-index: 5;
   background: var(--pd-bg); overflow-y: auto;
@@ -399,7 +402,9 @@
   display: flex; align-items: center; gap: 7px; margin: 0 0 10px;
   font-size: 14px; font-weight: 800; color: var(--pd-navy); letter-spacing: -0.01em;
 }
-.tl-pd-secicon { font-size: 15px; line-height: 1; }
+/* 섹션 아이콘 — 이모지 대신 얇은 선 SVG. 제목과 같은 색 계열로 눌러서 스티커처럼 튀지 않게 */
+.tl-pd-secicon { display: inline-flex; flex-shrink: 0; color: var(--pd-blue); }
+.tl-pd-secicon svg { width: 15px; height: 15px; }
 
 /* 가장 먼저 읽히는 자리 — 테두리도 배경도 없이 크게 */
 .tl-pd-sec-lead .tl-pd-sectitle { font-size: 15px; }
@@ -472,6 +477,12 @@
   cursor: pointer; transition: filter var(--tl-ease);
 }
 .tl-pd-genbtn:hover { filter: brightness(1.06); }
+/* "다시 생성"은 Primary가 아니라 복구용 보조 액션이라 채운 버튼으로 두지 않는다 */
+.tl-pd-genbtn.is-retry {
+  background: #fff; color: var(--pd-body); border: 1px solid var(--pd-line);
+  font-weight: 700;
+}
+.tl-pd-genbtn.is-retry:hover { border-color: var(--pd-blue); color: var(--pd-blue); filter: none; }
 .tl-pd-genbtn svg { width: 14px; height: 14px; }
 .tl-pd-genhint { font-size: 11.5px; color: var(--pd-muted); }
 .tl-pd-genhint:empty { display: none; }
@@ -515,7 +526,12 @@
   font-size: 10px; font-weight: 800;
 }
 .tl-pd-check-mark svg { width: 11px; height: 11px; }
-.tl-pd-check-label { flex-shrink: 0; font-weight: 700; color: var(--pd-navy); }
+.tl-pd-check-label {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px;
+  font-weight: 700; color: var(--pd-navy);
+}
+.tl-pd-check-icon { display: inline-flex; flex-shrink: 0; color: var(--pd-muted); }
+.tl-pd-check-icon svg { width: 13px; height: 13px; }
 .tl-pd-check-value {
   flex: 1; min-width: 0; text-align: right; color: var(--pd-body);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
