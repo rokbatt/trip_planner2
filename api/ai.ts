@@ -183,6 +183,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (kind === 'route-plan-macro') return handleRoutePlanMacro(req, res);
   if (kind === 'route-plan-day') return handleRoutePlanDay(req, res);
   if (kind === 'day-detail') return handleDayDetail(req, res);
+  if (kind === 'place-brief') return handlePlaceBrief(req, res);
   return handleHotelReview(req, res);
 }
 
@@ -922,5 +923,139 @@ async function handleDayDetail(req: VercelRequest, res: VercelResponse) {
   };
 
   await writePlanCache(supabase, cacheKey, 'day-detail', result);
+  res.status(200).json({ ...result, cached: false });
+}
+
+
+/* ══════════════════ 5. 장소 한눈에 보기 (TIMELINE 장소 상세 패널) ══════════════════ */
+
+/**
+ * 장소 하나를 여행 준비 관점에서 정리한다 — 요약 / 놓치지 말 것 / 가기 전 확인사항을
+ * **한 번의 호출로 같이** 받는다(원칙 3-2). 섹션별로 따로 부르면 같은 장소에 대해
+ * Gemini를 3번 부르게 되는데, 어차피 같은 맥락을 보고 쓰는 내용이라 나눌 이유가 없다.
+ *
+ * 캐시 키는 장소 신원(google_place_id 우선) — 유한 집합이라 무한정 늘어나지 않는다(원칙 3-5).
+ * 같은 장소를 여러 DAY에 담아도, 다른 멤버가 열어도 캐시가 그대로 재사용된다.
+ */
+const PLACE_BRIEF_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    summary: { type: 'STRING' },
+    keywords: { type: 'ARRAY', items: { type: 'STRING' } },
+    bestTime: { type: 'STRING' },
+    dontMiss: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: { title: { type: 'STRING' }, detail: { type: 'STRING' } },
+        required: ['title'],
+      },
+    },
+    beforeYouGo: {
+      type: 'OBJECT',
+      properties: {
+        booking: { type: 'STRING' },
+        dress: { type: 'STRING' },
+        cash: { type: 'STRING' },
+        tips: { type: 'ARRAY', items: { type: 'STRING' } },
+      },
+    },
+  },
+  required: ['summary'],
+};
+
+async function handlePlaceBrief(req: VercelRequest, res: VercelResponse) {
+  const body = (req.body ?? {}) as Record<string, any>;
+  const name = String(body.name ?? '').trim();
+  const googlePlaceId = String(body.googlePlaceId ?? '').trim();
+  const category = String(body.category ?? '').trim();
+  const address = String(body.address ?? '').trim();
+  const destination = String(body.destination ?? '').trim();
+  const rating = Number(body.rating);
+  const hours: string[] = Array.isArray(body.hours) ? body.hours.map((h: any) => String(h)) : [];
+
+  if (!name) {
+    res.status(400).json({ error: 'name이 필요해요.' });
+    return;
+  }
+
+  // 장소 신원이 같으면 같은 캐시를 쓴다. place_id가 없는 장소(지도에 직접 찍은 지점, 공항 등)는
+  // 이름+주소로 대체 — 좌표까지 넣으면 소수점 흔들림 때문에 같은 장소가 여러 키로 갈라진다.
+  const identity = googlePlaceId || name + '|' + address;
+  const cacheKey = 'place-brief:' + stableHash(identity);
+
+  const supabase = makeSupabase();
+  const cached = await readPlanCache(supabase, cacheKey);
+  if (cached) {
+    res.status(200).json({ ...cached, cached: true });
+    return;
+  }
+
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    res.status(500).json({ error: 'GEMINI_API_KEY가 설정되지 않았어요.' });
+    return;
+  }
+
+  const prompt = [
+    '너는 여행 가이드야. 아래 장소를 "여행 가기 전에 이해하고 준비하는" 관점에서 정리해줘.',
+    '',
+    '장소: ' + name,
+    destination ? '여행지: ' + destination : '',
+    category ? '분류: ' + category : '',
+    address ? '주소: ' + address : '',
+    Number.isFinite(rating) && rating > 0 ? '구글 평점: ' + rating : '',
+    hours.length ? '영업시간: ' + hours.join(' / ') : '',
+    '',
+    '요청 사항:',
+    '- summary: 이 장소가 어떤 곳인지 3~4문장으로. 여행자가 왜 여기 가는지가 드러나야 해.',
+    '  홍보 문구처럼 과장하지 말고 담백하게.',
+    '- keywords: 이 장소를 대표하는 짧은 키워드 3~5개 (예: 역사, 전망, 야경). 각 6자 이내.',
+    '- bestTime: 언제 가면 가장 좋은지 한 줄 (예: "일몰 1시간 전", "개장 직후 오전").',
+    '- dontMiss: 이 장소에서 놓치면 아쉬운 것 3~5개. title은 12자 이내로 짧게,',
+    '  detail은 한 줄로 왜 봐야 하는지. 포토스팟·대표 건축물·특정 메뉴·숨은 명소 같은 구체적인 것.',
+    '- beforeYouGo: 가기 전에 알아야 할 것.',
+    '  booking: 예약이나 입장권이 필요한지 (필요 없으면 "예약 없이 입장" 처럼 명확히).',
+    '  dress: 복장 제한이 있는지 (없으면 "제한 없음").',
+    '  cash: 현금이 필요한지 카드가 되는지.',
+    '  tips: 그 외 준비물·이동·혼잡 관련 팁 2~3개.',
+    '',
+    '중요: 너는 실시간 정보에 접근할 수 없어. 요금·운영시간·예약 정책은 자주 바뀌니까',
+    '확실하지 않은 걸 확정된 사실처럼 쓰지 마. 모르면 "현장 확인 권장"처럼 솔직하게 적어.',
+    '이 장소에 대해 아는 게 거의 없으면 없는 내용을 만들어내지 말고 짧게만 써.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const { data, error } = await callGeminiJson('gemini-2.5-flash-lite', geminiKey, prompt, PLACE_BRIEF_SCHEMA);
+  if (error) {
+    res.status(502).json({ error });
+    return;
+  }
+
+  const summary = String(data?.summary ?? '').trim();
+  if (!summary) {
+    res.status(502).json({ error: 'AI 응답을 해석하지 못했어요. 잠시 후 다시 시도해 주세요.' });
+    return;
+  }
+
+  const str = (v: any): string => String(v ?? '').trim();
+  const result = {
+    summary,
+    keywords: (Array.isArray(data?.keywords) ? data.keywords : []).map(str).filter(Boolean).slice(0, 5),
+    bestTime: str(data?.bestTime),
+    dontMiss: (Array.isArray(data?.dontMiss) ? data.dontMiss : [])
+      .map((d: any) => ({ title: str(d?.title), detail: str(d?.detail) }))
+      .filter((d: any) => d.title)
+      .slice(0, 5),
+    beforeYouGo: {
+      booking: str(data?.beforeYouGo?.booking),
+      dress: str(data?.beforeYouGo?.dress),
+      cash: str(data?.beforeYouGo?.cash),
+      tips: (Array.isArray(data?.beforeYouGo?.tips) ? data.beforeYouGo.tips : []).map(str).filter(Boolean).slice(0, 4),
+    },
+  };
+
+  await writePlanCache(supabase, cacheKey, 'place-brief', result);
   res.status(200).json({ ...result, cached: false });
 }
