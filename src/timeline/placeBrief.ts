@@ -54,14 +54,18 @@ export function placeBriefKey(req: PlaceBriefRequest): string {
   return (req.googlePlaceId || '').trim() || req.name + '|' + (req.address ?? '');
 }
 
-/** 서버가 준 에러 메시지를 그대로 살려서 던진다(화면에서 사용자에게 보여줌) */
-export async function requestPlaceBrief(req: PlaceBriefRequest): Promise<PlaceBrief> {
+/**
+ * 서버가 준 에러 메시지를 그대로 살려서 던진다(화면에서 사용자에게 보여줌).
+ * `refresh`를 주면 서버가 캐시를 건너뛰고 새로 생성한다 — 예전 응답에 일부 항목이 비어 있던
+ * 경우(모델이 필드를 빼먹은 결과가 캐시에 박힌 경우) 다시 생성할 수 있어야 하기 때문이다.
+ */
+export async function requestPlaceBrief(req: PlaceBriefRequest, refresh = false): Promise<PlaceBrief> {
   let res: Response;
   try {
     res = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'place-brief', ...req }),
+      body: JSON.stringify({ kind: 'place-brief', ...req, refresh }),
     });
   } catch {
     throw new Error('네트워크 연결을 확인해 주세요.');

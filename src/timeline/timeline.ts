@@ -89,6 +89,18 @@ const IC_PD_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 const IC_PD_MAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3 3 5v16l6-2 6 2 6-2V3l-6 2-6-2Z"/><path d="M9 3v16M15 5v16"/></svg>';
 const IC_PD_WEB = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a13 13 0 0 1 0 18M12 3a13 13 0 0 0 0 18"/></svg>';
 const IC_PD_BOOK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0 0 4h13"/></svg>';
+const IC_PD_REFRESH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>';
+// 섹션 제목·체크리스트용 얇은 선 아이콘 — 이모지는 OS/브라우저마다 모양과 색이 달라
+// 컨셉(Airport Lounge, 얇은 선 아이콘)에서 튀고 "AI가 붙인 스티커"처럼 보인다.
+const IC_PD_BULB = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3Z"/></svg>';
+const IC_PD_STAR_LINE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5l2.6 5.5 5.9.8-4.3 4.1 1.1 5.9L12 17l-5.3 2.8 1.1-5.9L3.5 9.8l5.9-.8z"/></svg>';
+const IC_PD_BAG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="14" rx="2.5"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M9 11v6M15 11v6"/></svg>';
+const IC_PD_PENCIL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9a2.5 2.5 0 0 0-3.5-3.5L4.5 16.5z"/><path d="M14.5 6.5 17.5 9.5"/></svg>';
+const IC_PD_CHAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-8 8H8l-4 3v-5.5A8 8 0 1 1 21 12Z"/></svg>';
+const IC_PD_TICKET = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9V6.5A1.5 1.5 0 0 1 4.5 5h15A1.5 1.5 0 0 1 21 6.5V9a3 3 0 0 0 0 6v2.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5V15a3 3 0 0 0 0-6Z"/><path d="M12 8.5v7"/></svg>';
+const IC_PD_SHIRT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3l3 2.5L15 3l5 3-2 3.5-1.5-.8V21h-9V8.7L6 9.5 4 6z"/></svg>';
+const IC_PD_CASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 12h.01M18 12h.01"/></svg>';
+const IC_PD_HOURGLASS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h10M7 21h10M8 3v3.5c0 1.5 4 3.6 4 5.5s-4 4-4 5.5V21M16 3v3.5c0 1.5-4 3.6-4 5.5s4 4 4 5.5V21"/></svg>';
 const IC_PD_PLAY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="4"/><path d="M10.5 9.5v5l4.5-2.5z"/></svg>';
 const IC_PD_SPARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/></svg>';
 
@@ -1603,16 +1615,24 @@ function pdBriefOf(stop: TlStop): PlaceBrief | null {
   return placeBriefs.get(placeBriefKey(pdBriefRequest(stop))) ?? null;
 }
 
-/** AI 브리핑 요청 — 이미 받았거나 받는 중이면 다시 부르지 않는다(원칙 3-2) */
-async function loadPlaceBrief(stop: TlStop): Promise<void> {
+/**
+ * AI 브리핑 요청 — 이미 받았거나 받는 중이면 다시 부르지 않는다(원칙 3-2).
+ *
+ * `force`는 "다시 생성"용이다. 이 우회로가 없으면 예전에 일부 항목이 비어 있는 응답을 한 번
+ * 받아 둔 장소에서 버튼이 **눌러도 아무 일도 안 하는 상태**가 된다 — 화면은 (그 섹션이 비었으니)
+ * 생성 버튼을 그리는데, 여기 가드는 (브리핑은 있으니) 그냥 return해 버리기 때문. 실제로 났던 버그다.
+ */
+async function loadPlaceBrief(stop: TlStop, force = false): Promise<void> {
   const req = pdBriefRequest(stop);
   const key = placeBriefKey(req);
-  if (placeBriefs.has(key) || placeBriefLoading.has(key)) return;
+  if (placeBriefLoading.has(key)) return;
+  if (!force && placeBriefs.has(key)) return;
   placeBriefLoading.add(key);
   placeBriefErrors.delete(key);
   render();
   try {
-    const brief = await requestPlaceBrief(req);
+    // force일 땐 서버 캐시도 건너뛴다 — 안 그러면 그 반쪽 결과를 그대로 다시 받는다
+    const brief = await requestPlaceBrief(req, force);
     placeBriefs.set(key, brief);
   } catch (e) {
     placeBriefErrors.set(key, (e as Error).message);
@@ -1625,17 +1645,29 @@ async function loadPlaceBrief(stop: TlStop): Promise<void> {
 /** AI가 쓴 값임을 항상 눈에 보이게 — 우리 DB의 실제 값과 같은 위계로 섞이면 안 된다(원칙 3-1) */
 const PD_AI_TAG = '<span class="tl-pd-aitag">AI</span>';
 
-/** 생성 버튼 / 로딩 / 실패를 한 자리에서 — 세 섹션이 같은 상태를 공유한다 */
+/**
+ * 생성 버튼 / 로딩 / 실패를 한 자리에서 — 세 섹션이 같은 상태를 공유한다(한 번의 호출로 다 채워짐).
+ * 이미 브리핑을 받았는데도 이 섹션이 비어 있으면(모델이 그 항목을 못 채운 경우) "생성"이 아니라
+ * **"다시 생성"**을 보여준다 — 생성 버튼을 그대로 두면 이미 받은 브리핑 때문에 눌려도 아무 일도
+ * 일어나지 않아 고장으로 보인다.
+ */
 function pdGenBlockHtml(stop: TlStop, label: string): string {
   const key = placeBriefKey(pdBriefRequest(stop));
   if (placeBriefLoading.has(key)) {
     return '<div class="tl-pd-genwrap"><span class="tl-pd-spinner"></span><span class="tl-pd-genhint">AI가 이 장소를 정리하고 있어요…</span></div>';
   }
   const err = placeBriefErrors.get(key);
+  const hasBrief = placeBriefs.has(key);
   return [
     '<div class="tl-pd-genwrap">',
-    '  <button type="button" class="tl-pd-genbtn" data-pd-gen="1">' + IC_PD_SPARK + '<span>' + label + '</span></button>',
-    err ? '  <span class="tl-pd-genhint is-error">' + escapeHtml(err) + '</span>' : '',
+    hasBrief
+      ? '  <button type="button" class="tl-pd-genbtn is-retry" data-pd-gen="1" data-pd-force="1">' + IC_PD_REFRESH + '<span>다시 생성</span></button>'
+      : '  <button type="button" class="tl-pd-genbtn" data-pd-gen="1">' + IC_PD_SPARK + '<span>' + label + '</span></button>',
+    err
+      ? '  <span class="tl-pd-genhint is-error">' + escapeHtml(err) + '</span>'
+      : hasBrief
+      ? '  <span class="tl-pd-genhint">AI가 이 항목은 채우지 못했어요.</span>'
+      : '',
     '</div>',
   ].join('\n');
 }
@@ -1664,7 +1696,7 @@ function pdAboutSectionHtml(stop: TlStop): string {
     : pdGenBlockHtml(stop, 'AI 요약 생성');
   return [
     '<section class="tl-pd-sec tl-pd-sec-lead">',
-    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">💡</span>한눈에 보기</h3>',
+    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">' + IC_PD_BULB + '</span>한눈에 보기</h3>',
     bodyHtml,
     '</section>',
   ].join('\n');
@@ -1696,7 +1728,7 @@ function pdDontMissSectionHtml(stop: TlStop): string {
     : pdGenBlockHtml(stop, '추천 포인트 생성');
   return [
     '<section class="tl-pd-sec">',
-    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">⭐</span>Don’t Miss' + (items.length ? PD_AI_TAG : '') + '</h3>',
+    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">' + IC_PD_STAR_LINE + '</span>Don’t Miss' + (items.length ? PD_AI_TAG : '') + '</h3>',
     listHtml,
     '  <div class="tl-pd-explore">',
     '    <span class="tl-pd-explore-label">직접 찾아보기</span>',
@@ -1723,7 +1755,7 @@ function pdCheckRow(icon: string, label: string, value: string | null, src: 'dat
   return [
     '<li class="tl-pd-check' + cls + '">',
     '  <span class="tl-pd-check-mark">' + mark + '</span>',
-    '  <span class="tl-pd-check-label">' + icon + escapeHtml(label) + '</span>',
+    '  <span class="tl-pd-check-label"><span class="tl-pd-check-icon">' + icon + '</span>' + escapeHtml(label) + '</span>',
     '  <span class="tl-pd-check-value">' + (known ? escapeHtml(value!) : '확인 필요') + '</span>',
     '</li>',
   ].join('');
@@ -1739,17 +1771,17 @@ function pdBeforeGoSectionHtml(stop: TlStop, dateISO: string | null): string {
   const hours = todaysHoursLine(place, dateISO);
   const bg = pdBriefOf(stop)?.beforeYouGo;
   const rows = [
-    pdCheckRow('🕒 ', '운영시간', hours),
-    pdCheckRow('📍 ', '위치', place.address),
-    pdCheckRow('⏳ ', '예상 체류', fmtMin(dwellMinutes(stop.cat))),
-    pdCheckRow('🎟️ ', '예약·입장', bg?.booking || null, 'ai'),
-    pdCheckRow('👕 ', '복장 규정', bg?.dress || null, 'ai'),
-    pdCheckRow('💵 ', '현금 필요 여부', bg?.cash || null, 'ai'),
+    pdCheckRow(IC_CLOCK, '운영시간', hours),
+    pdCheckRow(IC_PIN_SMALL, '위치', place.address),
+    pdCheckRow(IC_PD_HOURGLASS, '예상 체류', fmtMin(dwellMinutes(stop.cat))),
+    pdCheckRow(IC_PD_TICKET, '예약·입장', bg?.booking || null, 'ai'),
+    pdCheckRow(IC_PD_SHIRT, '복장 규정', bg?.dress || null, 'ai'),
+    pdCheckRow(IC_PD_CASH, '현금 필요 여부', bg?.cash || null, 'ai'),
   ].join('');
   const tips = bg?.tips ?? [];
   return [
     '<section class="tl-pd-sec">',
-    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">🧳</span>Before You Go</h3>',
+    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">' + IC_PD_BAG + '</span>Before You Go</h3>',
     '  <ul class="tl-pd-card tl-pd-checklist">' + rows + '</ul>',
     tips.length
       ? '  <ul class="tl-pd-tips">' +
@@ -1766,7 +1798,7 @@ function pdBeforeGoSectionHtml(stop: TlStop, dateISO: string | null): string {
 function pdMemoSectionHtml(stop: TlStop): string {
   return [
     '<section class="tl-pd-sec">',
-    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">📝</span>개인 메모</h3>',
+    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">' + IC_PD_PENCIL + '</span>개인 메모</h3>',
     '  <textarea class="tl-pd-memo" id="tl-pd-memo" rows="2" placeholder="이 장소에서 기억할 것을 적어두세요">' + escapeHtml(stop.memo ?? '') + '</textarea>',
     '</section>',
   ].join('\n');
@@ -1789,11 +1821,11 @@ function pdGuideTabHtml(stop: TlStop, dateISO: string | null): string {
     : '<div class="tl-pd-card tl-pd-blank">저장된 주소가 없어요.</div>';
   return [
     '<section class="tl-pd-sec">',
-    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">🕒</span>운영시간</h3>',
+    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">' + IC_CLOCK + '</span>운영시간</h3>',
     hoursBlock,
     '</section>',
     '<section class="tl-pd-sec">',
-    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">📍</span>위치</h3>',
+    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">' + IC_PIN_SMALL + '</span>위치</h3>',
     addrBlock,
     '  <div class="tl-pd-explore-links">',
     '    <button type="button" class="tl-pd-link" id="tl-pd-tomap">' + IC_PIN_SMALL + '<span>지도에서 보기</span></button>',
@@ -1812,7 +1844,7 @@ function pdReviewsTabHtml(stop: TlStop): string {
     : '<div class="tl-pd-blank tl-pd-card">저장된 평점이 없어요.</div>';
   return [
     '<section class="tl-pd-sec">',
-    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">💬</span>리뷰</h3>',
+    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">' + IC_PD_CHAT + '</span>리뷰</h3>',
     rating,
     '  <p class="tl-pd-note">리뷰 본문은 아직 가져오지 않아요. Google에서 실제 후기를 확인해 보세요.</p>',
     '  <div class="tl-pd-explore-links">',
@@ -1902,7 +1934,9 @@ function bindPlaceDetail(el: HTMLElement, stop: TlStop, day: TlDay): void {
 
   // 요약·추천 생성 버튼 — 어느 섹션에서 눌러도 같은 한 번의 호출로 둘 다 채워진다
   el.querySelectorAll('[data-pd-gen]').forEach((btn) => {
-    btn.addEventListener('click', () => { void loadPlaceBrief(stop); });
+    btn.addEventListener('click', () => {
+      void loadPlaceBrief(stop, (btn as HTMLElement).dataset.pdForce === '1');
+    });
   });
 
   // 메모는 카드 목록의 한 줄 입력과 같은 값을 공유한다 — 입력 중 전체를 다시 그리면 포커스가
