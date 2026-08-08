@@ -55,6 +55,8 @@ import {
   CAT_LABEL,
 } from '../utils/travelEstimate';
 import type { Leg, RealLeg, TravelMode, CatKey } from '../utils/travelEstimate';
+import { requestPlaceBrief, placeBriefKey } from './placeBrief';
+import type { PlaceBrief, PlaceBriefRequest } from './placeBrief';
 import type { Database, StaySegment, TripDestination } from '../types/database';
 import './timeline.css';
 
@@ -217,6 +219,11 @@ let detailKey: string | null = null;
 /** 상세 패널 탭 — Overview(이해) / Guide(준비 정보) / Reviews(후기) */
 type PdTab = 'overview' | 'guide' | 'reviews';
 let detailTab: PdTab = 'overview';
+/** 장소 신원(placeBriefKey) → AI 브리핑. 정류지가 아니라 **장소** 단위라 같은 장소를 여러 DAY에
+ *  담아도 한 번만 받는다(서버 캐시와 같은 기준). */
+let placeBriefs = new Map<string, PlaceBrief>();
+let placeBriefLoading = new Set<string>();
+let placeBriefErrors = new Map<string, string>();
 
 /** legKey → 모드별 실측. 없으면 직선거리 추정치 (ROUTE와 같은 캐시 전략) */
 let realLegs = new Map<string, Record<string, RealLeg>>();
@@ -269,6 +276,9 @@ export function teardownTimeline(): void {
   openLegIndex = null;
   detailKey = null;
   detailTab = 'overview';
+  placeBriefs = new Map();
+  placeBriefLoading = new Set();
+  placeBriefErrors = new Map();
   realLegs = new Map();
   realLegPending = false;
   storageReady = false;
@@ -1574,55 +1584,145 @@ function pdHeroHtml(stop: TlStop): string {
   ].join('\n');
 }
 
+/** 이 정류지의 장소를 AI에 물어볼 형태로 — 우리가 이미 갖고 있는 사실만 담는다 */
+function pdBriefRequest(stop: TlStop): PlaceBriefRequest {
+  const place = stop.place!;
+  const hours = pdHoursLines(place);
+  return {
+    name: stop.name || place.name,
+    googlePlaceId: place.google_place_id,
+    category: [CAT_LABEL[stop.cat], place.category ?? ''].filter(Boolean).join(' · '),
+    address: place.address,
+    destination: allDestinations.find((d) => d.id === activeDestId)?.name ?? currentTrip?.destinations?.[0] ?? null,
+    rating: place.google_rating,
+    hours,
+  };
+}
+
+function pdBriefOf(stop: TlStop): PlaceBrief | null {
+  return placeBriefs.get(placeBriefKey(pdBriefRequest(stop))) ?? null;
+}
+
+/** AI 브리핑 요청 — 이미 받았거나 받는 중이면 다시 부르지 않는다(원칙 3-2) */
+async function loadPlaceBrief(stop: TlStop): Promise<void> {
+  const req = pdBriefRequest(stop);
+  const key = placeBriefKey(req);
+  if (placeBriefs.has(key) || placeBriefLoading.has(key)) return;
+  placeBriefLoading.add(key);
+  placeBriefErrors.delete(key);
+  render();
+  try {
+    const brief = await requestPlaceBrief(req);
+    placeBriefs.set(key, brief);
+  } catch (e) {
+    placeBriefErrors.set(key, (e as Error).message);
+  } finally {
+    placeBriefLoading.delete(key);
+    render();
+  }
+}
+
+/** AI가 쓴 값임을 항상 눈에 보이게 — 우리 DB의 실제 값과 같은 위계로 섞이면 안 된다(원칙 3-1) */
+const PD_AI_TAG = '<span class="tl-pd-aitag">AI</span>';
+
+/** 생성 버튼 / 로딩 / 실패를 한 자리에서 — 세 섹션이 같은 상태를 공유한다 */
+function pdGenBlockHtml(stop: TlStop, label: string): string {
+  const key = placeBriefKey(pdBriefRequest(stop));
+  if (placeBriefLoading.has(key)) {
+    return '<div class="tl-pd-genwrap"><span class="tl-pd-spinner"></span><span class="tl-pd-genhint">AI가 이 장소를 정리하고 있어요…</span></div>';
+  }
+  const err = placeBriefErrors.get(key);
+  return [
+    '<div class="tl-pd-genwrap">',
+    '  <button type="button" class="tl-pd-genbtn" data-pd-gen="1">' + IC_PD_SPARK + '<span>' + label + '</span></button>',
+    err ? '  <span class="tl-pd-genhint is-error">' + escapeHtml(err) + '</span>' : '',
+    '</div>',
+  ].join('\n');
+}
+
 /**
  * 💡 한눈에 보기 — 이 패널에서 가장 먼저 읽히는 자리라 카드로 가두지 않고 배경 위에 그대로 얹는다.
- * AI 요약은 아직 연결 전이라 지어낸 설명을 채우는 대신(원칙 3-1) 생성 버튼 하나만 둔다.
+ * AI 요약이 없으면 생성 버튼 하나만 둔다(지어낸 설명을 채우지 않는다 — 원칙 3-1).
  */
-function pdAboutSectionHtml(): string {
+function pdAboutSectionHtml(stop: TlStop): string {
+  const brief = pdBriefOf(stop);
+  const bodyHtml = brief
+    ? [
+        '  <p class="tl-pd-lead">' + escapeHtml(brief.summary) + '</p>',
+        brief.keywords.length || brief.bestTime
+          ? '  <div class="tl-pd-chips">' +
+            (brief.bestTime
+              ? '<span class="tl-pd-chip tl-pd-chip-time">' + IC_CLOCK + '<span>' + escapeHtml(brief.bestTime) + '</span></span>'
+              : '') +
+            brief.keywords.map((k) => '<span class="tl-pd-chip">' + escapeHtml(k) + '</span>').join('') +
+            '</div>'
+          : '',
+        '  <p class="tl-pd-aicaveat">' + PD_AI_TAG + '가 정리한 참고 정보예요. 요금·운영 정책은 현장에서 확인해 주세요.</p>',
+      ]
+        .filter(Boolean)
+        .join('\n')
+    : pdGenBlockHtml(stop, 'AI 요약 생성');
   return [
     '<section class="tl-pd-sec tl-pd-sec-lead">',
     '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">💡</span>한눈에 보기</h3>',
-    '  <div class="tl-pd-lead-empty">',
-    '    <button type="button" class="tl-pd-genbtn" id="tl-pd-gen-about">' + IC_PD_SPARK + '<span>AI 요약 생성</span></button>',
-    '    <span class="tl-pd-genhint" id="tl-pd-gen-about-hint" role="status"></span>',
-    '  </div>',
+    bodyHtml,
     '</section>',
   ].join('\n');
 }
 
 /**
- * ⭐ Don't Miss — 두 번째로 중요한 자리. AI 추천 목록은 아직 없지만, "직접 찾아보는 통로"는
- * 지금도 진짜로 만들 수 있어서(검색 URL 조합뿐이라 API 비용 0) 그것만 먼저 놓는다.
+ * ⭐ Don't Miss — 두 번째로 중요한 자리. AI가 뽑은 포인트를 체크리스트로 보여주고,
+ * 그 아래에 "직접 찾아보는 통로"(검색 URL 조합뿐이라 API 비용 0)를 항상 함께 둔다 —
+ * AI는 추천만 하고 실제 확인은 사용자가 외부 자료로 한다는 구조.
  */
 function pdDontMissSectionHtml(stop: TlStop): string {
   const place = stop.place!;
   const name = stop.name || place.name;
   const q = encodeURIComponent(name);
+  const brief = pdBriefOf(stop);
+  const items = brief?.dontMiss ?? [];
+  const listHtml = items.length
+    ? '<ul class="tl-pd-misslist">' +
+      items
+        .map(
+          (m) =>
+            '<li class="tl-pd-missitem"><span class="tl-pd-missmark">' + IC_CHECK_SM + '</span>' +
+            '<span class="tl-pd-misstext"><b>' + escapeHtml(m.title) + '</b>' +
+            (m.detail ? '<span>' + escapeHtml(m.detail) + '</span>' : '') +
+            '</span></li>'
+        )
+        .join('') +
+      '</ul>'
+    : pdGenBlockHtml(stop, '추천 포인트 생성');
   return [
     '<section class="tl-pd-sec">',
-    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">⭐</span>Don’t Miss</h3>',
-    '  <div class="tl-pd-miss">',
-    '    <button type="button" class="tl-pd-genbtn" id="tl-pd-gen-miss">' + IC_PD_SPARK + '<span>추천 포인트 생성</span></button>',
-    '    <span class="tl-pd-genhint" id="tl-pd-gen-miss-hint" role="status"></span>',
-    '    <div class="tl-pd-explore">',
-    '      <span class="tl-pd-explore-label">직접 찾아보기</span>',
-    '      <div class="tl-pd-explore-links">',
-    '        <a class="tl-pd-link" href="' + pdMapsUrl(place, stop) + '" target="_blank" rel="noopener noreferrer">' + IC_PD_MAP + '<span>Google Maps</span></a>',
-    '        <a class="tl-pd-link" href="https://www.youtube.com/results?search_query=' + q + '" target="_blank" rel="noopener noreferrer">' + IC_PD_PLAY + '<span>YouTube</span></a>',
-    '        <a class="tl-pd-link" href="https://search.naver.com/search.naver?query=' + encodeURIComponent(name + ' 여행 후기') + '" target="_blank" rel="noopener noreferrer">' + IC_PD_BOOK + '<span>블로그 후기</span></a>',
-    '      </div>',
+    '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">⭐</span>Don’t Miss' + (items.length ? PD_AI_TAG : '') + '</h3>',
+    listHtml,
+    '  <div class="tl-pd-explore">',
+    '    <span class="tl-pd-explore-label">직접 찾아보기</span>',
+    '    <div class="tl-pd-explore-links">',
+    '      <a class="tl-pd-link" href="' + pdMapsUrl(place, stop) + '" target="_blank" rel="noopener noreferrer">' + IC_PD_MAP + '<span>Google Maps</span></a>',
+    '      <a class="tl-pd-link" href="https://www.youtube.com/results?search_query=' + q + '" target="_blank" rel="noopener noreferrer">' + IC_PD_PLAY + '<span>YouTube</span></a>',
+    '      <a class="tl-pd-link" href="https://search.naver.com/search.naver?query=' + encodeURIComponent(name + ' 여행 후기') + '" target="_blank" rel="noopener noreferrer">' + IC_PD_BOOK + '<span>블로그 후기</span></a>',
     '    </div>',
     '  </div>',
     '</section>',
   ].join('\n');
 }
 
-/** 체크리스트 한 줄 — 실제 값이 있으면 체크, 없으면 옅은 물음표로 "아직 모른다"를 그대로 보여준다 */
-function pdCheckRow(icon: string, label: string, value: string | null): string {
+/**
+ * 체크리스트 한 줄. 값의 출처를 세 가지로 구분해서 보여준다 — 이게 원칙 3-1의 핵심이다:
+ *   'data' : 우리 DB에 저장된 실제 값 → 파란 체크
+ *   'ai'   : AI가 쓴 참고 정보      → AI 태그 (실제 값과 같은 위계로 보이면 안 됨)
+ *   null   : 근거가 없음            → 옅은 ?, "확인 필요"
+ */
+function pdCheckRow(icon: string, label: string, value: string | null, src: 'data' | 'ai' = 'data'): string {
   const known = !!value;
+  const cls = !known ? ' is-unknown' : src === 'ai' ? ' is-ai' : '';
+  const mark = !known ? '?' : src === 'ai' ? IC_PD_SPARK : IC_CHECK_SM;
   return [
-    '<li class="tl-pd-check' + (known ? '' : ' is-unknown') + '">',
-    '  <span class="tl-pd-check-mark">' + (known ? IC_CHECK_SM : '?') + '</span>',
+    '<li class="tl-pd-check' + cls + '">',
+    '  <span class="tl-pd-check-mark">' + mark + '</span>',
     '  <span class="tl-pd-check-label">' + icon + escapeHtml(label) + '</span>',
     '  <span class="tl-pd-check-value">' + (known ? escapeHtml(value!) : '확인 필요') + '</span>',
     '</li>',
@@ -1631,26 +1731,35 @@ function pdCheckRow(icon: string, label: string, value: string | null): string {
 
 /**
  * 🧳 Before You Go — 보조 정보라 여기서부터 카드 스타일을 준다(위 두 섹션과 위계를 벌린다).
- * 우리 DB에 실제로 있는 값만 채우고, 없는 항목은 "확인 필요"로 남긴다 — 예약 여부·복장 규정·
- * 현금 결제 가능 여부는 근거 데이터가 없어 지어내지 않는다(원칙 3-1).
+ * 운영시간·위치·예상 체류는 우리 DB의 실제 값이고, 예약·복장·현금은 AI가 채운 참고 정보다.
+ * AI 브리핑을 아직 안 받았으면 그 세 줄은 "확인 필요"로 남는다 — 빈칸을 지어내지 않는다.
  */
 function pdBeforeGoSectionHtml(stop: TlStop, dateISO: string | null): string {
   const place = stop.place!;
   const hours = todaysHoursLine(place, dateISO);
+  const bg = pdBriefOf(stop)?.beforeYouGo;
   const rows = [
     pdCheckRow('🕒 ', '운영시간', hours),
     pdCheckRow('📍 ', '위치', place.address),
     pdCheckRow('⏳ ', '예상 체류', fmtMin(dwellMinutes(stop.cat))),
-    pdCheckRow('🎟️ ', '예약·입장', null),
-    pdCheckRow('👕 ', '복장 규정', null),
-    pdCheckRow('💵 ', '현금 필요 여부', null),
+    pdCheckRow('🎟️ ', '예약·입장', bg?.booking || null, 'ai'),
+    pdCheckRow('👕 ', '복장 규정', bg?.dress || null, 'ai'),
+    pdCheckRow('💵 ', '현금 필요 여부', bg?.cash || null, 'ai'),
   ].join('');
+  const tips = bg?.tips ?? [];
   return [
     '<section class="tl-pd-sec">',
     '  <h3 class="tl-pd-sectitle"><span class="tl-pd-secicon">🧳</span>Before You Go</h3>',
     '  <ul class="tl-pd-card tl-pd-checklist">' + rows + '</ul>',
+    tips.length
+      ? '  <ul class="tl-pd-tips">' +
+        tips.map((t) => '<li>' + escapeHtml(t) + '</li>').join('') +
+        '</ul>'
+      : '',
     '</section>',
-  ].join('\n');
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 /** 📝 개인 메모 — 카드 목록의 한 줄 메모(route_stops.memo)와 같은 값. 짧게 적는 칸이라 낮게 둔다 */
@@ -1731,7 +1840,7 @@ function placeDetailHtml(stop: TlStop, dateISO: string | null): string {
   else if (detailTab === 'reviews') body = pdReviewsTabHtml(stop);
   else {
     body =
-      pdAboutSectionHtml() +
+      pdAboutSectionHtml(stop) +
       pdDontMissSectionHtml(stop) +
       pdBeforeGoSectionHtml(stop, dateISO) +
       pdMemoSectionHtml(stop);
@@ -1759,16 +1868,6 @@ function renderPlaceDetailPanel(): void {
   el.hidden = false;
   el.innerHTML = placeDetailHtml(found.stop, found.day.date);
   bindPlaceDetail(el, found.stop, found.day);
-}
-
-/** 아직 AI가 붙지 않은 생성 버튼 — 눌러도 아무 반응이 없으면 고장으로 보이므로 상태만 알려준다 */
-function bindGenButton(el: HTMLElement, btnId: string, hintId: string): void {
-  const btn = el.querySelector('#' + btnId) as HTMLButtonElement | null;
-  const hint = el.querySelector('#' + hintId) as HTMLElement | null;
-  if (!btn || !hint) return;
-  btn.addEventListener('click', () => {
-    hint.textContent = 'AI 연동은 다음 단계에서 열려요.';
-  });
 }
 
 function bindPlaceDetail(el: HTMLElement, stop: TlStop, day: TlDay): void {
@@ -1801,8 +1900,10 @@ function bindPlaceDetail(el: HTMLElement, stop: TlStop, day: TlDay): void {
     else panToStop(stop);
   });
 
-  bindGenButton(el, 'tl-pd-gen-about', 'tl-pd-gen-about-hint');
-  bindGenButton(el, 'tl-pd-gen-miss', 'tl-pd-gen-miss-hint');
+  // 요약·추천 생성 버튼 — 어느 섹션에서 눌러도 같은 한 번의 호출로 둘 다 채워진다
+  el.querySelectorAll('[data-pd-gen]').forEach((btn) => {
+    btn.addEventListener('click', () => { void loadPlaceBrief(stop); });
+  });
 
   // 메모는 카드 목록의 한 줄 입력과 같은 값을 공유한다 — 입력 중 전체를 다시 그리면 포커스가
   // 날아가므로 값만 갱신하고, 카드 쪽 입력창도 DOM에서 직접 맞춰준다(scheduleSave 패턴과 동일)
