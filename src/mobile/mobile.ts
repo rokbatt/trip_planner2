@@ -9,6 +9,9 @@
  * 그래서 편집 UI(순서 변경·이동수단 선택·지도 편집)는 여기 없다. 대신 한 손으로 읽기 좋은
  * 밀도와, 카드를 누르면 장소 상세로 밀려 들어가는 두 화면 구조만 갖는다.
  *
+ * 컬러 컨셉("Night Lounge")과 색의 의미 고정은 mobile.css 상단 주석 참고 —
+ * 황동 = 구조·AI / 하늘 = 우리 DB의 실제 값 / 회색 = 추정 / 주황 = 지금.
+ *
  * ⚠️ 일정 데이터·시각 계산은 **직접 하지 않는다.** `timeline/dayModel.ts`의 loadDayModel과
  *    scheduleFor를 그대로 쓴다 — 같은 DAY인데 PC와 폰의 도착 시각이 다르면 그 자체가
  *    버그이기 때문이다(Claude.md 5-3). 이 파일에는 표현(마크업·색·아이콘)만 있다.
@@ -453,7 +456,7 @@ function stopCardHtml(stop: TlStop, i: number, s: DaySchedule, dateISO: string |
     place?.category ? '    <p class="mb-card-cat">' + escapeHtml(place.category) + '</p>' : '',
     '    <div class="mb-card-meta">',
     '      <span class="mb-meta-item">' + IC.clock + timeRange + '</span>',
-    rating != null ? '      <span class="mb-meta-item">' + IC.star + rating.toFixed(1) + '</span>' : '',
+    rating != null ? '      <span class="mb-meta-item rating">' + IC.star + rating.toFixed(1) + '</span>' : '',
     '    </div>',
     // 저장된 실제 값만 배지로 — 없으면 아예 안 보여준다
     hours ? '    <div class="mb-card-note">' + IC.clock + '<span>' + escapeHtml(hours) + '</span></div>' : '',
