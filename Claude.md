@@ -407,6 +407,61 @@ Hero 사진(260px)  ← 가장 먼저 눈에 들어오는 것은 글이 아니�
 
 ---
 
+## 5-4. MOBILE(Companion) 아키텍처 — 모바일은 두 번째 표면이다
+
+모바일은 데스크톱 화면을 반응형으로 줄인 게 아니라 **역할이 다른 두 번째 제품 표면**이다.
+자세한 배경·로드맵은 `docs/MOBILE_STRATEGY.md`.
+
+```
+PC/노트북  = PLANNER    여행 전, 4개 게이트로 결정한다        (기존 게이트 그대로)
+모바일     = COMPANION  여행 중, 확정된 하루를 따라가고 기록한다 (src/mobile/)
+```
+
+브레인스토밍 보드를 폰에 접어 넣지 않는다 — 4개 게이트를 한눈에 놓고 판단하는 건 화면 크기가
+아니라 **작업 자체가 큰 화면을 요구**하기 때문이다. 반대로 "장소를 담는 행위"는 폰이 우위다.
+
+### `src/timeline/dayModel.ts` — 하루 모델의 단일 기준 (중요)
+`utils/travelEstimate.ts`가 "구간 하나의 숫자"의 단일 기준이라면, `dayModel.ts`는 **"하루 전체를
+시간축에 올리는 규칙"의 단일 기준**이다. TIMELINE과 MOBILE이 둘 다 여기서 읽는다.
+
+- `loadDayModel(trip)` — route_days/route_stops → DAY 모델 전체(장소·숙소·공항 앵커 포함)
+- `scheduleFor(day, realLegs)` — 09:00 기준 누적 + 고정 시각 반영 + overrun/slack
+- `toStop` / `toStoredStops` / `todaysHoursLine` / `stopLegKey` / `legBetween`
+
+> 같은 DAY인데 PC와 폰의 도착 시각이 다르면 그 자체가 버그다. **하루 계산식을 손볼 일이
+> 생기면 반드시 이 파일에서만 고칠 것** — 화면 모듈 안에서 따로 계산하면 안 된다.
+
+### 화면 — 사진 레퍼런스 기준(2026-08)
+공항 라운지 컨셉의 **야간 모드**다. 데스크톱이 밝은 라운지라면 모바일은 같은 라운지의 밤 —
+배경은 딥네이비(`#0A1B33`→`#0B2A5C`) 그라데이션, 포인트는 스카이블루(`#8FD8F8`),
+**지금 진행 중인 일정만** Tangerine(`#F4801F`)으로 딱 하나 튀게 둔다. 새 색을 만들지 않고
+전부 앱 팔레트에서 파생시킨다.
+
+- **시간축이 왼쪽 여백이 아니라 화면 한가운데를 지난다.** 카드가 그 선에 꿰인 것처럼 보이도록
+  선(`.mb-spine`)은 카드 뒤(z-index 0)를 지나고, 카드 사이의 빈 구간에서만 드러난다.
+  이동 구간 칩(`.mb-leg-chip`)이 그 선 위 한가운데에 앉아 "구슬" 역할을 한다.
+- **카드는 `overflow:hidden`이라 바깥으로 나가는 걸 못 그린다.** NOW 배지와 시간축 마디는
+  그래서 카드가 아니라 래퍼(`.mb-stop`)에 얹는다 — 카드에 직접 붙이면 잘린다(실제로 났던 버그).
+- **하단 탭 4개**: TODAY(하루 시각표) · TIMELINE(전체 DAY) · WALLET(→ expense 게이트) · MORE
+- **카드 탭 → 장소 상세**가 위로 밀려 들어온다(`.mb-detail`). Hero 사진 → 이름·평점 →
+  예상 체류 칩 → OVERVIEW/GUIDE/REVIEWS 탭. 내용은 데스크톱 `.tl-pd` 패널과 같은 구조이고
+  AI 브리핑도 같은 `placeBrief.ts`·같은 서버 캐시를 공유한다(장소당 Gemini 호출 1회).
+- 스크롤 컨테이너는 `.mb-scroll` 하나로 통일한다. 게이트가 활성이면 바깥
+  `.ws-content-body`에 `.is-mobile-gate`를 붙여 바깥 스크롤을 끈다(중첩 스크롤 금지).
+
+### 원칙 3-1 적용 — 좁은 화면일수록 지어내기 쉽다
+화면이 좁아서 "뭐라도 채우고 싶은" 압력이 크지만 규칙은 같다.
+- 평점·영업시간·주소·카테고리 → **저장된 값이 있을 때만** 보여준다(없으면 그 줄이 사라진다)
+- 도착 시각·체류·이동 → 추정치. 하루 단위로 한 번 밝히고 실측 없는 구간엔 "추정" 배지
+- 요약·Don't Miss·복장/예약/현금 → Gemini. **반드시 `AI` 태그와 함께**, 근거 없으면 옅은 `?` +
+  "확인 필요"로 남긴다. 입장료처럼 출처가 아예 없는 항목은 **행 자체를 만들지 않는다**
+
+### 아직 안 한 것
+편집(순서 변경·이동수단 선택), 실시간 도착 기록(`trip_stop_progress`), 체크리스트, 오프라인 팩,
+PWA 자산은 전부 미구현이다. WALLET/MORE 탭은 "다음 단계에서 구현 예정" 안내만 띄운다.
+
+---
+
 ## 6. 파일 구조
 
 ```
@@ -416,6 +471,9 @@ src/
   route/route.ts, route.css          ← Route 게이트 (지도 위 동선 편집)
   route/routeStore.ts                ← route_days/route_stops 영속화 + 실시간 (Route/Timeline 공용)
   timeline/timeline.ts, timeline.css ← Timeline 게이트 (날짜별 시각표, 5-3 참고)
+  timeline/dayModel.ts               ← 하루를 시간축에 올리는 규칙의 단일 기준 (Timeline/Mobile 공용, 5-4 참고)
+  timeline/placeBrief.ts             ← 장소 상세 AI 브리핑 클라이언트 (Timeline/Mobile 공용)
+  mobile/mobile.ts, mobile.css       ← Mobile Companion 게이트 (여행 중 화면, 5-4 참고)
   expense/expense.ts, expense.css    ← Expense 게이트 (예산·지출·도넛 차트·정산, 5-2 참고)
   workspace/workspace.ts             ← 게이트 라우팅, 사이드바
   utils/googleMaps.ts                ← Google Maps 로더, GooglePlaceResult 추출/카테고리 매핑 (공유 유틸)
@@ -452,9 +510,13 @@ api/                                  ← Vercel 서버리스 함수 (각각 완
    - 여행 중: 실제 도착 시각 기록 → 이후 일정 자동 밀기
    - 내보내기: 캘린더(ics)·이미지로 공유
    - 장소별 예상 비용: `trip_expenses`와 연결(지금은 근거 데이터가 없어 표시하지 않음)
-3. **Checklist 탭** — 미구현. **Links 탭**은 채팅 링크를 자동 수집 + og:title/og:image 미리보기 + STAY/PLACE/FOOD/ACTIVITY/VIDEO/ARTICLE/OTHER 자동분류(애매하면 OTHER, 드래그로 수동 재분류 가능)까지 구현됨(`src/links/links.ts`, `src/trips/addLink.ts`, `api/cache-photo.ts`의 `kind:'link-preview'`, `supabase/trip_links.sql`) — 직접 추가 UI는 없음(채팅이 유일한 입력 경로). **Expense 탭**은 구현됨(아래 5-2 참고) — `supabase/trip_expenses.sql` 마이그레이션을 Supabase에서 실행해야 동작
-4. **`google.maps.Marker` → `AdvancedMarkerElement` 마이그레이션** — 지금은 폐기 예정 경고만 뜨는 상태, 급하진 않음 (최소 12개월 유예)
-5. **방콕 외 도시의 `stay_zones` 큐레이션** — 현재 방콕만 실제 조사된 데이터, 나머지 도시는 AI 폴백 상태
+3. **Mobile(Companion)** — 1차 완성(5-4). 다음 단계: 실시간 도착 기록(`trip_stop_progress`,
+   계획 컬럼과 분리) → 이후 일정 자동 밀기, 체크리스트, 오프라인 팩, PWA 자산(manifest·SW·
+   `viewport-fit=cover`). 서버가 필요한 기능(푸시·ics)은 `api/*.ts`가 이미 12개 상한이라
+   **Supabase Edge Functions로 뺀다**(3-7). 로드맵은 `docs/MOBILE_STRATEGY.md`
+4. **Checklist 탭** — 미구현. **Links 탭**은 채팅 링크를 자동 수집 + og:title/og:image 미리보기 + STAY/PLACE/FOOD/ACTIVITY/VIDEO/ARTICLE/OTHER 자동분류(애매하면 OTHER, 드래그로 수동 재분류 가능)까지 구현됨(`src/links/links.ts`, `src/trips/addLink.ts`, `api/cache-photo.ts`의 `kind:'link-preview'`, `supabase/trip_links.sql`) — 직접 추가 UI는 없음(채팅이 유일한 입력 경로). **Expense 탭**은 구현됨(아래 5-2 참고) — `supabase/trip_expenses.sql` 마이그레이션을 Supabase에서 실행해야 동작
+5. **`google.maps.Marker` → `AdvancedMarkerElement` 마이그레이션** — 지금은 폐기 예정 경고만 뜨는 상태, 급하진 않음 (최소 12개월 유예)
+6. **방콕 외 도시의 `stay_zones` 큐레이션** — 현재 방콕만 실제 조사된 데이터, 나머지 도시는 AI 폴백 상태
 
 ---
 

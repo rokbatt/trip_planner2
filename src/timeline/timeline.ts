@@ -22,23 +22,25 @@
 
 import { supabase } from '../supabase';
 import { store } from '../store';
+import { setActiveDestinationId, isSyntheticDestination } from '../trips/destinations';
 import {
-  loadDestinations,
-  resolveActiveDestination,
-  loadStaySegments,
-  isSyntheticDestination,
-  dayNumberOffsetFor,
-  setActiveDestinationId,
-} from '../trips/destinations';
-import {
-  loadRoutePlan,
   saveRouteDay,
   subscribeRoutePlan,
   unsubscribeRoutePlan,
-  isRouteStorageReady,
   resetRouteStorageProbe,
 } from '../route/routeStore';
 import type { StoredStop } from '../route/routeStore';
+// 하루를 시간축에 올리는 규칙은 MOBILE 화면과 공유한다 — 같은 DAY인데 두 화면의 도착 시각이
+// 다르면 그 자체가 버그이므로, 변환·시각 계산은 dayModel 하나만 쓴다(Claude.md 5-3).
+import {
+  loadDayModel,
+  scheduleFor,
+  stopLegKey,
+  toStoredStops,
+  todaysHoursLine,
+  MODES,
+} from './dayModel';
+import type { TlStop, TlDay, DaySchedule, DayModelContext, RealLegMap } from './dayModel';
 import { loadGoogleMapsScript } from '../utils/googleMaps';
 import {
   estimateLegBetween,
@@ -105,35 +107,11 @@ const IC_PD_PLAY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 const IC_PD_SPARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/></svg>';
 
 const MODE_ICON: Record<TravelMode, string> = { WALK: IC_WALK, TRANSIT: IC_TRANSIT, TAXI: IC_TAXI };
-const MODES: TravelMode[] = ['WALK', 'TRANSIT', 'TAXI'];
 
 /** 일정 핀·시간축 점 색 — 전부 같은 Primary Navy 하나로 통일(레퍼런스 기준) */
 const PIN_NAVY = '#193A73';
 
-/**
- * 이 정류지가 속한 캘린더 날짜(dateISO)의 요일에 맞는 영업시간 한 줄을 고른다.
- * Google Places의 opening_hours(weekdayDescriptions)는 월요일부터 7줄이 오므로,
- * JS의 getDay()(일=0)를 월요일 기준 인덱스로 바꿔서 정확히 그날의 줄만 골라 쓴다.
- * 데이터가 없거나 형식이 다르면 null — 근거 없는 영업시간을 지어내지 않는다(원칙 3-1).
- */
-function todaysHoursLine(place: Place | null, dateISO: string | null): string | null {
-  const lines = place?.opening_hours;
-  if (!dateISO || !Array.isArray(lines) || lines.length !== 7) return null;
-  if (!lines.every((l) => typeof l === 'string')) return null;
-  const d = new Date(dateISO + 'T00:00:00');
-  if (Number.isNaN(d.getTime())) return null;
-  const mondayFirstIdx = (d.getDay() + 6) % 7;
-  const line = String(lines[mondayFirstIdx]).trim();
-  if (!line) return null;
-  // "월요일: 09:00~18:00" 형식이면 요일 접두어는 떼고 시간만 배지에 보여준다
-  const colonIdx = line.indexOf(':');
-  return colonIdx >= 0 && colonIdx < 6 ? line.slice(colonIdx + 1).trim() : line;
-}
-
 const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
-
-/** 하루의 기본 시작 시각(분) — ROUTE의 computeStopTimes와 같은 09:00 기준 */
-const DAY_START_MIN = 9 * 60;
 
 /**
  * 여행 중에도 쓰는 화면이라 도로·지형은 살리고, 업체 POI 라벨만 옅게 눌러
@@ -148,58 +126,6 @@ const MAP_STYLE = [
 
 /* ══════════════ 타입 ══════════════ */
 
-/** 일정 카드 한 장 — route_stops 한 행에 대응 */
-interface TlStop {
-  /** 이 DAY 안에서만 유일하면 되는 행 키 (같은 장소를 하루에 두 번 담을 수 있으므로 순번 포함) */
-  key: string;
-  placeId: string | null;
-  /** 지도에 직접 찍은 지점·공항처럼 places 행이 없는 정류지의 이름 */
-  customName: string | null;
-  lat: number | null;
-  lng: number | null;
-  /** 사용자가 직접 고정한 도착 시각 (HH:MM). 없으면 앞 일정에서 계산 */
-  arriveTime: string | null;
-  memo: string | null;
-  /** 이 정류지로 **들어오는** 구간의 수동 이동수단 (저장 스키마가 도착지 기준) */
-  travelMode: TravelMode | null;
-  /** 비어있으면 일반 정류지, 있으면 "숙소 들르기"처럼 목적만 있는 특수 스탑(예: 짐 두기) —
-   *  이럴 땐 일반 장소 카드가 아니라 구간(leg) 카드에 가까운 전용 스타일로 그린다. */
-  purpose: string | null;
-  /* 표시용 파생값 */
-  name: string;
-  cat: CatKey;
-  place: Place | null;
-}
-
-interface TlDay {
-  dayIndex: number;
-  label: string;
-  /** 이 DAY의 실제 캘린더 날짜 (YYYY-MM-DD). 시작일을 모르면 null */
-  date: string | null;
-  stops: TlStop[];
-}
-
-/** 한 DAY를 시간축에 올린 결과 */
-interface DaySchedule {
-  arriveMin: number[];
-  departMin: number[];
-  dwellMin: number[];
-  /** 고정 시각 때문에 생긴 여유(분). 0보다 크면 그 앞에 빈 시간이 있다는 뜻 */
-  slackMin: number[];
-  /** 고정 시각이 앞 일정보다 빠를 때 모자란 시간(분). 0보다 크면 일정이 겹친다 */
-  overrunMin: number[];
-  /** stops[i] → stops[i+1] 구간 (좌표가 없는 정류지는 null) */
-  legs: Array<Leg | null>;
-  totalMoveMin: number;
-  totalDwellMin: number;
-  totalCost: number;
-  currency: string;
-  spanStartMin: number;
-  spanEndMin: number;
-  realLegCount: number;
-  legCount: number;
-}
-
 type ViewMode = 'day' | 'all';
 
 /* ══════════════ 모듈 상태 ══════════════ */
@@ -211,6 +137,7 @@ let activeDestId: string | null = null;
 /** 이 트립의 전체 여행지 목록 — 상단 "여행지 변경" 드롭다운에서 고를 목록으로 쓴다 */
 let allDestinations: TripDestination[] = [];
 let staySegments: StaySegment[] = [];
+let dayCtx: DayModelContext = { placeById: new Map(), basecampIds: new Set(), airportPlaceByName: new Map() };
 let placeById = new Map<string, Place>();
 let basecampIds = new Set<string>();
 /** 공항 이름 -> 합성 Place(사진/평점 포함). ROUTE의 makeAnchorPlace와 같은 목적 —
@@ -238,7 +165,7 @@ let placeBriefLoading = new Set<string>();
 let placeBriefErrors = new Map<string, string>();
 
 /** legKey → 모드별 실측. 없으면 직선거리 추정치 (ROUTE와 같은 캐시 전략) */
-let realLegs = new Map<string, Record<string, RealLeg>>();
+let realLegs: RealLegMap = new Map();
 let realLegPending = false;
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -278,6 +205,7 @@ export function teardownTimeline(): void {
   activeDestId = null;
   allDestinations = [];
   staySegments = [];
+  dayCtx = { placeById: new Map(), basecampIds: new Set(), airportPlaceByName: new Map() };
   placeById = new Map();
   basecampIds = new Set();
   airportPlaceByName = new Map();
@@ -350,245 +278,22 @@ async function loadTrip(tripId: string): Promise<Trip | null> {
   return data;
 }
 
-async function loadPlaces(tripId: string): Promise<Place[]> {
-  const { data, error } = await supabase.from('places').select('*').eq('trip_id', tripId).not('mood', 'is', null);
-  if (error) {
-    console.error('[Timeline] places load error:', error.message);
-    return [];
-  }
-  return data ?? [];
-}
-
-/** 공항 이름/좌표로 실제 Place 객체를 만든다 — ROUTE의 makeAnchorPlace와 동일한 목적.
- * 사진/평점은 트립 설정에서 자동완성으로 공항을 고를 때 이미 trip_destinations에
- * 캐싱되어 있으므로 그대로 넘겨받는다(원칙 3-1 — 없으면 null로 둔다). */
-function makeAnchorPlace(
-  tripId: string,
-  name: string,
-  lat: number,
-  lng: number,
-  photoUrl: string | null,
-  rating: number | null
-): Place {
-  return {
-    id: 'airport:' + name,
-    trip_id: tripId,
-    name,
-    lat,
-    lng,
-    address: null,
-    photo_url: photoUrl,
-    category: '공항',
-    notes: null,
-    added_by: null,
-    created_at: new Date().toISOString(),
-    likes_count: 0,
-    google_place_id: null,
-    google_rating: rating,
-    photo_ref: null,
-    opening_hours: null,
-    mood: null,
-    status: 'idea',
-    is_idea: false,
-    sort_order: 0,
-    destination_id: null,
-    group_id: null,
-    group_name: null,
-    group_order: null,
-  } as Place;
-}
-
-function buildAirportPlaceMap(trip: Trip, dest: TripDestination | null): Map<string, Place> {
-  const map = new Map<string, Place>();
-  if (dest?.arrival_airport && dest.arrival_lat != null && dest.arrival_lng != null) {
-    map.set(
-      dest.arrival_airport,
-      makeAnchorPlace(trip.id, dest.arrival_airport, dest.arrival_lat, dest.arrival_lng, dest.arrival_photo_url ?? null, dest.arrival_rating ?? null)
-    );
-  }
-  if (dest?.departure_airport && dest.departure_lat != null && dest.departure_lng != null) {
-    map.set(
-      dest.departure_airport,
-      makeAnchorPlace(trip.id, dest.departure_airport, dest.departure_lat, dest.departure_lng, dest.departure_photo_url ?? null, dest.departure_rating ?? null)
-    );
-  }
-  return map;
-}
-
 /**
- * 저장된 동선(route_days/route_stops)을 일정 모델로 변환한다.
- * ROUTE가 숙소·공항 앵커까지 전부 순서대로 저장해 두므로, 여기서 앵커를 다시 계산하지 않고
- * 저장된 순서를 그대로 신뢰한다 — 그래야 두 화면의 일정이 어긋날 여지가 없다.
+ * 저장된 동선을 하루 모델로 변환해 모듈 상태에 싣는다.
+ * 변환·시각 계산 규칙은 dayModel이 단일 기준이고(5-3), 여기서는 그 결과를 화면 상태에
+ * 옮겨 담기만 한다 — MOBILE 화면도 같은 loadDayModel을 쓰므로 두 화면의 일정이 어긋나지 않는다.
  */
 async function buildDays(trip: Trip): Promise<void> {
-  const places = await loadPlaces(trip.id);
-  placeById = new Map(places.map((p) => [p.id, p]));
-
-  const dests = await loadDestinations(trip);
-  allDestinations = dests;
-  const dest: TripDestination | null = resolveActiveDestination(trip.id, dests) ?? null;
-  activeDestId = dest && !isSyntheticDestination(dest.id) ? dest.id : null;
-
-  const segments = dest ? await loadStaySegments(trip, dest) : [];
-  staySegments = [...segments].sort((a, b) => (a.start_date ?? '').localeCompare(b.start_date ?? ''));
-
-  basecampIds = new Set(
-    [...staySegments.map((s) => s.basecamp_place_id), trip.shortlist_basecamp_place_id].filter(
-      (id): id is string => !!id
-    )
-  );
-  airportPlaceByName = buildAirportPlaceMap(trip, dest);
-
-  // DAY 개수 = 숙박 일수 + 1 (ROUTE와 같은 계산 — 마지막 출국일도 하나의 DAY다)
-  const start = dest?.start_date ?? trip.start_date;
-  const end = dest?.end_date ?? trip.end_date;
-  let nights = 1;
-  if (start && end) {
-    const diff = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000);
-    nights = Math.max(1, diff);
-  }
-  const dayCount = Math.max(2, Math.min(nights, 10) + 1);
-
-  // ROUTE와 같은 계산 — 이 여행지 앞에 다른 여행지가 있으면 그만큼 DAY 번호를 밀어서
-  // 여행 전체 기준으로 이어지는 번호를 보여준다(예: 방콕 DAY1~3 다음 푸켓은 DAY4부터).
-  const dayOffset = activeDestId ? dayNumberOffsetFor(dests, activeDestId, trip) : 0;
-
-  days = Array.from({ length: dayCount }, (_, i) => ({
-    dayIndex: i,
-    label: 'DAY ' + (dayOffset + i + 1),
-    date: start ? shiftDate(start, i) : null,
-    stops: [] as TlStop[],
-  }));
-
-  if (!activeDestId) {
-    storageReady = false;
-    return;
-  }
-  const stored = await loadRoutePlan(activeDestId);
-  storageReady = isRouteStorageReady();
-  if (!stored) return;
-
-  stored.forEach((sd) => {
-    const day = days[sd.dayIndex];
-    if (!day) return; // 기간이 줄어들어 남은 DAY는 조용히 무시 (ROUTE와 같은 처리)
-    day.stops = sd.stops.map((s, i) => toStop(s, sd.dayIndex, i));
-  });
-}
-
-function shiftDate(iso: string, plusDays: number): string {
-  const d = new Date(iso + 'T00:00:00');
-  d.setDate(d.getDate() + plusDays);
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-}
-
-function toStop(s: StoredStop, dayIndex: number, order: number): TlStop {
-  const airportPlace = !s.placeId && s.customName ? airportPlaceByName.get(s.customName) ?? null : null;
-  const place = s.placeId ? placeById.get(s.placeId) ?? null : airportPlace;
-  const name = place?.name ?? s.customName ?? '이름 없는 지점';
-  const isBasecamp = !!s.placeId && basecampIds.has(s.placeId);
-  const isAirport = !!airportPlace;
-  const mode = s.travelMode && (MODES as string[]).includes(s.travelMode) ? (s.travelMode as TravelMode) : null;
-  return {
-    key: 'd' + dayIndex + '-' + order + '-' + (s.placeId ?? s.customName ?? 'x'),
-    placeId: s.placeId,
-    customName: s.customName,
-    purpose: s.purpose,
-    lat: place?.lat ?? s.customLat,
-    lng: place?.lng ?? s.customLng,
-    arriveTime: s.arriveTime,
-    memo: s.memo,
-    travelMode: mode,
-    name,
-    cat: catKeyFor(place?.mood ?? null, place?.category ?? null, { isBasecamp, isAirport }),
-    place,
-  };
-}
-
-/* ══════════════ 시각 계산 ══════════════ */
-
-/**
- * 하루를 시간축에 올린다. 09:00에서 출발해 "체류 + 이동"을 누적하고, 사용자가 고정한
- * 도착 시각을 만나면 그 시각으로 시계를 맞춘다(ROUTE의 computeStopTimes와 같은 규칙).
- *
- * 여기에 더해 고정 시각과 자연스러운 도착 시각의 차이를 따로 남긴다 —
- *   앞당겨 고정  → overrun(일정이 겹침, 앞 일정을 줄여야 함)
- *   늦춰서 고정  → slack(그 앞에 비는 시간이 생김)
- * 단순 나열이 아니라 "이 일정이 실제로 가능한가"를 보여주기 위한 값이다.
- */
-function scheduleFor(day: TlDay): DaySchedule {
-  const stops = day.stops;
-  const legs: Array<Leg | null> = [];
-  for (let i = 0; i < stops.length - 1; i++) {
-    legs.push(legBetween(stops[i], stops[i + 1]));
-  }
-
-  const arriveMin: number[] = [];
-  const departMin: number[] = [];
-  const dwellMin: number[] = [];
-  const slackMin: number[] = [];
-  const overrunMin: number[] = [];
-
-  let clock = DAY_START_MIN;
-  stops.forEach((s, i) => {
-    const natural = clock;
-    const fixed = s.arriveTime ? hhmmToMin(s.arriveTime) : null;
-    const arrive = fixed ?? natural;
-    // 첫 정류지는 비교 대상이 없으므로 여유/겹침을 따지지 않는다
-    slackMin.push(i > 0 && fixed != null && fixed > natural ? fixed - natural : 0);
-    overrunMin.push(i > 0 && fixed != null && fixed < natural ? natural - fixed : 0);
-
-    const dwell = dwellMinutes(s.cat);
-    arriveMin.push(arrive);
-    dwellMin.push(dwell);
-    departMin.push(arrive + dwell);
-
-    clock = arrive + dwell + (legs[i]?.min ?? 0);
-  });
-
-  let totalMove = 0;
-  let totalCost = 0;
-  let realLegCount = 0;
-  let legCount = 0;
-  let currency = 'THB';
-  legs.forEach((l) => {
-    if (!l) return;
-    legCount += 1;
-    totalMove += l.min;
-    totalCost += l.costTHB;
-    if (l.real) realLegCount += 1;
-    if (l.fare?.currency) currency = l.fare.currency;
-  });
-
-  return {
-    arriveMin, departMin, dwellMin, slackMin, overrunMin, legs,
-    totalMoveMin: totalMove,
-    totalDwellMin: dwellMin.reduce((a, b) => a + b, 0),
-    totalCost,
-    currency,
-    spanStartMin: arriveMin.length ? arriveMin[0] : DAY_START_MIN,
-    spanEndMin: departMin.length ? departMin[departMin.length - 1] : DAY_START_MIN,
-    realLegCount,
-    legCount,
-  };
-}
-
-/** 좌표가 둘 다 있어야 구간을 계산할 수 있다 (원칙 3-1 — 좌표를 지어내지 않음) */
-function legBetween(a: TlStop, b: TlStop): Leg | null {
-  if (a.lat == null || a.lng == null || b.lat == null || b.lng == null) return null;
-  return estimateLegBetween(
-    { lat: a.lat, lng: a.lng },
-    { lat: b.lat, lng: b.lng },
-    b.travelMode ?? undefined,
-    realLegs.get(stopLegKey(a, b))
-  );
-}
-
-/** 실측 캐시 키 — 좌표 기반이라 같은 장소를 여러 DAY에 담아도 캐시가 공유된다 */
-function stopLegKey(a: TlStop, b: TlStop): string {
-  return legKey(a.placeId ?? coordId(a), b.placeId ?? coordId(b));
-}
-function coordId(s: TlStop): string {
-  return (s.lat ?? 0).toFixed(5) + ',' + (s.lng ?? 0).toFixed(5);
+  const model = await loadDayModel(trip);
+  days = model.days;
+  dayCtx = model.ctx;
+  placeById = model.ctx.placeById;
+  basecampIds = model.ctx.basecampIds;
+  airportPlaceByName = model.ctx.airportPlaceByName;
+  allDestinations = model.destinations;
+  staySegments = model.staySegments;
+  activeDestId = model.activeDestId;
+  storageReady = model.storageReady;
 }
 
 /* ══════════════ 실측 경로 (활성 DAY만) ══════════════ */
@@ -653,19 +358,6 @@ function setLegLoading(on: boolean): void {
 }
 
 /* ══════════════ 저장 ══════════════ */
-
-function toStoredStops(day: TlDay): StoredStop[] {
-  return day.stops.map((s) => ({
-    placeId: s.placeId,
-    customName: s.placeId ? null : s.customName ?? s.name,
-    customLat: s.placeId ? null : s.lat,
-    customLng: s.placeId ? null : s.lng,
-    arriveTime: s.arriveTime,
-    memo: s.memo || null,
-    travelMode: s.travelMode,
-    purpose: s.purpose,
-  }));
-}
 
 /** 바뀐 DAY를 잠시 뒤 한 번에 저장 (연속 조작을 묶음) */
 function scheduleSave(dayIndex: number): void {
@@ -944,7 +636,7 @@ function renderDayStrip(): void {
 
   // 막대 길이의 기준 = 가장 긴 하루 (절대 시간이 아니라 "이 여행 안에서의 상대 밀도")
   const spans = days.map((d) => {
-    const s = scheduleFor(d);
+    const s = scheduleFor(d, realLegs);
     return d.stops.length ? Math.max(0, s.spanEndMin - s.spanStartMin) : 0;
   });
   const maxSpan = Math.max(60, ...spans);
@@ -1006,7 +698,7 @@ function dayScheduleHtml(): string {
     ].join('');
   }
 
-  const s = scheduleFor(day);
+  const s = scheduleFor(day, realLegs);
   const rows: string[] = [];
   day.stops.forEach((stop, i) => {
     rows.push(stopCardHtml(stop, i, s, day.date));
@@ -1260,7 +952,7 @@ function legRowHtml(leg: Leg | null, to: TlStop, i: number, nextArriveMin: numbe
 function allDaysHtml(): string {
   const today = todayDayIndex();
   const cols = days.map((d, i) => {
-    const s = scheduleFor(d);
+    const s = scheduleFor(d, realLegs);
     const rows = d.stops.length
       ? d.stops
           .map((stop, j) => {
@@ -1321,7 +1013,7 @@ function renderNowMarker(): void {
   const day = activeDay();
   if (!day || day.date !== todayISO() || viewMode !== 'day' || !day.stops.length) return;
 
-  const s = scheduleFor(day);
+  const s = scheduleFor(day, realLegs);
   const now = nowMinutes();
   const list = container.querySelector('#tl-list') as HTMLElement | null;
   if (!list) return;
@@ -1445,7 +1137,7 @@ function drawMap(): void {
     return;
   }
 
-  const s = scheduleFor(day);
+  const s = scheduleFor(day, realLegs);
   const pts = day.stops
     .map((stop, i) => ({ stop, i }))
     .filter(({ stop }) => stop.lat != null && stop.lng != null);
