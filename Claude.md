@@ -425,8 +425,10 @@ PC/노트북  = PLANNER    여행 전, 4개 게이트로 결정한다        (�
 시간축에 올리는 규칙"의 단일 기준**이다. TIMELINE과 MOBILE이 둘 다 여기서 읽는다.
 
 - `loadDayModel(trip)` — route_days/route_stops → DAY 모델 전체(장소·숙소·공항 앵커 포함)
-- `scheduleFor(day, realLegs)` — 09:00 기준 누적 + 고정 시각 반영 + overrun/slack
+- `scheduleFor(day, realLegs, progress?)` — 09:00 기준 누적 + 고정 시각 반영 + overrun/slack.
+  `progress`(`mobile/stopProgress.ts`가 채움)를 넘기면 실제 도착/출발 기록이 계획보다 우선한다
 - `toStop` / `toStoredStops` / `todaysHoursLine` / `stopLegKey` / `legBetween`
+- `StopProgress` / `ProgressMap` — 실시간 진행 상황 타입(값 자체는 I/O 계층이 채운다)
 
 > 같은 DAY인데 PC와 폰의 도착 시각이 다르면 그 자체가 버그다. **하루 계산식을 손볼 일이
 > 생기면 반드시 이 파일에서만 고칠 것** — 화면 모듈 안에서 따로 계산하면 안 된다.
@@ -479,6 +481,26 @@ PC/노트북  = PLANNER    여행 전, 4개 게이트로 결정한다        (�
 - 스크롤 컨테이너는 `.mb-scroll` 하나로 통일한다. 게이트가 활성이면 바깥
   `.ws-content-body`에 `.is-mobile-gate`를 붙여 바깥 스크롤을 끈다(중첩 스크롤 금지).
 
+### 실제 도착 기록 → 남은 일정 자동 재계산
+오늘 DAY의 카드에만 도착/출발/건너뛰기 버튼(`.mb-track`)이 붙는다(지난 날·미래 날엔 의미가
+없어서 아예 안 그린다). `stopProgress.ts`(I/O)가 `trip_stop_progress`에 upsert하고,
+`dayModel.ts`의 `scheduleFor`에 그 결과(`ProgressMap`)를 넘기면 실제 기록 > 사용자가 고정한
+계획 시각 > 자연스러운 누적 시각 순서로 우선해서 시계를 다시 흘린다 — 이후 정류지들의 예상
+시각이 자동으로 다시 계산된다(원칙 3-1: 실제로 일어난 일이 계획보다 믿을 만하다).
+
+- **키는 `route_stops.id`가 아니라 `TlStop.key`다.** `saveRouteDay`는 그 DAY를 저장할 때마다
+  route_stops 전체를 지우고 다시 넣는 방식이라, FK로 걸었으면 관련 없는 정류지 수정에도
+  CASCADE로 진행 기록이 통째로 날아간다(supabase/trip_stop_progress.sql 상단 주석 참고).
+  **이 패턴은 route_stops를 참조하는 새 테이블을 또 만들 때도 반드시 되짚어볼 것.**
+- **낙관적 갱신** — 버튼을 누르면 저장 완료를 기다리지 않고 바로 화면에 반영한다(`recordAction`).
+  해외에서는 연결이 느리거나 끊길 수 있어서, 반응이 늦으면 눌렸는지 몰라 다시 누르게 된다.
+  실패해도 되돌리지 않는다 — 다음 realtime 이벤트나 재조회가 오면 서버 상태로 자연히 맞춰진다.
+- **"지금" 카드 판정도 실제 기록이 우선한다** — 사용자가 "도착"을 누른 정류지가 있으면 그게
+  확실한 NOW고, 없으면 기존처럼 현재 시각이 예상 도착~출발 사이인 정류지로 추정한다.
+- 건너뛴(skipped) 정류지는 체류시간을 0으로 쳐서 뒤 일정이 그만큼 당겨지게 한다(경로 자체는
+  안 바꾼다 — 자체 경로 재탐색은 만들지 않는다).
+- 진행 기록은 **활성 DAY만** 불러온다(원칙 3-2와 같은 절제). DAY를 옮길 때마다 다시 불러온다.
+
 ### 원칙 3-1 적용 — 좁은 화면일수록 지어내기 쉽다
 화면이 좁아서 "뭐라도 채우고 싶은" 압력이 크지만 규칙은 같다.
 - 평점·영업시간·주소·카테고리 → **저장된 값이 있을 때만** 보여준다(없으면 그 줄이 사라진다)
@@ -487,8 +509,8 @@ PC/노트북  = PLANNER    여행 전, 4개 게이트로 결정한다        (�
   "확인 필요"로 남긴다. 입장료처럼 출처가 아예 없는 항목은 **행 자체를 만들지 않는다**
 
 ### 아직 안 한 것
-편집(순서 변경·이동수단 선택), 실시간 도착 기록(`trip_stop_progress`), 체크리스트, 오프라인 팩,
-PWA 자산은 전부 미구현이다. WALLET/MORE 탭은 "다음 단계에서 구현 예정" 안내만 띄운다.
+편집(순서 변경·이동수단 선택), 체크리스트, 오프라인 팩, PWA 자산은 전부 미구현이다.
+WALLET/MORE 탭은 "다음 단계에서 구현 예정" 안내만 띄운다.
 
 ---
 
@@ -504,6 +526,7 @@ src/
   timeline/dayModel.ts               ← 하루를 시간축에 올리는 규칙의 단일 기준 (Timeline/Mobile 공용, 5-4 참고)
   timeline/placeBrief.ts             ← 장소 상세 AI 브리핑 클라이언트 (Timeline/Mobile 공용)
   mobile/mobile.ts, mobile.css       ← Mobile Companion 게이트 (여행 중 화면, 5-4 참고)
+  mobile/stopProgress.ts             ← 실제 도착/출발 기록 영속화 + 실시간 (Mobile 전용, 5-4 참고)
   expense/expense.ts, expense.css    ← Expense 게이트 (예산·지출·도넛 차트·정산, 5-2 참고)
   workspace/workspace.ts             ← 게이트 라우팅, 사이드바
   utils/googleMaps.ts                ← Google Maps 로더, GooglePlaceResult 추출/카테고리 매핑 (공유 유틸)
@@ -540,10 +563,11 @@ api/                                  ← Vercel 서버리스 함수 (각각 완
    - 여행 중: 실제 도착 시각 기록 → 이후 일정 자동 밀기
    - 내보내기: 캘린더(ics)·이미지로 공유
    - 장소별 예상 비용: `trip_expenses`와 연결(지금은 근거 데이터가 없어 표시하지 않음)
-3. **Mobile(Companion)** — 1차 완성(5-4). 다음 단계: 실시간 도착 기록(`trip_stop_progress`,
-   계획 컬럼과 분리) → 이후 일정 자동 밀기, 체크리스트, 오프라인 팩, PWA 자산(manifest·SW·
-   `viewport-fit=cover`). 서버가 필요한 기능(푸시·ics)은 `api/*.ts`가 이미 12개 상한이라
-   **Supabase Edge Functions로 뺀다**(3-7). 로드맵은 `docs/MOBILE_STRATEGY.md`
+3. **Mobile(Companion)** — 원터치 길찾기·실시간 도착 기록(`trip_stop_progress`)까지 구현됨(5-4).
+   다음 단계: 체크리스트, 오프라인 팩, PWA 자산(manifest·SW·`viewport-fit=cover`). 서버가
+   필요한 기능(푸시·ics)은 `api/*.ts`가 이미 12개 상한이라 **Supabase Edge Functions로
+   뺀다**(3-7). `trip_stop_progress.sql` 마이그레이션을 Supabase에서 실행해야 동작한다.
+   로드맵은 `docs/MOBILE_STRATEGY.md`
 4. **Checklist 탭** — 미구현. **Links 탭**은 채팅 링크를 자동 수집 + og:title/og:image 미리보기 + STAY/PLACE/FOOD/ACTIVITY/VIDEO/ARTICLE/OTHER 자동분류(애매하면 OTHER, 드래그로 수동 재분류 가능)까지 구현됨(`src/links/links.ts`, `src/trips/addLink.ts`, `api/cache-photo.ts`의 `kind:'link-preview'`, `supabase/trip_links.sql`) — 직접 추가 UI는 없음(채팅이 유일한 입력 경로). **Expense 탭**은 구현됨(아래 5-2 참고) — `supabase/trip_expenses.sql` 마이그레이션을 Supabase에서 실행해야 동작
 5. **`google.maps.Marker` → `AdvancedMarkerElement` 마이그레이션** — 지금은 폐기 예정 경고만 뜨는 상태, 급하진 않음 (최소 12개월 유예)
 6. **방콕 외 도시의 `stay_zones` 큐레이션** — 현재 방콕만 실제 조사된 데이터, 나머지 도시는 AI 폴백 상태

@@ -24,6 +24,12 @@
  *    scheduleFor를 그대로 쓴다 — 같은 DAY인데 PC와 폰의 도착 시각이 다르면 그 자체가
  *    버그이기 때문이다(Claude.md 5-3). 이 파일에는 표현(마크업·색·아이콘)만 있다.
  *
+ * **실제 도착 기록 → 남은 일정 자동 재계산.** 오늘 DAY의 카드에서 "도착"을 누르면
+ * `stopProgress.ts`가 `trip_stop_progress`에 실제 시각을 저장하고, `scheduleFor`에 그 값을
+ * 넘기면 이후 정류지들의 예상 시각이 자동으로 다시 계산된다(계획을 덮어쓰지 않는다 —
+ * 자세한 이유는 stopProgress.ts와 supabase/trip_stop_progress.sql 참고). 이 기록은 오늘
+ * DAY에서만 뜬다 — 지난 날·미래 날에는 "도착"이 의미가 없다.
+ *
  * 원칙 3-1 — 화면에 뜨는 값의 출처를 섞지 않는다.
  *   · 평점·영업시간·주소  : DB에 저장된 실제 값이 있을 때만
  *   · 도착 시각·체류·이동 : 추정치(구간마다 "추정" 표기, 헤더에 안내)
@@ -36,7 +42,17 @@ import { store } from '../store';
 import { navigate } from '../router';
 import { subscribeRoutePlan, unsubscribeRoutePlan, resetRouteStorageProbe } from '../route/routeStore';
 import { loadDayModel, scheduleFor, stopLegKey, todaysHoursLine } from '../timeline/dayModel';
-import type { TlDay, TlStop, DaySchedule, RealLegMap } from '../timeline/dayModel';
+import type { TlDay, TlStop, DaySchedule, RealLegMap, ProgressMap, StopProgress } from '../timeline/dayModel';
+import {
+  loadStopProgress,
+  markArrived,
+  markDeparted,
+  markSkipped,
+  resetProgress,
+  subscribeStopProgress,
+  unsubscribeStopProgress,
+  resetStopProgressStorageProbe,
+} from './stopProgress';
 import {
   modeLabel,
   fmtMin,
@@ -117,12 +133,18 @@ let placeBriefErrors = new Map<string, string>();
 let realLegs: RealLegMap = new Map();
 let realLegPending = false;
 
+/** 활성 DAY(오늘 보고 있는 하루)의 정류지별 실제 도착/출발 기록 — 활성 DAY만 불러온다(원칙 3-2와
+ *  같은 절제: 안 보는 날의 진행 기록까지 매번 조회하지 않는다). 키는 TlStop.key. */
+let progress: ProgressMap = new Map();
+
 let daySheetOpen = false;
 let nowTimer: ReturnType<typeof setInterval> | null = null;
 
 export function teardownMobile(): void {
   unsubscribeRoutePlan();
   resetRouteStorageProbe();
+  unsubscribeStopProgress();
+  resetStopProgressStorageProbe();
   if (nowTimer) {
     clearInterval(nowTimer);
     nowTimer = null;
@@ -142,6 +164,7 @@ export function teardownMobile(): void {
   placeBriefErrors = new Map();
   realLegs = new Map();
   realLegPending = false;
+  progress = new Map();
   daySheetOpen = false;
 }
 
@@ -246,7 +269,9 @@ export async function renderMobileContent(host: HTMLElement, tripId: string): Pr
   render();
 
   subscribeRoutePlan(tripId, () => { void reloadFromRemote(); });
+  subscribeStopProgress(tripId, () => { void loadProgressForActiveDay(); });
   void loadRealLegsForActiveDay();
+  void loadProgressForActiveDay();
 
   // "지금" 표시는 분 단위로만 움직이면 충분하다
   nowTimer = setInterval(() => { if (todayDayIndex() >= 0 && !detailKey) render(); }, 60_000);
@@ -259,6 +284,18 @@ async function reloadFromRemote(): Promise<void> {
   allDestinations = model.destinations;
   activeDestId = model.activeDestId;
   if (activeDayIndex >= days.length) activeDayIndex = Math.max(0, days.length - 1);
+  render();
+}
+
+/** 활성 DAY의 진행 기록만 불러온다(원칙 3-2). DAY를 옮길 때마다 다시 호출한다. */
+async function loadProgressForActiveDay(): Promise<void> {
+  if (!activeDestId) {
+    if (progress.size) { progress = new Map(); render(); }
+    return;
+  }
+  const map = await loadStopProgress(activeDestId, activeDayIndex);
+  if (!map) return; // 저장소를 못 씀(마이그레이션 전) — 조용히 유지
+  progress = map;
   render();
 }
 
@@ -401,19 +438,22 @@ function todayTabHtml(): string {
   if (!day) return emptyHtml('일정이 아직 없어요', 'PC에서 ROUTE로 동선을 먼저 만들어 주세요.');
   if (!day.stops.length) return emptyHtml('이 날은 비어 있어요', '다른 DAY를 보거나, PC에서 일정을 채워 주세요.');
 
-  const s = scheduleFor(day, realLegs);
+  const s = scheduleFor(day, realLegs, progress);
   const isToday = day.date === todayISO();
   const now = nowMinutes();
 
-  // "지금 진행 중"인 정류지 — 오늘이고, 도착~출발 사이일 때만(원칙 3-1: 여행 중이 아니면 안 띄운다)
+  // "지금 진행 중"인 정류지 — 사용자가 직접 "도착"을 기록했으면 그게 가장 확실한 신호다.
+  // 아직 아무도 기록하지 않았으면 지금 시각이 예상 도착~출발 사이인 정류지로 추정한다
+  // (원칙 3-1: 실제 기록 > 추정. 여행 중이 아니면 아예 띄우지 않는다).
   let nowIdx = -1;
   if (isToday) {
-    nowIdx = day.stops.findIndex((_, i) => now >= s.arriveMin[i] && now < s.departMin[i]);
+    const arrivedIdx = day.stops.findIndex((st) => progress.get(st.key)?.status === 'arrived');
+    nowIdx = arrivedIdx >= 0 ? arrivedIdx : day.stops.findIndex((_, i) => now >= s.arriveMin[i] && now < s.departMin[i]);
   }
 
   const rows: string[] = [];
   day.stops.forEach((stop, i) => {
-    rows.push(stopCardHtml(stop, i, s, day.date, i === nowIdx));
+    rows.push(stopCardHtml(stop, i, s, day.date, i === nowIdx, isToday, progress.get(stop.key)));
     if (i < day.stops.length - 1) rows.push(legNodeHtml(s.legs[i], i));
   });
 
@@ -439,14 +479,27 @@ function todayTabHtml(): string {
 /**
  * 일정 카드 한 장. 사진이 카드 전체를 채우고 그 위에 어둡게 깔린 그라데이션 위로 글자가 올라간다.
  * 번호 배지는 좌상단, 북마크는 우상단 — 사진 레퍼런스와 같은 배치.
+ *
+ * `showTrack`(오늘 DAY일 때만 true)이면 도착/출발/건너뛰기 버튼을 카드 하단에 붙인다 —
+ * 지난 날·미래 날에는 "도착"이 의미가 없으므로 아예 렌더링하지 않는다.
  */
-function stopCardHtml(stop: TlStop, i: number, s: DaySchedule, dateISO: string | null, isNow: boolean): string {
+function stopCardHtml(
+  stop: TlStop,
+  i: number,
+  s: DaySchedule,
+  dateISO: string | null,
+  isNow: boolean,
+  showTrack: boolean,
+  prog: StopProgress | undefined
+): string {
   const place = stop.place;
   const photo = place?.photo_url ?? null;
   const rating = typeof place?.google_rating === 'number' ? place.google_rating : null;
   const hours = todaysHoursLine(place ?? null, dateISO);
   const timeRange = minToHHMM(s.arriveMin[i]) + ' - ' + minToHHMM(s.departMin[i]);
   const overrun = s.overrunMin[i];
+  // 이미 다녀왔거나 건너뛴 곳은 살짝 가라앉혀서, 눈이 자연히 "아직 안 간 곳"으로 가게 한다
+  const done = prog?.status === 'departed' || prog?.status === 'skipped';
 
   // "숙소 들르기"처럼 목적만 있는 스탑은 사진·평점이 없으므로 얇은 줄 카드로 따로 그린다
   if (stop.purpose) {
@@ -468,7 +521,7 @@ function stopCardHtml(stop: TlStop, i: number, s: DaySchedule, dateISO: string |
   return [
     '<div class="mb-stop' + (isNow ? ' is-now' : '') + '">',
     isNow ? '  <span class="mb-now-flag">NOW</span>' : '',
-    '<article class="mb-card' + (isNow ? ' is-now' : '') + (photo ? '' : ' no-photo') + '"',
+    '<article class="mb-card' + (isNow ? ' is-now' : '') + (photo ? '' : ' no-photo') + (done ? ' is-done' : '') + '"',
     '  data-stop="' + escapeHtml(stop.key) + '" role="button" tabindex="0">',
     photo ? '  <div class="mb-card-photo" data-photo="' + escapeHtml(photo) + '"></div>' : '',
     '  <div class="mb-card-scrim"></div>',
@@ -492,8 +545,61 @@ function stopCardHtml(stop: TlStop, i: number, s: DaySchedule, dateISO: string |
     overrun > 0
       ? '    <div class="mb-card-warn">앞 일정을 다 하면 ' + fmtMin(overrun) + ' 늦어요</div>'
       : '',
+    showTrack ? trackHtml(stop, prog) : '',
     '  </div>',
     '</article>',
+    '</div>',
+  ].join('');
+}
+
+/** ISO 타임스탬프를 "HH:MM"으로 — 여행자의 폰이 현지 시간대를 따라간다고 가정한다 */
+function fmtClock(iso: string): string {
+  const d = new Date(iso);
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+/**
+ * 카드 하단의 도착/출발/건너뛰기 버튼 줄. 네 가지 상태를 오간다 —
+ *   pending(기본) → [도착] → arrived → [출발] → departed
+ *                 → [건너뛰기] → skipped
+ * 어느 상태에서든 "되돌리기"로 pending으로 되돌릴 수 있다(잘못 눌렀을 때).
+ */
+function trackHtml(stop: TlStop, prog: StopProgress | undefined): string {
+  const key = escapeHtml(stop.key);
+  const status = prog?.status ?? 'pending';
+
+  if (status === 'arrived') {
+    const t = prog?.actualArriveAt ? fmtClock(prog.actualArriveAt) : '';
+    return [
+      '<div class="mb-track">',
+      '  <span class="mb-track-status">' + t + ' 도착</span>',
+      '  <button class="mb-track-btn primary" data-depart="' + key + '">' + IC.check + '출발</button>',
+      '  <button class="mb-track-undo" data-reset="' + key + '">되돌리기</button>',
+      '</div>',
+    ].join('');
+  }
+  if (status === 'departed') {
+    const a = prog?.actualArriveAt ? fmtClock(prog.actualArriveAt) : '';
+    const d = prog?.actualDepartAt ? fmtClock(prog.actualDepartAt) : '';
+    return [
+      '<div class="mb-track">',
+      '  <span class="mb-track-status done">' + IC.check + a + ' – ' + d + ' 다녀옴</span>',
+      '  <button class="mb-track-undo" data-reset="' + key + '">되돌리기</button>',
+      '</div>',
+    ].join('');
+  }
+  if (status === 'skipped') {
+    return [
+      '<div class="mb-track">',
+      '  <span class="mb-track-status muted">건너뜀</span>',
+      '  <button class="mb-track-undo" data-reset="' + key + '">되돌리기</button>',
+      '</div>',
+    ].join('');
+  }
+  return [
+    '<div class="mb-track">',
+    '  <button class="mb-track-btn primary" data-arrive="' + key + '">' + IC.check + '도착</button>',
+    '  <button class="mb-track-btn ghost" data-skip="' + key + '">건너뛰기</button>',
     '</div>',
   ].join('');
 }
@@ -527,7 +633,9 @@ function allDaysTabHtml(): string {
   }
   const t = todayISO();
   const rows = days.map((d, idx) => {
-    const s = scheduleFor(d, realLegs);
+    // progress는 활성 DAY만 불러와 있다(원칙 3-2) — 다른 DAY의 키와는 안 겹치므로 그냥 넘겨도
+    // 안전하고, 활성 DAY 행에서는 실제 기록이 반영된 시각을 보여주는 보너스가 된다.
+    const s = scheduleFor(d, realLegs, progress);
     const filled = d.stops.length > 0;
     const names = d.stops.slice(0, 3).map((x) => x.name).join(' · ');
     const more = d.stops.length > 3 ? ' 외 ' + (d.stops.length - 3) + '곳' : '';
@@ -624,7 +732,7 @@ function detailHtml(): string {
   if (!found) return '<div class="mb-loading">장소를 찾을 수 없어요.</div>';
   const { stop, index, day } = found;
   const place = stop.place;
-  const s = scheduleFor(day, realLegs);
+  const s = scheduleFor(day, realLegs, progress);
   const rating = typeof place?.google_rating === 'number' ? place.google_rating : null;
   const photo = place?.photo_url ?? null;
   const dwell = s.dwellMin[index] ?? dwellMinutes(stop.cat);
@@ -909,6 +1017,7 @@ function bind(): void {
       daySheetOpen = false;
       render();
       void loadRealLegsForActiveDay();
+      void loadProgressForActiveDay();
     });
   });
   root.querySelectorAll('[data-goday]').forEach((btn) => {
@@ -917,14 +1026,16 @@ function bind(): void {
       activeTab = 'today';
       render();
       void loadRealLegsForActiveDay();
+      void loadProgressForActiveDay();
     });
   });
 
   // ── 카드 → 상세 ──
   root.querySelectorAll('[data-stop]').forEach((card) => {
     const open = (e: Event) => {
-      // 북마크·길찾기 버튼을 눌렀을 땐 상세를 열지 않는다
-      if ((e.target as HTMLElement).closest('[data-bm]') || (e.target as HTMLElement).closest('[data-nav]')) return;
+      // 북마크·길찾기·도착 기록 버튼을 눌렀을 땐 상세를 열지 않는다
+      const t = e.target as HTMLElement;
+      if (t.closest('[data-bm]') || t.closest('[data-nav]') || t.closest('.mb-track')) return;
       detailKey = (card as HTMLElement).dataset.stop ?? null;
       detailTab = 'overview';
       render();
@@ -937,6 +1048,20 @@ function bind(): void {
         open(e);
       }
     });
+  });
+
+  // ── 실제 도착/출발 기록 ──
+  root.querySelectorAll('[data-arrive]').forEach((btn) => {
+    btn.addEventListener('click', () => { void recordAction('arrive', (btn as HTMLElement).dataset.arrive!); });
+  });
+  root.querySelectorAll('[data-depart]').forEach((btn) => {
+    btn.addEventListener('click', () => { void recordAction('depart', (btn as HTMLElement).dataset.depart!); });
+  });
+  root.querySelectorAll('[data-skip]').forEach((btn) => {
+    btn.addEventListener('click', () => { void recordAction('skip', (btn as HTMLElement).dataset.skip!); });
+  });
+  root.querySelectorAll('[data-reset]').forEach((btn) => {
+    btn.addEventListener('click', () => { void recordAction('reset', (btn as HTMLElement).dataset.reset!); });
   });
 
   // ── 상세 닫기 · 탭 ──
@@ -975,6 +1100,31 @@ function bind(): void {
   root.querySelector('#mb-links')?.addEventListener('click', () => gotoGate('links'));
   root.querySelector('#mb-menu')?.addEventListener('click', () => gotoGate('timeline'));
   root.querySelector('#mb-add')?.addEventListener('click', () => gotoGate('route'));
+}
+
+/**
+ * 도착/출발/건너뛰기/되돌리기를 기록한다. **낙관적으로 먼저 화면에 반영하고 그다음 저장한다**
+ * — 해외에서는 연결이 느리거나 끊길 수 있어서, 버튼을 눌렀는데 반응이 늦으면 "눌렸는지 안
+ * 눌렸는지" 몰라 다시 누르게 된다. 저장이 실패해도 되돌리지 않는다: 다음 realtime 이벤트나
+ * 재조회가 오면 서버 상태로 자연히 맞춰진다(route_stops 저장의 self-write echo 억제와
+ * 같은 전제 — 쓰기는 기본적으로 성공한다고 보고, 실패는 로그만 남긴다).
+ */
+async function recordAction(kind: 'arrive' | 'depart' | 'skip' | 'reset', stopKey: string): Promise<void> {
+  if (!activeDestId || !currentTripId) return;
+
+  const nowIso = new Date().toISOString();
+  const prev = progress.get(stopKey);
+  const optimistic: StopProgress =
+    kind === 'arrive' ? { status: 'arrived', actualArriveAt: nowIso, actualDepartAt: null }
+    : kind === 'depart' ? { status: 'departed', actualArriveAt: prev?.actualArriveAt ?? nowIso, actualDepartAt: nowIso }
+    : kind === 'skip' ? { status: 'skipped', actualArriveAt: null, actualDepartAt: null }
+    : { status: 'pending', actualArriveAt: null, actualDepartAt: null };
+  progress.set(stopKey, optimistic);
+  render();
+
+  const save = kind === 'arrive' ? markArrived : kind === 'depart' ? markDeparted : kind === 'skip' ? markSkipped : resetProgress;
+  const ok = await save(currentTripId, activeDestId, activeDayIndex, stopKey);
+  if (!ok) console.error('[Mobile] 진행 기록 저장 실패:', kind, stopKey);
 }
 
 async function sharePlace(): Promise<void> {

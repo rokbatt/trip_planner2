@@ -77,18 +77,24 @@ NOW 카드 규칙: 한 화면에 **다음 한 곳만**, 액션은 **도착 / 출
 
 ---
 
-## 5. 실시간 타임라인 — 데이터 설계 (제일 중요)
+## 5. 실시간 타임라인 — 데이터 설계 (구현 완료, ✅)
 
 실제 도착 시각을 `route_stops.arrive_time`에 쓰면 **안 된다.** 그 컬럼은 "사용자가 고정한 계획
 시각"이고, 실제 시각으로 덮으면 계획을 되돌릴 수 없다. **별도 테이블로 분리한다:**
 
 ```
 trip_stop_progress
-  route_stop_id · trip_id · actual_arrive_at · actual_depart_at · status · recorded_by
+  stop_key · trip_id · destination_id · day_index
+  actual_arrive_at · actual_depart_at · status · recorded_by
 ```
 
 - 계획(`route_stops`)은 불변, 실제(`trip_stop_progress`)만 쌓임 → 여행 후 리포트가 공짜로 생김
 - Realtime publication에 추가 (links·expenses와 같은 패턴)
+- **키를 `route_stop_id`가 아니라 `stop_key`(=`dayModel.ts`의 `TlStop.key`)로 잡았다** — 처음
+  스케치와 다른 부분. `saveRouteDay`는 그 DAY를 저장할 때마다 route_stops 전체를 지우고
+  다시 넣는 방식이라, FK로 걸었으면 관련 없는 정류지 하나만 수정해도 CASCADE로 그 날 진행
+  기록이 통째로 날아간다. 실제 구현 단계에서 발견해 피한 함정 — `route_stops`를 참조하는
+  테이블을 또 만들 때 반드시 되짚어볼 것 (`supabase/trip_stop_progress.sql` 상단 주석 참고)
 
 **계산 로직은 새로 짤 게 거의 없다.** 기존 `computeStopTimes`는 09:00에서 시작해 "체류 + 이동"을
 누적하는데, 실시간 모드는 **시작 시계를 마지막 실제 기록으로 바꾸는 것**이 전부다. 이미 있는
@@ -145,13 +151,14 @@ overrun/slack 개념(5-3)을 "이 속도면 마지막 일정 22:10 도착, 30분
 
 | 단계 | 내용 | 규모 | 기존 코드 영향 |
 |---|---|---|---|
-| M0 | 모바일 셸 — `src/mobile/`, `#trip/:id/go`, 하단 탭, PWA 자산, Maps 지연 로드, safe-area | ~1주 | `index.html`·`workspace.ts` 분기 (소) |
-| M1 | 여행 중 코어 — 오늘/NOW, 모바일 타임라인, `trip_stop_progress`, 밀림 재계산 | ~2주 | 없음 (신규 테이블 1개) |
-| M2 | 여행 전 — 체크리스트(신규), 티켓 지갑, 오프라인 팩 | ~2주 | 없음 (Links 확장) |
+| M0 | ✅ 모바일 셸 — `src/mobile/`, `#trip/:id/go`, 하단 탭, Night/Daylight Lounge 테마 | 완료 | `workspace.ts` 분기 (소) |
+| M1 | ✅ 여행 중 코어 — 오늘 탭, 원터치 길찾기, `trip_stop_progress` 실시간 도착 기록·자동 재계산 | 완료 | 신규 테이블 1개 |
+| M2 | 여행 전 — 체크리스트(신규), 티켓 지갑, 오프라인 팩, PWA 자산(manifest·SW) | ~2주 | 없음 (Links 확장) |
 | M3 | 지갑 — 현장 지출 프리필, 정산 알림, Quick Capture | ~1주 | Expense 재사용 (소) |
 | M4 | 스토어 — Capacitor, 네이티브 푸시, 위젯, 심사 | ~2주 | 빌드 파이프라인만 (중) |
 
-M0만 끝나도 "폰으로 확정 일정을 깔끔하게 본다"는 요구는 충족된다. M1부터가 차별화 구간.
+M0로 "폰으로 확정 일정을 깔끔하게 본다"는 요구가 충족됐고, M1(길찾기·실시간 도착 기록)로
+차별화 구간까지 왔다. 다음은 M2(체크리스트·오프라인)부터.
 
 ---
 

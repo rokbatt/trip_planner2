@@ -591,6 +591,58 @@
   box-shadow: 0 2px 12px rgba(217, 109, 12, 0.4);
 }
 
+/* 이미 다녀왔거나 건너뛴 카드는 살짝 가라앉힌다 — 아직 안 간 곳으로 눈이 자연히 가게 */
+.mb-card.is-done { opacity: 0.8; }
+
+/* ── 도착/출발/건너뛰기 — 사진 위에서도 읽히도록 카드 노트(.mb-card-note)와 같은 유리질감 ── */
+.mb-track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.mb-track-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 13px;
+  min-height: 32px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+.mb-track-btn svg { width: 12px; height: 12px; }
+/* 지금 이 순간에 관한 동작이라 NOW 배지와 같은 주황 채움을 쓴다 */
+.mb-track-btn.primary { color: var(--mb-live-fg); background: var(--mb-live-grad); }
+.mb-track-btn.ghost {
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(13, 12, 11, 0.5);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.mb-track-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  font-variant-numeric: tabular-nums;
+}
+.mb-track-status svg { width: 12px; height: 12px; color: var(--mb-live); }
+.mb-track-status.done { color: rgba(255, 255, 255, 0.72); }
+.mb-track-status.muted { color: rgba(255, 255, 255, 0.55); }
+.mb-track-undo {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 4px;
+  color: rgba(255, 255, 255, 0.55);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.mb-track-undo:hover { color: rgba(255, 255, 255, 0.85); }
+
 /* 목적만 있는 스탑("숙소 들르기" 등) — 사진이 없으므로 얇은 줄로 */
 .mb-card-slim {
   min-height: 0;
