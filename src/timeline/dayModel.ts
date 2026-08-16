@@ -265,6 +265,31 @@ export function legBetween(a: TlStop, b: TlStop, realLegs: RealLegMap): Leg | nu
   );
 }
 
+/* ══════════════ 실시간 진행 상황 (MOBILE) ══════════════ */
+
+/**
+ * 정류지 하나의 실제 도착/출발 기록. `mobile/stopProgress.ts`(I/O 계층)가 Supabase에서 읽어
+ * 채워 넣고, 여기(계산 계층)는 그 값을 시각 계산에 어떻게 반영할지만 안다 — 저장 방식은
+ * 모른다. 키는 route_stops.id가 아니라 `TlStop.key`다(이유는 supabase/trip_stop_progress.sql
+ * 상단 주석 참고 — route_stops는 저장할 때마다 그 DAY를 통째로 지우고 다시 넣으므로
+ * FK로 걸면 관련 없는 수정에도 CASCADE로 진행 기록이 날아간다).
+ */
+export interface StopProgress {
+  status: 'pending' | 'arrived' | 'departed' | 'skipped';
+  actualArriveAt: string | null;
+  actualDepartAt: string | null;
+}
+
+/** TlStop.key → 그 정류지의 실시간 진행 상황 */
+export type ProgressMap = Map<string, StopProgress>;
+
+/** ISO 타임스탬프를 "그 날짜의 자정부터 몇 분"으로 바꾼다 — 브라우저 로컬 시간대 기준
+ *  (여행자의 폰이 현지 시간대를 따라간다고 가정, ROUTE/TIMELINE의 HH:MM 표시와 같은 기준) */
+function isoToMinutesOfDay(iso: string): number {
+  const d = new Date(iso);
+  return d.getHours() * 60 + d.getMinutes();
+}
+
 /* ══════════════ 시각 계산 ══════════════ */
 
 /**
@@ -275,8 +300,14 @@ export function legBetween(a: TlStop, b: TlStop, realLegs: RealLegMap): Leg | nu
  *   앞당겨 고정  → overrun(일정이 겹침, 앞 일정을 줄여야 함)
  *   늦춰서 고정  → slack(그 앞에 비는 시간이 생김)
  * 단순 나열이 아니라 "이 일정이 실제로 가능한가"를 보여주기 위한 값이다.
+ *
+ * `progress`(선택)를 넘기면 실제로 기록된 도착/출발 시각이 있는 정류지는 그 값을
+ * **사용자가 고정한 시각보다도 우선해서** 쓴다 — 실제로 일어난 일이 계획보다 더 믿을 만한
+ * 데이터이기 때문이다(원칙 3-1). 이후 시계는 그 실제 시각을 기준으로 계속 흘러가므로,
+ * 아직 기록이 없는 뒤쪽 정류지들의 예상 시각도 자동으로 다시 계산된다.
+ * 건너뛴(skipped) 정류지는 체류시간을 0으로 쳐서 뒤쪽 일정이 그만큼 당겨지게 한다.
  */
-export function scheduleFor(day: TlDay, realLegs: RealLegMap): DaySchedule {
+export function scheduleFor(day: TlDay, realLegs: RealLegMap, progress?: ProgressMap): DaySchedule {
   const stops = day.stops;
   const legs: Array<Leg | null> = [];
   for (let i = 0; i < stops.length - 1; i++) {
@@ -293,17 +324,27 @@ export function scheduleFor(day: TlDay, realLegs: RealLegMap): DaySchedule {
   stops.forEach((s, i) => {
     const natural = clock;
     const fixed = s.arriveTime ? hhmmToMin(s.arriveTime) : null;
-    const arrive = fixed ?? natural;
+    const prog = progress?.get(s.key);
+    const actualArrive = prog?.actualArriveAt != null ? isoToMinutesOfDay(prog.actualArriveAt) : null;
+    const actualDepart = prog?.actualDepartAt != null ? isoToMinutesOfDay(prog.actualDepartAt) : null;
+    // 실제 기록 > 사용자가 고정한 계획 시각 > 자연스러운 누적 시각, 이 순서로 우선한다
+    const pinned = actualArrive ?? fixed;
+    const arrive = pinned ?? natural;
     // 첫 정류지는 비교 대상이 없으므로 여유/겹침을 따지지 않는다
-    slackMin.push(i > 0 && fixed != null && fixed > natural ? fixed - natural : 0);
-    overrunMin.push(i > 0 && fixed != null && fixed < natural ? natural - fixed : 0);
+    slackMin.push(i > 0 && pinned != null && pinned > natural ? pinned - natural : 0);
+    overrunMin.push(i > 0 && pinned != null && pinned < natural ? natural - pinned : 0);
 
-    const dwell = dwellMinutes(s.cat);
+    const dwell =
+      prog?.status === 'skipped' ? 0
+      : actualArrive != null && actualDepart != null ? Math.max(0, actualDepart - actualArrive)
+      : dwellMinutes(s.cat);
+    const depart = actualDepart ?? arrive + dwell;
+
     arriveMin.push(arrive);
     dwellMin.push(dwell);
-    departMin.push(arrive + dwell);
+    departMin.push(depart);
 
-    clock = arrive + dwell + (legs[i]?.min ?? 0);
+    clock = depart + (legs[i]?.min ?? 0);
   });
 
   let totalMove = 0;

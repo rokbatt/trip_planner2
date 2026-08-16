@@ -319,6 +319,43 @@ export interface Database {
         Relationships: [];
       };
 
+      trip_stop_progress: {
+        Row: {
+          id: string;
+          trip_id: string;
+          destination_id: string | null;
+          day_index: number;
+          /** dayModel.ts의 TlStop.key와 동일한 문자열 — route_stops.id를 FK로 참조하지 않는다
+           *  (supabase/trip_stop_progress.sql 상단 주석 참고: route_stops는 저장할 때마다
+           *  그 DAY를 통째로 지우고 다시 넣으므로 FK를 쓰면 관련 없는 수정에도 CASCADE로
+           *  진행 기록이 날아간다) */
+          stop_key: string;
+          status: string; // 'pending' | 'arrived' | 'departed' | 'skipped'
+          actual_arrive_at: string | null;
+          actual_depart_at: string | null;
+          recorded_by: string | null;
+          recorded_by_name: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          trip_id: string;
+          destination_id?: string | null;
+          day_index: number;
+          stop_key: string;
+          status?: string;
+          actual_arrive_at?: string | null;
+          actual_depart_at?: string | null;
+          recorded_by?: string | null;
+          recorded_by_name?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['trip_stop_progress']['Insert']>;
+        Relationships: [];
+      };
+
       city_images: {
         Row: {
           id: string;
