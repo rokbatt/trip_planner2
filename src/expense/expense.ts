@@ -27,28 +27,40 @@ import { supabase } from '../supabase';
 import { store } from '../store';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { Database, TripExpense, TripExpenseBudget } from '../types/database';
+// 돈에 관한 숫자(집계·정산·환율 변환)는 MOBILE 지갑과 공유한다 — 같은 트립인데 PC와 폰의
+// 정산 결과가 다르면 그 자체가 버그이므로 계산은 expenseModel 하나만 쓴다(Claude.md 5-3).
+import {
+  EXPENSE_CATEGORIES,
+  CATEGORY_META,
+  SPLIT_MODE_LABEL,
+  CURRENCIES,
+  BUDGET_TOTAL_KEY,
+  fmtKRW,
+  symbolOf,
+  fmtAmount,
+  krwOf,
+  modeOf,
+  memberName as memberNameOf,
+  totalsByCategory as totalsByCategoryOf,
+  getTotalBudget as getTotalBudgetOf,
+  getCategoryBudgetSum as getCategoryBudgetSumOf,
+  sumPaid as sumPaidOf,
+  sumPaidByMode as sumPaidByModeOf,
+  unconvertedCount as unconvertedCountOf,
+  computeSettlement as computeSettlementOf,
+  settlementSummaryText as settlementSummaryTextOf,
+  buildExpensePayload as buildExpensePayloadOf,
+  fetchRate as fetchRateOf,
+} from './expenseModel';
+import type { ExpenseCategory, SplitMode, MemberLite, ExpenseCtx, SettleRow } from './expenseModel';
+
+export { EXPENSE_CATEGORIES };
+export type { ExpenseCategory };
 
 type TripExpenseInsert = Database['public']['Tables']['trip_expenses']['Insert'];
 import './expense.css';
 
-/* ── 카테고리 정의 ──
- * 색은 CVD(색약) 검증을 통과한 7색 고정 순서 — 카드·범례·칩이 전부 이 순서를 따른다.
- * 순서 자체가 인접 색 구분성의 안전장치이므로 임의로 섞지 말 것. */
-export const EXPENSE_CATEGORIES = ['FLIGHT', 'STAY', 'TRANSPORT', 'FOOD', 'ACTIVITY', 'SHOPPING', 'ETC'] as const;
-export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];
-
-/** trip_expense_budgets에서 "카테고리별 배분과 별개인 총 예산" lump sum을 저장하는 sentinel 키.
- *  실제 카테고리 목록에 없는 값이라 trip_expenses.category 체크 제약과 절대 충돌하지 않는다. */
-const BUDGET_TOTAL_KEY = 'TOTAL';
-
-type SplitMode = 'SHARED' | 'PERSONAL';
-
-const IC_PLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>';
-const IC_HOTEL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V6a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v15"/><path d="M15 21v-8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v8"/><path d="M7.5 7.5h1M7.5 11h1M7.5 14.5h1M11.5 7.5h1M11.5 11h1M11.5 14.5h1M17.5 14.5h1M17.5 17.5h1"/><path d="M2 21h20"/></svg>';
-const IC_BUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M3 11h18M7 18v2M17 18v2"/><circle cx="7.5" cy="14.5" r="0.8" fill="currentColor"/><circle cx="16.5" cy="14.5" r="0.8" fill="currentColor"/></svg>';
-const IC_FORK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3v6a2 2 0 0 0 4 0V3M9 11v10M17 3c-1.5 1-2 3-2 5s1 3 2 3 2-1 2-3-.5-4-2-5zM17 11v10"/></svg>';
-const IC_FERRIS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><circle cx="12" cy="13" r="1.1" fill="currentColor" stroke="none"/><path d="M12 5v16M4 13h16M6.3 7.3l11.4 11.4M17.7 7.3 6.3 18.7"/><path d="M4 21h16"/></svg>';
-const IC_BAG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l1 13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L6 7z"/><path d="M9 10V6a3 3 0 0 1 6 0v4"/></svg>';
+/* ── UI 전용 아이콘 (카테고리 아이콘은 expenseModel의 CATEGORY_META에 있다) ── */
 const IC_DOTS = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
 const IC_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
 const IC_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z"/></svg>';
@@ -63,44 +75,11 @@ const IC_CHEV_R = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const IC_CHEV_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
 const IC_CHEV_UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>';
 
-const CATEGORY_META: Record<ExpenseCategory, { label: string; color: string; icon: string }> = {
-  FLIGHT:    { label: '항공',        color: '#2a78d6', icon: IC_PLANE },
-  STAY:      { label: '숙소',        color: '#eb6834', icon: IC_HOTEL },
-  TRANSPORT: { label: '교통',        color: '#1baf7a', icon: IC_BUS },
-  FOOD:      { label: '식비',        color: '#eda100', icon: IC_FORK },
-  ACTIVITY:  { label: '관광·액티비티', color: '#e87ba4', icon: IC_FERRIS },
-  SHOPPING:  { label: '쇼핑',        color: '#008300', icon: IC_BAG },
-  ETC:       { label: '기타',        color: '#4a3aa7', icon: IC_DOTS },
-};
-
-const SPLIT_MODE_LABEL: Record<SplitMode, string> = { SHARED: '공동 지출', PERSONAL: '개인 지출' };
-
-/* 여행에서 실제로 자주 등장하는 통화만 — 자유 입력이 아니라 유한 목록 */
-const CURRENCIES: Array<{ code: string; symbol: string }> = [
-  { code: 'KRW', symbol: '₩' },
-  { code: 'THB', symbol: '฿' },
-  { code: 'JPY', symbol: '¥' },
-  { code: 'USD', symbol: '$' },
-  { code: 'EUR', symbol: '€' },
-  { code: 'TWD', symbol: 'NT$' },
-  { code: 'VND', symbol: '₫' },
-  { code: 'SGD', symbol: 'S$' },
-  { code: 'HKD', symbol: 'HK$' },
-  { code: 'PHP', symbol: '₱' },
-  { code: 'IDR', symbol: 'Rp' },
-];
-
 const TIPS = [
   '정산은 "결제 완료" + "공동 지출" 항목만 반영돼요.',
   '카테고리 카드의 ⋯ 메뉴에서 예산을 바로 수정할 수 있어요.',
   '환율은 저장 시점 기준이라 실제 결제 금액과 소폭 다를 수 있어요.',
 ];
-
-interface MemberLite {
-  user_id: string;
-  display_name: string | null;
-  avatar_url: string | null;
-}
 
 type TabKey = 'overview' | 'list' | 'settlement' | 'companions' | 'settings';
 const TABS: Array<{ key: TabKey; label: string }> = [
@@ -154,29 +133,30 @@ function escapeHtml(str: string): string {
   return div.innerHTML;
 }
 
-function fmtKRW(n: number): string {
-  return '₩' + Math.round(n).toLocaleString('ko-KR');
+/* ── 계산은 expenseModel에 위임한다 ──
+ * 모듈 상태(expenses/members/budgets/headcount)를 컨텍스트로 묶어 넘기기만 하고,
+ * 아래 래퍼들은 기존 호출부가 그대로 동작하도록 이름을 유지한다. */
+function ctx(): ExpenseCtx {
+  return { tripId: currentTripId, members, expenses, budgets, headcount };
 }
 
-function symbolOf(code: string): string {
-  return CURRENCIES.find((c) => c.code === code)?.symbol ?? code + ' ';
+function memberName(userId: string | null): string { return memberNameOf(ctx(), userId); }
+function totalsByCategory(): Map<ExpenseCategory, number> { return totalsByCategoryOf(ctx()); }
+function getTotalBudget(): number | null { return getTotalBudgetOf(ctx()); }
+function getCategoryBudgetSum(): number { return getCategoryBudgetSumOf(ctx()); }
+function sumPaid(): number { return sumPaidOf(ctx()); }
+function sumPaidByMode(mode: SplitMode): number { return sumPaidByModeOf(ctx(), mode); }
+function unconvertedCount(): number { return unconvertedCountOf(ctx()); }
+function computeSettlement(): { rows: SettleRow[]; transfers: Array<{ from: string; to: string; amount: number }>; skipped: number } {
+  return computeSettlementOf(ctx());
 }
-
-function fmtAmount(amount: number, currency: string): string {
-  const num = currency === 'KRW' || currency === 'JPY' || currency === 'VND' || currency === 'IDR'
-    ? Math.round(amount).toLocaleString('ko-KR')
-    : amount.toLocaleString('ko-KR', { maximumFractionDigits: 2 });
-  return symbolOf(currency) + num;
-}
-
-/** 집계에 쓸 원화 금액 — KRW 입력은 amount 그대로, 그 외엔 저장된 환산값 */
-function krwOf(e: TripExpense): number | null {
-  if (e.currency === 'KRW') return e.amount;
-  return e.amount_krw;
-}
-
-function modeOf(e: TripExpense): SplitMode {
-  return e.split_mode === 'PERSONAL' ? 'PERSONAL' : 'SHARED';
+function settlementSummaryText(): string { return settlementSummaryTextOf(ctx()); }
+function fetchRate(currency: string): Promise<{ rate: number | null; source: string }> { return fetchRateOf(currency); }
+function buildExpensePayload(fields: {
+  category: string; title: string; amount: number; currency: string; expenseDate: string | null;
+  isPaid: boolean; splitMode: SplitMode; payer: string | null; split: Set<string>; memo: string | null;
+}): Promise<TripExpenseInsert> {
+  return buildExpensePayloadOf(ctx(), fields);
 }
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -184,11 +164,6 @@ const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 function fmtDateLabel(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00');
   return (d.getMonth() + 1) + '.' + String(d.getDate()).padStart(2, '0') + ' (' + WEEKDAYS[d.getDay()] + ')';
-}
-
-function memberName(userId: string | null): string {
-  if (!userId) return '미지정';
-  return members.find((m) => m.user_id === userId)?.display_name || '멤버';
 }
 
 function avatarHtml(userId: string | null, size: 'sm' | 'md' | 'lg' = 'md', fallbackName?: string | null, fallbackAvatar?: string | null): string {
@@ -199,103 +174,6 @@ function avatarHtml(userId: string | null, size: 'sm' | 'md' | 'lg' = 'md', fall
     ? '<img src="' + escapeHtml(url) + '" alt="" referrerpolicy="no-referrer" />'
     : escapeHtml(name.charAt(0));
   return '<span class="ex-avatar ex-avatar-' + size + '" title="' + escapeHtml(name) + '">' + inner + '</span>';
-}
-
-/* ══════════════════════ 집계 ══════════════════════ */
-
-function totalsByCategory(): Map<ExpenseCategory, number> {
-  const map = new Map<ExpenseCategory, number>();
-  for (const cat of EXPENSE_CATEGORIES) map.set(cat, 0);
-  for (const e of expenses) {
-    const krw = krwOf(e);
-    if (krw == null) continue;
-    const cat = (EXPENSE_CATEGORIES as readonly string[]).includes(e.category) ? (e.category as ExpenseCategory) : 'ETC';
-    map.set(cat, (map.get(cat) ?? 0) + krw);
-  }
-  return map;
-}
-
-function getTotalBudget(): number | null {
-  return budgets.get(BUDGET_TOTAL_KEY) ?? null;
-}
-
-function getCategoryBudgetSum(): number {
-  let sum = 0;
-  for (const cat of EXPENSE_CATEGORIES) sum += budgets.get(cat) ?? 0;
-  return sum;
-}
-
-/** "현재 사용" — 실제로 결제 완료한 금액(예정 항목은 제외) */
-function sumPaid(): number {
-  return expenses.filter((e) => e.is_paid).reduce((acc, e) => acc + (krwOf(e) ?? 0), 0);
-}
-
-function sumPaidByMode(mode: SplitMode): number {
-  return expenses.filter((e) => e.is_paid && modeOf(e) === mode).reduce((acc, e) => acc + (krwOf(e) ?? 0), 0);
-}
-
-/** 환산 불가(환율 없음)로 집계에서 빠진 항목 수 — 화면에 정직하게 표시 */
-function unconvertedCount(): number {
-  return expenses.filter((e) => krwOf(e) == null).length;
-}
-
-/* ══════════════════════ 정산 ══════════════════════ */
-
-interface SettleRow {
-  userId: string;
-  paidSum: number;
-  shareSum: number;
-  balance: number; // + 받을 돈, - 보낼 돈
-  paidCount: number;
-}
-
-function computeSettlement(): { rows: SettleRow[]; transfers: Array<{ from: string; to: string; amount: number }>; skipped: number } {
-  const byUser = new Map<string, SettleRow>();
-  const ensure = (uid: string): SettleRow => {
-    let r = byUser.get(uid);
-    if (!r) { r = { userId: uid, paidSum: 0, shareSum: 0, balance: 0, paidCount: 0 }; byUser.set(uid, r); }
-    return r;
-  };
-  members.forEach((m) => ensure(m.user_id));
-
-  let skipped = 0;
-  const allIds = members.map((m) => m.user_id);
-  for (const e of expenses) {
-    if (!e.is_paid || modeOf(e) !== 'SHARED') continue; // 개인 지출/예정 항목은 정산 대상 아님
-    const krw = krwOf(e);
-    if (krw == null || !e.paid_by) { skipped++; continue; }
-    const splitIds = e.split_user_ids && e.split_user_ids.length > 0 ? e.split_user_ids : allIds;
-    if (splitIds.length === 0) { skipped++; continue; }
-    const payerRow = ensure(e.paid_by);
-    payerRow.paidSum += krw;
-    payerRow.paidCount += 1;
-    const share = krw / splitIds.length;
-    splitIds.forEach((uid) => { ensure(uid).shareSum += share; });
-  }
-
-  const rows = Array.from(byUser.values());
-  rows.forEach((r) => { r.balance = r.paidSum - r.shareSum; });
-
-  // 최소 송금 제안 — 가장 많이 받을 사람과 가장 많이 보낼 사람을 그리디로 매칭
-  const creditors = rows.filter((r) => r.balance > 0.5).map((r) => ({ uid: r.userId, amt: r.balance })).sort((a, b) => b.amt - a.amt);
-  const debtors = rows.filter((r) => r.balance < -0.5).map((r) => ({ uid: r.userId, amt: -r.balance })).sort((a, b) => b.amt - a.amt);
-  const transfers: Array<{ from: string; to: string; amount: number }> = [];
-  let ci = 0, di = 0;
-  while (ci < creditors.length && di < debtors.length) {
-    const pay = Math.min(creditors[ci].amt, debtors[di].amt);
-    transfers.push({ from: debtors[di].uid, to: creditors[ci].uid, amount: pay });
-    creditors[ci].amt -= pay;
-    debtors[di].amt -= pay;
-    if (creditors[ci].amt < 0.5) ci++;
-    if (debtors[di].amt < 0.5) di++;
-  }
-  return { rows, transfers, skipped };
-}
-
-function settlementSummaryText(): string {
-  const { transfers } = computeSettlement();
-  if (transfers.length === 0) return '모두 정산이 맞아요. 보낼 돈이 없어요!';
-  return '[정산 안내]\n' + transfers.map((t) => memberName(t.from) + ' → ' + memberName(t.to) + ' : ' + fmtKRW(t.amount)).join('\n');
 }
 
 function shareSettlement(): void {
@@ -718,57 +596,6 @@ function quickAddFormHtml(): string {
     '</div>',
     '<div class="ex-qa-flash" id="qa-flash"></div>',
   ].join('\n');
-}
-
-async function fetchRate(currency: string): Promise<{ rate: number | null; source: string }> {
-  if (currency === 'KRW') return { rate: 1, source: 'live' };
-  const cached = fxCache.get(currency);
-  if (cached) return cached;
-  try {
-    const res = await fetch('/api/exchange-rate?from=' + encodeURIComponent(currency));
-    const data = (await res.json()) as { rate: number | null; source: string };
-    const result = { rate: typeof data.rate === 'number' && data.rate > 0 ? data.rate : null, source: data.source ?? 'unavailable' };
-    fxCache.set(currency, result);
-    return result;
-  } catch {
-    return { rate: null, source: 'unavailable' };
-  }
-}
-
-/** 공통: 입력값 → 저장 payload 계산(환율 조회 포함). quick-add와 수정 모달이 함께 사용. */
-async function buildExpensePayload(fields: {
-  category: string; title: string; amount: number; currency: string; expenseDate: string | null;
-  isPaid: boolean; splitMode: SplitMode; payer: string | null; split: Set<string>; memo: string | null;
-}): Promise<TripExpenseInsert> {
-  let amountKrw: number | null = Math.round(fields.amount);
-  let fxRate: number | null = 1;
-  let fxSource: string | null = 'live';
-  if (fields.currency !== 'KRW') {
-    const { rate, source } = await fetchRate(fields.currency);
-    fxRate = rate;
-    fxSource = source;
-    amountKrw = rate != null ? Math.round(fields.amount * rate) : null;
-  }
-  const payerMember = fields.payer ? members.find((m) => m.user_id === fields.payer) : null;
-  return {
-    trip_id: currentTripId,
-    category: fields.category,
-    title: fields.title,
-    amount: fields.amount,
-    currency: fields.currency,
-    amount_krw: amountKrw,
-    fx_rate: fxRate,
-    fx_source: fxSource,
-    expense_date: fields.expenseDate,
-    is_paid: fields.isPaid,
-    split_mode: fields.splitMode,
-    paid_by: fields.payer,
-    paid_by_name: payerMember?.display_name ?? null,
-    paid_by_avatar: payerMember?.avatar_url ?? null,
-    split_user_ids: fields.splitMode === 'PERSONAL' ? (fields.payer ? [fields.payer] : null) : (fields.split.size === members.length ? null : Array.from(fields.split)),
-    memo: fields.memo,
-    updated_at: new Date().toISOString(),
-  };
 }
 
 function mountQuickAdd(container: HTMLElement): void {
