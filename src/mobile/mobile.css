@@ -468,11 +468,17 @@
   font-variant-numeric: tabular-nums;
 }
 
-.mb-card-bm {
+/* 카드 우상단 액션 두 개(길찾기·저장) — 한 컨테이너로 묶어 absolute 위치를 한 번만 잡는다 */
+.mb-card-actions {
   position: absolute;
   top: 12px;
   right: 12px;
   z-index: 2;
+  display: flex;
+  gap: 6px;
+}
+.mb-card-nav,
+.mb-card-bm {
   display: grid;
   place-items: center;
   width: 28px;
@@ -482,9 +488,18 @@
   border: 1px solid rgba(255, 255, 255, 0.2);
   backdrop-filter: blur(6px);
   color: rgba(255, 255, 255, 0.82);
+  text-decoration: none;
 }
+.mb-card-nav svg,
 .mb-card-bm svg { width: 14px; height: 14px; }
+.mb-card-nav:hover,
 .mb-card-bm:hover { color: #fff; }
+/* 길찾기는 이 화면의 핵심 동작이라 저장 버튼과 다르게 hover 시 살짝 튀는 색을 준다.
+   --mb-live는 테마마다 값이 다르므로 하드코딩하지 않고 그대로 섞어 쓴다. */
+.mb-card-nav:hover {
+  background: color-mix(in srgb, var(--mb-live) 75%, transparent);
+  border-color: color-mix(in srgb, var(--mb-live) 55%, transparent);
+}
 
 .mb-card-body {
   position: relative;

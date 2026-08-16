@@ -470,6 +470,12 @@ PC/노트북  = PLANNER    여행 전, 4개 게이트로 결정한다        (�
 - **카드 탭 → 장소 상세**가 위로 밀려 들어온다(`.mb-detail`). Hero 사진 → 이름·평점 →
   예상 체류 칩 → OVERVIEW/GUIDE/REVIEWS 탭. 내용은 데스크톱 `.tl-pd` 패널과 같은 구조이고
   AI 브리핑도 같은 `placeBrief.ts`·같은 서버 캐시를 공유한다(장소당 Gemini 호출 1회).
+- **길찾기는 원터치, 자체 지도 없이.** 카드 우상단의 나침반 아이콘(`.mb-card-nav`)과
+  Overview·Guide 탭의 "길찾기" 링크가 전부 `directionsHref(stop)` 하나를 공유한다 —
+  Google Maps 딥링크(`/maps/dir/?api=1&destination=...`) 조합뿐이라 API 비용이 0(원칙 3-2).
+  출발지는 일부러 넣지 않는다: 생략하면 Google Maps가 여는 기기의 현재 위치를 자동으로 쓰므로
+  우리가 위치 권한을 따로 요청할 필요가 없다. 정류지에 사용자가 직접 지정한 이동수단이 있으면
+  `travelmode` 힌트로 같이 넘긴다. 자체 내비게이션·지도 타일 캐싱은 만들지 않는다.
 - 스크롤 컨테이너는 `.mb-scroll` 하나로 통일한다. 게이트가 활성이면 바깥
   `.ws-content-body`에 `.is-mobile-gate`를 붙여 바깥 스크롤을 끈다(중첩 스크롤 금지).
 
