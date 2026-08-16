@@ -9,6 +9,13 @@
  * 그래서 편집 UI(순서 변경·이동수단 선택·지도 편집)는 여기 없다. 대신 한 손으로 읽기 좋은
  * 밀도와, 카드를 누르면 장소 상세로 밀려 들어가는 두 화면 구조만 갖는다.
  *
+ * **길찾기는 원터치, 자체 지도 없이.** 카드 우상단(`.mb-card-nav`), Overview·Guide 탭의
+ * "길찾기" 링크가 전부 `directionsHref(stop)` 하나를 쓴다 — Google Maps 딥링크(`/maps/dir/`)
+ * 조합뿐이라 API 비용이 0(원칙 3-2)이고, 출발지를 일부러 안 넣어서 앱이 위치 권한을 따로
+ * 요청할 필요가 없다(생략하면 Google Maps가 여는 기기의 현재 위치를 자동으로 쓴다).
+ * 자체 내비게이션·지도 타일 캐싱은 만들지 않는다 — 실시간 교통정보를 우리가 지어낼 수 없고
+ * (원칙 3-1), 만들 이유도 없다.
+ *
  * 컬러는 Light가 기본(프로젝트 원래 Airport Lounge Premium Light)이고, 기기가 다크모드면
  * "Night Lounge"로 바뀐다. 색의 의미 고정은 mobile.css 상단 주석 참고 —
  * 골드 = AI가 만든 값·별점 / 파랑 = 우리 DB의 실제 값·링크 / 회색 = 추정 / 주황 = 지금.
@@ -77,6 +84,7 @@ const IC = {
   route: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H14a3.5 3.5 0 0 0 0-7h-4a3.5 3.5 0 0 1 0-7h5.5"/></svg>',
   wallet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18M17 14.5h.01"/></svg>',
   dots: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 8h16M4 14h16"/></svg>',
+  navigate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg>',
 };
 
 const MODE_ICON: Record<TravelMode, string> = { WALK: IC.walk, TRANSIT: IC.transit, TAXI: IC.taxi };
@@ -192,6 +200,21 @@ async function loadTrip(tripId: string): Promise<Trip | null> {
 function gotoGate(gate: string): void {
   if (!currentTripId) return;
   navigate('trip/' + currentTripId + '/' + gate);
+}
+
+/**
+ * 이 정류지로 가는 길찾기 링크(Google Maps). URL 조합뿐이라 API 비용이 0(원칙 3-2).
+ * 목적지는 좌표가 있으면 좌표로, 없으면 이름으로 잡는다. 출발지는 일부러 넣지 않는다 —
+ * 비워두면 Google Maps가 이 링크를 여는 기기의 현재 위치를 출발지로 자동으로 잡아준다
+ * (우리가 위치 권한을 따로 요청할 필요가 없다).
+ * 이 정류지로 "들어오는" 구간에 사용자가 직접 지정한 이동수단이 있으면 힌트로 같이 넘긴다 —
+ * 없으면 Google Maps가 알아서 고른다.
+ */
+function directionsHref(stop: TlStop): string {
+  const dest = stop.lat != null && stop.lng != null ? stop.lat + ',' + stop.lng : stop.name;
+  const mode =
+    stop.travelMode === 'WALK' ? 'walking' : stop.travelMode === 'TRANSIT' ? 'transit' : stop.travelMode === 'TAXI' ? 'driving' : null;
+  return 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(dest) + (mode ? '&travelmode=' + mode : '');
 }
 
 /* ══════════════ 진입점 ══════════════ */
@@ -450,7 +473,11 @@ function stopCardHtml(stop: TlStop, i: number, s: DaySchedule, dateISO: string |
     photo ? '  <div class="mb-card-photo" data-photo="' + escapeHtml(photo) + '"></div>' : '',
     '  <div class="mb-card-scrim"></div>',
     '  <span class="mb-card-num">' + (i + 1) + '</span>',
-    '  <button class="mb-card-bm" data-bm="' + escapeHtml(stop.key) + '" aria-label="저장">' + IC.bookmark + '</button>',
+    '  <div class="mb-card-actions">',
+    // 상세로 안 들어가고 바로 이동할 수 있는 원터치 길찾기 — 여행 중 가장 자주 쓰는 동작
+    '    <a class="mb-card-nav" href="' + directionsHref(stop) + '" target="_blank" rel="noopener" aria-label="길찾기" data-nav="' + escapeHtml(stop.key) + '">' + IC.navigate + '</a>',
+    '    <button class="mb-card-bm" data-bm="' + escapeHtml(stop.key) + '" aria-label="저장">' + IC.bookmark + '</button>',
+    '  </div>',
     '  <div class="mb-card-body">',
     '    <h3 class="mb-card-name">' + escapeHtml(stop.name) + '</h3>',
     // 실제 저장된 카테고리가 있을 때만 (원칙 3-1)
@@ -735,12 +762,12 @@ function dontMissHtml(stop: TlStop, brief: PlaceBrief | null, loading: boolean, 
   return links;
 }
 
-/** 검색 URL 조합뿐이라 API 비용이 0 (원칙 3-2) */
+/** URL 조합뿐이라 API 비용이 0 (원칙 3-2) */
 function searchLinksHtml(stop: TlStop): string {
   const q = encodeURIComponent(stop.name);
   return [
     '<div class="mb-links">',
-    '  <a class="mb-link" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=' + q + '">' + IC.pin + '지도</a>',
+    '  <a class="mb-link" target="_blank" rel="noopener" href="' + directionsHref(stop) + '">' + IC.navigate + '길찾기</a>',
     '  <a class="mb-link" target="_blank" rel="noopener" href="https://www.youtube.com/results?search_query=' + q + '">' + IC.ext + '영상</a>',
     '  <a class="mb-link" target="_blank" rel="noopener" href="https://search.naver.com/search.naver?query=' + q + '+후기">' + IC.ext + '후기</a>',
     '</div>',
@@ -810,7 +837,6 @@ function pdGuideHtml(stop: TlStop, day: TlDay): string {
         '</div>'
       : '<p class="mb-pd-muted">저장된 영업시간이 없어요.</p>';
 
-  const q = encodeURIComponent(stop.name);
   return [
     pdCardSectionHtml(IC.clock, '영업시간', hoursBlock),
     pdCardSectionHtml(
@@ -818,7 +844,7 @@ function pdGuideHtml(stop: TlStop, day: TlDay): string {
       '위치',
       (place?.address ? '<p class="mb-pd-text">' + escapeHtml(place.address) + '</p>' : '<p class="mb-pd-muted">저장된 주소가 없어요.</p>') +
         '<div class="mb-links">' +
-        '<a class="mb-link" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=' + q + '">' + IC.ext + 'Google 지도 열기</a>' +
+        '<a class="mb-link" target="_blank" rel="noopener" href="' + directionsHref(stop) + '">' + IC.navigate + '길찾기</a>' +
         '</div>'
     ),
   ].join('');
@@ -897,8 +923,8 @@ function bind(): void {
   // ── 카드 → 상세 ──
   root.querySelectorAll('[data-stop]').forEach((card) => {
     const open = (e: Event) => {
-      // 북마크 버튼을 눌렀을 땐 상세를 열지 않는다
-      if ((e.target as HTMLElement).closest('[data-bm]')) return;
+      // 북마크·길찾기 버튼을 눌렀을 땐 상세를 열지 않는다
+      if ((e.target as HTMLElement).closest('[data-bm]') || (e.target as HTMLElement).closest('[data-nav]')) return;
       detailKey = (card as HTMLElement).dataset.stop ?? null;
       detailTab = 'overview';
       render();
