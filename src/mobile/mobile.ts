@@ -62,6 +62,26 @@ import {
   CAT_LABEL,
 } from '../utils/travelEstimate';
 import type { RealLeg, TravelMode } from '../utils/travelEstimate';
+import {
+  loadExpenseCtx,
+  buildExpensePayload,
+  fetchRate,
+  computeSettlement,
+  memberName,
+  sumPaid,
+  sumPaidOn,
+  getTotalBudget,
+  krwOf,
+  categoryOf,
+  fmtKRW,
+  fmtAmount,
+  symbolOf,
+  unconvertedCount,
+  EXPENSE_CATEGORIES,
+  CATEGORY_META,
+  CURRENCIES,
+} from '../expense/expenseModel';
+import type { ExpenseCtx, ExpenseCategory } from '../expense/expenseModel';
 import { requestPlaceBrief, placeBriefKey } from '../timeline/placeBrief';
 import type { PlaceBrief, PlaceBriefRequest } from '../timeline/placeBrief';
 import type { Database, TripDestination } from '../types/database';
@@ -101,6 +121,8 @@ const IC = {
   wallet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18M17 14.5h.01"/></svg>',
   dots: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 8h16M4 14h16"/></svg>',
   navigate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg>',
+  close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
+  padDel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 5H9L3 12l6 7h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1z"/><path d="M17 9.5 12.5 14M12.5 9.5 17 14"/></svg>',
 };
 
 const MODE_ICON: Record<TravelMode, string> = { WALK: IC.walk, TRANSIT: IC.transit, TAXI: IC.taxi };
@@ -140,6 +162,20 @@ let progress: ProgressMap = new Map();
 let daySheetOpen = false;
 let nowTimer: ReturnType<typeof setInterval> | null = null;
 
+/* ── WALLET ── */
+/** 지출·예산·멤버. WALLET 탭을 처음 열 때만 불러온다(원칙 3-2 — 안 보는 탭을 미리 조회하지 않음) */
+let expenseCtx: ExpenseCtx | null = null;
+let expenseLoading = false;
+let expenseChannel: ReturnType<typeof supabase.channel> | null = null;
+/** 숫자패드 시트 상태 */
+let padOpen = false;
+let padAmount = '';
+let padCurrency = 'KRW';
+let padCategory: ExpenseCategory = 'ETC';
+let padSaving = false;
+/** 현재 통화의 환율 미리보기(≈₩) — fetchRate가 통화당 1회만 조회하고 캐시한다 */
+let padRate: { rate: number | null; source: string } | null = null;
+
 export function teardownMobile(): void {
   unsubscribeRoutePlan();
   resetRouteStorageProbe();
@@ -166,6 +202,18 @@ export function teardownMobile(): void {
   realLegPending = false;
   progress = new Map();
   daySheetOpen = false;
+  if (expenseChannel) {
+    supabase.removeChannel(expenseChannel);
+    expenseChannel = null;
+  }
+  expenseCtx = null;
+  expenseLoading = false;
+  padOpen = false;
+  padAmount = '';
+  padCurrency = 'KRW';
+  padCategory = 'ETC';
+  padSaving = false;
+  padRate = null;
 }
 
 /* ══════════════ 유틸 ══════════════ */
@@ -370,12 +418,14 @@ function appHtml(): string {
     '<main class="mb-scroll">' + tabBodyHtml() + '</main>',
     tabBarHtml(),
     daySheetOpen ? daySheetHtml() : '',
+    padOpen ? padSheetHtml() : '',
   ].join('');
 }
 
 function tabBodyHtml(): string {
   if (activeTab === 'today') return todayTabHtml();
   if (activeTab === 'timeline') return allDaysTabHtml();
+  if (activeTab === 'wallet') return walletTabHtml();
   return comingSoonHtml();
 }
 
@@ -384,7 +434,7 @@ function tabBodyHtml(): string {
 function topBarHtml(): string {
   const day = activeDay();
   const isToday = day?.date === todayISO();
-  return [
+  const brandRow = [
     '<header class="mb-top">',
     '  <div class="mb-brand"><span class="mb-brand-mark">' + IC.logo + '</span>몽실이</div>',
     '  <div class="mb-top-actions">',
@@ -392,6 +442,21 @@ function topBarHtml(): string {
     '    <button class="mb-icon-btn" id="mb-menu" aria-label="메뉴">' + IC.menu + '</button>',
     '  </div>',
     '</header>',
+  ].join('');
+
+  // DAY를 고르는 건 일정 화면에서만 의미가 있다 — 지갑은 하루가 아니라 여행 전체를 다룬다
+  if (activeTab === 'wallet') {
+    return [
+      brandRow,
+      '<div class="mb-daybar"><span class="mb-screen-title">지갑</span></div>',
+      '<div class="mb-daymeta">',
+      '  <span class="mb-date">' + escapeHtml(destName()) + ' · 여행 전체</span>',
+      '</div>',
+    ].join('');
+  }
+
+  return [
+    brandRow,
     '<div class="mb-daybar">',
     '  <button class="mb-daypick" id="mb-daypick">',
     '    <span class="mb-daypick-dest">' + escapeHtml(destName().toUpperCase()) + '</span>',
@@ -659,12 +724,331 @@ function allDaysTabHtml(): string {
   return '<div class="mb-daylist">' + rows.join('') + '</div>';
 }
 
+/* ══════════════════════ WALLET 탭 ══════════════════════ */
+
+/** 지출 데이터를 아직 안 불렀으면 불러온다 — WALLET을 처음 열 때만(원칙 3-2) */
+async function ensureExpenseCtx(): Promise<void> {
+  if (expenseCtx || expenseLoading || !currentTripId) return;
+  expenseLoading = true;
+  render();
+  try {
+    expenseCtx = await loadExpenseCtx(currentTripId);
+    // 마지막으로 쓴 통화를 기본값으로 — 방콕 여행이면 두 번째 지출부터 THB가 미리 잡힌다
+    const last = [...expenseCtx.expenses].reverse().find((e) => e.currency);
+    if (last?.currency) padCurrency = last.currency;
+    subscribeExpenses();
+  } catch (e) {
+    console.error('[Mobile] 지출 로드 실패:', e);
+  } finally {
+    expenseLoading = false;
+    render();
+  }
+}
+
+/** 다른 멤버가 지출을 넣으면 지갑도 즉시 따라간다 (links·expenses와 같은 패턴) */
+function subscribeExpenses(): void {
+  if (expenseChannel || !currentTripId) return;
+  expenseChannel = supabase
+    .channel('mb-expenses:' + currentTripId)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'trip_expenses', filter: 'trip_id=eq.' + currentTripId },
+      () => { void reloadExpenses(); }
+    )
+    .subscribe();
+}
+
+async function reloadExpenses(): Promise<void> {
+  if (!currentTripId) return;
+  try {
+    expenseCtx = await loadExpenseCtx(currentTripId);
+    if (activeTab === 'wallet') render();
+  } catch (e) {
+    console.error('[Mobile] 지출 새로고침 실패:', e);
+  }
+}
+
+function walletTabHtml(): string {
+  if (expenseLoading && !expenseCtx) {
+    return '<div class="mb-wallet-loading"><span class="mb-spinner"></span>지출 불러오는 중…</div>';
+  }
+  if (!expenseCtx) {
+    return [
+      '<div class="mb-empty">',
+      '  <div class="mb-empty-title">지갑을 불러오지 못했어요</div>',
+      '  <p class="mb-empty-sub">잠시 후 다시 시도해 주세요.</p>',
+      '</div>',
+    ].join('');
+  }
+
+  const ctx = expenseCtx;
+  const today = sumPaidOn(ctx, todayISO());
+  const total = sumPaid(ctx);
+  const budget = getTotalBudget(ctx);
+  const pct = budget && budget > 0 ? Math.min(100, Math.round((total / budget) * 100)) : null;
+  const over = budget != null && total > budget;
+  const unconverted = unconvertedCount(ctx);
+
+  return [
+    // ── 히어로: 오늘 쓴 돈 하나만 크게 ──
+    '<section class="mb-wal-hero">',
+    '  <div class="mb-wal-hero-label">오늘 쓴 돈</div>',
+    '  <div class="mb-wal-hero-value">' + fmtKRW(today) + '</div>',
+    budget != null
+      ? [
+          '  <div class="mb-wal-gauge"><span class="mb-wal-gauge-fill' + (over ? ' is-over' : '') + '" style="width:' + (pct ?? 0) + '%"></span></div>',
+          '  <div class="mb-wal-hero-sub">',
+          '    <span>전체 ' + fmtKRW(total) + '</span>',
+          '    <span>' + (over ? '예산 ' + fmtKRW(total - budget) + ' 초과' : '예산 ' + fmtKRW(budget) + '의 ' + pct + '%') + '</span>',
+          '  </div>',
+        ].join('')
+      : '  <div class="mb-wal-hero-sub"><span>전체 ' + fmtKRW(total) + '</span><span>예산 미설정</span></div>',
+    // 원칙 3-1 — 환산 못 한 항목이 있으면 합계가 그만큼 빠졌다고 밝힌다
+    unconverted > 0
+      ? '  <p class="mb-wal-note">환율을 못 받은 ' + unconverted + '건은 합계에서 빠졌어요.</p>'
+      : '',
+    '</section>',
+    settleLineHtml(ctx),
+    recentExpensesHtml(ctx),
+    '<button class="mb-wal-add" id="mb-wal-add">' + IC.plus + ' 지출 추가</button>',
+  ].join('');
+}
+
+/** 정산은 한 줄 요약만 — 자세한 건 PC에서 (모바일에서 필요한 건 "얼마 주고받나" 하나) */
+function settleLineHtml(ctx: ExpenseCtx): string {
+  const me = store.get('user')?.id ?? null;
+  const { transfers } = computeSettlement(ctx);
+  if (!transfers.length) return '';
+
+  const mine = me ? transfers.filter((t) => t.from === me || t.to === me) : [];
+  const shown = mine.length ? mine : transfers;
+  const t = shown[0];
+  const text =
+    me && t.from === me ? memberName(ctx, t.to) + '에게 ' + fmtKRW(t.amount) + ' 보내야 해요'
+    : me && t.to === me ? memberName(ctx, t.from) + '에게 ' + fmtKRW(t.amount) + ' 받을 게 있어요'
+    : memberName(ctx, t.from) + ' → ' + memberName(ctx, t.to) + ' ' + fmtKRW(t.amount);
+  const more = shown.length > 1 ? ' 외 ' + (shown.length - 1) + '건' : '';
+
+  return [
+    '<button class="mb-wal-settle" id="mb-wal-settle">',
+    '  <span class="mb-wal-settle-ic">' + IC.wallet + '</span>',
+    '  <span class="mb-wal-settle-text">' + escapeHtml(text + more) + '</span>',
+    '  <span class="mb-wal-settle-chev">' + IC.chevRight + '</span>',
+    '</button>',
+  ].join('');
+}
+
+/** 최근 지출 몇 개만 — 전체 목록·필터·차트는 PC의 몫이다 */
+function recentExpensesHtml(ctx: ExpenseCtx): string {
+  const items = [...ctx.expenses]
+    .filter((e) => e.is_paid)
+    .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
+    .slice(0, 6);
+
+  if (!items.length) {
+    return [
+      '<section class="mb-wal-sec">',
+      '  <h4 class="mb-wal-sec-title">최근 지출</h4>',
+      '  <p class="mb-wal-empty">아직 기록한 지출이 없어요. 아래 버튼으로 첫 지출을 남겨보세요.</p>',
+      '</section>',
+    ].join('');
+  }
+
+  const rows = items.map((e) => {
+    const cat = categoryOf(e);
+    const meta = CATEGORY_META[cat];
+    const krw = krwOf(e);
+    const isForeign = e.currency !== 'KRW';
+    return [
+      '<div class="mb-wal-row">',
+      '  <span class="mb-wal-row-ic" style="color:' + meta.color + ';background:' + meta.color + '1f">' + meta.icon + '</span>',
+      '  <div class="mb-wal-row-main">',
+      '    <div class="mb-wal-row-title">' + escapeHtml(e.title) + '</div>',
+      '    <div class="mb-wal-row-sub">' + escapeHtml(meta.label) + (e.paid_by_name ? ' · ' + escapeHtml(e.paid_by_name) : '') + '</div>',
+      '  </div>',
+      '  <div class="mb-wal-row-amt">',
+      '    <div class="mb-wal-row-primary">' + escapeHtml(fmtAmount(e.amount, e.currency)) + '</div>',
+      // 외화면 환산값을 아래에 — 환산 실패면 지어내지 않고 물음표로 남긴다(원칙 3-1)
+      isForeign
+        ? '    <div class="mb-wal-row-krw">' + (krw != null ? escapeHtml(fmtKRW(krw)) : '환산 불가') + '</div>'
+        : '',
+      '  </div>',
+      '</div>',
+    ].join('');
+  });
+
+  return [
+    '<section class="mb-wal-sec">',
+    '  <h4 class="mb-wal-sec-title">최근 지출</h4>',
+    '  <div class="mb-wal-list">' + rows.join('') + '</div>',
+    '  <button class="mb-wal-more" id="mb-wal-pc">전체 내역·예산 설정은 PC에서 ' + IC.chevRight + '</button>',
+    '</section>',
+  ].join('');
+}
+
+/* ── 숫자패드 시트 ── */
+
+/**
+ * 지금 있는 정류지로 카테고리·제목을 미리 채운다. 값을 "지어내는" 게 아니라 입력 폼의
+ * 기본값일 뿐이고 사용자가 바로 바꿀 수 있다 — 여행 중엔 이 한 번의 절약이 크다.
+ */
+function guessFromCurrentStop(): { category: ExpenseCategory; title: string } | null {
+  const day = activeDay();
+  if (!day || day.date !== todayISO()) return null;
+  const stop = day.stops.find((st) => progress.get(st.key)?.status === 'arrived');
+  if (!stop) return null;
+
+  const hay = ((stop.place?.category ?? '') + ' ' + stop.name).toLowerCase();
+  const cat: ExpenseCategory =
+    /식당|음식|카페|레스토랑|푸드|맛집|바|주점|베이커리|restaurant|cafe|food|bar/.test(hay) ? 'FOOD'
+    : /호텔|숙소|게스트|리조트|hotel|hostel|resort/.test(hay) ? 'STAY'
+    : /공항|역|터미널|정류장|airport|station|terminal/.test(hay) ? 'TRANSPORT'
+    : /쇼핑|몰|시장|백화점|면세|market|mall|shopping/.test(hay) ? 'SHOPPING'
+    : 'ACTIVITY';
+  return { category: cat, title: stop.name };
+}
+
+function openPad(): void {
+  const guess = guessFromCurrentStop();
+  padAmount = '';
+  padCategory = guess?.category ?? 'ETC';
+  padSaving = false;
+  padOpen = true;
+  padRate = null;
+  render();
+  void refreshPadRate();
+}
+
+/** 외화면 ≈₩ 미리보기를 채운다. 통화당 1회만 조회되고 캐시된다(원칙 3-2) */
+async function refreshPadRate(): Promise<void> {
+  if (padCurrency === 'KRW') { padRate = { rate: 1, source: 'live' }; render(); return; }
+  padRate = null;
+  render();
+  padRate = await fetchRate(padCurrency);
+  if (padOpen) render();
+}
+
+function padSheetHtml(): string {
+  const amount = padAmount ? Number(padAmount) : 0;
+  const guess = guessFromCurrentStop();
+  const krw = padRate?.rate != null ? Math.round(amount * padRate.rate) : null;
+
+  const currencyChips = CURRENCIES.slice(0, 6)
+    .map((c) => '<button class="mb-pad-chip' + (c.code === padCurrency ? ' active' : '') + '" data-cur="' + c.code + '">' + c.code + '</button>')
+    .join('');
+
+  const catChips = EXPENSE_CATEGORIES.map((cat) => {
+    const meta = CATEGORY_META[cat];
+    const on = cat === padCategory;
+    return (
+      '<button class="mb-pad-cat' + (on ? ' active' : '') + '" data-cat="' + cat + '"' +
+      (on ? ' style="border-color:' + meta.color + ';background:' + meta.color + '22;color:' + meta.color + '"' : '') +
+      '><span class="mb-pad-cat-ic">' + meta.icon + '</span>' + escapeHtml(meta.label) + '</button>'
+    );
+  }).join('');
+
+  const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'del'];
+  const pad = keys
+    .map((k) =>
+      k === 'del'
+        ? '<button class="mb-pad-key" data-key="del" aria-label="지우기">' + IC.padDel + '</button>'
+        : '<button class="mb-pad-key" data-key="' + k + '">' + k + '</button>'
+    )
+    .join('');
+
+  return [
+    '<div class="mb-sheet-back" id="mb-pad-back"></div>',
+    '<div class="mb-pad" role="dialog" aria-label="지출 추가">',
+    '  <div class="mb-pad-head">',
+    '    <button class="mb-pad-close" id="mb-pad-close" aria-label="닫기">' + IC.close + '</button>',
+    '    <span class="mb-pad-title">지출 추가</span>',
+    '  </div>',
+    '  <div class="mb-pad-amount">',
+    '    <span class="mb-pad-sym">' + escapeHtml(symbolOf(padCurrency)) + '</span>',
+    '    <span class="mb-pad-num' + (padAmount ? '' : ' is-empty') + '">' + escapeHtml(padAmount || '0') + '</span>',
+    '  </div>',
+    padCurrency !== 'KRW'
+      ? '  <div class="mb-pad-krw">' +
+        (krw != null
+          ? '≈ ' + escapeHtml(fmtKRW(krw)) + (padRate?.source === 'fallback' ? ' <span class="mb-tag-est">참고용 환율</span>' : '')
+          : padRate === null ? '환율 확인 중…' : '<span class="mb-pad-warn">환율을 못 받았어요 · 원화 환산 없이 저장돼요</span>') +
+        '</div>'
+      : '',
+    '  <div class="mb-pad-currencies">' + currencyChips + '</div>',
+    '  <div class="mb-pad-cats">' + catChips + '</div>',
+    guess
+      ? '  <p class="mb-pad-hint">' + escapeHtml(guess.title) + '에서 쓴 걸로 저장돼요</p>'
+      : '',
+    '  <div class="mb-pad-keys">' + pad + '</div>',
+    '  <button class="mb-pad-save" id="mb-pad-save"' + (amount > 0 && !padSaving ? '' : ' disabled') + '>' +
+      (padSaving ? '<span class="mb-spinner"></span>저장 중…' : '저장') + '</button>',
+    '</div>',
+  ].join('');
+}
+
+function padPress(key: string): void {
+  if (key === 'del') {
+    padAmount = padAmount.slice(0, -1);
+  } else if (key === '.') {
+    if (!padAmount.includes('.')) padAmount = (padAmount || '0') + '.';
+  } else {
+    // 소수점 둘째 자리까지만, 그리고 앞자리 0이 쌓이지 않게
+    if (padAmount.includes('.') && padAmount.split('.')[1].length >= 2) return;
+    if (padAmount === '0') padAmount = key;
+    else padAmount = padAmount + key;
+  }
+  render();
+}
+
+/** 저장 — 여행 중 기록이므로 "결제 완료 + 공동 지출 + 오늘 날짜"가 기본이다 */
+async function savePadExpense(): Promise<void> {
+  const amount = Number(padAmount);
+  if (!expenseCtx || !Number.isFinite(amount) || amount <= 0 || padSaving) return;
+
+  padSaving = true;
+  render();
+
+  const guess = guessFromCurrentStop();
+  const me = store.get('user')?.id ?? null;
+  const allIds = new Set(expenseCtx.members.map((m) => m.user_id));
+
+  try {
+    const payload = await buildExpensePayload(expenseCtx, {
+      category: padCategory,
+      title: guess?.title || CATEGORY_META[padCategory].label,
+      amount,
+      currency: padCurrency,
+      expenseDate: todayISO(),
+      isPaid: true,
+      splitMode: 'SHARED',
+      payer: me,
+      split: allIds,
+      memo: null,
+    });
+    const { error } = await supabase.from('trip_expenses').insert(payload);
+    if (error) {
+      console.error('[Mobile] 지출 저장 실패:', error.message);
+      padSaving = false;
+      render();
+      return;
+    }
+    padOpen = false;
+    padSaving = false;
+    padAmount = '';
+    await reloadExpenses();
+    render();
+  } catch (e) {
+    console.error('[Mobile] 지출 저장 실패:', e);
+    padSaving = false;
+    render();
+  }
+}
+
 function comingSoonHtml(): string {
-  const label = activeTab === 'wallet' ? 'WALLET' : 'MORE';
   return [
     '<div class="mb-empty">',
-    '  <div class="mb-empty-title">' + label + '</div>',
-    '  <p class="mb-empty-sub">이 탭은 다음 단계에서 구현 예정이에요.<br />지금은 PC 화면에서 이용할 수 있어요.</p>',
+    '  <div class="mb-empty-title">MORE</div>',
+    '  <p class="mb-empty-sub">체크리스트·티켓 지갑·채팅이 이 탭에 들어올 예정이에요.<br />지금은 PC 화면에서 이용할 수 있어요.</p>',
     '  <button class="mb-ghost-btn" id="mb-goto-desktop">PC 화면으로 열기</button>',
     '</div>',
   ].join('');
@@ -996,9 +1380,9 @@ function bind(): void {
   root.querySelectorAll('[data-tab]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const tab = (btn as HTMLElement).dataset.tab as MbTab;
-      if (tab === 'wallet') { gotoGate('expense'); return; }
       activeTab = tab;
       render();
+      if (tab === 'wallet') void ensureExpenseCtx();
     });
   });
 
@@ -1100,6 +1484,31 @@ function bind(): void {
   root.querySelector('#mb-links')?.addEventListener('click', () => gotoGate('links'));
   root.querySelector('#mb-menu')?.addEventListener('click', () => gotoGate('timeline'));
   root.querySelector('#mb-add')?.addEventListener('click', () => gotoGate('route'));
+
+  // ── WALLET ──
+  root.querySelector('#mb-wal-add')?.addEventListener('click', () => openPad());
+  root.querySelector('#mb-wal-pc')?.addEventListener('click', () => gotoGate('expense'));
+  root.querySelector('#mb-wal-settle')?.addEventListener('click', () => gotoGate('expense'));
+
+  // ── 숫자패드 ──
+  root.querySelector('#mb-pad-back')?.addEventListener('click', () => { padOpen = false; render(); });
+  root.querySelector('#mb-pad-close')?.addEventListener('click', () => { padOpen = false; render(); });
+  root.querySelectorAll('[data-key]').forEach((btn) => {
+    btn.addEventListener('click', () => padPress((btn as HTMLElement).dataset.key!));
+  });
+  root.querySelectorAll('[data-cur]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      padCurrency = (btn as HTMLElement).dataset.cur!;
+      void refreshPadRate();
+    });
+  });
+  root.querySelectorAll('[data-cat]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      padCategory = (btn as HTMLElement).dataset.cat as ExpenseCategory;
+      render();
+    });
+  });
+  root.querySelector('#mb-pad-save')?.addEventListener('click', () => { void savePadExpense(); });
 }
 
 /**

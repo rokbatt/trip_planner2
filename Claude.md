@@ -184,6 +184,22 @@ Light" 컨셉 유지, 배치·형태만 차용): **예산 요약 / 지출 내역
   함께 저장(3-1 — fallback 환율이면 화면에 `*`와 "참고용" 표시, 환산 실패 항목은 합계에서 빠졌다고 명시)
 - 두 테이블 모두 realtime publication에 추가 — 다른 멤버 화면에 즉시 반영 (links와 같은 패턴)
 
+### `src/expense/expenseModel.ts` — 돈에 관한 숫자의 단일 기준 (중요)
+집계·정산·환율 변환은 이 파일 하나에만 둔다. EXPENSE(데스크톱 대시보드)와 MOBILE 지갑이 같은
+지출을 다루므로, **같은 트립인데 PC의 정산 결과와 폰의 정산 결과가 다르면 그 자체가 버그**다 —
+`timeline/dayModel.ts`가 "하루를 시간축에 올리는 규칙"의 단일 기준인 것과 같은 이유·같은 구조다.
+
+- `loadExpenseCtx(tripId)` — 트립(인원수)·멤버·지출·예산 병렬 로드 → `ExpenseCtx`
+- `computeSettlement(ctx)` — 결제 완료 + 공동 지출만, 최소 송금 그리디 매칭
+- `buildExpensePayload(ctx, fields)` / `fetchRate(currency)` — 저장 payload와 환율(통화당 1회 캐시)
+- `sumPaid` / `sumPaidOn` / `totalsByCategory` / `getTotalBudget` / `unconvertedCount`
+- `CATEGORY_META`(CVD 검증 7색 고정 순서) · `CURRENCIES` · `fmtKRW` / `fmtAmount` / `krwOf`
+
+`expense.ts`는 모듈 상태를 `ctx()`로 묶어 넘기는 **얇은 위임 래퍼**만 갖는다(호출부는 그대로).
+아이콘·마크업 같은 표현 계층은 각 모듈이 따로 가진다 — 이 파일엔 DOM이 없다.
+
+> **집계식·정산식을 손볼 일이 생기면 반드시 이 파일에서만 고칠 것.**
+
 ### 재렌더 전략 (`src/expense/expense.ts`)
 실시간 이벤트(다른 멤버의 지출/예산 변경)마다 탭 전체를 다시 그리면, 사이드바 "빠른 지출 추가"
 폼이나 설정 탭에 입력 중이던 값이 날아간다. 그래서 데이터가 바뀌면(`refreshActiveTabData`) 활성
@@ -468,7 +484,18 @@ PC/노트북  = PLANNER    여행 전, 4개 게이트로 결정한다        (�
   이동 구간 칩(`.mb-leg-chip`)이 그 선 위 한가운데에 앉아 "구슬" 역할을 한다.
 - **카드는 `overflow:hidden`이라 바깥으로 나가는 걸 못 그린다.** NOW 배지와 시간축 마디는
   그래서 카드가 아니라 래퍼(`.mb-stop`)에 얹는다 — 카드에 직접 붙이면 잘린다(실제로 났던 버그).
-- **하단 탭 4개**: TODAY(하루 시각표) · TIMELINE(전체 DAY) · WALLET(→ expense 게이트) · MORE
+- **하단 탭 4개**: TODAY(하루 시각표) · TIMELINE(전체 DAY) · WALLET(모바일 전용 지갑) · MORE
+- **WALLET은 PC Expense의 축소판이 아니다.** 데스크톱은 탭 5개짜리 대시보드지만 여행 중에 폰으로
+  하는 일은 "방금 낸 돈 3초 안에 넣기" 하나다. 그래서 화면은 **오늘 쓴 돈(크게) + 예산 게이지 →
+  정산 한 줄 → 최근 지출 6건 → [지출 추가]** 로만 구성하고, 도넛 차트·카테고리 그리드·필터·예산
+  설정 폼은 PC에 남긴다("전체 내역·예산 설정은 PC에서" 링크로 넘김).
+  - 입력은 **전체화면 숫자패드 시트**(`.mb-pad`) — 금액 → 카테고리 칩 → 저장. 통화는 마지막에 쓴
+    통화가 기본값이라 방콕 여행이면 두 번째 지출부터 THB가 미리 잡힌다. 외화면 `≈₩` 미리보기를
+    같이 보여주고, 환율을 못 받으면 지어내지 않고 "원화 환산 없이 저장돼요"라고 밝힌다(3-1).
+  - **지금 있는 정류지로 카테고리·제목을 미리 채운다**(`guessFromCurrentStop`) — 도착 기록이 있는
+    정류지의 이름/카테고리로 추정. 값을 지어내는 게 아니라 사용자가 바로 바꿀 수 있는 입력
+    기본값이다. 저장은 여행 중 기록이므로 "결제 완료 + 공동 지출 + 오늘 날짜"가 기본.
+  - 지출 데이터는 **WALLET을 처음 열 때만** 불러온다(원칙 3-2 — 안 보는 탭을 미리 조회하지 않음).
 - **카드 탭 → 장소 상세**가 위로 밀려 들어온다(`.mb-detail`). Hero 사진 → 이름·평점 →
   예상 체류 칩 → OVERVIEW/GUIDE/REVIEWS 탭. 내용은 데스크톱 `.tl-pd` 패널과 같은 구조이고
   AI 브리핑도 같은 `placeBrief.ts`·같은 서버 캐시를 공유한다(장소당 Gemini 호출 1회).
@@ -508,9 +535,16 @@ PC/노트북  = PLANNER    여행 전, 4개 게이트로 결정한다        (�
 - 요약·Don't Miss·복장/예약/현금 → Gemini. **반드시 `AI` 태그와 함께**, 근거 없으면 옅은 `?` +
   "확인 필요"로 남긴다. 입장료처럼 출처가 아예 없는 항목은 **행 자체를 만들지 않는다**
 
+### 알려진 CSS 함정 — 버튼 리셋의 명시도
+`.mb-app button`(명시도 0,1,1)으로 리셋을 걸면 `.mb-pad-save`·`.mb-ai-btn`처럼 **클래스 하나짜리
+버튼 규칙(0,1,0)을 전부 이겨버려** 배경이 조용히 투명해진다. 실제로 이 버그로 지갑의 "저장"
+버튼과 카드의 북마크 버튼 배경이 사라져 있었다. 그래서 리셋은 `:where(.mb-app button)`으로
+감싸 **명시도를 0으로** 만든다 — 어떤 컴포넌트 규칙이든 순서와 무관하게 리셋을 덮어쓴다.
+새 버튼 컴포넌트를 만들 때 배경이 안 보이면 먼저 이 명시도부터 의심할 것.
+
 ### 아직 안 한 것
 편집(순서 변경·이동수단 선택), 체크리스트, 오프라인 팩, PWA 자산은 전부 미구현이다.
-WALLET/MORE 탭은 "다음 단계에서 구현 예정" 안내만 띄운다.
+MORE 탭은 "다음 단계에서 구현 예정" 안내만 띄운다(체크리스트·티켓 지갑·채팅이 들어올 자리).
 
 ---
 
@@ -528,6 +562,7 @@ src/
   mobile/mobile.ts, mobile.css       ← Mobile Companion 게이트 (여행 중 화면, 5-4 참고)
   mobile/stopProgress.ts             ← 실제 도착/출발 기록 영속화 + 실시간 (Mobile 전용, 5-4 참고)
   expense/expense.ts, expense.css    ← Expense 게이트 (예산·지출·도넛 차트·정산, 5-2 참고)
+  expense/expenseModel.ts            ← 집계·정산·환율의 단일 기준 (Expense/Mobile 공용, 5-2 참고)
   workspace/workspace.ts             ← 게이트 라우팅, 사이드바
   utils/googleMaps.ts                ← Google Maps 로더, GooglePlaceResult 추출/카테고리 매핑 (공유 유틸)
   utils/travelEstimate.ts            ← 이동시간·거리·요금·체류시간 계산의 단일 기준 (Route/Timeline 공용, 5-3 참고)

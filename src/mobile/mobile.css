@@ -252,7 +252,12 @@
 
 .mb-app * { box-sizing: border-box; }
 
-.mb-app button { font-family: inherit; cursor: pointer; border: 0; background: none; color: inherit; }
+/* 버튼 기본값 리셋 — :where()로 감싸 **명시도를 0으로** 만든다.
+   `.mb-app button`(0,1,1)로 두면 컴포넌트 클래스 하나짜리 규칙(0,1,0)을 전부 이겨버려서
+   `.mb-pad-save`·`.mb-ai-btn`처럼 배경을 채우는 버튼이 조용히 투명해진다(실제로 났던 버그).
+   :where()는 명시도가 0이라 어떤 컴포넌트 규칙이든 순서와 무관하게 이 리셋을 덮어쓴다. */
+:where(.mb-app button) { font-family: inherit; cursor: pointer; border: 0; background: none; color: inherit; }
+.mb-app button { cursor: pointer; }
 .mb-app button:focus-visible,
 .mb-app a:focus-visible,
 .mb-app textarea:focus-visible,
@@ -831,6 +836,346 @@
 .mb-tab.active { color: var(--mb-sky); }
 .mb-tab:hover { color: var(--mb-ink-2); }
 .mb-tab.active:hover { color: var(--mb-sky); }
+
+/* ══════════════ WALLET ══════════════ */
+
+/* 일정 화면의 DAY 선택 자리에 들어가는 화면 제목 — 같은 위치·같은 크기라 탭을 옮겨도
+   레이아웃이 흔들리지 않는다 */
+.mb-screen-title {
+  display: inline-block;
+  padding: 4px 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--mb-ink);
+}
+
+.mb-wallet-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 56px 0;
+  font-size: 13px;
+  color: var(--mb-muted);
+}
+
+/* ── 히어로: 오늘 쓴 돈 하나만 크게 ── */
+.mb-wal-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px;
+  border-radius: var(--mb-radius);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line-soft);
+  box-shadow: var(--mb-shadow-card);
+}
+.mb-wal-hero-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: var(--mb-muted);
+}
+.mb-wal-hero-value {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  color: var(--mb-ink);
+  font-variant-numeric: tabular-nums;
+}
+.mb-wal-gauge {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--mb-fill-subtle);
+  overflow: hidden;
+  margin-top: 4px;
+}
+.mb-wal-gauge-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--mb-sky);
+  transition: width var(--mb-ease) 320ms;
+}
+/* 예산을 넘긴 순간만 주황 — 화면에서 "지금 문제" 색은 하나로 유지한다 */
+.mb-wal-gauge-fill.is-over { background: var(--mb-live); }
+.mb-wal-hero-sub {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+  color: var(--mb-muted);
+  font-variant-numeric: tabular-nums;
+}
+.mb-wal-note { font-size: 11.5px; color: var(--mb-muted); opacity: 0.85; }
+
+/* ── 정산 한 줄 ── */
+.mb-wal-settle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 14px;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line-soft);
+  text-align: left;
+  box-shadow: var(--mb-inset-hi);
+  transition: border-color var(--mb-ease) 160ms;
+}
+.mb-wal-settle:hover { border-color: var(--mb-sky); }
+.mb-wal-settle-ic {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--mb-sky-wash);
+  color: var(--mb-sky);
+}
+.mb-wal-settle-ic svg { width: 15px; height: 15px; }
+.mb-wal-settle-text { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600; color: var(--mb-ink); }
+.mb-wal-settle-chev { display: grid; place-items: center; color: var(--mb-muted); flex: none; }
+.mb-wal-settle-chev svg { width: 15px; height: 15px; }
+
+/* ── 최근 지출 ── */
+.mb-wal-sec { display: flex; flex-direction: column; gap: 10px; margin-top: 22px; }
+.mb-wal-sec-title { font-size: 13.5px; font-weight: 700; color: var(--mb-ink); }
+.mb-wal-empty { font-size: 12.5px; line-height: 1.7; color: var(--mb-muted); }
+
+.mb-wal-list {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line-soft);
+  overflow: hidden;
+  box-shadow: var(--mb-inset-hi);
+}
+.mb-wal-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 14px;
+  border-bottom: 1px dashed var(--mb-line-cool);
+}
+.mb-wal-row:last-child { border-bottom: 0; }
+.mb-wal-row-ic {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  flex: none;
+}
+.mb-wal-row-ic svg { width: 16px; height: 16px; }
+.mb-wal-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mb-wal-row-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--mb-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mb-wal-row-sub { font-size: 11.5px; color: var(--mb-muted); }
+.mb-wal-row-amt { text-align: right; flex: none; font-variant-numeric: tabular-nums; }
+.mb-wal-row-primary { font-size: 13.5px; font-weight: 700; color: var(--mb-ink); }
+.mb-wal-row-krw { font-size: 11px; color: var(--mb-muted); margin-top: 1px; }
+
+.mb-wal-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  padding: 12px;
+  min-height: 44px;
+  border-radius: var(--mb-radius-sm);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--mb-muted);
+}
+.mb-wal-more svg { width: 13px; height: 13px; }
+.mb-wal-more:hover { color: var(--mb-sky); }
+
+/* 화면의 유일한 Primary 액션 — 여행 중엔 "지출 넣기"가 이 탭의 전부다 */
+.mb-wal-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  margin-top: 22px;
+  padding: 15px;
+  min-height: 50px;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-btn-bg);
+  color: var(--mb-btn-fg);
+  box-shadow: var(--mb-btn-shadow);
+  font-size: 14.5px;
+  font-weight: 700;
+  transition: filter var(--mb-ease) 160ms;
+}
+.mb-wal-add:hover { filter: brightness(1.06); }
+.mb-wal-add svg { width: 17px; height: 17px; }
+
+/* ══════════════ 숫자패드 시트 ══════════════ */
+
+.mb-pad {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 41;
+  max-height: 94%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
+  border-radius: 22px 22px 0 0;
+  background: linear-gradient(180deg, var(--mb-surface) 0%, var(--mb-surface-2) 100%);
+  border-top: 1px solid var(--mb-line);
+  box-shadow: var(--mb-shadow-sheet);
+  animation: mb-rise 240ms var(--mb-ease);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.mb-pad::-webkit-scrollbar { display: none; }
+
+.mb-pad-head { display: flex; align-items: center; gap: 8px; flex: none; }
+.mb-pad-close {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  color: var(--mb-ink-2);
+  background: var(--mb-fill-subtle);
+}
+.mb-pad-close svg { width: 16px; height: 16px; }
+.mb-pad-title { font-size: 14px; font-weight: 700; color: var(--mb-ink); }
+
+/* 금액 — 이 시트에서 눈이 가장 먼저 닿아야 하는 곳 */
+.mb-pad-amount {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 0 0;
+}
+.mb-pad-sym { font-size: 22px; font-weight: 700; color: var(--mb-muted); }
+.mb-pad-num {
+  font-size: 42px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--mb-ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.mb-pad-num.is-empty { color: var(--mb-muted); opacity: 0.4; }
+.mb-pad-krw {
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--mb-muted);
+  font-variant-numeric: tabular-nums;
+  min-height: 18px;
+}
+.mb-pad-warn { color: var(--mb-live-soft); }
+
+.mb-pad-currencies,
+.mb-pad-cats {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+.mb-pad-currencies::-webkit-scrollbar,
+.mb-pad-cats::-webkit-scrollbar { display: none; }
+
+.mb-pad-chip {
+  flex: none;
+  padding: 7px 14px;
+  min-height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--mb-line-soft);
+  background: var(--mb-surface);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--mb-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.mb-pad-chip.active { border-color: var(--mb-sky); background: var(--mb-sky-wash); color: var(--mb-sky); }
+
+.mb-pad-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 7px 13px;
+  min-height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--mb-line-soft);
+  background: var(--mb-surface);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--mb-ink-2);
+  white-space: nowrap;
+}
+.mb-pad-cat-ic { display: grid; place-items: center; }
+.mb-pad-cat-ic svg { width: 14px; height: 14px; }
+
+.mb-pad-hint {
+  font-size: 11.5px;
+  color: var(--mb-muted);
+  text-align: center;
+}
+
+.mb-pad-keys {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.mb-pad-key {
+  display: grid;
+  place-items: center;
+  /* 한 손으로 누르는 키라 넉넉하게 — 44px 최소 터치 타겟을 크게 웃돈다 */
+  min-height: 54px;
+  border-radius: 14px;
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line-soft);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--mb-ink);
+  font-variant-numeric: tabular-nums;
+  transition: transform var(--mb-ease) 120ms, background var(--mb-ease) 120ms;
+}
+.mb-pad-key:active { transform: scale(0.95); background: var(--mb-surface-3); }
+.mb-pad-key svg { width: 22px; height: 22px; }
+
+.mb-pad-save {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 15px;
+  min-height: 52px;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-btn-bg);
+  color: var(--mb-btn-fg);
+  box-shadow: var(--mb-btn-shadow);
+  font-size: 15px;
+  font-weight: 700;
+  transition: filter var(--mb-ease) 160ms;
+}
+.mb-pad-save:hover:not(:disabled) { filter: brightness(1.06); }
+.mb-pad-save:disabled { opacity: 0.45; box-shadow: none; cursor: default; }
 
 /* ══════════════ DAY 선택 시트 ══════════════ */
 
