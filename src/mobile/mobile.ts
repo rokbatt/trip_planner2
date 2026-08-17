@@ -498,6 +498,223 @@ function tabBarHtml(): string {
 
 /* ══════════════ TODAY 탭 — 시간축 위의 하루 ══════════════ */
 
+/* ── "지금" 상태 판정 ──────────────────────────────────────
+ * TODAY 히어로가 답해야 하는 질문은 하나다: "지금 뭘 해야 하나."
+ * 새 데이터는 쓰지 않는다 — 이미 있는 일정(scheduleFor)과 실제 도착 기록(progress)만으로
+ * 상태를 가른다. 판정 순서는 항상 **실제 기록 > 시각 추정**이다(원칙 3-1).
+ */
+type NowState =
+  | { kind: 'before'; daysLeft: number; startDate: string | null; totalStops: number }
+  | { kind: 'after'; visited: number; totalStops: number }
+  | { kind: 'otherday'; todayIdx: number; todayLabel: string }
+  | { kind: 'pre'; stop: TlStop; minsTo: number; at: number }
+  | { kind: 'at'; stop: TlStop; index: number; minsLeft: number; next: TlStop | null }
+  | { kind: 'moving'; stop: TlStop; index: number; leg: ReturnType<typeof scheduleFor>['legs'][number]; minsTo: number }
+  | { kind: 'done'; visited: number; totalStops: number };
+
+function daysBetween(fromISO: string, toISO: string): number {
+  const a = new Date(fromISO + 'T00:00:00').getTime();
+  const b = new Date(toISO + 'T00:00:00').getTime();
+  return Math.round((b - a) / 86400000);
+}
+
+function computeNowState(day: TlDay, s: DaySchedule): NowState | null {
+  const t = todayISO();
+  const filled = days.filter((d) => d.stops.length);
+  const first = filled[0]?.date ?? null;
+  const last = filled[filled.length - 1]?.date ?? null;
+  const totalStops = days.reduce((acc, d) => acc + d.stops.length, 0);
+
+  // 여행 전 — 아직 시작 안 함
+  if (first && t < first) {
+    return { kind: 'before', daysLeft: daysBetween(t, first), startDate: first, totalStops };
+  }
+  // 여행 후 — 실제로 다녀온 곳만 센다(기록이 없으면 0)
+  if (last && t > last) {
+    let visited = 0;
+    progress.forEach((v) => { if (v.status === 'arrived' || v.status === 'departed') visited++; });
+    return { kind: 'after', visited, totalStops };
+  }
+  // 여행 중인데 다른 날을 보고 있음 — 오늘로 돌아갈 길만 안내한다
+  const todayIdx = todayDayIndex();
+  if (todayIdx >= 0 && todayIdx !== activeDayIndex) {
+    return { kind: 'otherday', todayIdx, todayLabel: days[todayIdx]?.label ?? '오늘' };
+  }
+  if (day.date !== t || !day.stops.length) return null;
+
+  const now = nowMinutes();
+  const stops = day.stops;
+
+  // ① 실제 "도착" 기록이 있으면 그게 가장 확실한 현재 위치
+  const arrivedIdx = stops.findIndex((st) => progress.get(st.key)?.status === 'arrived');
+  if (arrivedIdx >= 0) {
+    return {
+      kind: 'at',
+      stop: stops[arrivedIdx],
+      index: arrivedIdx,
+      minsLeft: s.departMin[arrivedIdx] - now,
+      next: stops[arrivedIdx + 1] ?? null,
+    };
+  }
+
+  // ② "출발"까지 기록했고 다음 정류지가 아직이면 이동 중
+  let lastDeparted = -1;
+  stops.forEach((st, i) => { if (progress.get(st.key)?.status === 'departed') lastDeparted = i; });
+  if (lastDeparted >= 0 && lastDeparted + 1 < stops.length) {
+    const nextIdx = lastDeparted + 1;
+    const np = progress.get(stops[nextIdx].key)?.status;
+    if (!np || np === 'pending') {
+      return { kind: 'moving', stop: stops[nextIdx], index: nextIdx, leg: s.legs[lastDeparted], minsTo: s.arriveMin[nextIdx] - now };
+    }
+  }
+
+  // ③ 기록이 없으면 시각으로 추정한다
+  if (now < s.arriveMin[0]) {
+    return { kind: 'pre', stop: stops[0], minsTo: s.arriveMin[0] - now, at: s.arriveMin[0] };
+  }
+  for (let i = 0; i < stops.length; i++) {
+    if (now >= s.arriveMin[i] && now < s.departMin[i]) {
+      return { kind: 'at', stop: stops[i], index: i, minsLeft: s.departMin[i] - now, next: stops[i + 1] ?? null };
+    }
+    if (i + 1 < stops.length && now >= s.departMin[i] && now < s.arriveMin[i + 1]) {
+      return { kind: 'moving', stop: stops[i + 1], index: i + 1, leg: s.legs[i], minsTo: s.arriveMin[i + 1] - now };
+    }
+  }
+
+  let visited = 0;
+  stops.forEach((st) => { const v = progress.get(st.key); if (v?.status === 'arrived' || v?.status === 'departed') visited++; });
+  return { kind: 'done', visited, totalStops: stops.length };
+}
+
+/** "40분", "1시간 20분" — 음수(이미 지난 시각)는 호출부가 따로 다룬다 */
+function fmtLeft(mins: number): string {
+  return fmtMin(Math.max(0, Math.round(mins)));
+}
+
+/**
+ * TODAY 히어로 — 카드 목록 위에 얹히는 "지금" 한 덩어리.
+ * 상태마다 문구와 액션이 통째로 바뀐다. 여기 뜨는 시각·소요는 전부 기존 계산에서 오고,
+ * 새로 지어내는 값은 없다(원칙 3-1).
+ */
+function heroHtml(st: NowState, day: TlDay, s: DaySchedule): string {
+  const wrap = (cls: string, eyebrow: string, title: string, sub: string, extra: string, actions: string): string =>
+    [
+      '<section class="mb-now ' + cls + '">',
+      '  <div class="mb-now-eyebrow">' + eyebrow + '</div>',
+      '  <h2 class="mb-now-title">' + title + '</h2>',
+      sub ? '  <p class="mb-now-sub">' + sub + '</p>' : '',
+      extra,
+      actions ? '  <div class="mb-now-actions">' + actions + '</div>' : '',
+      '</section>',
+    ].join('');
+
+  if (st.kind === 'before') {
+    const d = st.daysLeft;
+    return wrap(
+      'is-plan',
+      'D-' + d,
+      escapeHtml(destName()) + ' 여행까지 ' + d + '일',
+      (st.startDate ? escapeHtml(dateLabel(st.startDate)) + ' 출발' : '') + (st.totalStops ? ' · 일정 ' + st.totalStops + '곳' : ''),
+      '',
+      ''
+    );
+  }
+
+  if (st.kind === 'after') {
+    return wrap(
+      'is-plan',
+      '여행 끝',
+      '잘 다녀오셨어요',
+      st.visited > 0 ? '기록한 방문 ' + st.visited + '곳 · 전체 일정 ' + st.totalStops + '곳' : '전체 일정 ' + st.totalStops + '곳',
+      '',
+      ''
+    );
+  }
+
+  if (st.kind === 'otherday') {
+    return wrap(
+      'is-plan',
+      'TODAY',
+      '오늘은 ' + escapeHtml(st.todayLabel) + '이에요',
+      '지금은 다른 날을 보고 있어요',
+      '',
+      '<button class="mb-now-btn primary" data-goday="' + st.todayIdx + '">오늘 보기</button>'
+    );
+  }
+
+  if (st.kind === 'pre') {
+    return wrap(
+      'is-live',
+      'TODAY',
+      '첫 일정까지 ' + fmtLeft(st.minsTo),
+      escapeHtml(st.stop.name) + ' · ' + minToHHMM(st.at) + ' 시작',
+      '',
+      '<a class="mb-now-btn primary" href="' + directionsHref(st.stop) + '" target="_blank" rel="noopener">' + IC.navigate + '길찾기</a>'
+    );
+  }
+
+  if (st.kind === 'at') {
+    const late = st.minsLeft < 0;
+    // 체류 진행 바 — 예상 체류 중 얼마나 지났는지
+    const dwell = s.dwellMin[st.index] || 0;
+    const pct = dwell > 0 ? Math.min(100, Math.max(0, Math.round(((dwell - st.minsLeft) / dwell) * 100))) : 0;
+    const bar = dwell > 0
+      ? '  <div class="mb-now-bar"><span class="mb-now-bar-fill' + (late ? ' is-late' : '') + '" style="width:' + pct + '%"></span></div>'
+      : '';
+    return wrap(
+      'is-live',
+      'NOW',
+      escapeHtml(st.stop.name) + '에 있어요',
+      late
+        ? '출발 예정 시각을 ' + fmtLeft(-st.minsLeft) + ' 지났어요'
+        : fmtLeft(st.minsLeft) + ' 뒤 출발 · ' + minToHHMM(s.departMin[st.index]),
+      bar,
+      '<button class="mb-now-btn primary" data-hero-depart="' + escapeHtml(st.stop.key) + '">' + IC.check + '출발</button>' +
+        (st.next ? '<a class="mb-now-btn ghost" href="' + directionsHref(st.next) + '" target="_blank" rel="noopener">' + IC.navigate + '다음 장소</a>' : '')
+    );
+  }
+
+  if (st.kind === 'moving') {
+    const legText = st.leg ? modeLabel(st.leg.mode) + ' ' + fmtMin(st.leg.min) : null;
+    const late = st.minsTo < 0;
+    return wrap(
+      'is-live',
+      'NEXT',
+      escapeHtml(st.stop.name) + '으로 이동',
+      (legText ? escapeHtml(legText) + ' · ' : '') +
+        (late ? '도착 예정 시각을 ' + fmtLeft(-st.minsTo) + ' 지났어요' : minToHHMM(s.arriveMin[st.index]) + ' 도착 예정'),
+      '',
+      '<a class="mb-now-btn primary" href="' + directionsHref(st.stop) + '" target="_blank" rel="noopener">' + IC.navigate + '길찾기</a>' +
+        '<button class="mb-now-btn ghost" data-hero-arrive="' + escapeHtml(st.stop.key) + '">' + IC.check + '도착</button>'
+    );
+  }
+
+  // done
+  return wrap(
+    'is-live',
+    '오늘 일정 끝',
+    '오늘 하루 수고했어요',
+    st.visited > 0 ? st.totalStops + '곳 중 ' + st.visited + '곳 다녀왔어요' : '오늘 일정 ' + st.totalStops + '곳',
+    '',
+    ''
+  );
+}
+
+/**
+ * 계획 대비 얼마나 밀렸는지 한 줄. 실제 기록이 반영된 일정과 계획만의 일정을 같은 함수로
+ * 두 번 계산해 끝나는 시각을 비교한다 — 도착 기록이 실제로 무슨 차이를 만드는지 보여주는 자리다.
+ */
+function driftLineHtml(day: TlDay): string {
+  if (!progress.size) return '';
+  const plan = scheduleFor(day, realLegs);
+  const real = scheduleFor(day, realLegs, progress);
+  const delta = real.spanEndMin - plan.spanEndMin;
+  if (Math.abs(delta) < 10) return '';
+  return delta > 0
+    ? '<p class="mb-drift is-late">이 속도면 계획보다 ' + fmtMin(delta) + ' 늦게 끝나요 · ' + minToHHMM(real.spanEndMin) + ' 종료</p>'
+    : '<p class="mb-drift">계획보다 ' + fmtMin(-delta) + ' 빨라요 · ' + minToHHMM(real.spanEndMin) + ' 종료</p>';
+}
+
 function todayTabHtml(): string {
   const day = activeDay();
   if (!day) return emptyHtml('일정이 아직 없어요', 'PC에서 ROUTE로 동선을 먼저 만들어 주세요.');
@@ -522,7 +739,11 @@ function todayTabHtml(): string {
     if (i < day.stops.length - 1) rows.push(legNodeHtml(s.legs[i], i));
   });
 
+  const nowState = computeNowState(day, s);
+
   return [
+    nowState ? heroHtml(nowState, day, s) : '',
+    isToday ? driftLineHtml(day) : '',
     '<div class="mb-daysum">',
     '  <span>' + minToHHMM(s.spanStartMin) + ' – ' + minToHHMM(s.spanEndMin) + '</span>',
     '  <span class="mb-daysum-dot">·</span>',
@@ -1484,6 +1705,14 @@ function bind(): void {
   root.querySelector('#mb-links')?.addEventListener('click', () => gotoGate('links'));
   root.querySelector('#mb-menu')?.addEventListener('click', () => gotoGate('timeline'));
   root.querySelector('#mb-add')?.addEventListener('click', () => gotoGate('route'));
+
+  // ── TODAY 히어로 ──
+  root.querySelectorAll('[data-hero-arrive]').forEach((btn) => {
+    btn.addEventListener('click', () => { void recordAction('arrive', (btn as HTMLElement).dataset.heroArrive!); });
+  });
+  root.querySelectorAll('[data-hero-depart]').forEach((btn) => {
+    btn.addEventListener('click', () => { void recordAction('depart', (btn as HTMLElement).dataset.heroDepart!); });
+  });
 
   // ── WALLET ──
   root.querySelector('#mb-wal-add')?.addEventListener('click', () => openPad());

@@ -837,6 +837,113 @@
 .mb-tab:hover { color: var(--mb-ink-2); }
 .mb-tab.active:hover { color: var(--mb-sky); }
 
+/* ══════════════ TODAY "지금" 카드 ══════════════ */
+/* ⚠️ 클래스 접두어는 .mb-now-* 다. .mb-hero-* 는 **장소 상세의 사진 히어로**가
+   이미 쓰고 있다(position:absolute·border-radius:50% 원형 버튼) — 그 이름을 재사용하면
+   여기 버튼이 원형으로 절대배치돼 제목 위로 겹친다. 실제로 났던 충돌이다. */
+
+/* 카드 목록 위에 얹히는 "지금" 한 덩어리 — 화면을 다 읽지 않아도 다음 행동이 보이게 */
+.mb-now {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px;
+  margin-bottom: 14px;
+  border-radius: var(--mb-radius);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line-soft);
+  box-shadow: var(--mb-shadow-card);
+}
+/* 여행 중(지금 진행 중) — 화면에서 유일하게 주황을 쓰는 자리와 같은 계열 */
+.mb-now.is-live { border-color: color-mix(in srgb, var(--mb-live) 38%, transparent); }
+
+.mb-now-eyebrow {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: var(--mb-muted);
+}
+.mb-now.is-live .mb-now-eyebrow { color: var(--mb-live-soft); }
+
+.mb-now-title {
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  color: var(--mb-ink);
+}
+.mb-now-sub {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--mb-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 체류 진행 바 — 예상 체류 중 얼마나 지났는지 */
+.mb-now-bar {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--mb-fill-subtle);
+  overflow: hidden;
+  margin-top: 6px;
+}
+.mb-now-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--mb-live);
+  transition: width var(--mb-ease) 320ms;
+}
+/* 출발 시각을 넘겼으면 꽉 찬 상태로 두되 색만 진하게 — 숫자는 문구가 이미 말하고 있다 */
+.mb-now-bar-fill.is-late { background: var(--mb-danger); }
+
+.mb-now-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.mb-now-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 120px;
+  padding: 12px 14px;
+  min-height: 46px;
+  border-radius: var(--mb-radius-sm);
+  font-size: 13.5px;
+  font-weight: 700;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: filter var(--mb-ease) 160ms, border-color var(--mb-ease) 160ms;
+}
+.mb-now-btn svg { width: 15px; height: 15px; }
+.mb-now-btn.primary {
+  background: var(--mb-btn-bg);
+  color: var(--mb-btn-fg);
+  box-shadow: var(--mb-btn-shadow);
+}
+/* 여행 중의 Primary는 "지금" 액션이라 NOW 배지·도착 버튼과 같은 주황을 쓴다 */
+.mb-now.is-live .mb-now-btn.primary {
+  background: var(--mb-live-grad);
+  color: var(--mb-live-fg);
+  box-shadow: 0 6px 18px rgba(217, 109, 12, 0.24);
+}
+.mb-now-btn.primary:hover { filter: brightness(1.06); }
+.mb-now-btn.ghost {
+  background: var(--mb-surface-2);
+  border-color: var(--mb-line);
+  color: var(--mb-ink-2);
+}
+.mb-now-btn.ghost:hover { border-color: var(--mb-sky); color: var(--mb-sky); }
+
+/* 계획 대비 밀림 한 줄 — 도착 기록이 실제로 무슨 차이를 만드는지 보여주는 자리 */
+.mb-drift {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--mb-muted);
+  padding: 0 2px 10px;
+  font-variant-numeric: tabular-nums;
+}
+.mb-drift.is-late { color: var(--mb-live-soft); font-weight: 600; }
+
 /* ══════════════ WALLET ══════════════ */
 
 /* 일정 화면의 DAY 선택 자리에 들어가는 화면 제목 — 같은 위치·같은 크기라 탭을 옮겨도
