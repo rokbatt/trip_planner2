@@ -356,6 +356,36 @@ export interface Database {
         Relationships: [];
       };
 
+      /** MOBILE MORE 탭 — 트립 멤버가 공유하는 여행 준비 체크리스트
+       *  (개인 목록이 아닌 이유는 supabase/trip_checklist.sql 상단 주석 참고) */
+      trip_checklist: {
+        Row: {
+          id: string;
+          trip_id: string;
+          title: string;
+          /** null이면 미완료 — boolean 대신 시각을 두어 "언제 했는지"가 공짜로 남는다 */
+          checked_at: string | null;
+          checked_by: string | null;
+          checked_by_name: string | null;
+          sort_order: number;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          trip_id: string;
+          title: string;
+          checked_at?: string | null;
+          checked_by?: string | null;
+          checked_by_name?: string | null;
+          sort_order?: number;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['trip_checklist']['Insert']>;
+        Relationships: [];
+      };
+
       city_images: {
         Row: {
           id: string;
@@ -618,6 +648,7 @@ export type Place = Database['public']['Tables']['places']['Row'];
 export type CityImage = Database['public']['Tables']['city_images']['Row'];
 export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'];
 export type TripLink = Database['public']['Tables']['trip_links']['Row'];
+export type TripChecklistItem = Database['public']['Tables']['trip_checklist']['Row'];
 export type PlaceComment = Database['public']['Tables']['place_comments']['Row'];
 export type TripDestination = Database['public']['Tables']['trip_destinations']['Row'];
 export type StaySegment = Database['public']['Tables']['stay_segments']['Row'];

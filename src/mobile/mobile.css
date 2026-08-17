@@ -1131,6 +1131,322 @@
 .mb-wal-add:hover { filter: brightness(1.06); }
 .mb-wal-add svg { width: 17px; height: 17px; }
 
+/* ══════════════ MORE 탭 — 하루 바깥의 것들 ══════════════
+ *
+ * 이 탭은 성격이 다른 블록(숙소·체크리스트·링크·바로가기)이 세로로 쌓이는 곳이라,
+ * 각 블록을 예쁘게 만들기보다 **같은 틀에 넣는 게 먼저**다. 그래서 섹션 머리(.mb-more-sec-head)
+ * 와 카드 표면(.mb-surface + .mb-line-soft)을 전부 공유하고, 블록마다 다른 건 안쪽 내용뿐이다.
+ * 새 블록을 넣을 때도 .mb-more-sec 안에 넣어 같은 리듬을 유지할 것.
+ */
+
+.mb-more-head { display: flex; flex-direction: column; gap: 5px; padding: 2px 0 4px; }
+.mb-more-head-top { display: flex; align-items: center; gap: 9px; }
+.mb-more-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--mb-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mb-more-badge {
+  flex: none;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: var(--mb-fill-subtle);
+  color: var(--mb-ink-2);
+}
+/* "지금"을 뜻하는 색은 화면 전체에서 주황 하나로 유지한다(NOW 배지와 같은 규칙) */
+.mb-more-badge.is-live { background: var(--mb-live-grad); color: var(--mb-live-fg); }
+.mb-more-sub { font-size: 12.5px; color: var(--mb-muted); }
+
+.mb-more-sec { display: flex; flex-direction: column; gap: 10px; margin-top: 22px; }
+.mb-more-sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.mb-more-sec-title { font-size: 13.5px; font-weight: 700; color: var(--mb-ink); }
+.mb-more-sec-note { font-size: 11.5px; color: var(--mb-muted); font-variant-numeric: tabular-nums; }
+
+/* ── 숙소 ── */
+.mb-stay-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 14px;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line-soft);
+  text-align: left;
+  box-shadow: var(--mb-inset-hi);
+}
+.mb-stay-card.is-empty { align-items: center; transition: border-color var(--mb-ease) 160ms; }
+.mb-stay-card.is-empty:hover { border-color: var(--mb-sky); }
+.mb-stay-ic {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  flex: none;
+  background: var(--mb-brass-wash);
+  color: var(--mb-brass-lit);
+}
+.mb-stay-ic svg { width: 17px; height: 17px; }
+.mb-stay-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.mb-stay-name { font-size: 14.5px; font-weight: 700; color: var(--mb-ink); line-height: 1.35; }
+.mb-stay-addr { font-size: 12px; color: var(--mb-ink-2); line-height: 1.5; }
+.mb-stay-meta { font-size: 11.5px; color: var(--mb-muted); }
+.mb-stay-chev { display: grid; place-items: center; color: var(--mb-muted); flex: none; }
+.mb-stay-chev svg { width: 15px; height: 15px; }
+
+.mb-stay-actions { display: flex; gap: 8px; }
+.mb-stay-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+  padding: 12px;
+  min-height: 44px;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--mb-ink-2);
+  text-decoration: none; /* 길찾기는 <a>지만 버튼으로 읽혀야 한다 */
+  transition: border-color var(--mb-ease) 160ms;
+}
+.mb-stay-btn:hover { border-color: var(--mb-sky); }
+.mb-stay-btn svg { width: 15px; height: 15px; }
+/* 밤에 이 화면을 여는 이유는 대부분 "숙소로 돌아가기" 하나다 — 그 버튼만 채운다 */
+.mb-stay-btn.is-primary {
+  background: var(--mb-btn-bg);
+  color: var(--mb-btn-fg);
+  border-color: transparent;
+  box-shadow: var(--mb-btn-shadow);
+}
+.mb-stay-btn.is-primary:hover { filter: brightness(1.06); border-color: transparent; }
+
+/* ── 준비 체크리스트 ── */
+.mb-ck-gauge {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--mb-fill-subtle);
+  overflow: hidden;
+}
+.mb-ck-gauge-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--mb-sky);
+  transition: width var(--mb-ease) 320ms;
+}
+.mb-ck-empty { font-size: 12.5px; line-height: 1.7; color: var(--mb-muted); }
+
+.mb-ck-list {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line-soft);
+  overflow: hidden;
+  box-shadow: var(--mb-inset-hi);
+}
+.mb-ck-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 12px;
+  border-bottom: 1px dashed var(--mb-line-cool);
+}
+.mb-ck-row:last-child { border-bottom: 0; }
+.mb-ck-box {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  flex: none;
+  border: 1.6px solid var(--mb-line);
+  background: transparent;
+  color: transparent;
+  transition: background var(--mb-ease) 160ms, border-color var(--mb-ease) 160ms;
+}
+.mb-ck-box svg { width: 14px; height: 14px; }
+.mb-ck-row.is-done .mb-ck-box {
+  background: var(--mb-sky);
+  border-color: var(--mb-sky);
+  color: #FFFFFF;
+}
+.mb-ck-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mb-ck-title { font-size: 13.5px; font-weight: 600; color: var(--mb-ink); line-height: 1.4; }
+/* 끝난 항목은 지우지 않고 흐리게만 — "이미 했다"는 정보 자체가 목록의 절반이다 */
+.mb-ck-row.is-done .mb-ck-title { color: var(--mb-muted); text-decoration: line-through; }
+.mb-ck-by { font-size: 11px; color: var(--mb-muted); }
+.mb-ck-del {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  flex: none;
+  color: var(--mb-muted);
+  opacity: 0.55;
+  transition: opacity var(--mb-ease) 160ms, color var(--mb-ease) 160ms;
+}
+.mb-ck-del svg { width: 13px; height: 13px; }
+.mb-ck-del:hover { opacity: 1; color: var(--mb-danger); }
+
+.mb-ck-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.mb-ck-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 11px;
+  min-height: 36px;
+  border-radius: 999px;
+  border: 1px dashed var(--mb-line);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mb-ink-2);
+  transition: border-color var(--mb-ease) 160ms, color var(--mb-ease) 160ms;
+}
+.mb-ck-chip svg { width: 12px; height: 12px; opacity: 0.7; }
+.mb-ck-chip:hover { border-color: var(--mb-sky); color: var(--mb-sky); }
+
+.mb-ck-form { display: flex; gap: 8px; }
+.mb-ck-input {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 13px;
+  min-height: 44px;
+  border-radius: var(--mb-radius-sm);
+  border: 1px solid var(--mb-line);
+  background: var(--mb-input-bg);
+  font-size: 13.5px;
+  color: var(--mb-ink);
+  font-family: inherit;
+}
+.mb-ck-input:focus { outline: none; border-color: var(--mb-sky); }
+.mb-ck-input::placeholder { color: var(--mb-muted); }
+.mb-ck-submit {
+  flex: none;
+  padding: 12px 18px;
+  min-height: 44px;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-btn-bg);
+  color: var(--mb-btn-fg);
+  box-shadow: var(--mb-btn-shadow);
+  font-size: 13px;
+  font-weight: 700;
+}
+.mb-ck-open {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  padding: 12px;
+  min-height: 44px;
+  border-radius: var(--mb-radius-sm);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--mb-muted);
+}
+.mb-ck-open svg { width: 13px; height: 13px; }
+.mb-ck-open:hover { color: var(--mb-sky); }
+
+/* ── 예약 · 티켓 링크 ── */
+.mb-bk-list {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line-soft);
+  overflow: hidden;
+  box-shadow: var(--mb-inset-hi);
+}
+.mb-bk-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 12px;
+  border-bottom: 1px dashed var(--mb-line-cool);
+  text-decoration: none;
+}
+.mb-bk-row:last-child { border-bottom: 0; }
+.mb-bk-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+  flex: none;
+  background-size: cover;
+  background-position: center;
+  background-color: var(--mb-surface-3);
+}
+.mb-bk-thumb.is-blank {
+  display: grid;
+  place-items: center;
+  color: var(--mb-muted);
+}
+.mb-bk-thumb.is-blank svg { width: 16px; height: 16px; }
+.mb-bk-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mb-bk-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mb-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mb-bk-host { font-size: 11px; color: var(--mb-muted); }
+.mb-bk-ext { display: grid; place-items: center; color: var(--mb-muted); flex: none; }
+.mb-bk-ext svg { width: 14px; height: 14px; }
+
+/* ── PC로 넘기는 줄들 ── */
+.mb-more-list {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line-soft);
+  overflow: hidden;
+  box-shadow: var(--mb-inset-hi);
+}
+.mb-more-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 13px 12px;
+  border-bottom: 1px dashed var(--mb-line-cool);
+  text-align: left;
+}
+.mb-more-row:last-child { border-bottom: 0; }
+.mb-more-row-ic {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  flex: none;
+  background: var(--mb-sky-wash);
+  color: var(--mb-sky);
+}
+.mb-more-row-ic svg { width: 16px; height: 16px; }
+.mb-more-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mb-more-row-label { font-size: 13.5px; font-weight: 600; color: var(--mb-ink); }
+.mb-more-row-sub { font-size: 11.5px; color: var(--mb-muted); }
+.mb-more-row-chev { display: grid; place-items: center; color: var(--mb-muted); flex: none; }
+.mb-more-row-chev svg { width: 15px; height: 15px; }
+
 /* ══════════════ 숫자패드 시트 ══════════════ */
 
 .mb-pad {

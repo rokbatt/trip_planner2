@@ -484,7 +484,8 @@ PC/노트북  = PLANNER    여행 전, 4개 게이트로 결정한다        (�
   이동 구간 칩(`.mb-leg-chip`)이 그 선 위 한가운데에 앉아 "구슬" 역할을 한다.
 - **카드는 `overflow:hidden`이라 바깥으로 나가는 걸 못 그린다.** NOW 배지와 시간축 마디는
   그래서 카드가 아니라 래퍼(`.mb-stop`)에 얹는다 — 카드에 직접 붙이면 잘린다(실제로 났던 버그).
-- **하단 탭 4개**: TODAY(지금 상태 + 하루 시각표) · TIMELINE(전체 DAY) · WALLET(모바일 전용 지갑) · MORE
+- **하단 탭 4개**: TODAY(지금 상태 + 하루 시각표) · TIMELINE(전체 DAY) · WALLET(모바일 전용 지갑) ·
+  MORE(숙소·체크리스트·예약 링크)
 - **WALLET은 PC Expense의 축소판이 아니다.** 데스크톱은 탭 5개짜리 대시보드지만 여행 중에 폰으로
   하는 일은 "방금 낸 돈 3초 안에 넣기" 하나다. 그래서 화면은 **오늘 쓴 돈(크게) + 예산 게이지 →
   정산 한 줄 → 최근 지출 6건 → [지출 추가]** 로만 구성하고, 도넛 차트·카테고리 그리드·필터·예산
@@ -556,6 +557,42 @@ TODAY 탭 맨 위에는 카드 목록보다 **지금 상태 한 장**(`.mb-now`)
 > 튀어 제목 위에 겹친다(실제로 났던 버그). 모바일에 새 컴포넌트를 만들 땐 접두사가 이미 쓰이는지
 > 먼저 확인할 것.
 
+### MORE 탭 — 하루 바깥의 것들
+TODAY·TIMELINE·WALLET은 전부 "지금 이 하루"를 다루고, MORE는 하루에 매이지 않는 것들
+(숙소·준비물·예약 흔적) 자리다. 잡동사니 서랍이 되기 쉬운 탭이라 **넣는 기준을 하나로 고정**했다
+— *여행 중 폰에서 "지금 당장" 필요한 것만.* 트립 설정·멤버 초대·전체 링크 목록 같은 관리
+기능은 PC에 남기고 마지막 섹션에서 링크로만 넘긴다.
+
+- **섹션 순서가 여행 상태에 따라 바뀐다.** 여행 전에는 체크리스트가, 여행 중에는 숙소가 위로
+  온다 — 밤에 택시를 잡으며 폰을 여는 사람에게 필요한 건 준비물 목록이 아니라 숙소 주소다.
+- **숙소는 `loadDayModel`이 이미 준 값만 쓴다**(`staySegments` + `ctx.placeById`). MORE 때문에
+  따로 조회하지 않는다(원칙 3-2). `end_date`는 체크아웃 날이므로 그날 밤 묵는 구간은
+  `start ≤ 날짜 < end`다. 확정된 숙소가 없으면 지어내지 않고 "아직 확정 안 됨"으로 두고 STAY로
+  넘긴다. 주소는 DB에 있을 때만 그리고, 있으면 클립보드 복사 버튼을 같이 둔다(택시 기사에게
+  보여줄 주소를 손으로 옮겨 적지 않게).
+- **"예약·티켓 링크"를 "티켓 지갑"이라고 부르지 않는다.** 우리가 가진 건 예약 확인서가 아니라
+  채팅에 공유된 `trip_links`뿐이다. 그 이상인 척하면 사용자가 없는 걸 믿게 된다(원칙 3-1).
+  숙소(STAY)·액티비티(ACTIVITY) 카테고리만 골라 보여주고, 나머지는 PC의 LINKS에 남긴다.
+- 체크리스트·링크는 **MORE를 처음 열 때만** 불러온다(WALLET과 같은 절제, 원칙 3-2).
+
+#### 체크리스트 (`trip_checklist` · `mobile/checklist.ts`)
+제품 통틀어 첫 체크리스트다(PC의 `checklist` 게이트는 아직 빈 플레이스홀더 — 나중에 붙일 때
+이 테이블을 그대로 쓰면 된다).
+
+- **개인 목록이 아니라 트립 공유 목록이다.** 실제로 빠뜨려서 문제가 되는 건 "내 칫솔"이 아니라
+  "유심 아무도 안 샀네" 쪽이고, 그건 목록이 공유될 때만 막힌다. 목록을 개인/공용 둘로 쪼개면
+  "어느 쪽에 적었더라"가 생겨 오히려 더 빠뜨린다.
+- 체크 상태는 boolean이 아니라 `checked_at`(timestamptz)이다 — "체크됨"은 `is not null`로 그대로
+  읽히면서 언제 했는지가 공짜로 남는다. 해제하면 `checked_by`·`checked_by_name`까지 같이 비운다
+  (남겨두면 "누가 했지?"가 거짓이 된다).
+- **추천 준비물 칩은 자동으로 넣지 않는다.** 눌러야 추가되는 입력 도우미일 뿐이라 원칙 3-1에
+  걸리지 않는다 — 빈 목록 앞에서 "뭘 적지"로 막히는 걸 없애는 게 목적이고, 이미 담긴 항목은
+  칩에서 사라진다. 자동 삽입으로 바꾸면 그 순간 "우리가 지어낸 데이터"가 된다.
+- 정렬은 **미완료 먼저**. 끝낸 항목이 위에서 자리를 차지하면 남은 걸 보려고 스크롤해야 한다.
+- 마이그레이션 전(`trip_checklist` 없음)이면 **섹션을 통째로 접는다** — 저장이 안 되는 입력창을
+  띄우면 사용자가 적은 게 그대로 사라진다. 나머지 섹션은 정상적으로 보인다.
+- 입력 중 realtime 재렌더로 글자가 날아가지 않게 초안을 모듈 상태(`checklistDraft`)에 붙들어 둔다.
+
 ### 원칙 3-1 적용 — 좁은 화면일수록 지어내기 쉽다
 화면이 좁아서 "뭐라도 채우고 싶은" 압력이 크지만 규칙은 같다.
 - 평점·영업시간·주소·카테고리 → **저장된 값이 있을 때만** 보여준다(없으면 그 줄이 사라진다)
@@ -571,8 +608,9 @@ TODAY 탭 맨 위에는 카드 목록보다 **지금 상태 한 장**(`.mb-now`)
 새 버튼 컴포넌트를 만들 때 배경이 안 보이면 먼저 이 명시도부터 의심할 것.
 
 ### 아직 안 한 것
-편집(순서 변경·이동수단 선택), 체크리스트, 오프라인 팩, PWA 자산은 전부 미구현이다.
-MORE 탭은 "다음 단계에서 구현 예정" 안내만 띄운다(체크리스트·티켓 지갑·채팅이 들어올 자리).
+편집(순서 변경·이동수단 선택), 오프라인 팩, PWA 자산(manifest·SW)은 전부 미구현이다.
+TIMELINE 탭은 아직 DAY 목록이라 가로 스와이프 페이저로 바꿀 여지가 남아 있고, 모바일 채팅도
+없다(MORE에서 PC의 LINKS로 넘긴다).
 
 ---
 
@@ -589,6 +627,7 @@ src/
   timeline/placeBrief.ts             ← 장소 상세 AI 브리핑 클라이언트 (Timeline/Mobile 공용)
   mobile/mobile.ts, mobile.css       ← Mobile Companion 게이트 (여행 중 화면, 5-4 참고)
   mobile/stopProgress.ts             ← 실제 도착/출발 기록 영속화 + 실시간 (Mobile 전용, 5-4 참고)
+  mobile/checklist.ts                ← 여행 준비 체크리스트 I/O + 실시간 (Mobile 전용, 5-4 참고)
   expense/expense.ts, expense.css    ← Expense 게이트 (예산·지출·도넛 차트·정산, 5-2 참고)
   expense/expenseModel.ts            ← 집계·정산·환율의 단일 기준 (Expense/Mobile 공용, 5-2 참고)
   workspace/workspace.ts             ← 게이트 라우팅, 사이드바
@@ -626,12 +665,16 @@ api/                                  ← Vercel 서버리스 함수 (각각 완
    - 여행 중: 실제 도착 시각 기록 → 이후 일정 자동 밀기
    - 내보내기: 캘린더(ics)·이미지로 공유
    - 장소별 예상 비용: `trip_expenses`와 연결(지금은 근거 데이터가 없어 표시하지 않음)
-3. **Mobile(Companion)** — 원터치 길찾기·실시간 도착 기록(`trip_stop_progress`)까지 구현됨(5-4).
-   다음 단계: 체크리스트, 오프라인 팩, PWA 자산(manifest·SW·`viewport-fit=cover`). 서버가
-   필요한 기능(푸시·ics)은 `api/*.ts`가 이미 12개 상한이라 **Supabase Edge Functions로
-   뺀다**(3-7). `trip_stop_progress.sql` 마이그레이션을 Supabase에서 실행해야 동작한다.
-   로드맵은 `docs/MOBILE_STRATEGY.md`
-4. **Checklist 탭** — 미구현. **Links 탭**은 채팅 링크를 자동 수집 + og:title/og:image 미리보기 + STAY/PLACE/FOOD/ACTIVITY/VIDEO/ARTICLE/OTHER 자동분류(애매하면 OTHER, 드래그로 수동 재분류 가능)까지 구현됨(`src/links/links.ts`, `src/trips/addLink.ts`, `api/cache-photo.ts`의 `kind:'link-preview'`, `supabase/trip_links.sql`) — 직접 추가 UI는 없음(채팅이 유일한 입력 경로). **Expense 탭**은 구현됨(아래 5-2 참고) — `supabase/trip_expenses.sql` 마이그레이션을 Supabase에서 실행해야 동작
+3. **Mobile(Companion)** — 4개 탭 전부 모바일 전용으로 구현됨(5-4): TODAY 히어로,
+   원터치 길찾기, 실시간 도착 기록(`trip_stop_progress`), 지갑(숫자패드), MORE(숙소·체크리스트
+   `trip_checklist`·예약 링크). 다음 단계: TIMELINE 가로 스와이프, 오프라인 팩, PWA
+   자산(manifest·SW·`viewport-fit=cover`). 서버가 필요한 기능(푸시·ics)은 `api/*.ts`가 이미
+   12개 상한이라 **Supabase Edge Functions로 뺀다**(3-7). `trip_stop_progress.sql`과
+   `trip_checklist.sql` 마이그레이션을 Supabase에서 실행해야 각 기능이 저장된다(안 해도 앱은
+   정상 동작 — 해당 기능만 조용히 접힌다). 로드맵은 `docs/MOBILE_STRATEGY.md`
+4. **PC Checklist 게이트** — 아직 빈 플레이스홀더. 데이터 모델(`trip_checklist`)은 모바일 MORE가
+   이미 만들어 뒀으므로, PC 화면을 붙일 땐 그 테이블을 그대로 쓰면 된다(5-4 참고).
+   **Links 탭**은 채팅 링크를 자동 수집 + og:title/og:image 미리보기 + STAY/PLACE/FOOD/ACTIVITY/VIDEO/ARTICLE/OTHER 자동분류(애매하면 OTHER, 드래그로 수동 재분류 가능)까지 구현됨(`src/links/links.ts`, `src/trips/addLink.ts`, `api/cache-photo.ts`의 `kind:'link-preview'`, `supabase/trip_links.sql`) — 직접 추가 UI는 없음(채팅이 유일한 입력 경로). **Expense 탭**은 구현됨(아래 5-2 참고) — `supabase/trip_expenses.sql` 마이그레이션을 Supabase에서 실행해야 동작
 5. **`google.maps.Marker` → `AdvancedMarkerElement` 마이그레이션** — 지금은 폐기 예정 경고만 뜨는 상태, 급하진 않음 (최소 12개월 유예)
 6. **방콕 외 도시의 `stay_zones` 큐레이션** — 현재 방콕만 실제 조사된 데이터, 나머지 도시는 AI 폴백 상태
 
