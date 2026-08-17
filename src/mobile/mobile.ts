@@ -176,6 +176,10 @@ let progress: ProgressMap = new Map();
 let daySheetOpen = false;
 let nowTimer: ReturnType<typeof setInterval> | null = null;
 
+/** TIMELINE 가로 페이저 — 스와이프가 "멈춘 뒤"에만 상태를 반영하고, 조회는 거기서 더 미룬다 */
+let pagerSettleTimer: ReturnType<typeof setTimeout> | null = null;
+let pagerLoadTimer: ReturnType<typeof setTimeout> | null = null;
+
 /* ── WALLET ── */
 /** 지출·예산·멤버. WALLET 탭을 처음 열 때만 불러온다(원칙 3-2 — 안 보는 탭을 미리 조회하지 않음) */
 let expenseCtx: ExpenseCtx | null = null;
@@ -213,6 +217,14 @@ export function teardownMobile(): void {
   if (nowTimer) {
     clearInterval(nowTimer);
     nowTimer = null;
+  }
+  if (pagerSettleTimer) {
+    clearTimeout(pagerSettleTimer);
+    pagerSettleTimer = null;
+  }
+  if (pagerLoadTimer) {
+    clearTimeout(pagerLoadTimer);
+    pagerLoadTimer = null;
   }
   container = null;
   currentTripId = '';
@@ -471,13 +483,21 @@ function render(): void {
   // 목록으로 돌아왔을 때 보던 위치를 잃지 않게(상세를 열고 닫으면 위로 튀는 걸 막음)
   const scroller = container.querySelector('.mb-scroll') as HTMLElement | null;
   if (scroller && !detailKey) scroller.scrollTop = scrollTop;
+
+  // TIMELINE 페이저는 innerHTML을 새로 그리면 첫 페이지로 돌아간다 — 상태(activeDayIndex)가
+  // 곧 페이지 위치이므로 매 렌더마다 거기로 되돌려 놓는다(애니메이션 없이: 이미 그 자리다).
+  const pager = container.querySelector('#mb-tl-pager') as HTMLElement | null;
+  if (pager) pager.scrollLeft = activeDayIndex * pager.clientWidth;
 }
 
 function appHtml(): string {
   if (detailKey) return detailHtml();
+  // TIMELINE은 세로로 흐르지 않는다 — 가로 페이저가 남은 높이를 다 쓰고, 세로 스크롤은
+  // 페이지 안쪽이 맡는다(축이 달라 서로 싸우지 않는다)
+  const scrollCls = 'mb-scroll' + (activeTab === 'timeline' && days.some((d) => d.stops.length) ? ' is-pager' : '');
   return [
     topBarHtml(),
-    '<main class="mb-scroll">' + tabBodyHtml() + '</main>',
+    '<main class="' + scrollCls + '">' + tabBodyHtml() + '</main>',
     tabBarHtml(),
     daySheetOpen ? daySheetHtml() : '',
     padOpen ? padSheetHtml() : '',
@@ -506,9 +526,10 @@ function topBarHtml(): string {
     '</header>',
   ].join('');
 
-  // DAY를 고르는 건 일정 화면에서만 의미가 있다 — 지갑·MORE는 하루가 아니라 여행 전체를 다룬다
-  if (activeTab === 'wallet' || activeTab === 'more') {
-    const title = activeTab === 'wallet' ? '지갑' : '여행 정보';
+  // DAY 선택 버튼은 TODAY에서만 의미가 있다. 지갑·MORE는 하루가 아니라 여행 전체를 다루고,
+  // TIMELINE은 DAY 칩 줄과 페이지 머리가 이미 "어느 날인지"를 말하고 있어서 여기 또 두면 겹친다.
+  if (activeTab !== 'today') {
+    const title = activeTab === 'wallet' ? '지갑' : activeTab === 'more' ? '여행 정보' : '전체 일정';
     return [
       brandRow,
       '<div class="mb-daybar"><span class="mb-screen-title">' + title + '</span></div>',
@@ -974,38 +995,187 @@ function legNodeHtml(leg: ReturnType<typeof scheduleFor>['legs'][number], i: num
   ].join('');
 }
 
-/* ══════════════ TIMELINE 탭 — 전체 DAY 한눈에 ══════════════ */
+/* ══════════════ TIMELINE 탭 — 옆으로 넘겨 보는 DAY ══════════════
+ *
+ * 세로 목록이던 걸 **가로 스와이프 페이저**로 바꿨다. 여행 계획을 폰으로 볼 때 하는 일은
+ * "DAY를 고른다"가 아니라 "다음 날은 뭐였지" — 즉 **옆 날과 비교**하는 행위다. 목록은 그때마다
+ * 눌러 들어갔다 나와야 하지만, 페이저는 엄지로 밀기만 하면 된다.
+ *
+ * TODAY와 역할이 겹치지 않게 **밀도를 다르게** 둔다. TODAY는 사진 카드 + 시간축 + 도착 기록이
+ * 있는 "지금 따라가는 화면"이고, 여기는 사진 없이 시각·이름만 있는 압축 표라 하루가 한 화면에
+ * 들어온다. 그래서 자세히 볼 땐 페이지 아래 버튼으로 TODAY로 넘긴다.
+ *
+ * 스와이프는 CSS scroll-snap이 전부다 — 제스처 라이브러리를 넣지 않는다. JS가 하는 일은
+ * "멈춘 뒤 어느 페이지인지" 읽어 상태에 반영하는 것뿐이다(아래 bindPager).
+ */
 
 function allDaysTabHtml(): string {
   if (!days.some((d) => d.stops.length)) {
     return emptyHtml('일정이 아직 없어요', 'PC에서 ROUTE로 동선을 먼저 만들어 주세요.');
   }
   const t = todayISO();
-  const rows = days.map((d, idx) => {
-    // progress는 활성 DAY만 불러와 있다(원칙 3-2) — 다른 DAY의 키와는 안 겹치므로 그냥 넘겨도
-    // 안전하고, 활성 DAY 행에서는 실제 기록이 반영된 시각을 보여주는 보너스가 된다.
-    const s = scheduleFor(d, realLegs, progress);
-    const filled = d.stops.length > 0;
-    const names = d.stops.slice(0, 3).map((x) => x.name).join(' · ');
-    const more = d.stops.length > 3 ? ' 외 ' + (d.stops.length - 3) + '곳' : '';
+
+  const chips = days
+    .map(
+      (d, i) =>
+        '<button class="mb-tl-chip' + (i === activeDayIndex ? ' active' : '') + (d.date === t ? ' is-today' : '') + '" data-page="' + i + '">' +
+        escapeHtml(d.label) +
+        '</button>'
+    )
+    .join('');
+
+  return [
+    tripProgressHtml(),
+    '<div class="mb-tl-chips" id="mb-tl-chips">' + chips + '</div>',
+    '<div class="mb-tl-pager" id="mb-tl-pager">' + days.map((d, i) => dayPageHtml(d, i)).join('') + '</div>',
+  ].join('');
+}
+
+/**
+ * 여행 전체에서 지금 어디쯤인지 한 줄. **날짜로만 계산한다** — 진행 기록(progress)은 활성 DAY만
+ * 불러와 있어서(원칙 3-2) "총 몇 곳 방문"을 여기서 세면 틀린 수가 나온다(원칙 3-1).
+ * 대신 날짜와 정류지 수는 항상 정확하므로 그것만 쓴다.
+ */
+function tripProgressHtml(): string {
+  const total = days.length;
+  const totalStops = days.reduce((n, d) => n + d.stops.length, 0);
+  const todayIdx = todayDayIndex();
+  const start = days.find((d) => d.date)?.date ?? null;
+
+  let label: string;
+  let pct: number;
+  if (todayIdx >= 0) {
+    label = 'DAY ' + (todayIdx + 1) + ' / ' + total + ' 진행 중';
+    pct = Math.round(((todayIdx + 1) / total) * 100);
+  } else if (start && daysBetween(todayISO(), start) > 0) {
+    label = start ? 'D-' + daysBetween(todayISO(), start) + ' · ' + total + '일 일정' : total + '일 일정';
+    pct = 0;
+  } else {
+    label = '여행 완료 · ' + total + '일';
+    pct = 100;
+  }
+
+  return [
+    '<section class="mb-tl-sum">',
+    '  <div class="mb-tl-sum-top">',
+    '    <span class="mb-tl-sum-label">' + escapeHtml(label) + '</span>',
+    '    <span class="mb-tl-sum-count">' + totalStops + '곳</span>',
+    '  </div>',
+    '  <div class="mb-tl-sum-bar"><span class="mb-tl-sum-fill" style="width:' + pct + '%"></span></div>',
+    '</section>',
+  ].join('');
+}
+
+/** 한 DAY = 한 페이지. 사진 없이 시각·이름만 있는 압축 표라 하루가 한 화면에 들어온다. */
+function dayPageHtml(day: TlDay, idx: number): string {
+  const isToday = day.date === todayISO();
+  // progress는 활성 DAY만 채워져 있다(원칙 3-2). 다른 DAY의 키와 겹치지 않으므로 그냥 넘겨도
+  // 안전하고, 활성 DAY에서는 실제 기록이 반영된 시각이 나오는 보너스가 된다.
+  const s = scheduleFor(day, realLegs, progress);
+
+  const head = [
+    '  <header class="mb-tl-head">',
+    '    <div class="mb-tl-head-main">',
+    '      <span class="mb-tl-day">' + escapeHtml(day.label) + '</span>',
+    isToday ? '      <span class="mb-today-chip">TODAY</span>' : '',
+    '    </div>',
+    '    <span class="mb-tl-date">' + escapeHtml(dateLabel(day.date)) + '</span>',
+    '  </header>',
+  ].join('');
+
+  if (!day.stops.length) {
     return [
-      '<button class="mb-dayrow' + (idx === activeDayIndex ? ' active' : '') + '" data-goday="' + idx + '">',
-      '  <div class="mb-dayrow-left">',
-      '    <span class="mb-dayrow-label">' + escapeHtml(d.label) + '</span>',
-      '    <span class="mb-dayrow-date">' + escapeHtml(dateLabel(d.date)) + (d.date === t ? ' · TODAY' : '') + '</span>',
-      '  </div>',
-      '  <div class="mb-dayrow-mid">',
-      filled
-        ? '    <span class="mb-dayrow-names">' + escapeHtml(names) + escapeHtml(more) + '</span>' +
-          '    <span class="mb-dayrow-sub">' + minToHHMM(s.spanStartMin) + '–' + minToHHMM(s.spanEndMin) +
-          (s.legCount ? ' · 이동 ' + fmtMin(s.totalMoveMin) : '') + '</span>'
-        : '    <span class="mb-dayrow-empty">비어 있어요</span>',
-      '  </div>',
-      '  <span class="mb-dayrow-chev">' + IC.chevRight + '</span>',
-      '</button>',
+      '<article class="mb-tl-page" data-page="' + idx + '">',
+      head,
+      '  <div class="mb-tl-blank">이 날은 아직 비어 있어요</div>',
+      '</article>',
     ].join('');
+  }
+
+  const rows = day.stops
+    .map((stop, i) => {
+      const prog = progress.get(stop.key);
+      const skipped = prog?.status === 'skipped';
+      const visited = prog?.status === 'arrived' || prog?.status === 'departed';
+      const leg = s.legs[i];
+      return [
+        '<div class="mb-tl-row' + (skipped ? ' is-skipped' : '') + (visited ? ' is-visited' : '') + '" data-stop="' + escapeHtml(stop.key) + '" role="button" tabindex="0">',
+        '  <span class="mb-tl-time">' + minToHHMM(s.arriveMin[i]) + '</span>',
+        '  <span class="mb-tl-dot" aria-hidden="true"></span>',
+        '  <div class="mb-tl-main">',
+        '    <div class="mb-tl-name">' + escapeHtml(stop.name) + '</div>',
+        '    <div class="mb-tl-meta">' + escapeHtml(CAT_LABEL[stop.cat] ?? '') + ' · ' + fmtMin(s.dwellMin[i]) + ' 머무름</div>',
+        '  </div>',
+        '</div>',
+        // 구간 이동은 행 사이에 작게 — 여기선 "얼마나 걸리나"만 알면 된다
+        leg
+          ? '<div class="mb-tl-leg"><span class="mb-tl-leg-ic ' + leg.mode.toLowerCase() + '">' + MODE_ICON[leg.mode] + '</span>' +
+            escapeHtml(modeLabel(leg.mode)) + ' ' + fmtMin(leg.min) +
+            (leg.real ? '' : ' <span class="mb-tl-est">추정</span>') +
+            '</div>'
+          : '',
+      ].join('');
+    })
+    .join('');
+
+  return [
+    '<article class="mb-tl-page" data-page="' + idx + '">',
+    head,
+    '  <div class="mb-tl-rows">' + rows + '</div>',
+    '  <div class="mb-tl-foot">',
+    '    <span>' + minToHHMM(s.spanStartMin) + '–' + minToHHMM(s.spanEndMin) + '</span>',
+    '    <span>' + day.stops.length + '곳' + (s.legCount ? ' · 이동 ' + fmtMin(s.totalMoveMin) : '') + '</span>',
+    '  </div>',
+    '  <button class="mb-tl-open" data-goday="' + idx + '">이 날 자세히 보기 ' + IC.chevRight + '</button>',
+    '</article>',
+  ].join('');
+}
+
+/* ── 페이저 동작 ──
+ *
+ * 스와이프 자체는 CSS(scroll-snap)가 처리한다. JS는 "멈춘 뒤 어느 페이지인지"만 읽는다.
+ * 스크롤 이벤트마다 render()를 부르면 그리는 도중 스크롤이 끊기므로, **멈춘 뒤 한 번만** 반영한다.
+ */
+function bindPager(root: HTMLElement): void {
+  const pager = root.querySelector('#mb-tl-pager') as HTMLElement | null;
+  if (!pager) return;
+
+  // 칩을 누르면 그 페이지로 부드럽게 민다. 여기서 render()를 부르면 애니메이션이 끊기므로
+  // 하이라이트만 손으로 옮기고, 상태 반영은 아래 onPagerSettle에 맡긴다.
+  root.querySelectorAll('.mb-tl-chip[data-page]').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const i = Number((chip as HTMLElement).dataset.page);
+      root.querySelectorAll('.mb-tl-chip').forEach((c, ci) => c.classList.toggle('active', ci === i));
+      pager.scrollTo({ left: i * pager.clientWidth, behavior: 'smooth' });
+    });
   });
-  return '<div class="mb-daylist">' + rows.join('') + '</div>';
+
+  pager.addEventListener(
+    'scroll',
+    () => {
+      if (pagerSettleTimer) clearTimeout(pagerSettleTimer);
+      pagerSettleTimer = setTimeout(() => onPagerSettle(pager), 120);
+    },
+    { passive: true }
+  );
+}
+
+function onPagerSettle(pager: HTMLElement): void {
+  const w = pager.clientWidth;
+  if (!w || !days.length) return;
+  const idx = Math.max(0, Math.min(days.length - 1, Math.round(pager.scrollLeft / w)));
+  if (idx === activeDayIndex) return;
+
+  activeDayIndex = idx;
+  render();
+
+  // 빠르게 여러 장을 넘기면 지나친 DAY까지 전부 조회하게 된다 — 손이 멈춘 뒤 한 번만
+  // 부른다(원칙 3-2: 안 보는 DAY를 미리 조회하지 않는다는 절제를 스와이프에도 적용).
+  if (pagerLoadTimer) clearTimeout(pagerLoadTimer);
+  pagerLoadTimer = setTimeout(() => {
+    void loadRealLegsForActiveDay();
+    void loadProgressForActiveDay();
+  }, 350);
 }
 
 /* ══════════════════════ WALLET 탭 ══════════════════════ */
@@ -2075,6 +2245,8 @@ function bind(): void {
       void loadProgressForActiveDay();
     });
   });
+
+  bindPager(root);
 
   // ── 카드 → 상세 ──
   root.querySelectorAll('[data-stop]').forEach((card) => {

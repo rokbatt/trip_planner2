@@ -770,43 +770,199 @@
 .mb-add:hover { background: var(--mb-fill-subtle); border-color: var(--mb-sky); color: var(--mb-sky); }
 .mb-add svg { width: 16px; height: 16px; }
 
-/* ══════════════ 전체 DAY 목록 ══════════════ */
+/* ══════════════ TIMELINE — 옆으로 넘겨 보는 DAY ══════════════
+ *
+ * 스와이프는 전부 CSS다(scroll-snap). JS는 멈춘 뒤 위치만 읽는다 — mobile.ts의 bindPager 참고.
+ * 세로 스크롤은 페이지 **안쪽**(.mb-tl-page)이 맡는다. 바깥(.mb-scroll.is-pager)은 가로 페이저가
+ * 남은 높이를 정확히 쓰도록 스크롤을 끈다 — 축이 달라 둘이 서로 싸우지 않는다.
+ */
 
-.mb-daylist { display: flex; flex-direction: column; gap: 8px; padding-top: 2px; }
-
-.mb-dayrow {
+.mb-scroll.is-pager {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0 0 calc(4px + env(safe-area-inset-bottom));
+}
+/* 페이저 바깥의 두 줄(요약·칩)만 좌우 여백을 갖는다 — 페이지는 화면 끝까지 차야 스와이프가
+   화면 폭과 정확히 맞는다 */
+.mb-scroll.is-pager > .mb-tl-sum,
+.mb-scroll.is-pager > .mb-tl-chips { margin: 0 16px; }
+
+/* ── 여행 전체 진행 ── */
+.mb-tl-sum { display: flex; flex-direction: column; gap: 7px; flex: none; padding: 2px 0 10px; }
+.mb-tl-sum-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.mb-tl-sum-label { font-size: 13px; font-weight: 700; color: var(--mb-ink); }
+.mb-tl-sum-count { font-size: 12px; color: var(--mb-muted); font-variant-numeric: tabular-nums; }
+.mb-tl-sum-bar { height: 5px; border-radius: 999px; background: var(--mb-fill-subtle); overflow: hidden; }
+.mb-tl-sum-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--mb-sky);
+  transition: width var(--mb-ease) 320ms;
+}
+
+/* ── DAY 칩 줄 ── */
+.mb-tl-chips {
+  display: flex;
+  gap: 6px;
+  flex: none;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  scrollbar-width: none;
+}
+.mb-tl-chips::-webkit-scrollbar { display: none; }
+.mb-tl-chip {
+  flex: none;
+  padding: 7px 13px;
+  min-height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--mb-line-soft);
+  background: var(--mb-surface);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--mb-muted);
+  transition: color var(--mb-ease) 160ms, border-color var(--mb-ease) 160ms, background var(--mb-ease) 160ms;
+}
+.mb-tl-chip.active {
+  background: var(--mb-sky);
+  border-color: transparent;
+  color: #FFFFFF;
+}
+/* 오늘은 활성이 아닐 때도 표시가 남아야 한다 — 여행 중엔 "오늘이 어디냐"가 기준점이다 */
+.mb-tl-chip.is-today:not(.active) { border-color: var(--mb-live); color: var(--mb-live); }
+
+/* ── 페이저 ── */
+.mb-tl-pager {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.mb-tl-pager::-webkit-scrollbar { display: none; }
+
+.mb-tl-page {
+  flex: none;
   width: 100%;
-  padding: 14px;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 16px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.mb-tl-page::-webkit-scrollbar { display: none; }
+
+.mb-tl-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex: none; }
+.mb-tl-head-main { display: flex; align-items: center; gap: 8px; }
+.mb-tl-day { font-size: 17px; font-weight: 800; letter-spacing: -0.01em; color: var(--mb-ink); }
+.mb-tl-date { font-size: 12px; color: var(--mb-muted); font-variant-numeric: tabular-nums; }
+.mb-tl-blank { font-size: 12.5px; color: var(--mb-muted); padding: 26px 0; text-align: center; }
+
+/* ── 압축 표 (TODAY의 사진 카드와 밀도를 일부러 다르게) ── */
+.mb-tl-rows {
+  display: flex;
+  flex-direction: column;
   border-radius: var(--mb-radius-sm);
   background: var(--mb-surface);
   border: 1px solid var(--mb-line-soft);
+  overflow: hidden;
   box-shadow: var(--mb-inset-hi);
-  text-align: left;
-  transition: border-color var(--mb-ease) 160ms, background var(--mb-ease) 160ms;
 }
-.mb-dayrow:hover { background: var(--mb-surface-2); }
-.mb-dayrow.active { border-color: var(--mb-sky); background: var(--mb-surface-2); }
-
-.mb-dayrow-left { display: flex; flex-direction: column; gap: 2px; flex: none; width: 74px; }
-.mb-dayrow-label { font-size: 13px; font-weight: 800; color: var(--mb-sky); letter-spacing: 0.02em; }
-.mb-dayrow-date { font-size: 10.5px; color: var(--mb-muted); font-variant-numeric: tabular-nums; }
-
-.mb-dayrow-mid { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
-.mb-dayrow-names {
-  font-size: 13px;
+.mb-tl-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 13px;
+  transition: background var(--mb-ease) 160ms;
+}
+.mb-tl-row:hover { background: var(--mb-surface-2); }
+.mb-tl-time {
+  flex: none;
+  width: 42px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--mb-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.mb-tl-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--mb-node-border);
+  background: var(--mb-surface);
+}
+/* 이미 다녀온 곳은 마디를 채운다 — 활성 DAY에서만 기록이 있으므로 다른 날엔 그냥 빈 마디다 */
+.mb-tl-row.is-visited .mb-tl-dot { background: var(--mb-sky); border-color: var(--mb-sky); }
+.mb-tl-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.mb-tl-name {
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--mb-ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.mb-dayrow-sub { font-size: 11px; color: var(--mb-muted); font-variant-numeric: tabular-nums; }
-.mb-dayrow-empty { font-size: 12.5px; color: var(--mb-muted); opacity: 0.7; }
-.mb-dayrow-chev { display: grid; place-items: center; color: var(--mb-muted); flex: none; }
-.mb-dayrow-chev svg { width: 15px; height: 15px; }
+.mb-tl-meta { font-size: 11px; color: var(--mb-muted); }
+/* 건너뛴 곳은 지우지 않고 흐리게 — 계획에 있었다는 사실 자체가 정보다 */
+.mb-tl-row.is-skipped .mb-tl-name { color: var(--mb-muted); text-decoration: line-through; }
+
+.mb-tl-leg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 13px 5px 55px;
+  font-size: 11px;
+  color: var(--mb-muted);
+  background: var(--mb-fill-faint);
+  font-variant-numeric: tabular-nums;
+}
+.mb-tl-leg-ic { display: grid; place-items: center; }
+.mb-tl-leg-ic svg { width: 12px; height: 12px; }
+.mb-tl-leg-ic.walk { color: var(--mb-walk); }
+.mb-tl-leg-ic.transit { color: var(--mb-transit); }
+.mb-tl-leg-ic.taxi { color: var(--mb-taxi); }
+.mb-tl-est { opacity: 0.7; }
+
+.mb-tl-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex: none;
+  padding: 0 2px;
+  font-size: 11.5px;
+  color: var(--mb-muted);
+  font-variant-numeric: tabular-nums;
+}
+.mb-tl-open {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: none;
+  width: 100%;
+  margin-bottom: 16px;
+  padding: 12px;
+  min-height: 44px;
+  border-radius: var(--mb-radius-sm);
+  border: 1px solid var(--mb-line-soft);
+  background: var(--mb-surface);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--mb-ink-2);
+  transition: border-color var(--mb-ease) 160ms, color var(--mb-ease) 160ms;
+}
+.mb-tl-open svg { width: 13px; height: 13px; }
+.mb-tl-open:hover { border-color: var(--mb-sky); color: var(--mb-sky); }
 
 /* ══════════════ 하단 탭 ══════════════ */
 
