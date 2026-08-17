@@ -82,9 +82,18 @@ import {
   CURRENCIES,
 } from '../expense/expenseModel';
 import type { ExpenseCtx, ExpenseCategory } from '../expense/expenseModel';
+import {
+  loadChecklist,
+  addChecklistItem,
+  setChecklistChecked,
+  deleteChecklistItem,
+  subscribeChecklist,
+  unsubscribeChecklist,
+  resetChecklistStorageProbe,
+} from './checklist';
 import { requestPlaceBrief, placeBriefKey } from '../timeline/placeBrief';
 import type { PlaceBrief, PlaceBriefRequest } from '../timeline/placeBrief';
-import type { Database, TripDestination } from '../types/database';
+import type { Database, TripDestination, StaySegment, TripChecklistItem, TripLink } from '../types/database';
 import './mobile.css';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -144,6 +153,11 @@ let days: TlDay[] = [];
 let activeDayIndex = 0;
 let activeTab: MbTab = 'today';
 
+/** 숙소 구간(체크인~체크아웃)과 그 숙소 Place를 찾기 위한 조회표 — 둘 다 loadDayModel이 이미
+ *  돌려주는 값이라 MORE 탭 때문에 따로 조회하지 않는다(원칙 3-2). */
+let staySegments: StaySegment[] = [];
+let placeById = new Map<string, Place>();
+
 /** 열려 있는 장소 상세의 stop key (null이면 목록 화면) */
 let detailKey: string | null = null;
 let detailTab: PdTab = 'overview';
@@ -176,11 +190,26 @@ let padSaving = false;
 /** 현재 통화의 환율 미리보기(≈₩) — fetchRate가 통화당 1회만 조회하고 캐시한다 */
 let padRate: { rate: number | null; source: string } | null = null;
 
+/* ── MORE ── */
+/** 체크리스트·공유 링크. WALLET과 같은 규칙으로 **MORE를 처음 열 때만** 불러온다(원칙 3-2). */
+let moreLoading = false;
+let moreLoaded = false;
+let checklist: TripChecklistItem[] = [];
+/** trip_checklist 마이그레이션 전이면 false — 체크리스트 섹션을 통째로 접는다 */
+let checklistReady = false;
+let checklistAdding = false;
+let checklistDraft = '';
+/** 채팅에 공유된 링크 중 숙소·액티비티(=예약 흔적)만 */
+let tripLinks: TripLink[] = [];
+let linksChannel: ReturnType<typeof supabase.channel> | null = null;
+
 export function teardownMobile(): void {
   unsubscribeRoutePlan();
   resetRouteStorageProbe();
   unsubscribeStopProgress();
   resetStopProgressStorageProbe();
+  unsubscribeChecklist();
+  resetChecklistStorageProbe();
   if (nowTimer) {
     clearInterval(nowTimer);
     nowTimer = null;
@@ -191,6 +220,8 @@ export function teardownMobile(): void {
   activeDestId = null;
   allDestinations = [];
   days = [];
+  staySegments = [];
+  placeById = new Map();
   activeDayIndex = 0;
   activeTab = 'today';
   detailKey = null;
@@ -214,6 +245,17 @@ export function teardownMobile(): void {
   padCategory = 'ETC';
   padSaving = false;
   padRate = null;
+  if (linksChannel) {
+    supabase.removeChannel(linksChannel);
+    linksChannel = null;
+  }
+  moreLoading = false;
+  moreLoaded = false;
+  checklist = [];
+  checklistReady = false;
+  checklistAdding = false;
+  checklistDraft = '';
+  tripLinks = [];
 }
 
 /* ══════════════ 유틸 ══════════════ */
@@ -274,6 +316,22 @@ function gotoGate(gate: string): void {
 }
 
 /**
+ * 주소 복사 — 택시 기사에게 보여줄 주소를 손으로 옮겨 적지 않게 한다.
+ * 결과는 버튼 글자로만 알린다(토스트 인프라를 이 화면 하나 때문에 만들지 않는다).
+ * navigator.clipboard는 HTTPS에서만 있으므로 없으면 조용히 넘어간다.
+ */
+async function copyToClipboard(text: string, btn: HTMLElement): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    const original = btn.innerHTML;
+    btn.innerHTML = IC.check + ' 복사됨';
+    setTimeout(() => { btn.innerHTML = original; }, 1600);
+  } catch (e) {
+    console.error('[Mobile] 주소 복사 실패:', e);
+  }
+}
+
+/**
  * 이 정류지로 가는 길찾기 링크(Google Maps). URL 조합뿐이라 API 비용이 0(원칙 3-2).
  * 목적지는 좌표가 있으면 좌표로, 없으면 이름으로 잡는다. 출발지는 일부러 넣지 않는다 —
  * 비워두면 Google Maps가 이 링크를 여는 기기의 현재 위치를 출발지로 자동으로 잡아준다
@@ -308,6 +366,8 @@ export async function renderMobileContent(host: HTMLElement, tripId: string): Pr
   days = model.days;
   allDestinations = model.destinations;
   activeDestId = model.activeDestId;
+  staySegments = model.staySegments;
+  placeById = model.ctx.placeById;
 
   // 여행 중이면 오늘 DAY로, 아니면 일정이 처음 들어 있는 DAY로 연다
   const today = todayDayIndex();
@@ -331,6 +391,8 @@ async function reloadFromRemote(): Promise<void> {
   days = model.days;
   allDestinations = model.destinations;
   activeDestId = model.activeDestId;
+  staySegments = model.staySegments;
+  placeById = model.ctx.placeById;
   if (activeDayIndex >= days.length) activeDayIndex = Math.max(0, days.length - 1);
   render();
 }
@@ -426,7 +488,7 @@ function tabBodyHtml(): string {
   if (activeTab === 'today') return todayTabHtml();
   if (activeTab === 'timeline') return allDaysTabHtml();
   if (activeTab === 'wallet') return walletTabHtml();
-  return comingSoonHtml();
+  return moreTabHtml();
 }
 
 /* ── 상단 바 ── */
@@ -444,11 +506,12 @@ function topBarHtml(): string {
     '</header>',
   ].join('');
 
-  // DAY를 고르는 건 일정 화면에서만 의미가 있다 — 지갑은 하루가 아니라 여행 전체를 다룬다
-  if (activeTab === 'wallet') {
+  // DAY를 고르는 건 일정 화면에서만 의미가 있다 — 지갑·MORE는 하루가 아니라 여행 전체를 다룬다
+  if (activeTab === 'wallet' || activeTab === 'more') {
+    const title = activeTab === 'wallet' ? '지갑' : '여행 정보';
     return [
       brandRow,
-      '<div class="mb-daybar"><span class="mb-screen-title">지갑</span></div>',
+      '<div class="mb-daybar"><span class="mb-screen-title">' + title + '</span></div>',
       '<div class="mb-daymeta">',
       '  <span class="mb-date">' + escapeHtml(destName()) + ' · 여행 전체</span>',
       '</div>',
@@ -1265,14 +1328,391 @@ async function savePadExpense(): Promise<void> {
   }
 }
 
-function comingSoonHtml(): string {
+/* ══════════════ MORE 탭 — 하루 바깥의 것들 ══════════════
+ *
+ * TODAY·TIMELINE·WALLET은 전부 "지금 이 하루"를 다룬다. MORE는 하루에 매이지 않는 것들
+ * (숙소, 준비물, 예약 흔적, 같이 가는 사람) 자리다. 잡동사니 서랍이 되기 쉬운 탭이라
+ * 넣는 기준을 하나로 정했다 — **여행 중 폰에서 "지금 당장" 필요한 것만.**
+ * 그래서 트립 설정·멤버 초대·전체 링크 목록 같은 관리 기능은 PC에 남기고 링크로만 넘긴다.
+ *
+ * 섹션 순서는 여행 상태에 따라 바뀐다. 여행 전에는 체크리스트가, 여행 중에는 숙소가 위로
+ * 온다 — 밤에 택시를 잡으며 폰을 여는 사람에게 필요한 건 준비물 목록이 아니라 숙소 주소다.
+ */
+
+/** 채팅에 공유된 링크 중 "예약 흔적"으로 볼 수 있는 카테고리만. 나머지(영상·블로그 등)는
+ *  참고 자료라 여행 중에 급히 열 일이 없다 — 전체 목록은 PC의 LINKS 게이트에 있다. */
+const BOOKING_LINK_CATEGORIES = new Set(['STAY', 'ACTIVITY']);
+
+/**
+ * 추천 준비물 — **자동으로 넣지 않는다.** 눌러야 추가되는 입력 도우미일 뿐이라
+ * 원칙 3-1(없는 데이터를 지어내지 않는다)에 걸리지 않는다. 빈 목록 앞에서
+ * "뭘 적지"로 막히는 걸 없애는 게 목적이고, 이미 목록에 있는 항목은 칩에서 사라진다.
+ */
+const CHECKLIST_SUGGESTIONS = ['여권', '항공권', '유심 · eSIM', '여행자보험', '보조배터리', '멀티어댑터', '상비약', '환전'];
+
+/** MORE를 처음 열 때 한 번만 — 체크리스트와 공유 링크를 같이 불러온다(원칙 3-2). */
+async function ensureMoreCtx(): Promise<void> {
+  if (moreLoaded || moreLoading || !currentTripId) return;
+  moreLoading = true;
+  render();
+  try {
+    const [items, linkRes] = await Promise.all([
+      loadChecklist(currentTripId),
+      supabase
+        .from('trip_links')
+        .select('*')
+        .eq('trip_id', currentTripId)
+        .order('created_at', { ascending: false })
+        .limit(50),
+    ]);
+
+    // null이면 마이그레이션 전 — 섹션을 접고 나머지는 그대로 보여준다
+    checklistReady = items != null;
+    checklist = items ?? [];
+    if (linkRes.error) console.error('[Mobile] 링크 로드 실패:', linkRes.error.message);
+    tripLinks = ((linkRes.data ?? []) as TripLink[]).filter((l) => BOOKING_LINK_CATEGORIES.has(l.category));
+
+    moreLoaded = true;
+    if (checklistReady) subscribeChecklist(currentTripId, () => { void reloadChecklist(); });
+    subscribeLinks();
+  } catch (e) {
+    console.error('[Mobile] MORE 로드 실패:', e);
+  } finally {
+    moreLoading = false;
+    render();
+  }
+}
+
+async function reloadChecklist(): Promise<void> {
+  if (!currentTripId) return;
+  const items = await loadChecklist(currentTripId);
+  if (items == null) return;
+  checklist = items;
+  if (activeTab === 'more') render();
+}
+
+/** 다른 멤버가 채팅에 예약 링크를 올리면 MORE에도 즉시 뜬다 (expenses와 같은 패턴) */
+function subscribeLinks(): void {
+  if (linksChannel || !currentTripId) return;
+  linksChannel = supabase
+    .channel('mb-links:' + currentTripId)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'trip_links', filter: 'trip_id=eq.' + currentTripId },
+      () => { void reloadLinks(); }
+    )
+    .subscribe();
+}
+
+async function reloadLinks(): Promise<void> {
+  if (!currentTripId) return;
+  const { data, error } = await supabase
+    .from('trip_links')
+    .select('*')
+    .eq('trip_id', currentTripId)
+    .order('created_at', { ascending: false })
+    .limit(50);
+  if (error) return;
+  tripLinks = ((data ?? []) as TripLink[]).filter((l) => BOOKING_LINK_CATEGORIES.has(l.category));
+  if (activeTab === 'more') render();
+}
+
+function moreTabHtml(): string {
+  if (moreLoading && !moreLoaded) {
+    return '<div class="mb-wallet-loading"><span class="mb-spinner"></span>불러오는 중…</div>';
+  }
+
+  // 여행 중이면 숙소가, 여행 전이면 준비물이 먼저다 (섹션 주석 참고)
+  const traveling = todayDayIndex() >= 0;
+  const stay = stayCardHtml();
+  const check = checklistSecHtml();
+
   return [
-    '<div class="mb-empty">',
-    '  <div class="mb-empty-title">MORE</div>',
-    '  <p class="mb-empty-sub">체크리스트·티켓 지갑·채팅이 이 탭에 들어올 예정이에요.<br />지금은 PC 화면에서 이용할 수 있어요.</p>',
-    '  <button class="mb-ghost-btn" id="mb-goto-desktop">PC 화면으로 열기</button>',
-    '</div>',
+    tripHeadHtml(),
+    traveling ? stay + check : check + stay,
+    bookingLinksHtml(),
+    moreLinksHtml(),
   ].join('');
+}
+
+/** 여행 요약 한 줄 — 어디로, 언제, 며칠 남았나. 전부 trips/destinations에 이미 있는 값이다. */
+function tripHeadHtml(): string {
+  const start = days.find((d) => d.date)?.date ?? null;
+  const end = [...days].reverse().find((d) => d.date)?.date ?? null;
+  const todayIdx = todayDayIndex();
+
+  let badge = '';
+  if (todayIdx >= 0) {
+    badge = '<span class="mb-more-badge is-live">여행 중 · ' + escapeHtml(days[todayIdx].label) + '</span>';
+  } else if (start) {
+    const left = daysBetween(todayISO(), start);
+    if (left > 0) badge = '<span class="mb-more-badge">D-' + left + '</span>';
+    else badge = '<span class="mb-more-badge">여행 완료</span>';
+  }
+
+  const range = start && end ? dateLabel(start) + ' – ' + dateLabel(end) : '';
+
+  return [
+    '<section class="mb-more-head">',
+    '  <div class="mb-more-head-top">',
+    '    <h2 class="mb-more-title">' + escapeHtml(currentTrip?.name || destName()) + '</h2>',
+    badge,
+    '  </div>',
+    range ? '  <div class="mb-more-sub">' + escapeHtml(destName()) + ' · ' + escapeHtml(range) + '</div>' : '',
+    '</section>',
+  ].join('');
+}
+
+/* ── 숙소 ── */
+
+/** 그날 밤 묵는 구간. end_date는 체크아웃 날이므로 "start ≤ 날짜 < end"가 숙박한 밤이다. */
+function staySegmentOn(dateISO: string | null): StaySegment | null {
+  if (!dateISO) return null;
+  return (
+    staySegments.find(
+      (seg) => seg.start_date != null && seg.end_date != null && seg.start_date <= dateISO && dateISO < seg.end_date
+    ) ?? null
+  );
+}
+
+function stayPlaceOf(seg: StaySegment): Place | null {
+  return seg.basecamp_place_id ? placeById.get(seg.basecamp_place_id) ?? null : null;
+}
+
+/**
+ * 오늘 밤(여행 전이면 첫날 밤) 묵는 숙소 하나. 확정된 숙소가 없으면 지어내지 않고
+ * "아직 확정 안 됨"으로 남기고 PC의 STAY로 넘긴다(원칙 3-1).
+ */
+function stayCardHtml(): string {
+  if (!staySegments.length) return '';
+
+  const todayIdx = todayDayIndex();
+  const refDate = todayIdx >= 0 ? todayISO() : days.find((d) => d.date)?.date ?? null;
+  const seg = staySegmentOn(refDate) ?? staySegments[0];
+  const place = stayPlaceOf(seg);
+  const isTonight = todayIdx >= 0 && staySegmentOn(todayISO()) === seg;
+
+  const head =
+    '  <div class="mb-more-sec-head">' +
+    '<h4 class="mb-more-sec-title">' + (isTonight ? '오늘 밤 숙소' : '숙소') + '</h4>' +
+    (staySegments.length > 1 ? '<span class="mb-more-sec-note">구간 ' + staySegments.length + '개</span>' : '') +
+    '</div>';
+
+  if (!place) {
+    return [
+      '<section class="mb-more-sec">',
+      head,
+      '  <button class="mb-stay-card is-empty" id="mb-goto-stay">',
+      '    <span class="mb-stay-ic">' + IC.bag + '</span>',
+      '    <div class="mb-stay-main">',
+      '      <div class="mb-stay-name">숙소가 아직 확정되지 않았어요</div>',
+      '      <div class="mb-stay-meta">' + escapeHtml(seg.zone_name ?? destName()) + ' · PC의 STAY에서 정할 수 있어요</div>',
+      '    </div>',
+      '    <span class="mb-stay-chev">' + IC.chevRight + '</span>',
+      '  </button>',
+      '</section>',
+    ].join('');
+  }
+
+  const nights =
+    seg.start_date && seg.end_date
+      ? Math.max(0, daysBetween(seg.start_date, seg.end_date))
+      : 0;
+  const stayRange =
+    seg.start_date && seg.end_date
+      ? dateLabel(seg.start_date) + ' – ' + dateLabel(seg.end_date) + (nights > 0 ? ' · ' + nights + '박' : '')
+      : '';
+  const href =
+    'https://www.google.com/maps/dir/?api=1&destination=' +
+    encodeURIComponent(place.lat != null && place.lng != null ? place.lat + ',' + place.lng : place.name);
+
+  return [
+    '<section class="mb-more-sec">',
+    head,
+    '  <div class="mb-stay-card">',
+    '    <span class="mb-stay-ic">' + IC.bag + '</span>',
+    '    <div class="mb-stay-main">',
+    '      <div class="mb-stay-name">' + escapeHtml(place.name) + '</div>',
+    // 주소는 DB에 있을 때만 — 없으면 그 줄이 사라진다(원칙 3-1)
+    place.address ? '      <div class="mb-stay-addr">' + escapeHtml(place.address) + '</div>' : '',
+    stayRange ? '      <div class="mb-stay-meta">' + escapeHtml(stayRange) + '</div>' : '',
+    '    </div>',
+    '  </div>',
+    '  <div class="mb-stay-actions">',
+    '    <a class="mb-stay-btn is-primary" href="' + href + '" target="_blank" rel="noopener">' + IC.navigate + ' 길찾기</a>',
+    place.address
+      ? '    <button class="mb-stay-btn" data-copy="' + escapeHtml(place.address) + '">' + IC.share + ' 주소 복사</button>'
+      : '',
+    '  </div>',
+    '</section>',
+  ].join('');
+}
+
+/* ── 준비 체크리스트 ── */
+
+function checklistSecHtml(): string {
+  // 마이그레이션 전이면 섹션을 통째로 접는다 — 저장이 안 되는 입력창을 띄우면 적은 게 사라진다
+  if (!checklistReady) return '';
+
+  const done = checklist.filter((c) => c.checked_at != null).length;
+  const total = checklist.length;
+  const pct = total ? Math.round((done / total) * 100) : 0;
+
+  const rows = checklist
+    .map((c) => {
+      const checked = c.checked_at != null;
+      return [
+        '<div class="mb-ck-row' + (checked ? ' is-done' : '') + '">',
+        '  <button class="mb-ck-box" data-ck-toggle="' + c.id + '" aria-pressed="' + checked + '" aria-label="' + escapeHtml(c.title) + '">',
+        checked ? IC.check : '',
+        '  </button>',
+        '  <div class="mb-ck-main">',
+        '    <div class="mb-ck-title">' + escapeHtml(c.title) + '</div>',
+        // 누가 했는지는 저장된 이름이 있을 때만 (원칙 3-1)
+        checked && c.checked_by_name
+          ? '    <div class="mb-ck-by">' + escapeHtml(c.checked_by_name) + ' 완료</div>'
+          : '',
+        '  </div>',
+        '  <button class="mb-ck-del" data-ck-del="' + c.id + '" aria-label="삭제">' + IC.close + '</button>',
+        '</div>',
+      ].join('');
+    })
+    .join('');
+
+  const taken = new Set(checklist.map((c) => c.title));
+  const suggestions = CHECKLIST_SUGGESTIONS.filter((s) => !taken.has(s));
+
+  return [
+    '<section class="mb-more-sec">',
+    '  <div class="mb-more-sec-head">',
+    '    <h4 class="mb-more-sec-title">준비 체크리스트</h4>',
+    total ? '    <span class="mb-more-sec-note">' + done + ' / ' + total + '</span>' : '',
+    '  </div>',
+    total
+      ? '  <div class="mb-ck-gauge"><span class="mb-ck-gauge-fill" style="width:' + pct + '%"></span></div>'
+      : '  <p class="mb-ck-empty">같이 가는 사람 모두가 보는 목록이에요. 아래에서 눌러 담아보세요.</p>',
+    total ? '  <div class="mb-ck-list">' + rows + '</div>' : '',
+    suggestions.length
+      ? '  <div class="mb-ck-chips">' +
+        suggestions.map((s) => '<button class="mb-ck-chip" data-ck-add="' + escapeHtml(s) + '">' + IC.plus + escapeHtml(s) + '</button>').join('') +
+        '  </div>'
+      : '',
+    checklistAdding
+      ? [
+          '  <form class="mb-ck-form" id="mb-ck-form">',
+          '    <input class="mb-ck-input" id="mb-ck-input" type="text" placeholder="직접 입력" value="' + escapeHtml(checklistDraft) + '" maxlength="60" />',
+          '    <button class="mb-ck-submit" type="submit">추가</button>',
+          '  </form>',
+        ].join('')
+      : '  <button class="mb-ck-open" id="mb-ck-open">' + IC.plus + ' 직접 추가</button>',
+    '</section>',
+  ].join('');
+}
+
+/* ── 예약·티켓 링크 ── */
+
+/**
+ * "티켓 지갑"이라고 부르지 않는다 — 우리가 가진 건 예약 확인서가 아니라 **채팅에 공유된
+ * 링크**뿐이고, 그 이상인 척하면 사용자가 없는 걸 믿게 된다(원칙 3-1). 대신 여행 중에
+ * 급히 열 만한 숙소·액티비티 링크만 골라 크게 눌리게 둔다.
+ */
+function bookingLinksHtml(): string {
+  if (!tripLinks.length) return '';
+
+  const rows = tripLinks
+    .slice(0, 6)
+    .map((l) => {
+      let host = l.url;
+      try { host = new URL(l.url).hostname.replace(/^www\./, ''); } catch { /* 잘못된 URL이면 원문 그대로 */ }
+      const label = l.title || l.site_name || host;
+      return [
+        '<a class="mb-bk-row" href="' + escapeHtml(l.url) + '" target="_blank" rel="noopener">',
+        l.image_url
+          ? '  <span class="mb-bk-thumb" style="background-image:url(' + escapeHtml(l.image_url) + ')"></span>'
+          : '  <span class="mb-bk-thumb is-blank">' + IC.bookmark + '</span>',
+        '  <div class="mb-bk-main">',
+        '    <div class="mb-bk-title">' + escapeHtml(label) + '</div>',
+        '    <div class="mb-bk-host">' + escapeHtml(host) + '</div>',
+        '  </div>',
+        '  <span class="mb-bk-ext">' + IC.ext + '</span>',
+        '</a>',
+      ].join('');
+    })
+    .join('');
+
+  return [
+    '<section class="mb-more-sec">',
+    '  <div class="mb-more-sec-head">',
+    '    <h4 class="mb-more-sec-title">예약 · 티켓 링크</h4>',
+    '    <span class="mb-more-sec-note">채팅에서 모임</span>',
+    '  </div>',
+    '  <div class="mb-bk-list">' + rows + '</div>',
+    tripLinks.length > 6
+      ? '  <button class="mb-wal-more" id="mb-more-links">공유된 링크 전체 보기 ' + IC.chevRight + '</button>'
+      : '',
+    '</section>',
+  ].join('');
+}
+
+/** PC로 넘기는 줄들 — 모바일에서 만들지 않기로 한 기능은 숨기지 말고 어디 있는지 알려준다 */
+function moreLinksHtml(): string {
+  const rows: Array<{ id: string; icon: string; label: string; sub: string }> = [
+    { id: 'mb-more-chat', icon: IC.bell, label: '채팅 · 공유 링크', sub: '같이 가는 사람들과 나눈 이야기' },
+    { id: 'mb-more-plan', icon: IC.route, label: '일정 편집', sub: '순서·이동수단 변경은 PC에서' },
+    { id: 'mb-more-expense', icon: IC.wallet, label: '전체 지출 · 예산 설정', sub: '차트와 필터가 있는 대시보드' },
+  ];
+  return [
+    '<section class="mb-more-sec">',
+    '  <div class="mb-more-list">',
+    rows
+      .map(
+        (r) =>
+          '<button class="mb-more-row" id="' + r.id + '">' +
+          '<span class="mb-more-row-ic">' + r.icon + '</span>' +
+          '<div class="mb-more-row-main">' +
+          '<div class="mb-more-row-label">' + escapeHtml(r.label) + '</div>' +
+          '<div class="mb-more-row-sub">' + escapeHtml(r.sub) + '</div>' +
+          '</div>' +
+          '<span class="mb-more-row-chev">' + IC.chevRight + '</span>' +
+          '</button>'
+      )
+      .join(''),
+    '  </div>',
+    '</section>',
+  ].join('');
+}
+
+/* ── 체크리스트 동작 (낙관적 갱신 — 카드의 도착 기록과 같은 이유) ── */
+
+async function toggleChecklistItem(id: string): Promise<void> {
+  const item = checklist.find((c) => c.id === id);
+  if (!item) return;
+  const next = item.checked_at == null;
+
+  checklist = checklist.map((c) =>
+    c.id === id ? { ...c, checked_at: next ? new Date().toISOString() : null, checked_by_name: next ? c.checked_by_name : null } : c
+  );
+  render();
+
+  const ok = await setChecklistChecked(id, next);
+  if (ok) await reloadChecklist();
+}
+
+async function addChecklist(title: string): Promise<void> {
+  const trimmed = title.trim();
+  if (!trimmed || !currentTripId) return;
+  if (checklist.some((c) => c.title === trimmed)) return;
+
+  const maxOrder = checklist.reduce((m, c) => Math.max(m, c.sort_order), 0);
+  const created = await addChecklistItem(currentTripId, trimmed, maxOrder + 1);
+  if (created) await reloadChecklist();
+}
+
+async function removeChecklist(id: string): Promise<void> {
+  checklist = checklist.filter((c) => c.id !== id);
+  render();
+  const ok = await deleteChecklistItem(id);
+  if (ok) await reloadChecklist();
 }
 
 function emptyHtml(title: string, sub: string): string {
@@ -1604,6 +2044,7 @@ function bind(): void {
       activeTab = tab;
       render();
       if (tab === 'wallet') void ensureExpenseCtx();
+      if (tab === 'more') void ensureMoreCtx();
     });
   });
 
@@ -1718,6 +2159,48 @@ function bind(): void {
   root.querySelector('#mb-wal-add')?.addEventListener('click', () => openPad());
   root.querySelector('#mb-wal-pc')?.addEventListener('click', () => gotoGate('expense'));
   root.querySelector('#mb-wal-settle')?.addEventListener('click', () => gotoGate('expense'));
+
+  // ── MORE ──
+  root.querySelector('#mb-goto-stay')?.addEventListener('click', () => gotoGate('shortlist'));
+  root.querySelector('#mb-more-links')?.addEventListener('click', () => gotoGate('links'));
+  root.querySelector('#mb-more-chat')?.addEventListener('click', () => gotoGate('links'));
+  root.querySelector('#mb-more-plan')?.addEventListener('click', () => gotoGate('route'));
+  root.querySelector('#mb-more-expense')?.addEventListener('click', () => gotoGate('expense'));
+
+  root.querySelectorAll('[data-copy]').forEach((btn) => {
+    btn.addEventListener('click', () => { void copyToClipboard((btn as HTMLElement).dataset.copy!, btn as HTMLElement); });
+  });
+
+  // ── 체크리스트 ──
+  root.querySelectorAll('[data-ck-toggle]').forEach((btn) => {
+    btn.addEventListener('click', () => { void toggleChecklistItem((btn as HTMLElement).dataset.ckToggle!); });
+  });
+  root.querySelectorAll('[data-ck-del]').forEach((btn) => {
+    btn.addEventListener('click', () => { void removeChecklist((btn as HTMLElement).dataset.ckDel!); });
+  });
+  root.querySelectorAll('[data-ck-add]').forEach((btn) => {
+    btn.addEventListener('click', () => { void addChecklist((btn as HTMLElement).dataset.ckAdd!); });
+  });
+  root.querySelector('#mb-ck-open')?.addEventListener('click', () => {
+    checklistAdding = true;
+    checklistDraft = '';
+    render();
+    (container?.querySelector('#mb-ck-input') as HTMLInputElement | null)?.focus();
+  });
+  const ckForm = root.querySelector('#mb-ck-form') as HTMLFormElement | null;
+  if (ckForm) {
+    const input = ckForm.querySelector('#mb-ck-input') as HTMLInputElement | null;
+    // 입력 중 realtime 재렌더로 글자가 날아가지 않게 초안을 상태에 붙들어 둔다
+    input?.addEventListener('input', () => { checklistDraft = input.value; });
+    ckForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const value = input?.value ?? '';
+      checklistDraft = '';
+      checklistAdding = false;
+      render();
+      void addChecklist(value);
+    });
+  }
 
   // ── 숫자패드 ──
   root.querySelector('#mb-pad-back')?.addEventListener('click', () => { padOpen = false; render(); });
