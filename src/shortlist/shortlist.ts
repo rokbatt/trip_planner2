@@ -60,6 +60,7 @@ const IC_CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const IC_PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-7.58 7-12A7 7 0 0 0 5 10c0 4.42 7 12 7 12z"/><circle cx="12" cy="10" r="2.4"/></svg>';
 const IC_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
 const IC_RULER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.4 2.4 0 0 1 0-3.4l2.6-2.6a2.4 2.4 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2M11.5 9.5l2-2M8.5 6.5l2-2M17.5 15.5l2-2"/></svg>';
+const IC_UNDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4v6h6"/><path d="M3.5 13a8.5 8.5 0 1 0 2.5-6.5L3 10"/></svg>';
 const IC_BUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="13" rx="2"/><path d="M4 11h16M7 20v-3M17 20v-3M8 8h8"/><circle cx="8" cy="14" r=".6" fill="currentColor"/><circle cx="16" cy="14" r=".6" fill="currentColor"/></svg>';
 const IC_HOUSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-6 8 6M6 10v9h12v-9M10 19v-5h4v5"/></svg>';
 const IC_BUILDING = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V6l7-3 7 3v15M9 21v-4h6v4M8 9h.01M12 9h.01M16 9h.01M8 13h.01M12 13h.01M16 13h.01"/></svg>';
@@ -3209,6 +3210,10 @@ function renderHotelSiteCards(body: HTMLElement, destination: string, zoneName: 
   ].join('')).join('');
 }
 
+/** 여러 사이트에서 모은 후보를 놓고 가격 메모 + 소거법으로 비교하기 쉽도록, 지역 중심까지의
+ *  거리를 항상 같이 보여주고(정렬 기준과 무관하게), 카드 안에서 바로 가격을 적고 "제외"로
+ *  후보에서 지울 수 있게 한다. 제외한 후보는 지우는 게 아니라 흐리게 표시하고 목록 맨 아래로
+ *  보내서 — 마음이 바뀌면 언제든 복원 가능. */
 function renderBasecampList(body: HTMLElement, candidates: Place[]): void {
   const listEl = body.querySelector('#sl-basecamp-list') as HTMLElement;
   if (!listEl) return;
@@ -3218,6 +3223,7 @@ function renderBasecampList(body: HTMLElement, candidates: Place[]): void {
   );
 
   const sorted = [...filtered].sort((a, b) => {
+    if (a.is_excluded !== b.is_excluded) return a.is_excluded ? 1 : -1;
     if (step2SortMode === 'rating') {
       return (b.google_rating ?? 0) - (a.google_rating ?? 0);
     }
@@ -3246,15 +3252,27 @@ function renderBasecampList(body: HTMLElement, candidates: Place[]): void {
   listEl.innerHTML = sorted
     .map((c) => {
       const isSelected = pendingHotelId === c.id;
+      const isExcluded = c.is_excluded;
+      const distanceLabel = (() => {
+        if (!selectedZone || c.lat == null || c.lng == null) return '';
+        const km = haversineKm(selectedZone.centerLat, selectedZone.centerLng, c.lat, c.lng);
+        return km < 1 ? Math.round(km * 1000) + 'm' : km.toFixed(1) + 'km';
+      })();
+
       return [
-        '<button type="button" class="sl-basecamp-card' + (isSelected ? ' selected' : '') + '" data-place-id="' + c.id + '">',
+        '<div class="sl-basecamp-card' + (isSelected ? ' selected' : '') + (isExcluded ? ' excluded' : '') + '" data-place-id="' + c.id + '">',
+        '  <button type="button" class="sl-basecamp-exclude-btn" data-exclude-toggle="1" title="' + (isExcluded ? '후보로 복원' : '비교에서 제외') + '">' + (isExcluded ? IC_UNDO : IC_XCLOSE) + '</button>',
         c.photo_url ? '<div class="sl-basecamp-thumb" style="background-image:url(\'' + c.photo_url + '\')"></div>' : '<div class="sl-basecamp-thumb sl-basecamp-thumb-empty">' + IC_BED + '</div>',
         '  <div class="sl-basecamp-info">',
         '    <div class="sl-basecamp-name">' + escapeHtml(c.name) + '</div>',
-        typeof c.google_rating === 'number' ? '<div class="sl-basecamp-rating">★ ' + c.google_rating.toFixed(1) + '</div>' : '',
+        '    <div class="sl-basecamp-meta-row">',
+        typeof c.google_rating === 'number' ? '<span class="sl-basecamp-rating">★ ' + c.google_rating.toFixed(1) + '</span>' : '',
+        distanceLabel ? '<span class="sl-basecamp-distance">' + IC_RULER + distanceLabel + '</span>' : '',
+        '    </div>',
+        '    <input type="text" class="sl-basecamp-price-input" data-place-id="' + c.id + '" placeholder="가격 메모 (예: 1박 15만원)" value="' + escapeHtml(c.price_note ?? '') + '" />',
         '  </div>',
         isSelected ? '<span class="sl-basecamp-selected-badge">' + IC_CHECK + '</span>' : '',
-        '</button>',
+        '</div>',
       ].join('');
     })
     .join('');
@@ -3262,12 +3280,74 @@ function renderBasecampList(body: HTMLElement, candidates: Place[]): void {
   listEl.querySelectorAll('.sl-basecamp-card').forEach((card) => {
     card.addEventListener('click', () => {
       const placeId = (card as HTMLElement).dataset.placeId;
-      pendingHotelId = pendingHotelId === placeId ? null : (placeId ?? null);
+      const nowSelecting = pendingHotelId !== placeId;
+      pendingHotelId = nowSelecting ? (placeId ?? null) : null;
+      // 제외해둔 후보를 최종 선택하면 "제외" 표시는 앞뒤가 안 맞으니 같이 풀어준다
+      if (nowSelecting && placeId) {
+        const place = allPlaces.find((p) => p.id === placeId);
+        if (place?.is_excluded) {
+          place.is_excluded = false;
+          void supabase.from('places').update({ is_excluded: false }).eq('id', placeId);
+        }
+      }
       renderBasecampList(body, candidates);
       renderSelectedHotelPreview(body, candidates);
       highlightBasecampMarker(pendingHotelId);
     });
   });
+
+  listEl.querySelectorAll('[data-exclude-toggle]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const placeId = (btn.closest('.sl-basecamp-card') as HTMLElement | null)?.dataset.placeId;
+      if (placeId) void toggleExcludeCandidate(body, candidates, placeId);
+    });
+  });
+
+  listEl.querySelectorAll('.sl-basecamp-price-input').forEach((input) => {
+    input.addEventListener('click', (e) => e.stopPropagation());
+    input.addEventListener('blur', () => {
+      const placeId = (input as HTMLElement).dataset.placeId;
+      if (placeId) void savePriceNote(placeId, (input as HTMLInputElement).value);
+    });
+    input.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key === 'Enter') (input as HTMLInputElement).blur();
+    });
+  });
+}
+
+/** 가격 메모 저장 — 통화·환산 없는 자유 텍스트라 그대로 저장만 한다. 입력 중 포커스를
+ *  잃지 않도록 목록을 다시 그리지 않고 allPlaces/candidates가 공유하는 레퍼런스만 갱신. */
+async function savePriceNote(placeId: string, value: string): Promise<void> {
+  const trimmed = value.trim();
+  const place = allPlaces.find((p) => p.id === placeId);
+  const { error } = await supabase.from('places').update({ price_note: trimmed || null }).eq('id', placeId);
+  if (error) {
+    console.error('가격 메모 저장 실패:', error.message);
+    return;
+  }
+  if (place) place.price_note = trimmed || null;
+}
+
+/** 소거법 지원 — 삭제가 아니라 "제외" 표시만 토글(카드가 흐려지고 목록 맨 아래로), 언제든 복원 가능 */
+async function toggleExcludeCandidate(body: HTMLElement, candidates: Place[], placeId: string): Promise<void> {
+  const place = allPlaces.find((p) => p.id === placeId);
+  if (!place) return;
+  const next = !place.is_excluded;
+  const { error } = await supabase.from('places').update({ is_excluded: next }).eq('id', placeId);
+  if (error) {
+    console.error('숙소 제외 상태 저장 실패:', error.message);
+    return;
+  }
+  place.is_excluded = next;
+  // 지금 선택해둔 후보를 제외하면 선택도 같이 풀어서 "제외했는데 여전히 최종 선택"인
+  // 모순 상태(+뱃지·제외 버튼이 같은 자리에서 겹쳐 보이는 문제)를 막는다.
+  if (next && pendingHotelId === placeId) {
+    pendingHotelId = null;
+    renderSelectedHotelPreview(body, candidates);
+    highlightBasecampMarker(null);
+  }
+  renderBasecampList(body, candidates);
 }
 
 function renderSelectedHotelPreview(body: HTMLElement, candidates: Place[]): void {
