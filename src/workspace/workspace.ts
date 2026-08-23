@@ -49,6 +49,7 @@ const IC = {
   panelClose: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
   mapPin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21C12 21 19 14.5 19 9.5C19 5.9 15.9 3 12 3C8.1 3 5 5.9 5 9.5C5 14.5 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.2"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
+  play: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="4"/><path d="M10 9l5 3-5 3V9z" fill="currentColor" stroke="none"/></svg>',
 };
 
 interface NavItem {
@@ -804,6 +805,14 @@ function buildDetailPanelShell(place: any): string {
     '</a>',
   ].join('');
 
+  const youtubeUrl = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(place.name);
+  const youtubeLink = [
+    '<a class="ws-maps-link ws-youtube-link" href="' + youtubeUrl + '" target="_blank" rel="noopener noreferrer">',
+    IC.play,
+    '<span>YouTube에서 검색</span>',
+    '</a>',
+  ].join('');
+
   const address = place.address
     ? '<div class="ws-detail-section"><span class="ws-detail-label">주소</span><div class="ws-detail-text">' + escapeHtml(place.address) + '</div></div>'
     : '';
@@ -834,7 +843,7 @@ function buildDetailPanelShell(place: any): string {
            rating,
     '    </div>',
     '    <span class="ws-detail-save-hint" id="detail-name-hint"></span>',
-    '    <div class="ws-detail-links">' + mapsLink + searchLink + '</div>',
+    '    <div class="ws-detail-links">' + mapsLink + searchLink + youtubeLink + '</div>',
          category,
          address,
          hours,

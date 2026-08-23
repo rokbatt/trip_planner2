@@ -907,13 +907,16 @@
 /*
  * outline은 border와 달리 박스 크기(레이아웃)에 전혀 영향을 주지 않는다 — padding:0이라
  * 카드는 그룹 없는 카드와 완전히 같은 위치에서 시작하고, outline-offset으로 테두리만
- * 카드 바깥쪽에 살짝 띄워서 그린다(활주로 조명 느낌의 주황 실선).
+ * 카드 바깥쪽에 살짝 띄워서 그린다(활주로 조명 느낌의 실선). 색은 JS가 --group-color로
+ * 그룹마다 다르게 채워준다(게이트 안에 그룹이 2개 이상이면 서로 구분되도록) — 기본값은
+ * 기존 주황(단일 그룹일 때 화면이 안 바뀌도록).
  */
 .bd-group-cluster {
+  --group-color: #F5A623;
   position: relative;
   padding: 0;
   border-radius: 12px;
-  outline: 1.5px solid #F5A623;
+  outline: 2px solid var(--group-color);
   outline-offset: 4px;
 }
 /* 평소엔 테두리만 보이고, 클러스터에 마우스를 올렸을 때만 좌상단에 이름표가 나타난다 —
@@ -929,7 +932,7 @@
   gap: 4px;
   padding: 3px 7px;
   background: #FFFFFF;
-  border: 1px solid rgba(245,166,35,0.45);
+  border: 1px solid color-mix(in srgb, var(--group-color) 45%, transparent);
   border-radius: 999px;
   box-shadow: 0 2px 6px rgba(11,42,92,0.1);
   opacity: 0;
@@ -955,8 +958,8 @@
 .bd-group-cluster-count {
   font-size: 9.5px;
   font-weight: 700;
-  color: #E08E00;
-  background: rgba(245,166,35,0.14);
+  color: color-mix(in srgb, var(--group-color) 80%, black 20%);
+  background: color-mix(in srgb, var(--group-color) 14%, white);
   border-radius: 999px;
   padding: 0 6px;
   flex-shrink: 0;
