@@ -1713,6 +1713,30 @@
 .sl-zoom-btn:first-child { border-bottom: 1px solid rgba(130,150,170,0.2); }
 .sl-zoom-btn:hover { background: #F1F6FB; }
 
+/* Step1 지도 좌상단 — 두 장소를 클릭해서 직선거리 재는 토글 버튼 */
+.sl-distance-control { margin: 10px 0 0 10px; }
+.sl-distance-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(11,42,92,0.18);
+  transition: background 120ms ease, color 120ms ease;
+}
+.sl-distance-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+.sl-distance-btn:hover { background: #F1F6FB; }
+.sl-distance-btn.active { background: #0B2A5C; color: #fff; }
+/* 측정 모드에서는 지도를 눌렀을 때 핀 클릭을 유도 — 커서로 상태를 알려줌 */
+.sl-map.sl-distance-mode { cursor: crosshair; }
+
 /* ── 이름으로 숙소 추가 ── */
 .sl-import-link-wrap {
   margin-bottom: 14px;
