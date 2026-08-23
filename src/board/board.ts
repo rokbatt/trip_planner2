@@ -61,6 +61,10 @@ const ICON_EXPAND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 const ICON_COLLAPSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v3a2 2 0 0 1-2 2H4M15 3v3a2 2 0 0 0 2 2h3M4 15h3a2 2 0 0 1 2 2v3M21 15h-3a2 2 0 0 0-2 2v3"/></svg>';
 const ICON_GROUP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.8"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.8"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.8"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.8"/></svg>';
 
+/** 게이트 하나에 그룹이 2개 이상일 때 서로 구분되도록 순환시키는 팔레트.
+ * 첫 색은 기존 "활주로 조명" 주황을 그대로 유지(그룹이 1개뿐인 기존 화면은 안 바뀜). */
+const GROUP_COLOR_PALETTE = ['#F5A623', '#2A78D6', '#1BAF7A', '#E87BA4', '#4A3AA7'];
+
 const GATES: GateConfig[] = [
   { key: '가고싶어', step: 'GATE 01', label: 'VISIT',    icon: ICON_PIN },
   { key: '먹고싶어', step: 'GATE 02', label: 'FOOD',     icon: ICON_FORK },
@@ -1536,6 +1540,7 @@ function renderGateListContent(listEl: HTMLElement, gateKey: string): void {
   }
 
   let i = 0;
+  let clusterIndex = 0; // 이 게이트 안에서 몇 번째로 만나는 그룹인지 — 그룹별로 다른 색을 쓰기 위함
   while (i < items.length) {
     const place = items[i];
     if (place.group_id) {
@@ -1545,7 +1550,8 @@ function renderGateListContent(listEl: HTMLElement, gateKey: string): void {
         members.push(items[i]);
         i++;
       }
-      listEl.appendChild(buildGroupCluster(groupId, members, gateKey));
+      listEl.appendChild(buildGroupCluster(groupId, members, gateKey, clusterIndex));
+      clusterIndex++;
     } else {
       listEl.appendChild(createBoardingCard(place));
       i++;
@@ -1559,13 +1565,15 @@ function renderGateListContent(listEl: HTMLElement, gateKey: string): void {
 }
 
 /** 그룹 멤버 카드들을 테두리 있는 박스 하나로 묶어서 보여준다 */
-function buildGroupCluster(groupId: string, members: Place[], gateKey: string): HTMLElement {
+function buildGroupCluster(groupId: string, members: Place[], gateKey: string, clusterIndex: number): HTMLElement {
   const cluster = document.createElement('div');
   cluster.className = 'bd-group-cluster';
   cluster.dataset.groupId = groupId;
   // 포커스 모드(게이트 하나만 크게 보기)에서 카드가 가로 그리드로 늘어설 때, 클러스터도
   // 멤버 수만큼 열을 차지해서 안의 카드들이 세로로 쌓이지 않고 가로로 나란히 보이게 함
   cluster.style.setProperty('--group-span', String(Math.max(1, Math.min(members.length, 4))));
+  // 게이트 안에 그룹이 2개 이상이면 서로 다른 색으로 구분
+  cluster.style.setProperty('--group-color', GROUP_COLOR_PALETTE[clusterIndex % GROUP_COLOR_PALETTE.length]);
 
   const name = members[0]?.group_name;
   cluster.innerHTML = [

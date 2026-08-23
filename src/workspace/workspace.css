@@ -710,6 +710,11 @@
 .ws-maps-link:hover { color: #0B2A5C; }
 .ws-maps-link svg { width: 13px; height: 13px; }
 
+/* flex-basis:100%로 항상 새 줄에서 시작 — 컨테이너 폭에 따른 wrap에 기대지 않고
+   "Google에서 검색" 바로 아래에 오도록 고정 */
+.ws-youtube-link { flex-basis: 100%; color: #E0332B; }
+.ws-youtube-link:hover { color: #B91C1C; }
+
 .ws-chip {
   display: inline-block;
   align-self: flex-start;
