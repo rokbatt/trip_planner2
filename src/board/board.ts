@@ -289,6 +289,7 @@ export function teardownBoard(): void {
   closeDestSwitcher();
   cleanupAutocomplete();
   exitGroupSelectMode();
+  closeAiExportModal();
 }
 
 /** 자동완성 드롭다운/디바운스 타이머 정리 */
@@ -754,7 +755,10 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
 
   inbox.innerHTML = [
     '<div class="bd-inbox-header">',
-    '  <div class="bd-inbox-eyebrow">CHECK-IN COUNTER</div>',
+    '  <div class="bd-inbox-header-top">',
+    '    <div class="bd-inbox-eyebrow">CHECK-IN COUNTER</div>',
+    '    <button type="button" class="bd-export-btn" id="bd-export-btn" title="지금까지 모은 장소를 텍스트로 내보내기">' + ICON_EXTERNAL + '<span>AI로 내보내기</span></button>',
+    '  </div>',
     '  <div class="bd-inbox-title">아이디어 체크인</div>',
     '</div>',
     '<form class="bd-inbox-form" id="bd-inbox-form">',
@@ -823,6 +827,8 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
 
   bindAiPicksToggle(inbox, tripId);
   bindPopularSites(inbox);
+
+  inbox.querySelector('#bd-export-btn')?.addEventListener('click', () => openAiExportModal());
 
   return inbox;
 }
@@ -1081,6 +1087,148 @@ function buildInboxEmpty(): string {
     '  <div class="bd-empty-hint">🎤 통화 중 나온 아이디어를 기록하세요</div>',
     '</div>',
   ].join('');
+}
+
+/* ══════════════════ AI로 내보내기 — 담아둔 장소를 텍스트로 정리 ══════════════════
+ * 다른 AI(ChatGPT/Gemini 등)에 붙여넣고 이어서 요청사항을 적으면, 그 AI가 이 장소들
+ * 기준으로 일정을 짜거나 그룹핑을 해주는 식으로 쓰라는 용도. 그래서 순수 데이터만 담고
+ * (지어내지 않고 실제 저장된 값만), AI에게 보내는 지시문은 넣지 않는다 — 지시는 사용자가
+ * 붙여넣은 뒤 직접 이어서 적는 몫. */
+function formatExportPlaceLine(p: Place): string {
+  const bits: string[] = [];
+  if (p.category) bits.push(p.category);
+  if (typeof p.google_rating === 'number') bits.push('★' + p.google_rating.toFixed(1));
+  const meta = bits.length ? ' (' + bits.join(', ') + ')' : '';
+  const addr = p.address ? ' — ' + p.address : '';
+  return '- ' + p.name + meta + addr;
+}
+
+function buildAiExportText(): string {
+  const trip = store.get('currentTrip');
+  const destName = boardActiveDest && !isSyntheticDestination(boardActiveDest.id)
+    ? boardActiveDest.name
+    : (trip?.name ?? '이번 여행');
+
+  const places = boardActiveDest
+    ? Array.from(placesCache.values()).filter((p) => placeBelongsToDestination(p, boardActiveDest!))
+    : Array.from(placesCache.values());
+
+  const lines: string[] = ['[' + destName + ' 여행 · 브레인스토밍 보드에 모은 장소]', ''];
+  let hasAny = false;
+
+  GATES.forEach((gate) => {
+    const gatePlaces = places.filter((p) => p.mood === gate.key).sort(gateSortCompare);
+    if (gatePlaces.length === 0) return;
+    hasAny = true;
+
+    lines.push('■ ' + gate.key + ' (' + gate.label + ')');
+    let i = 0;
+    while (i < gatePlaces.length) {
+      const p = gatePlaces[i];
+      if (p.group_id) {
+        const groupId = p.group_id;
+        lines.push('[그룹: ' + (p.group_name || '그룹') + ']');
+        while (i < gatePlaces.length && gatePlaces[i].group_id === groupId) {
+          lines.push(formatExportPlaceLine(gatePlaces[i]));
+          i++;
+        }
+      } else {
+        lines.push(formatExportPlaceLine(p));
+        i++;
+      }
+    }
+    lines.push('');
+  });
+
+  const inboxPlaces = places.filter((p) => p.mood === null).sort((a, b) => a.sort_order - b.sort_order);
+  if (inboxPlaces.length > 0) {
+    hasAny = true;
+    lines.push('■ 체크인 대기 (아직 게이트로 분류 안 함)');
+    inboxPlaces.forEach((p) => lines.push(formatExportPlaceLine(p)));
+    lines.push('');
+  }
+
+  if (!hasAny) return '아직 담아둔 장소가 없어요. 먼저 브레인스토밍 보드에 장소를 몇 개 담아보세요.';
+
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  return lines.join('\n');
+}
+
+let aiExportOverlayEl: HTMLElement | null = null;
+let aiExportEscHandler: ((e: KeyboardEvent) => void) | null = null;
+
+function closeAiExportModal(): void {
+  aiExportOverlayEl?.remove();
+  aiExportOverlayEl = null;
+  if (aiExportEscHandler) {
+    document.removeEventListener('keydown', aiExportEscHandler);
+    aiExportEscHandler = null;
+  }
+}
+
+function openAiExportModal(): void {
+  closeAiExportModal();
+
+  const text = buildAiExportText();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'bd-export-overlay';
+  overlay.innerHTML = [
+    '<div class="bd-export-modal">',
+    '  <div class="bd-export-header">',
+    '    <div>',
+    '      <div class="bd-export-eyebrow">AI로 내보내기</div>',
+    '      <div class="bd-export-title">모은 장소를 텍스트로 복사하세요</div>',
+    '    </div>',
+    '    <button type="button" class="bd-export-close" id="bd-export-close">' + ICON_CLEAR + '</button>',
+    '  </div>',
+    '  <div class="bd-export-hint">아래 내용을 복사해서 ChatGPT·Gemini 같은 AI에 붙여넣고, 이어서 "이 장소들로 3박4일 일정 짜줘"처럼 요청사항을 적어보세요.</div>',
+    '  <textarea class="bd-export-textarea" id="bd-export-textarea" readonly></textarea>',
+    '  <div class="bd-export-actions">',
+    '    <button type="button" class="bd-export-copy" id="bd-export-copy">복사하기</button>',
+    '  </div>',
+    '</div>',
+  ].join('');
+
+  document.body.appendChild(overlay);
+  aiExportOverlayEl = overlay;
+
+  const textarea = overlay.querySelector('#bd-export-textarea') as HTMLTextAreaElement;
+  textarea.value = text;
+  requestAnimationFrame(() => {
+    textarea.focus();
+    textarea.select();
+  });
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeAiExportModal();
+  });
+  overlay.querySelector('#bd-export-close')?.addEventListener('click', () => closeAiExportModal());
+
+  const copyBtn = overlay.querySelector('#bd-export-copy') as HTMLButtonElement;
+  copyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(text).then(
+      () => {
+        const original = copyBtn.textContent;
+        copyBtn.textContent = '복사됨!';
+        copyBtn.classList.add('copied');
+        setTimeout(() => {
+          copyBtn.textContent = original;
+          copyBtn.classList.remove('copied');
+        }, 1600);
+      },
+      () => {
+        textarea.focus();
+        textarea.select();
+        alert('자동 복사에 실패했어요. 텍스트가 선택되어 있으니 Ctrl+C(⌘+C)로 복사해주세요.');
+      }
+    );
+  });
+
+  aiExportEscHandler = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') closeAiExportModal();
+  };
+  document.addEventListener('keydown', aiExportEscHandler);
 }
 
 /* ── AI Monthly Picks ── */
