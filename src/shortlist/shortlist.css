@@ -1181,6 +1181,10 @@
 }
 .sl-basecamp-card:hover { border-color: var(--sl-sky); }
 .sl-basecamp-card.selected { border-color: #185FA5; background: #E6F1FB; }
+/* 소거법으로 제외한 후보 — 지우지 않고 흐리게(카드는 renderBasecampList에서 이미 맨 아래로 정렬됨) */
+.sl-basecamp-card.excluded { opacity: 0.5; }
+.sl-basecamp-card.excluded .sl-basecamp-name { text-decoration: line-through; }
+.sl-basecamp-card.excluded:hover { opacity: 0.75; }
 .sl-basecamp-thumb {
   width: 56px;
   height: 56px;
@@ -1199,7 +1203,51 @@
 .sl-basecamp-thumb-empty svg { width: 22px; height: 22px; }
 .sl-basecamp-info { flex: 1; min-width: 0; }
 .sl-basecamp-name { font-size: 13.5px; font-weight: 700; color: var(--sl-navy); }
-.sl-basecamp-rating { font-size: 12px; color: #F5A623; font-weight: 700; margin-top: 2px; }
+.sl-basecamp-meta-row { display: flex; align-items: center; gap: 10px; margin-top: 2px; min-height: 15px; }
+.sl-basecamp-rating { font-size: 12px; color: #F5A623; font-weight: 700; }
+.sl-basecamp-distance {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11.5px;
+  color: var(--sl-muted);
+  font-weight: 600;
+}
+.sl-basecamp-distance svg { width: 11px; height: 11px; }
+.sl-basecamp-price-input {
+  width: 100%;
+  margin-top: 6px;
+  padding: 5px 8px;
+  border: 1px solid rgba(130,150,170,0.22);
+  border-radius: 7px;
+  background: #F8FBFE;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--sl-navy);
+  box-sizing: border-box;
+}
+.sl-basecamp-price-input::placeholder { color: #A8B7C7; }
+.sl-basecamp-price-input:focus { outline: none; border-color: var(--sl-sky); background: #FFFFFF; }
+.sl-basecamp-exclude-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(241,246,251,0.9);
+  color: #94A3B8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 150ms ease, color 150ms ease;
+}
+.sl-basecamp-exclude-btn svg { width: 11px; height: 11px; }
+.sl-basecamp-exclude-btn:hover { background: #FDEEEC; color: #C0392B; }
+.sl-basecamp-card.excluded .sl-basecamp-exclude-btn:hover { background: #E6F1FB; color: #185FA5; }
 .sl-basecamp-selected-badge {
   width: 22px;
   height: 22px;

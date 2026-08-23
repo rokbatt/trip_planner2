@@ -113,6 +113,8 @@ export interface Database {
           group_id: string | null;
           group_name: string | null;
           group_order: number | null;
+          price_note: string | null;
+          is_excluded: boolean;
         };
         Insert: {
           id?: string;
@@ -139,6 +141,8 @@ export interface Database {
           group_id?: string | null;
           group_name?: string | null;
           group_order?: number | null;
+          price_note?: string | null;
+          is_excluded?: boolean;
         };
         Update: Partial<Database['public']['Tables']['places']['Insert']>;
         Relationships: [];
