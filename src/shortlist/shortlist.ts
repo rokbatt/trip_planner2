@@ -59,6 +59,7 @@ const IC_ROUTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const IC_CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>';
 const IC_PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-7.58 7-12A7 7 0 0 0 5 10c0 4.42 7 12 7 12z"/><circle cx="12" cy="10" r="2.4"/></svg>';
 const IC_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
+const IC_RULER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.4 2.4 0 0 1 0-3.4l2.6-2.6a2.4 2.4 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2M11.5 9.5l2-2M8.5 6.5l2-2M17.5 15.5l2-2"/></svg>';
 const IC_BUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="13" rx="2"/><path d="M4 11h16M7 20v-3M17 20v-3M8 8h8"/><circle cx="8" cy="14" r=".6" fill="currentColor"/><circle cx="16" cy="14" r=".6" fill="currentColor"/></svg>';
 const IC_HOUSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-6 8 6M6 10v9h12v-9M10 19v-5h4v5"/></svg>';
 const IC_BUILDING = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V6l7-3 7 3v15M9 21v-4h6v4M8 9h.01M12 9h.01M16 9h.01M8 13h.01M12 13h.01M16 13h.01"/></svg>';
@@ -213,6 +214,12 @@ let mapInstance: any = null;
 let mapMarkers: any[] = [];
 let zoneLabelZoomRedrawHandle: number | null = null;
 
+/* ── Step1 지도: 두 장소 클릭해서 직선거리 재기 (API 호출 없음, Haversine) ── */
+let distanceMeasureActive = false;
+let distanceFirstPoint: { lat: number; lng: number } | null = null;
+let distancePolyline: any = null;
+let distanceInfoWindow: any = null;
+
 export function teardownShortlist(): void {
   if (shellResizeHandler) {
     window.removeEventListener('resize', shellResizeHandler);
@@ -262,6 +269,10 @@ export function teardownShortlist(): void {
   reviewSummaryLoading = false;
   reviewSummaryPlaceId = null;
   mapMarkers = [];
+  distanceMeasureActive = false;
+  distanceFirstPoint = null;
+  distancePolyline = null;
+  distanceInfoWindow = null;
   highlightedZoneId = null;
   pendingSelectedZoneId = null;
   zonePolygons = [];
@@ -2417,6 +2428,7 @@ async function initMap(body: HTMLElement): Promise<void> {
   fixMapVisibilityOnResize(g, mapInstance, mapEl, { lat: avgLat, lng: avgLng });
 
   addCustomZoomControl(mapInstance, body.querySelector('#sl-map') as HTMLElement);
+  addDistanceMeasureControl(mapInstance, body);
 
   // 지도를 축소하면 권역 이름 필(pill) 라벨이 화면 픽셀 기준으로는 그대로라 도형에 비해
   // 점점 커 보임 — 줌 레벨에 맞춰 다시 계산. 스크롤 줌 중엔 자주 발생하므로 프레임당 한 번만.
@@ -2430,11 +2442,14 @@ async function initMap(body: HTMLElement): Promise<void> {
     });
   });
 
-  // 폴리곤/마커/라벨이 아닌 지도 빈 공간을 클릭하면 강조 해제 + 고정된 정보창도 닫음
+  // 폴리곤/마커/라벨이 아닌 지도 빈 공간을 클릭하면 강조 해제 + 고정된 정보창도 닫음.
+  // 거리 재기 중이었다면 찍어둔 첫 지점/그려둔 선도 같이 취소(빈 공간 클릭 = 해제 원칙).
   mapInstance.addListener('click', () => {
     pendingSelectedZoneId = null;
     placeInfoWindowPinned = false;
     placeInfoWindow?.close();
+    distanceFirstPoint = null;
+    clearDistanceLine();
     highlightZone(null);
     renderZoneCards(body);
     renderSelectBar(body);
@@ -2447,6 +2462,9 @@ async function initMap(body: HTMLElement): Promise<void> {
   zoneLabelOverlays.forEach((o) => o.setMap(null));
   zoneLabelOverlays = [];
   zoneBlobPoints = computeZonePolygons(zones);
+  distanceMeasureActive = false;
+  distanceFirstPoint = null;
+  clearDistanceLine();
 
   zones.forEach((zone) => {
     const color = zoneColor(zone.id);
@@ -2466,14 +2484,19 @@ async function initMap(body: HTMLElement): Promise<void> {
         icon: buildStep1GatePin(g, p.mood, p.category, p.name),
       });
       // 클릭 없이 마우스만 올려도 바로 정보가 뜨게(터치 기기는 hover가 없으니 click도 유지).
-      // 클릭으로 고정된 상태(pinned)면 다른 마커 hover에 안 밀리고 mouseout에도 안 닫힘
+      // 클릭으로 고정된 상태(pinned)면 다른 마커 hover에 안 밀리고 mouseout에도 안 닫힘.
+      // 거리 재기 모드일 땐 정보창 대신 거리 측정 클릭으로 처리(호버 미리보기도 끔).
       marker.addListener('mouseover', () => {
-        if (!placeInfoWindowPinned) showPlaceInfoWindow(g, mapInstance, marker, p);
+        if (!placeInfoWindowPinned && !distanceMeasureActive) showPlaceInfoWindow(g, mapInstance, marker, p);
       });
       marker.addListener('mouseout', () => {
         if (!placeInfoWindowPinned) placeInfoWindow?.close();
       });
       marker.addListener('click', () => {
+        if (distanceMeasureActive) {
+          handleDistanceMarkerClick(g, mapInstance, p, marker);
+          return;
+        }
         showPlaceInfoWindow(g, mapInstance, marker, p, true);
       });
       zoneMarkers.push(marker);
@@ -2530,18 +2553,98 @@ async function initMap(body: HTMLElement): Promise<void> {
       icon: buildStep1GatePin(g, p.mood, p.category, p.name),
     });
     marker.addListener('mouseover', () => {
-      if (!placeInfoWindowPinned) showPlaceInfoWindow(g, mapInstance, marker, p);
+      if (!placeInfoWindowPinned && !distanceMeasureActive) showPlaceInfoWindow(g, mapInstance, marker, p);
     });
     marker.addListener('mouseout', () => {
       if (!placeInfoWindowPinned) placeInfoWindow?.close();
     });
     marker.addListener('click', () => {
+      if (distanceMeasureActive) {
+        handleDistanceMarkerClick(g, mapInstance, p, marker);
+        return;
+      }
       showPlaceInfoWindow(g, mapInstance, marker, p, true);
     });
     mapMarkers.push(marker);
   });
 
   if (!bounds.isEmpty()) mapInstance.fitBounds(bounds, 40);
+}
+
+/** 지도 좌상단 "거리 재기" 버튼 — 누르면 이 지도가 측정 모드로 바뀌고, 장소 핀을 두 개
+ *  차례로 클릭하면 그 사이 직선거리를 선+라벨로 보여준다(Google API 호출 없이 Haversine으로
+ *  계산 — 실제 이동 경로 거리가 아니라 직선거리라는 걸 라벨에 명시함). */
+function addDistanceMeasureControl(map: any, body: HTMLElement): void {
+  const g = (window as any).google;
+  const wrap = document.createElement('div');
+  wrap.className = 'sl-distance-control';
+  wrap.innerHTML = [
+    '<button type="button" class="sl-distance-btn" id="sl-distance-btn" title="두 장소를 클릭해서 직선거리 재기">',
+    IC_RULER,
+    '<span>거리 재기</span>',
+    '</button>',
+  ].join('');
+
+  wrap.querySelector('#sl-distance-btn')?.addEventListener('click', () => toggleDistanceMeasure(body));
+  map.controls[g.maps.ControlPosition.TOP_LEFT].push(wrap);
+}
+
+function toggleDistanceMeasure(body: HTMLElement): void {
+  distanceMeasureActive = !distanceMeasureActive;
+  distanceFirstPoint = null;
+  clearDistanceLine();
+
+  const btn = body.querySelector('#sl-distance-btn');
+  btn?.classList.toggle('active', distanceMeasureActive);
+  const mapEl = body.querySelector('#sl-map');
+  mapEl?.classList.toggle('sl-distance-mode', distanceMeasureActive);
+}
+
+function clearDistanceLine(): void {
+  distancePolyline?.setMap(null);
+  distancePolyline = null;
+  distanceInfoWindow?.close();
+}
+
+/** 거리 재기 모드에서 장소 핀 클릭 처리 — 첫 클릭은 시작점만 표시하고, 두 번째 클릭에서
+ *  선을 긋고 직선거리를 계산한다. 두 번째 클릭 이후에도 모드는 유지되어 바로 다음 쌍을 잴 수 있다. */
+function handleDistanceMarkerClick(g: any, map: any, p: Place, marker: any): void {
+  if (p.lat == null || p.lng == null) return;
+
+  if (!distanceFirstPoint) {
+    distanceFirstPoint = { lat: p.lat, lng: p.lng };
+    marker.setAnimation(g.maps.Animation.BOUNCE);
+    setTimeout(() => marker.setAnimation(null), 650);
+    return;
+  }
+
+  const from = distanceFirstPoint;
+  const to = { lat: p.lat, lng: p.lng };
+  distanceFirstPoint = null;
+  clearDistanceLine();
+
+  distancePolyline = new g.maps.Polyline({
+    path: [from, to],
+    map,
+    strokeColor: '#0B2A5C',
+    strokeOpacity: 0,
+    icons: [{
+      icon: { path: 'M 0,-1 0,1', strokeOpacity: 0.9, strokeColor: '#0B2A5C', scale: 3 },
+      offset: '0',
+      repeat: '10px',
+    }],
+  });
+
+  const km = haversineKm(from.lat, from.lng, to.lat, to.lng);
+  const label = km < 1 ? Math.round(km * 1000) + 'm' : km.toFixed(1) + 'km';
+  const mid = { lat: (from.lat + to.lat) / 2, lng: (from.lng + to.lng) / 2 };
+
+  if (!distanceInfoWindow) distanceInfoWindow = new g.maps.InfoWindow({ disableAutoPan: true });
+  distanceInfoWindow.setContent(
+    '<div style="font-family:inherit;font-size:12.5px;font-weight:700;color:#0B2A5C;white-space:nowrap;">직선거리 ' + label + '</div>'
+  );
+  distanceInfoWindow.setPosition(mid);
+  distanceInfoWindow.open(map);
 }
 
 /** 지도 위에 뜨는 지역 정보 카드 (Google Maps 커스텀 OverlayView, 실제 DOM 엘리먼트) */
