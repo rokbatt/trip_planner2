@@ -433,6 +433,49 @@ function assignPlacesToZones(seeds: ZoneSeed[], places: Place[]): Zone[] {
 }
 
 /**
+ * 큐레이션 DB에도 없고 AI 폴백까지 실패해서 seeds가 완전히 비었을 때 쓰는 최후의 폴백.
+ * "지역 데이터가 없다"는 이유로 이미 브레인스토밍에 담아둔 장소까지 화면에서 아예 안 보이게
+ * 막는 건 과함 — 지역 이름 대신 담아둔 장소들의 좌표 중심 하나를 권역으로 잡아서
+ * (거리 기준 배정·outlier 컷 없이) 담긴 장소 전부를 하나의 임시 권역으로 묶어 보여준다.
+ * 실제 조사된 생활권이 아니라는 걸 zoneDataSource='places_only'로 표시해 화면에 안내 문구를 띄운다.
+ */
+function buildFallbackZoneFromPlaces(places: Place[], destinationName: string): Zone[] {
+  const withCoords = places.filter((p) => p.lat != null && p.lng != null);
+  if (withCoords.length === 0) return [];
+
+  const avgLat = withCoords.reduce((s, p) => s + p.lat!, 0) / withCoords.length;
+  const avgLng = withCoords.reduce((s, p) => s + p.lng!, 0) / withCoords.length;
+
+  const rated = withCoords.filter((p) => typeof p.google_rating === 'number');
+  const avgRating = rated.length > 0
+    ? rated.reduce((s, p) => s + (p.google_rating ?? 0), 0) / rated.length
+    : null;
+
+  const topPlaces = [...withCoords]
+    .filter((p) => typeof p.google_rating === 'number')
+    .sort((a, b) => (b.google_rating ?? 0) - (a.google_rating ?? 0))
+    .slice(0, 6);
+
+  const recommendedNights = Math.max(1, Math.min(4, Math.ceil(withCoords.length / 3)));
+  const avgWalk = avgInternalWalkMinutes(withCoords);
+
+  return [{
+    id: 'zone-places-only',
+    name: destinationName,
+    features: [],
+    places: withCoords,
+    centerLat: avgLat,
+    centerLng: avgLng,
+    avgRating,
+    avgInternalWalkMin: avgWalk,
+    recommendedNights,
+    topPlaces,
+    efficiencyLabel: travelEfficiencyLabel(avgWalk),
+    rank: 1,
+  }];
+}
+
+/**
  * Step2 숙소 후보 — zone.places(큐레이션 권역 배정 결과)에 기대지 않고, 이 권역 중심에서
  * 실제 거리로 ZONE_ASSIGN_MAX_KM 이내인 "숙소" 무드 장소를 트립 전체에서 직접 찾음.
  * 직접 검색해서 추가한 권역(공항 등, isCustom)은 zone.places가 항상 비어있어서
@@ -567,20 +610,29 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
   const { seeds, source } = await fetchDestinationZones(destination);
 
   if (seeds.length === 0) {
-    container.innerHTML = emptyShell([
-      '<div class="sl-empty">',
-      '  <div class="sl-empty-title">' + escapeHtml(destination) + '의 숙박 생활권 정보가 아직 없어요</div>',
-      '  <div class="sl-empty-hint">이 여행지는 아직 검수된 지역 데이터가 준비되지 않았어요. 조만간 추가될 예정이에요.</div>',
-      '</div>',
-    ].join('\n'));
-    renderShortlistDestBar(container);
-    return;
+    // 큐레이션 DB에도 없고 AI 폴백까지 실패한 여행지 — 그래도 브레인스토밍에 담아둔
+    // 장소가 있으면 "지역 데이터 없음"으로 화면을 막지 않고, 그 장소들을 좌표 중심
+    // 하나로 묶은 임시 권역을 보여준다(3-1 원칙: 실제 조사된 생활권이 아님을 명시).
+    const fallbackZones = buildFallbackZoneFromPlaces(allPlaces, destination);
+    if (fallbackZones.length === 0) {
+      container.innerHTML = emptyShell([
+        '<div class="sl-empty">',
+        '  <div class="sl-empty-title">' + escapeHtml(destination) + '의 숙박 생활권 정보가 아직 없어요</div>',
+        '  <div class="sl-empty-hint">이 여행지는 아직 검수된 지역 데이터가 준비되지 않았어요. 조만간 추가될 예정이에요.</div>',
+        '</div>',
+      ].join('\n'));
+      renderShortlistDestBar(container);
+      return;
+    }
+    zoneDataSource = 'places_only';
+    zones = fallbackZones;
+    unassignedPlaces = [];
+  } else {
+    zoneDataSource = source;
+    zones = assignPlacesToZones(seeds, allPlaces);
+    const assignedIds = new Set(zones.flatMap((z) => z.places.map((p) => p.id)));
+    unassignedPlaces = allPlaces.filter((p) => p.lat != null && p.lng != null && !assignedIds.has(p.id));
   }
-
-  zoneDataSource = source;
-  zones = assignPlacesToZones(seeds, allPlaces);
-  const assignedIds = new Set(zones.flatMap((z) => z.places.map((p) => p.id)));
-  unassignedPlaces = allPlaces.filter((p) => p.lat != null && p.lng != null && !assignedIds.has(p.id));
 
   // 활성 여행지의 숙소 구간들을 로드하고, 활성 구간의 저장 상태를 복원
   if (trip && slActiveDest) {
@@ -1552,6 +1604,8 @@ async function renderStep1(body: HTMLElement): Promise<void> {
     '      <div class="sl-zone-list" id="sl-zone-list"></div>',
     zoneDataSource === 'ai_fallback'
       ? '      <div class="sl-ai-reason sl-ai-reason-compact"><span class="sl-ai-reason-icon">' + IC_SPARK + '</span><span class="sl-ai-reason-text">이 여행지는 아직 검수된 지역 데이터가 없어 AI가 추정한 생활권을 사용 중이에요.</span></div>'
+      : zoneDataSource === 'places_only'
+      ? '      <div class="sl-ai-reason sl-ai-reason-compact"><span class="sl-ai-reason-icon">' + IC_SPARK + '</span><span class="sl-ai-reason-text">이 여행지는 아직 조사된 지역 데이터가 없어, 담아둔 장소들의 위치를 기준으로 임시 권역 하나만 보여주고 있어요.</span></div>'
       : '',
     '      <div class="sl-zone-cta-sticky" id="sl-zone-cta-sticky"></div>',
     '    </div>',
