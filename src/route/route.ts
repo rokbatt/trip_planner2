@@ -640,6 +640,10 @@ function makeAdhocPlace(name: string, lat: number, lng: number): Place {
     group_order: null,
     price_note: null,
     is_excluded: false,
+    price_per_night: null,
+    price_currency: null,
+    room_condition: null,
+    excluded_reason: null,
   };
 }
 
@@ -692,6 +696,10 @@ function googleResultToPlace(g: GooglePlaceResult): Place {
     group_order: null,
     price_note: null,
     is_excluded: false,
+    price_per_night: null,
+    price_currency: null,
+    room_condition: null,
+    excluded_reason: null,
   };
 }
 
@@ -970,6 +978,10 @@ function makeAnchorPlace(
     group_order: null,
     price_note: null,
     is_excluded: false,
+    price_per_night: null,
+    price_currency: null,
+    room_condition: null,
+    excluded_reason: null,
   };
 }
 

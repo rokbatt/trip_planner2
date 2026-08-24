@@ -115,6 +115,10 @@ export interface Database {
           group_order: number | null;
           price_note: string | null;
           is_excluded: boolean;
+          price_per_night: number | null;
+          price_currency: string | null;
+          room_condition: number | null;
+          excluded_reason: string | null;
         };
         Insert: {
           id?: string;
@@ -143,6 +147,10 @@ export interface Database {
           group_order?: number | null;
           price_note?: string | null;
           is_excluded?: boolean;
+          price_per_night?: number | null;
+          price_currency?: string | null;
+          room_condition?: number | null;
+          excluded_reason?: string | null;
         };
         Update: Partial<Database['public']['Tables']['places']['Insert']>;
         Relationships: [];
