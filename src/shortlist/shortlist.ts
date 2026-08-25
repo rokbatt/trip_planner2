@@ -183,6 +183,10 @@ let zonePolygons: any[] = [];
 let zoneLabelOverlays: any[] = [];
 let zoneBlobPoints = new Map<string, { lat: number; lng: number }[]>();
 let markersByZone = new Map<string, any[]>();
+/** 지도(Step1)에 그려둔 마커를 장소 id로 바로 찾기 위한 인덱스 — 권역 선택 단계가 없어지고
+ *  숙소 비교 패널이 이 지도를 그대로 같이 쓰게 되면서, 후보 카드 hover/클릭이 그 숙소의
+ *  지도 핀을 강조/확대하려면 이 지도의 마커를 찾을 방법이 필요해서 추가했다. */
+let markersByPlaceId = new Map<string, any>();
 
 /* ── 모듈 상태 ── */
 let currentTripId = '';
@@ -224,7 +228,7 @@ let totalBudgetKRW: number | null = null;
 let pendingHotelId: string | null = null;
 /** 숙소 투표 요청 토스트의 "보러 가기"로 들어왔을 때, 그 숙소의 Step3로 강제 이동시키기 위한 1회성 타겟 */
 let pendingVoteTarget: { destinationId: string; placeId: string } | null = null;
-let step2SortMode: 'rating' | 'distance' | 'price' | 'access' = 'rating';
+let step2SortMode: 'rating' | 'price' | 'access' = 'rating';
 let step2FilterText = '';
 
 /* ── Step2 Candidate Pool — 후보를 비교하고 하나씩 탈락시켜 최종 숙소를 고르는 상태 ──
@@ -273,8 +277,6 @@ interface CandidateMetrics {
   spotCount: number;
   /** 도착 공항까지의 이동시간(분, 추정) — 공항 좌표가 실제로 저장돼 있을 때만 */
   airportMin: number | null;
-  /** 선택한 지역 중심까지의 거리(km) */
-  centerKm: number | null;
   roomCondition: number | null;
   rating: number | null;
 }
@@ -286,7 +288,6 @@ function candidateMetrics(p: Place): CandidateMetrics {
   let spotAccessMin: number | null = null;
   let spotCount = 0;
   let airportMin: number | null = null;
-  let centerKm: number | null = null;
 
   if (p.lat != null && p.lng != null) {
     const from = { lat: p.lat, lng: p.lng };
@@ -310,8 +311,6 @@ function candidateMetrics(p: Place): CandidateMetrics {
     if (Number.isFinite(aLat) && Number.isFinite(aLng)) {
       airportMin = estimateLegBetween(from, { lat: aLat as number, lng: aLng as number }).min;
     }
-
-    if (selectedZone) centerKm = haversineKm(selectedZone.centerLat, selectedZone.centerLng, p.lat, p.lng);
   }
 
   return {
@@ -321,7 +320,6 @@ function candidateMetrics(p: Place): CandidateMetrics {
     spotAccessMin,
     spotCount,
     airportMin,
-    centerKm,
     roomCondition: typeof p.room_condition === 'number' ? p.room_condition : null,
     rating: typeof p.google_rating === 'number' ? p.google_rating : null,
   };
@@ -389,8 +387,6 @@ export function teardownShortlist(): void {
   stayFilters = { budget: '', customMinKRW: null, customMaxKRW: null };
   confirmedIds = new Set();
   mapInstance = null;
-  step2MapInstance = null;
-  step2Markers = new Map();
   step3MapInstance = null;
   step3InfraLines = [];
   step3Facilities = [];
@@ -409,6 +405,7 @@ export function teardownShortlist(): void {
   zoneLabelOverlays = [];
   zoneBlobPoints = new Map();
   markersByZone = new Map();
+  markersByPlaceId = new Map();
 }
 
 /**
@@ -698,23 +695,6 @@ function buildFallbackZoneFromPlaces(places: Place[], destinationName: string): 
   }];
 }
 
-/**
- * Step2 숙소 후보 — zone.places(큐레이션 권역 배정 결과)에 기대지 않고, 이 권역 중심에서
- * 실제 거리로 ZONE_ASSIGN_MAX_KM 이내인 "숙소" 무드 장소를 트립 전체에서 직접 찾음.
- * 직접 검색해서 추가한 권역(공항 등, isCustom)은 zone.places가 항상 비어있어서
- * (assignPlacesToZones를 거치지 않으니까) 이렇게 안 하면 근처에 담아둔 숙소가 있어도
- * 후보가 하나도 안 뜸.
- */
-function nearbyStayCandidates(zone: Zone): Place[] {
-  return allPlaces.filter(
-    (p) =>
-      p.mood === '숙소' &&
-      p.lat != null &&
-      p.lng != null &&
-      haversineKm(zone.centerLat, zone.centerLng, p.lat, p.lng) <= ZONE_ASSIGN_MAX_KM
-  );
-}
-
 /* ── 데이터 로드 ── */
 async function loadPlaces(tripId: string): Promise<Place[]> {
   const { data, error } = await supabase
@@ -867,12 +847,6 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
     restoreStateFromSegment(slActiveSegment);
   }
 
-  // Step2까지만(지역은 골랐지만 숙소는 아직 안 고름) 진행하고 나갔다 들어오면 Step1부터
-  // 다시 시작하지만, 숙소 후보라도 골라 Step3까지 가봤으면 나갔다 들어와도 Step3를 그대로
-  // 유지(이어서 확인/확정하도록) — selectedZone/selectedBasecamp/confirmedIds 등 실제 진행
-  // 데이터는 어느 쪽이든 restoreStateFromSegment가 그대로 복원해 둔 상태라 유실되지 않음
-  if (step === 2) step = 1;
-
   // 투표 요청으로 들어온 경우, 방금 복원한 상태를 덮어쓰고 그 숙소의 Step3로 강제 진입
   if (pendingVoteTarget) {
     const targetZone = zones.find((z) => z.places.some((p) => p.id === pendingVoteTarget!.placeId));
@@ -992,15 +966,14 @@ async function renderStep(container: HTMLElement): Promise<void> {
   renderStepper(container);
   lockShellHeight(container);
 
-  if (step !== 2 && step2MapResizeHandler) {
+  if (step === 3 && step2MapResizeHandler) {
     window.removeEventListener('resize', step2MapResizeHandler);
     step2MapResizeHandler = null;
   }
 
   const body = container.querySelector('#sl-body') as HTMLElement;
-  if (step === 1) await renderStep1(body);
-  else if (step === 2) await renderStep2(body);
-  else await renderStep3(body);
+  if (step === 3) await renderStep3(body);
+  else await renderStep1(body);
 }
 
 /** "여행지 변경" 버튼 HTML — 실제 멀티 여행지일 때만, 아니면 빈 문자열(래퍼 없는 순수 버튼) */
@@ -1015,11 +988,7 @@ function bindDestSwitchButton(root: HTMLElement): void {
   });
 }
 
-/**
- * 스테퍼 줄 우측(#sl-stepper-extra)에 "여행지 변경"을 기본으로 채움 — 1·3단계는 이 기본값을
- * 그대로 쓰고, 2단계는 renderStep2가 자신의 요약(선택 지역/숙박 기간/예산 필터) 박스 안에
- * 같은 버튼을 다시 포함시켜 덮어쓴다(2단계 전용 콘텐츠와 한 슬롯을 같이 써야 해서).
- */
+/** 스테퍼 줄 우측(#sl-stepper-extra)에 "여행지 변경"을 채움 — 두 단계 모두 이 기본값을 그대로 쓴다. */
 function renderShortlistDestBar(container: HTMLElement): void {
   const stepperSlot = container.querySelector('#sl-stepper-extra') as HTMLElement | null;
   if (stepperSlot) {
@@ -1142,26 +1111,21 @@ function restoreStateFromSegment(seg: StaySegment | null): void {
   basecampConfirmedAt = null;
   confirmedIds = new Set();
   totalBudgetKRW = seg?.total_budget_krw ?? null;
-  if (!seg?.zone_name) return;
+  // 예전엔 "권역 선택" 단계를 지났는지(zone_name)로 진행 상태를 판단했지만, 권역 선택
+  // 단계 자체가 없어지면서 이제는 숙소를 골랐는지(basecamp_place_id)만 보면 된다.
+  if (!seg?.basecamp_place_id) return;
 
-  const zpids = seg.zone_place_ids ?? [];
-  let restoredZone = zones.find((z) => z.places.some((p) => zpids.includes(p.id))) ?? null;
-  if (!restoredZone && seg.basecamp_place_id) {
-    restoredZone = reconstructZoneFromBasecamp(seg.zone_name, seg.id, seg.basecamp_place_id);
-  }
-  if (!restoredZone) return;
+  const bc = allPlaces.find((p) => p.id === seg.basecamp_place_id);
+  if (!bc) return;
 
-  selectedZone = restoredZone;
-  step = 2;
-  if (seg.basecamp_place_id) {
-    const bc = restoredZone.places.find((p) => p.id === seg.basecamp_place_id) ?? allPlaces.find((p) => p.id === seg.basecamp_place_id);
-    if (bc) {
-      selectedBasecamp = bc;
-      basecampConfirmedAt = seg.basecamp_confirmed_at ?? null;
-      step = 3;
-      confirmedIds = new Set(seg.confirmed_place_ids ?? []);
-    }
-  }
+  selectedBasecamp = bc;
+  pendingHotelId = bc.id;
+  // Step3(최종 점검)는 여전히 "이 숙소를 중심으로 한 권역" 정보(지도 중심, 접근성 계산 기준점)가
+  // 필요해서, 실제 권역 선택 없이도 이 숙소 좌표를 중심으로 한 임시 권역을 만들어 채워준다.
+  selectedZone = reconstructZoneFromBasecamp(bc.name, seg.id, bc.id);
+  basecampConfirmedAt = seg.basecamp_confirmed_at ?? null;
+  step = 3;
+  confirmedIds = new Set(seg.confirmed_place_ids ?? []);
 }
 
 /* ══════════════ 숙소 구간(Phase 3 — 한 여행지 안에서 숙소 나누기) ══════════════ */
@@ -1765,21 +1729,27 @@ function openStayDateEditor(): void {
   });
 }
 
+/** 권역 선택 단계가 없어지면서 실제 진행 단계는 2개뿐 — 화면에 보이는 스테퍼 위치(1/2)와
+ *  내부 step 값(1 또는 3, 2는 더 이상 안 씀)이 다르므로 표시용으로만 따로 계산한다. */
+function stepperPosition(): 1 | 2 {
+  return step === 3 ? 2 : 1;
+}
+
 function renderStepper(container: HTMLElement): void {
   const stepperEl = container.querySelector('#sl-stepper') as HTMLElement;
   const steps = [
-    { n: 1, label: '지역 선택' },
-    { n: 2, label: '숙소 선택' },
-    { n: 3, label: '확정' },
+    { n: 1, label: '숙소 비교', gotoStep: 1 as 1 | 3 },
+    { n: 2, label: '확정', gotoStep: 3 as 1 | 3 },
   ];
+  const pos = stepperPosition();
 
   stepperEl.innerHTML = steps
     .map((s, i) => {
-      const state = s.n === step ? 'active' : s.n < step ? 'done' : '';
-      const clickable = s.n < step;
+      const state = s.n === pos ? 'active' : s.n < pos ? 'done' : '';
+      const clickable = s.n < pos;
       return [
-        '<div class="sl-step ' + state + (clickable ? ' clickable' : '') + '" data-step="' + s.n + '">',
-        '  <span class="sl-step-num">' + (s.n < step ? IC_CHECK : s.n) + '</span>',
+        '<div class="sl-step ' + state + (clickable ? ' clickable' : '') + '" data-goto-step="' + s.gotoStep + '">',
+        '  <span class="sl-step-num">' + (s.n < pos ? IC_CHECK : s.n) + '</span>',
         '  <span class="sl-step-label">' + s.label + '</span>',
         '</div>',
         i < steps.length - 1 ? '<div class="sl-step-line"></div>' : '',
@@ -1789,7 +1759,7 @@ function renderStepper(container: HTMLElement): void {
 
   stepperEl.querySelectorAll('.sl-step.clickable').forEach((el) => {
     el.addEventListener('click', () => {
-      step = Number((el as HTMLElement).dataset.step) as 1 | 2 | 3;
+      step = Number((el as HTMLElement).dataset.gotoStep) as 1 | 3;
       // container는 renderStep()이 넘겨준 바로 그 바깥 컨테이너(.sl-shell의 부모)라 이미 정답.
       // body(.sl-shell 안쪽)에서 쓰는 body.closest('.sl-shell')!.parentElement 패턴을 여기 그대로
       // 베껴 쓰면 container 자신은 .sl-shell의 조상이 아니라 부모라 closest가 null을 반환해 터짐.
@@ -1798,51 +1768,167 @@ function renderStepper(container: HTMLElement): void {
   });
 }
 
-/* ══════════════════ STEP 1 — Overview Map ══════════════════ */
+/** 이 여행지에 담아둔 숙소 후보 전체 — 예전엔 먼저 고른 권역 안으로 한정했지만, 권역 선택
+ *  단계 자체가 없어지면서 "여행 계획 중에 미리 담아둔 후보들 중 하나를 고른다"는 원래 목적에
+ *  맞게 지역과 무관하게 이 여행지의 숙소 무드 장소를 전부 후보로 다룬다. */
+function allStayCandidates(): Place[] {
+  return allPlaces.filter((p) => p.mood === '숙소');
+}
+
+/* ══════════════════ STEP 1 — 담아둔 숙소 비교해서 하나 고르기 ══════════════════
+ * 예전엔 (1) 지도에서 권역을 먼저 고르고 (2) 그 권역 안 숙소를 비교하는 두 단계였다.
+ * 하지만 계획 단계에서 이미 숙소 후보를 여러 개 아이디어보드에 담아두는 게 일반적이라,
+ * "권역부터 골라야 후보를 볼 수 있는" 구조가 오히려 불편했다. 그래서 지도는 (권역 표시는
+ * 참고용으로 남기되) 이 여행지의 모든 장소를 그대로 다 보여주고, 바로 옆에서 담아둔 숙소
+ * 후보 전체를 비교·소거해 하나를 고르는 화면으로 합쳤다. */
 async function renderStep1(body: HTMLElement): Promise<void> {
-  // 이미 진행 중인 지역이 있으면(Step2/3에서 되돌아왔거나, 재진입으로 Step1부터 다시 시작된
-  // 경우) 카드/지도에 그 선택을 바로 표시해 어디까지 진행했는지 한눈에 보이게 함
-  if (selectedZone) pendingSelectedZoneId = selectedZone.id;
+  const candidates = allStayCandidates();
+  const destination = getTripDestination();
+  const dateRange = formatTripDateRange();
 
   body.innerHTML = [
-    '<div class="sl-step1">',
-    '  <div class="sl-step1-header">',
-    '    <div class="sl-eyebrow">DEPARTURE HALL</div>',
-    '    <div class="sl-title">어느 지역을 중심으로 여행할까요?</div>',
-    '  </div>',
-    '  <div class="sl-step1-layout">',
-    '    <div class="sl-map-wrap">',
-    '      <div id="sl-map" class="sl-map"></div>',
-    '      <div class="sl-map-legend">',
-    '        <span><span class="sl-legend-dot" style="--dot:#E24B4A"></span>관광(VISIT)</span>',
-    '        <span><span class="sl-legend-dot" style="--dot:#1D9E75"></span>맛집(FOOD)</span>',
-    '        <span><span class="sl-legend-dot" style="--dot:#7F77DD"></span>액티비티(ACTIVITY)</span>',
-    '        <span><span class="sl-legend-dot" style="--dot:#185FA5"></span>숙소 후보(STAY)</span>',
-    '      </div>',
+    '<div class="sl-step2">',
+    '  <div class="sl-step2-header-row">',
+    '    <div class="sl-step1-header sl-step2-header-text">',
+    '      <div class="sl-eyebrow">DEPARTURE HALL</div>',
+    '      <div class="sl-title">담아둔 숙소를 비교해서 하나를 골라보세요</div>',
     '    </div>',
-    '    <div class="sl-zone-panel">',
-    '      <div class="sl-zone-panel-head"><span class="sl-zone-panel-sort">추천 순</span></div>',
-    '      <div class="sl-zone-search">',
-    '        <span class="sl-zone-search-icon">' + IC_SEARCH2 + '</span>',
-    '        <input type="text" id="sl-zone-search-input" class="sl-zone-search-input" placeholder="추천 목록에 없는 지역·장소 검색해서 추가 (예: 수완나품 공항)" autocomplete="off" />',
+    '    <div class="sl-step2-summary-card">',
+    '      <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">숙박 기간</span><span class="sl-step2-summary-value">' + escapeHtml(dateRange) + '</span></div>',
+    '      <div class="sl-step2-summary-divider"></div>',
+    '      <div class="sl-step2-summary-item sl-step2-summary-budget">',
+    '        <span class="sl-step2-summary-label">예산 (1박 1인)</span>',
+    '        <select id="sl-budget-select" class="sl-budget-select">',
+    '          <option value=""' + (stayFilters.budget === '' ? ' selected' : '') + '>전체</option>',
+    '          <option value="under5"' + (stayFilters.budget === 'under5' ? ' selected' : '') + '>5만원 이하</option>',
+    '          <option value="under10"' + (stayFilters.budget === 'under10' ? ' selected' : '') + '>10만원 이하</option>',
+    '          <option value="over20"' + (stayFilters.budget === 'over20' ? ' selected' : '') + '>20만원 이상</option>',
+    '          <option value="custom"' + (stayFilters.budget === 'custom' ? ' selected' : '') + '>직접설정</option>',
+    '        </select>',
+    '        <div class="sl-budget-custom-row" id="sl-budget-custom-row" style="display:' + (stayFilters.budget === 'custom' ? 'flex' : 'none') + '">',
+    '          <input type="number" id="sl-budget-min" class="sl-budget-custom-input" placeholder="최소" value="' + (stayFilters.customMinKRW ?? '') + '" />',
+    '          <span>~</span>',
+    '          <input type="number" id="sl-budget-max" class="sl-budget-custom-input" placeholder="최대" value="' + (stayFilters.customMaxKRW ?? '') + '" />',
+    '          <span class="sl-budget-custom-unit">원</span>',
+    '        </div>',
     '      </div>',
-    '      <div class="sl-zone-list" id="sl-zone-list"></div>',
+    '      <div class="sl-step2-summary-divider"></div>',
+    '      <button type="button" class="sl-step2-summary-edit" id="sl-step2-date-edit">' + IC_EXTLINK + ' 수정</button>',
+    '    </div>',
+    '  </div>',
+
+    '  <div class="sl-step2-layout">',
+
+    '    <div class="sl-step2-left">',
+    '      <div class="sl-map-wrap">',
+    '        <div id="sl-map" class="sl-map"></div>',
+    '        <div class="sl-map-legend">',
+    '          <span><span class="sl-legend-dot" style="--dot:#E24B4A"></span>관광(VISIT)</span>',
+    '          <span><span class="sl-legend-dot" style="--dot:#1D9E75"></span>맛집(FOOD)</span>',
+    '          <span><span class="sl-legend-dot" style="--dot:#7F77DD"></span>액티비티(ACTIVITY)</span>',
+    '          <span><span class="sl-legend-dot" style="--dot:#185FA5"></span>숙소 후보(STAY)</span>',
+    '        </div>',
+    '      </div>',
     zoneDataSource === 'ai_fallback'
-      ? '      <div class="sl-ai-reason sl-ai-reason-compact"><span class="sl-ai-reason-icon">' + IC_SPARK + '</span><span class="sl-ai-reason-text">이 여행지는 아직 검수된 지역 데이터가 없어 AI가 추정한 생활권을 사용 중이에요.</span></div>'
+      ? '      <div class="sl-ai-reason sl-ai-reason-compact"><span class="sl-ai-reason-icon">' + IC_SPARK + '</span><span class="sl-ai-reason-text">이 여행지는 아직 검수된 지역 데이터가 없어 AI가 추정한 생활권을 참고용으로 표시하고 있어요.</span></div>'
       : zoneDataSource === 'places_only'
-      ? '      <div class="sl-ai-reason sl-ai-reason-compact"><span class="sl-ai-reason-icon">' + IC_SPARK + '</span><span class="sl-ai-reason-text">이 여행지는 아직 조사된 지역 데이터가 없어, 담아둔 장소들의 위치를 기준으로 임시 권역 하나만 보여주고 있어요.</span></div>'
+      ? '      <div class="sl-ai-reason sl-ai-reason-compact"><span class="sl-ai-reason-icon">' + IC_SPARK + '</span><span class="sl-ai-reason-text">이 여행지는 아직 조사된 지역 데이터가 없어, 담아둔 장소들의 위치를 기준으로 임시 권역 하나만 참고용으로 표시하고 있어요.</span></div>'
       : '',
-    '      <div class="sl-zone-cta-sticky" id="sl-zone-cta-sticky"></div>',
+    '    </div>',
+
+    '    <div class="sl-step2-right">',
+
+    '      <section class="sl-hotel-sites-section">',
+    '        <div class="sl-section-title">숙소 검색 사이트</div>',
+    '        <div class="sl-section-desc">' + escapeHtml(destination) + ' 기준으로 바로 검색해보세요. <span class="sl-rating-caveat">★ 점수는 예약 편의를 종합한 Claude 편집 평가로, 각 사이트의 실제 이용자 평점이 아니에요.</span></div>',
+    '        <div class="sl-hotel-sites-grid" id="sl-hotel-sites"></div>',
+    '      </section>',
+
+    '      <div class="sl-step2-divider"></div>',
+
+    '      <section class="sl-direct-select-section">',
+    '        <div class="sl-section-title">직접 숙소 선택하기</div>',
+    '        <div class="sl-section-desc">예약 사이트에서 본 숙소 이름을 붙여넣으면 자동으로 추가돼요.</div>',
+
+    '        <div class="sl-import-link-wrap">',
+    '          <div class="sl-import-link-row">',
+    '            <input type="text" id="sl-import-link-input" class="sl-import-link-input" placeholder="예: Grande Centre Point Siam" />',
+    '            <button type="button" id="sl-import-link-btn" class="sl-import-link-btn">추가</button>',
+    '          </div>',
+    '          <div class="sl-import-link-status" id="sl-import-link-status"></div>',
+    '        </div>',
+
+    '      </section>',
+
+    '      <div class="sl-step2-divider"></div>',
+
+    // ── CANDIDATE POOL — 모아둔 후보를 비교하고 하나씩 탈락시켜 최종 숙소를 고르는 영역 ──
+    '      <section class="sl-candidate-pool" id="sl-candidate-pool">',
+    '        <div class="sl-pool-head" id="sl-pool-head"></div>',
+    '        <div class="sl-pool-progress" id="sl-pool-progress"></div>',
+    '        <div class="sl-direct-search-wrap">',
+    '          <span class="sl-direct-search-icon">' + IC_SEARCH2 + '</span>',
+    '          <input type="text" id="sl-hotel-filter" class="sl-direct-search-input" placeholder="숙소명으로 찾기" value="' + escapeHtml(step2FilterText) + '" />',
+    '        </div>',
+    '        <div class="sl-basecamp-list" id="sl-basecamp-list"></div>',
+    '        <div class="sl-excluded-section" id="sl-excluded-section"></div>',
+    '      </section>',
+
+    // 비교 모드는 페이지 이동 없이 이 패널 안에서 열린다(지도는 그대로 옆에 유지)
+    '      <section class="sl-compare-panel" id="sl-compare-panel" hidden></section>',
+
+    '      <button class="sl-step2-cta" id="sl-step2-cta" disabled>',
+    '        <span>' + IC_CHECK + ' 이 숙소를 여행 중심으로 선택하기</span>',
+    '      </button>',
+    '      <div class="sl-step2-cta-hint">선택한 숙소를 기준으로 이동시간과 동선을 계산해요.</div>',
+
     '    </div>',
     '  </div>',
     '</div>',
   ].join('\n');
 
-  renderZoneCards(body);
-  attachZoneSearch(body);
-  renderSelectBar(body);
+  body.querySelector('#sl-step2-date-edit')?.addEventListener('click', openStayDateEditor);
+
+  body.querySelector('#sl-budget-select')?.addEventListener('change', (e) => {
+    stayFilters.budget = (e.target as HTMLSelectElement).value;
+    const customRow = body.querySelector('#sl-budget-custom-row') as HTMLElement;
+    if (customRow) customRow.style.display = stayFilters.budget === 'custom' ? 'flex' : 'none';
+    renderHotelSiteCards(body, destination, '');
+  });
+
+  const applyCustomBudget = () => {
+    const minInput = body.querySelector('#sl-budget-min') as HTMLInputElement;
+    const maxInput = body.querySelector('#sl-budget-max') as HTMLInputElement;
+    stayFilters.customMinKRW = minInput?.value ? Number(minInput.value) : null;
+    stayFilters.customMaxKRW = maxInput?.value ? Number(maxInput.value) : null;
+    renderHotelSiteCards(body, destination, '');
+  };
+  body.querySelector('#sl-budget-min')?.addEventListener('input', applyCustomBudget);
+  body.querySelector('#sl-budget-max')?.addEventListener('input', applyCustomBudget);
+
+  body.querySelector('#sl-hotel-filter')?.addEventListener('input', (e) => {
+    step2FilterText = (e.target as HTMLInputElement).value;
+    renderBasecampList(body, candidates);
+  });
+
+  body.querySelector('#sl-import-link-btn')?.addEventListener('click', () => {
+    handleImportHotelLink(body, candidates);
+  });
+  body.querySelector('#sl-import-link-input')?.addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key === 'Enter') handleImportHotelLink(body, candidates);
+  });
+
+  renderHotelSiteCards(body, destination, '');
+  renderBasecampList(body, candidates);
+  renderSelectedHotelPreview(body, candidates);
+
+  // 실시간 환율은 백그라운드로 불러오고, 도착하면 사이트 카드만 조용히 갱신 (화면 로딩을 막지 않음)
+  loadLiveExchangeRate().then(() => {
+    if (body.isConnected) renderHotelSiteCards(body, destination, '');
+  });
+
+  lockStep2MapHeight(body);
   await initMap(body);
-  if (pendingSelectedZoneId) highlightZone(pendingSelectedZoneId);
 }
 
 /** 사용자가 직접 검색해 추가한 권역 카드 — AI 통계(장소 수/이동시간 등)가 없어 간소화된 형태.
@@ -2724,19 +2810,17 @@ async function initMap(body: HTMLElement): Promise<void> {
   // 폴리곤/마커/라벨이 아닌 지도 빈 공간을 클릭하면 강조 해제 + 고정된 정보창도 닫음.
   // 거리 재기 중이었다면 찍어둔 첫 지점/그려둔 선도 같이 취소(빈 공간 클릭 = 해제 원칙).
   mapInstance.addListener('click', () => {
-    pendingSelectedZoneId = null;
     placeInfoWindowPinned = false;
     placeInfoWindow?.close();
     distanceFirstPoint = null;
     clearDistanceLine();
     highlightZone(null);
-    renderZoneCards(body);
-    renderSelectBar(body);
   });
 
   const bounds = new g.maps.LatLngBounds();
   mapMarkers = [];
   markersByZone = new Map();
+  markersByPlaceId = new Map();
   zonePolygons = [];
   zoneLabelOverlays.forEach((o) => o.setMap(null));
   zoneLabelOverlays = [];
@@ -2749,12 +2833,9 @@ async function initMap(body: HTMLElement): Promise<void> {
     const color = zoneColor(zone.id);
     const zoneMarkers: any[] = [];
 
-    // 대표 장소만 마커로 노출 (전체 장소 다 보여주지 않음)
-    const representative = [...zone.places]
-      .sort((a, b) => (b.google_rating ?? 0) - (a.google_rating ?? 0))
-      .slice(0, 4);
-
-    representative.forEach((p) => {
+    // 권역 선택이 더 이상 별도 단계가 아니라(숙소 비교가 이 화면의 본체) 숙소 후보를
+    // 대표 몇 개만 추려서 보여주면 비교 대상이 지도에서 누락돼 버린다 — 전부 표시한다.
+    zone.places.forEach((p) => {
       if (p.lat == null || p.lng == null) return;
       const marker = new g.maps.Marker({
         position: { lat: p.lat, lng: p.lng },
@@ -2780,10 +2861,8 @@ async function initMap(body: HTMLElement): Promise<void> {
       });
       zoneMarkers.push(marker);
       mapMarkers.push(marker);
-    });
-
-    zone.places.forEach((p) => {
-      if (p.lat != null && p.lng != null) bounds.extend({ lat: p.lat, lng: p.lng });
+      markersByPlaceId.set(p.id, marker);
+      bounds.extend({ lat: p.lat, lng: p.lng });
     });
 
     markersByZone.set(zone.id, zoneMarkers);
@@ -2806,11 +2885,10 @@ async function initMap(body: HTMLElement): Promise<void> {
       clickable: true,
     });
     polygon.set('zoneId', zone.id);
+    // 권역은 이제 선택하는 대상이 아니라 지도 위 참고 정보 — 클릭하면 그 권역만 잠깐
+    // 강조해서 보여주고(포커스), 빈 공간을 클릭하면 원래대로 돌아온다(3-3: 명확한 해제 경로).
     polygon.addListener('click', () => {
-      pendingSelectedZoneId = zone.id;
       highlightZone(zone.id);
-      renderZoneCards(body);
-      renderSelectBar(body);
     });
     zonePolygons.push(polygon);
 
@@ -2845,6 +2923,8 @@ async function initMap(body: HTMLElement): Promise<void> {
       showPlaceInfoWindow(g, mapInstance, marker, p, true);
     });
     mapMarkers.push(marker);
+    markersByPlaceId.set(p.id, marker);
+    bounds.extend({ lat: p.lat, lng: p.lng });
   });
 
   if (!bounds.isEmpty()) mapInstance.fitBounds(bounds, 40);
@@ -3049,169 +3129,6 @@ const MAP_STYLE_LIGHT = [
 ];
 
 
-/* ══════════════════ STEP 2 — Base Camp Selection ══════════════════ */
-async function renderStep2(body: HTMLElement): Promise<void> {
-  if (!selectedZone) {
-    step = 1;
-    await renderStep1(body);
-    return;
-  }
-
-  // selectedZone.places만 보면 "직접 검색해서 추가한 권역"(공항 등)은 항상 비어있어
-  // (assignPlacesToZones를 거치지 않음) 근처에 담아둔 숙소가 있어도 후보가 하나도 안 뜸.
-  // 대신 이 지역 중심에서 실제 거리로 가까운 숙소를 찾음 — 큐레이션 권역이든 직접 추가한
-  // 권역이든 동일하게 동작.
-  const candidates = nearbyStayCandidates(selectedZone);
-  const destination = getTripDestination();
-  const dateRange = formatTripDateRange();
-
-  // 스테퍼 줄 우측(#sl-stepper-extra)은 1·3단계와 동일하게 "여행지 변경"만 두고(이미
-  // renderShortlistDestBar가 채워둠), 지역/기간/예산 필터 박스는 타이틀과 같은 줄로 내림.
-
-  body.innerHTML = [
-    '<div class="sl-step2">',
-    '  <div class="sl-step2-header-row">',
-    '    <div class="sl-step1-header sl-step2-header-text">',
-    '      <div class="sl-eyebrow">IMMIGRATION COUNTER</div>',
-    '      <div class="sl-title">숙소를 선택하면 여행의 중심이 결정됩니다</div>',
-    '    </div>',
-    '    <div class="sl-step2-summary-card">',
-    '      <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">선택 지역</span><span class="sl-step2-summary-value">' + escapeHtml(selectedZone.name) + '</span></div>',
-    '      <div class="sl-step2-summary-divider"></div>',
-    '      <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">숙박 기간</span><span class="sl-step2-summary-value">' + escapeHtml(dateRange) + '</span></div>',
-    '      <div class="sl-step2-summary-divider"></div>',
-    '      <div class="sl-step2-summary-item sl-step2-summary-budget">',
-    '        <span class="sl-step2-summary-label">예산 (1박 1인)</span>',
-    '        <select id="sl-budget-select" class="sl-budget-select">',
-    '          <option value=""' + (stayFilters.budget === '' ? ' selected' : '') + '>전체</option>',
-    '          <option value="under5"' + (stayFilters.budget === 'under5' ? ' selected' : '') + '>5만원 이하</option>',
-    '          <option value="under10"' + (stayFilters.budget === 'under10' ? ' selected' : '') + '>10만원 이하</option>',
-    '          <option value="over20"' + (stayFilters.budget === 'over20' ? ' selected' : '') + '>20만원 이상</option>',
-    '          <option value="custom"' + (stayFilters.budget === 'custom' ? ' selected' : '') + '>직접설정</option>',
-    '        </select>',
-    '        <div class="sl-budget-custom-row" id="sl-budget-custom-row" style="display:' + (stayFilters.budget === 'custom' ? 'flex' : 'none') + '">',
-    '          <input type="number" id="sl-budget-min" class="sl-budget-custom-input" placeholder="최소" value="' + (stayFilters.customMinKRW ?? '') + '" />',
-    '          <span>~</span>',
-    '          <input type="number" id="sl-budget-max" class="sl-budget-custom-input" placeholder="최대" value="' + (stayFilters.customMaxKRW ?? '') + '" />',
-    '          <span class="sl-budget-custom-unit">원</span>',
-    '        </div>',
-    '      </div>',
-    '      <div class="sl-step2-summary-divider"></div>',
-    '      <button type="button" class="sl-step2-summary-edit" id="sl-step2-date-edit">' + IC_EXTLINK + ' 수정</button>',
-    '    </div>',
-    '  </div>',
-
-    '  <div class="sl-step2-layout">',
-
-    '    <div class="sl-step2-left">',
-    '      <div class="sl-map-wrap">',
-    '        <div id="sl-map2" class="sl-map"></div>',
-    '        <div class="sl-map-legend">',
-    '          <span><span class="sl-legend-dot" style="--dot:#E24B4A"></span>관광(VISIT)</span>',
-    '          <span><span class="sl-legend-dot" style="--dot:#1D9E75"></span>맛집(FOOD)</span>',
-    '          <span><span class="sl-legend-dot" style="--dot:#7F77DD"></span>액티비티(ACTIVITY)</span>',
-    '          <span><span class="sl-legend-dot" style="--dot:#185FA5"></span>숙소 후보(STAY)</span>',
-    '        </div>',
-    '      </div>',
-    '    </div>',
-
-    '    <div class="sl-step2-right">',
-
-    '      <section class="sl-hotel-sites-section">',
-    '        <div class="sl-section-title">숙소 검색 사이트</div>',
-    '        <div class="sl-section-desc">선택한 지역 기준으로 바로 검색해보세요. <span class="sl-rating-caveat">★ 점수는 예약 편의를 종합한 Claude 편집 평가로, 각 사이트의 실제 이용자 평점이 아니에요.</span></div>',
-    '        <div class="sl-hotel-sites-grid" id="sl-hotel-sites"></div>',
-    '      </section>',
-
-    '      <div class="sl-step2-divider"></div>',
-
-    '      <section class="sl-direct-select-section">',
-    '        <div class="sl-section-title">직접 숙소 선택하기</div>',
-    '        <div class="sl-section-desc">예약 사이트에서 본 숙소 이름을 붙여넣으면 자동으로 추가돼요.</div>',
-
-    '        <div class="sl-import-link-wrap">',
-    '          <div class="sl-import-link-row">',
-    '            <input type="text" id="sl-import-link-input" class="sl-import-link-input" placeholder="예: Grande Centre Point Siam" />',
-    '            <button type="button" id="sl-import-link-btn" class="sl-import-link-btn">추가</button>',
-    '          </div>',
-    '          <div class="sl-import-link-status" id="sl-import-link-status"></div>',
-    '        </div>',
-
-    '      </section>',
-
-    '      <div class="sl-step2-divider"></div>',
-
-    // ── CANDIDATE POOL — 모아둔 후보를 비교하고 하나씩 탈락시켜 최종 숙소를 고르는 영역 ──
-    '      <section class="sl-candidate-pool" id="sl-candidate-pool">',
-    '        <div class="sl-pool-head" id="sl-pool-head"></div>',
-    '        <div class="sl-pool-progress" id="sl-pool-progress"></div>',
-    '        <div class="sl-direct-search-wrap">',
-    '          <span class="sl-direct-search-icon">' + IC_SEARCH2 + '</span>',
-    '          <input type="text" id="sl-hotel-filter" class="sl-direct-search-input" placeholder="숙소명으로 찾기" value="' + escapeHtml(step2FilterText) + '" />',
-    '        </div>',
-    '        <div class="sl-basecamp-list" id="sl-basecamp-list"></div>',
-    '        <div class="sl-excluded-section" id="sl-excluded-section"></div>',
-    '      </section>',
-
-    // 비교 모드는 페이지 이동 없이 이 패널 안에서 열린다(지도는 그대로 옆에 유지)
-    '      <section class="sl-compare-panel" id="sl-compare-panel" hidden></section>',
-
-    '      <button class="sl-step2-cta" id="sl-step2-cta" disabled>',
-    '        <span>' + IC_CHECK + ' 이 숙소를 여행 중심으로 선택하기</span>',
-    '      </button>',
-    '      <div class="sl-step2-cta-hint">선택한 숙소를 기준으로 이동시간과 동선을 계산해요.</div>',
-
-    '    </div>',
-    '  </div>',
-    '</div>',
-  ].join('\n');
-
-  body.querySelector('#sl-step2-date-edit')?.addEventListener('click', openStayDateEditor);
-
-  body.querySelector('#sl-budget-select')?.addEventListener('change', (e) => {
-    stayFilters.budget = (e.target as HTMLSelectElement).value;
-    const customRow = body.querySelector('#sl-budget-custom-row') as HTMLElement;
-    if (customRow) customRow.style.display = stayFilters.budget === 'custom' ? 'flex' : 'none';
-    renderHotelSiteCards(body, destination, selectedZone!.name);
-  });
-
-  const applyCustomBudget = () => {
-    const minInput = body.querySelector('#sl-budget-min') as HTMLInputElement;
-    const maxInput = body.querySelector('#sl-budget-max') as HTMLInputElement;
-    stayFilters.customMinKRW = minInput?.value ? Number(minInput.value) : null;
-    stayFilters.customMaxKRW = maxInput?.value ? Number(maxInput.value) : null;
-    renderHotelSiteCards(body, destination, selectedZone!.name);
-  };
-  body.querySelector('#sl-budget-min')?.addEventListener('input', applyCustomBudget);
-  body.querySelector('#sl-budget-max')?.addEventListener('input', applyCustomBudget);
-
-  body.querySelector('#sl-hotel-filter')?.addEventListener('input', (e) => {
-    step2FilterText = (e.target as HTMLInputElement).value;
-    renderBasecampList(body, candidates);
-  });
-
-  body.querySelector('#sl-import-link-btn')?.addEventListener('click', () => {
-    handleImportHotelLink(body, candidates);
-  });
-  body.querySelector('#sl-import-link-input')?.addEventListener('keydown', (e) => {
-    if ((e as KeyboardEvent).key === 'Enter') handleImportHotelLink(body, candidates);
-  });
-
-  renderHotelSiteCards(body, destination, selectedZone.name);
-  renderBasecampList(body, candidates);
-  renderSelectedHotelPreview(body, candidates);
-
-  // 실시간 환율은 백그라운드로 불러오고, 도착하면 사이트 카드만 조용히 갱신 (화면 로딩을 막지 않음)
-  loadLiveExchangeRate().then(() => {
-    if (step === 2 && selectedZone) {
-      renderHotelSiteCards(body, destination, selectedZone.name);
-    }
-  });
-
-  lockStep2MapHeight(body);
-  await initMapStep2(body, candidates);
-}
-
 /** 활성 숙소 구간 자체의 기간이 있으면 그걸(숙소를 나눈 경우), 없으면 여행지 기간, 그것도 없으면 트립 전체 기간 */
 function formatTripDateRange(): string {
   const start = slActiveSegment?.start_date || slActiveDest?.start_date || currentTrip?.start_date;
@@ -3326,6 +3243,11 @@ interface HotelSite {
   buildUrl: (destination: string, zoneName: string, filters: StayFilters) => string;
 }
 
+/** 권역 없이 여행지만으로 검색할 때도(zoneName === '') 앞뒤 공백 없이 자연스럽게 조합 */
+function combineLocation(zoneName: string, destination: string): string {
+  return [zoneName, destination].filter(Boolean).join(' ');
+}
+
 const HOTEL_SITES: HotelSite[] = [
   {
     name: 'Booking.com',
@@ -3334,7 +3256,7 @@ const HOTEL_SITES: HotelSite[] = [
     editorialRating: 4.6,
     buildUrl: (d, z, f) => {
       const url = new URL('https://www.booking.com/searchresults.ko.html');
-      url.searchParams.set('ss', z + ' ' + d);
+      url.searchParams.set('ss', combineLocation(z, d));
       const dates = getTripDatesISO();
       if (dates) {
         url.searchParams.set('checkin', dates.checkin);
@@ -3359,7 +3281,7 @@ const HOTEL_SITES: HotelSite[] = [
       // Agoda 실제 검색 URL은 도시 고유 숫자ID(city=1234) 기반이라 우리가 알 방법이 없음.
       // checkIn/checkOut/price 파라미터를 텍스트 검색에 붙여봤지만 실제로 안 먹혀서(확인됨) 제거.
       // 지역명 텍스트로만 검색되도록 단순화 — 날짜/가격은 사용자가 Agoda 화면에서 직접 설정 필요.
-      return 'https://www.agoda.com/ko-kr/search?text=' + encodeURIComponent(z + ' ' + d);
+      return 'https://www.agoda.com/ko-kr/search?text=' + encodeURIComponent(combineLocation(z, d));
     },
   },
   {
@@ -3368,7 +3290,7 @@ const HOTEL_SITES: HotelSite[] = [
     filterSupport: 'confirmed',
     editorialRating: 4.2,
     buildUrl: (d, z, f) => {
-      const url = new URL('https://www.airbnb.co.kr/s/' + encodeURIComponent(z + ' ' + d) + '/homes');
+      const url = new URL('https://www.airbnb.co.kr/s/' + encodeURIComponent(combineLocation(z, d)) + '/homes');
       const dates = getTripDatesISO();
       if (dates) {
         url.searchParams.set('checkin', dates.checkin);
@@ -3391,7 +3313,7 @@ const HOTEL_SITES: HotelSite[] = [
     buildUrl: (d, z, f) => {
       // 날짜를 검색어에 자연어로 넣는 게 실제로 필터에 반영되는지 확인된 바가 없어서 뺐음
       // (Google이 계정/세션 컨텍스트로 알아서 처리하는 것으로 보임)
-      let q = z + ' ' + d + ' 호텔';
+      let q = combineLocation(z, d) + ' 호텔';
       const range = resolveBudgetRangeKRW(f);
       if (range) q += ' ' + range.label;
       return 'https://www.google.com/travel/search?q=' + encodeURIComponent(q);
@@ -3424,7 +3346,7 @@ function renderHotelSiteCards(body: HTMLElement, destination: string, zoneName: 
     '  <img class="sl-hotel-site-logo" src="https://www.google.com/s2/favicons?domain=' + site.domain + '&sz=128" alt="" />',
     '  <div class="sl-hotel-site-name">' + escapeHtml(site.name) + '</div>',
     '  <div class="sl-hotel-site-rating" title="Claude 편집 평가 (실제 이용자 평점 아님)"><span class="sl-hotel-site-rating-tag">편집</span>★ ' + site.editorialRating.toFixed(1) + '</div>',
-    '  <div class="sl-hotel-site-zone">' + escapeHtml(zoneName) + ' 지역</div>',
+    '  <div class="sl-hotel-site-zone">' + escapeHtml(combineLocation(zoneName, destination)) + ' 기준</div>',
     '  <div class="sl-hotel-site-filter">' + (site.filterSupport === 'unsupported' ? '지역만 검색' : escapeHtml(filterNote) + (site.filterSupport === 'best_effort' ? ' · 참고용' : '')) + '</div>',
     '  <div class="sl-hotel-site-cta">바로 검색 ' + IC_EXTLINK + '</div>',
     '</a>',
@@ -3450,15 +3372,9 @@ function activeCandidates(candidates: Place[]): Place[] {
       const pb = typeof b.price_per_night === 'number' ? b.price_per_night : Infinity;
       return pa - pb;
     }
-    if (step2SortMode === 'access') {
-      const aa = candidateMetrics(a).spotAccessMin ?? Infinity;
-      const ab = candidateMetrics(b).spotAccessMin ?? Infinity;
-      return aa - ab;
-    }
-    if (!selectedZone) return 0;
-    const da = a.lat != null && a.lng != null ? haversineKm(selectedZone.centerLat, selectedZone.centerLng, a.lat, a.lng) : Infinity;
-    const db = b.lat != null && b.lng != null ? haversineKm(selectedZone.centerLat, selectedZone.centerLng, b.lat, b.lng) : Infinity;
-    return da - db;
+    const aa = candidateMetrics(a).spotAccessMin ?? Infinity;
+    const ab = candidateMetrics(b).spotAccessMin ?? Infinity;
+    return aa - ab;
   });
 }
 
@@ -3502,7 +3418,6 @@ function renderPoolHead(body: HTMLElement, candidates: Place[]): void {
     '    <option value="rating"' + (step2SortMode === 'rating' ? ' selected' : '') + '>평점순</option>',
     '    <option value="price"' + (step2SortMode === 'price' ? ' selected' : '') + '>가격순</option>',
     '    <option value="access"' + (step2SortMode === 'access' ? ' selected' : '') + '>일정 접근성순</option>',
-    '    <option value="distance"' + (step2SortMode === 'distance' ? ' selected' : '') + '>지역 중심 거리순</option>',
     '  </select>',
     '  <button type="button" class="sl-pool-compare-btn" id="sl-pool-compare-btn"' + (compareCount < 2 ? ' disabled' : '') + '>',
     '    비교하기' + (compareCount > 0 ? ' <span class="sl-pool-compare-count">' + compareCount + '</span>' : ''),
@@ -3597,9 +3512,6 @@ function renderCandidateCards(body: HTMLElement, candidates: Place[]): void {
       }
       if (m.airportMin != null) {
         metricBits.push('<span class="sl-cand-metric" title="도착 공항까지 이동시간(직선거리 기반 추정)">' + IC_PLANE + '공항 ' + fmtMin(m.airportMin) + '</span>');
-      }
-      if (m.centerKm != null) {
-        metricBits.push('<span class="sl-cand-metric">' + IC_RULER + '중심지 ' + (m.centerKm < 1 ? Math.round(m.centerKm * 1000) + 'm' : m.centerKm.toFixed(1) + 'km') + '</span>');
       }
 
       return [
@@ -3987,14 +3899,6 @@ function buildCompareRows(list: Place[]): CompareRow[] {
 
   rows.push(
     {
-      label: '지역 중심 거리',
-      values: metrics.map((m) => (m.centerKm != null ? (m.centerKm < 1 ? Math.round(m.centerKm * 1000) + 'm' : m.centerKm.toFixed(1) + 'km') : '–')),
-      nums: metrics.map((m) => m.centerKm),
-      higherIsBetter: false,
-      tint: 'time',
-      comparable: true,
-    },
-    {
       label: '객실 컨디션',
       values: list.map((c, i) => conditionStarsHtml(c.id, metrics[i].roomCondition, false)),
       nums: metrics.map((m) => m.roomCondition),
@@ -4165,7 +4069,9 @@ function renderComparePanel(body: HTMLElement, candidates: Place[]): void {
  * (원칙 3-3 — hover는 선택을 덮어쓰지 않는 임시 미리보기).
  */
 function previewCandidateOnMap(placeId: string | null): void {
-  step2Markers.forEach((marker, id) => {
+  markersByPlaceId.forEach((marker, id) => {
+    const place = allPlaces.find((p) => p.id === id);
+    if (place?.mood !== '숙소') return; // 숙소 마커만 대상 — 배경 장소는 건드리지 않음
     const isPinned = id === pendingHotelId;
     const isPreview = placeId != null && id === placeId;
     marker.setZIndex(isPinned ? 50 : isPreview ? 40 : 20);
@@ -4189,6 +4095,9 @@ function renderSelectedHotelPreview(body: HTMLElement, candidates: Place[]): voi
     // 이전에 확정했던 기록도 더 이상 유효하지 않으니 같이 지움(같은 숙소 재선택이면 유지)
     if (selectedBasecamp?.id !== hotel.id) basecampConfirmedAt = null;
     selectedBasecamp = hotel;
+    // Step3(최종 점검)이 지도 중심·접근성 계산 기준으로 쓸 권역 — 실제 권역 선택 단계가
+    // 없어졌으니 이 숙소 좌표를 중심으로 임시 권역을 만들어준다.
+    selectedZone = reconstructZoneFromBasecamp(hotel.name, slActiveSegment?.id ?? hotel.id, hotel.id);
     confirmedIds = new Set();
     step = 3;
     // 숙소 선택 시점에 바로 저장 — 여기서 새로고침해도 Step3부터 복원됨 (진행상황 유실 방지)
@@ -4197,9 +4106,6 @@ function renderSelectedHotelPreview(body: HTMLElement, candidates: Place[]): voi
     renderStep(container);
   };
 }
-
-let step2Markers = new Map<string, any>();
-let step2MapInstance: any = null;
 
 /**
  * 숙소 이름을 붙여넣으면 자동으로 숙소를 추가.
@@ -4210,7 +4116,7 @@ async function handleImportHotelLink(body: HTMLElement, candidates: Place[]): Pr
   const input = body.querySelector('#sl-import-link-input') as HTMLInputElement;
   const btn = body.querySelector('#sl-import-link-btn') as HTMLButtonElement;
   const statusEl = body.querySelector('#sl-import-link-status') as HTMLElement;
-  if (!input || !btn || !statusEl || !selectedZone) return;
+  if (!input || !btn || !statusEl) return;
 
   const name = input.value.trim();
   if (!name) return;
@@ -4224,7 +4130,7 @@ async function handleImportHotelLink(body: HTMLElement, candidates: Place[]): Pr
     const res = await fetch('/api/import-hotel', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, contextHint: selectedZone.name + ' ' + getTripDestination() }),
+      body: JSON.stringify({ name, contextHint: getTripDestination() }),
     });
     const data = await res.json();
 
@@ -4280,7 +4186,7 @@ async function handleImportHotelLink(body: HTMLElement, candidates: Place[]): Pr
     // 화면 상태에 즉시 반영 (다시 불러오지 않고 메모리에서 바로 추가)
     markRecentlyMutated(inserted.id);
     allPlaces.push(inserted);
-    selectedZone.places.push(inserted);
+    recomputeZonesFromPlaces(); // 지도가 이 숙소를 어느 권역(있다면) 소속으로 그릴 수 있게 재계산
     candidates.push(inserted);
 
     input.value = '';
@@ -4299,19 +4205,20 @@ async function handleImportHotelLink(body: HTMLElement, candidates: Place[]): Pr
   }
 }
 
-/** 새로 추가된 숙소를 Step2 지도에 마커로 즉시 표시 (지도를 통째로 다시 그리지 않고 마커만 추가) */
+/** 새로 추가된 숙소를 지도에 마커로 즉시 표시 (지도를 통째로 다시 그리지 않고 마커만 추가) */
 function addMarkerForNewCandidate(place: Place): void {
   const g = (window as any).google;
-  if (!g?.maps || !step2MapInstance || place.lat == null || place.lng == null) return;
+  if (!g?.maps || !mapInstance || place.lat == null || place.lng == null) return;
 
   const marker = new g.maps.Marker({
     position: { lat: place.lat, lng: place.lng },
-    map: step2MapInstance,
+    map: mapInstance,
     title: place.name,
     icon: buildStep1GatePin(g, place.mood, place.category, place.name),
     zIndex: 20,
   });
-  step2Markers.set(place.id, marker);
+  mapMarkers.push(marker);
+  markersByPlaceId.set(place.id, marker);
   marker.addListener('click', () => {
     pendingHotelId = place.id;
     highlightBasecampMarker(place.id);
@@ -4319,106 +4226,19 @@ function addMarkerForNewCandidate(place: Place): void {
   highlightBasecampMarker(place.id);
 }
 
-async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<void> {
-  step2Markers = new Map();
-
-  try {
-    await loadGoogleMapsScript();
-  } catch (e) {
-    return;
-  }
-  const g = (window as any).google;
-  const mapEl = body.querySelector('#sl-map2') as HTMLElement;
-  if (!g?.maps || !mapEl || !selectedZone) return;
-
-  const map = new g.maps.Map(mapEl, {
-    center: { lat: selectedZone.centerLat, lng: selectedZone.centerLng },
-    zoom: 15,
-    disableDefaultUI: true,
-    zoomControl: false,
-    fullscreenControl: false,
-    mapTypeControl: false,
-    streetViewControl: false,
-    keyboardShortcuts: false,
-    isFractionalZoomEnabled: true,
-    gestureHandling: 'greedy',
-    // Step1처럼 완전히 추상화하진 않고 도로명·건물 등 실제 디테일은 유지하되,
-    // 우리 핀이 묻히지 않도록 구글 기본 업체 POI 아이콘만 옅게 처리
-    styles: MAP_STYLE_STEP2,
-  });
-  step2MapInstance = map;
-  fixMapVisibilityOnResize(g, map, mapEl, { lat: selectedZone.centerLat, lng: selectedZone.centerLng });
-
-  addCustomZoomControl(map, mapEl);
-
-  // candidates(거리 기반 숙소 후보)와 selectedZone.places(큐레이션 배정 결과) 둘 다
-  // "이 지역 안"으로 쳐서 강조 표시 대상에서 배경 마커 루프를 제외 — 안 그러면 candidates로
-  // 새로 잡힌 숙소가 배경에도, 강조 마커에도 중복으로 찍힘
-  const inZoneIds = new Set([...selectedZone.places.map((p) => p.id), ...candidates.map((p) => p.id)]);
-
-  // 선택한 지역 밖 장소도 함께 찍어서, 사용자가 축소했을 때 트립 전체 장소를 파악할 수 있게 함
-  allPlaces.forEach((p) => {
-    if (p.lat == null || p.lng == null) return;
-    if (inZoneIds.has(p.id)) return; // 지역 안 장소는 아래에서 강조된 스타일로 별도 처리
-
-    const marker = new g.maps.Marker({
-      position: { lat: p.lat, lng: p.lng },
-      map,
-      title: p.name,
-      icon: buildCategoryIcon(g, p.mood, p.category, p.name),
-      zIndex: 0,
-    });
-    marker.addListener('click', () => {
-      showPlaceInfoWindow(g, map, marker, p);
-    });
-  });
-
-  // 숙소 후보 — zone.places가 아니라 거리 기반 candidates 기준(직접 추가한 권역도 동작하도록)
-  candidates.forEach((p) => {
-    if (p.lat == null || p.lng == null) return;
-    const marker = new g.maps.Marker({
-      position: { lat: p.lat, lng: p.lng },
-      map,
-      title: p.name,
-      icon: buildStep1GatePin(g, p.mood, p.category, p.name),
-      zIndex: 20,
-    });
-    step2Markers.set(p.id, marker);
-    marker.addListener('click', () => {
-      pendingHotelId = p.id;
-      renderBasecampList(body, candidates);
-      renderSelectedHotelPreview(body, candidates);
-      highlightBasecampMarker(p.id);
-      showPlaceInfoWindow(g, map, marker, p);
-    });
-  });
-
-  // 큐레이션 권역에 배정된 숙소 외 장소(관광/맛집/액티비티) — 직접 추가한 권역은 항상 비어있음
-  selectedZone.places.forEach((p) => {
-    if (p.mood === '숙소' || p.lat == null || p.lng == null) return; // 위에서 이미 처리
-    const marker = new g.maps.Marker({
-      position: { lat: p.lat, lng: p.lng },
-      map,
-      title: p.name,
-      icon: buildCategoryIcon(g, p.mood, p.category, p.name),
-      zIndex: 1,
-    });
-    // 숙소 후보가 아닌 장소는 선택 동작 없이 정보만 표시 (이미 저장된 데이터, 추가 API 호출 없음)
-    marker.addListener('click', () => {
-      showPlaceInfoWindow(g, map, marker, p);
-    });
-  });
-}
-
 /** 숙소를 선택했을 때 지도를 이동시켜 보여줄 적당한 줌 레벨(기본 지도 줌 15보다 한 단계 더 확대) */
 const STEP2_SELECT_ZOOM = 17;
 
-/** 숙소 후보 리스트에서 클릭한 항목을 지도 마커에서도 확대·강조하고, 그 위치로 지도를 이동·줌인 */
+/** 후보 리스트에서 클릭한 항목을 지도(Step1과 공유하는 mapInstance) 마커에서도 확대·강조하고,
+ *  그 위치로 지도를 이동·줌인. 예전엔 Step2가 자기 지도를 따로 가지고 있었지만, 권역 선택
+ *  단계가 없어지면서 지도를 하나만 쓰게 돼 markersByPlaceId로 해당 마커를 찾아 처리한다. */
 function highlightBasecampMarker(placeId: string | null): void {
   const g = (window as any).google;
   if (!g?.maps) return;
   let selectedMarker: any = null;
-  step2Markers.forEach((marker, id) => {
+  markersByPlaceId.forEach((marker, id) => {
+    const place = allPlaces.find((p) => p.id === id);
+    if (place?.mood !== '숙소') return; // 숙소 마커만 강조 대상 — 배경 장소는 그대로 둠
     const isSelected = id === placeId;
     marker.setZIndex(isSelected ? 50 : 20);
     marker.setAnimation(isSelected ? g.maps.Animation.BOUNCE : null);
@@ -4430,12 +4250,12 @@ function highlightBasecampMarker(placeId: string | null): void {
 
   // 선택 취소 후 같은 숙소를 다시 선택하는 경우에도 매번 다시 이동·줌인되도록,
   // 매 선택 시점마다(이전 상태와 무관하게) 무조건 실행한다.
-  if (selectedMarker && step2MapInstance) {
+  if (selectedMarker && mapInstance) {
     const pos = selectedMarker.getPosition?.();
     if (pos) {
-      step2MapInstance.panTo(pos);
-      const currentZoom = step2MapInstance.getZoom() ?? STEP2_SELECT_ZOOM;
-      step2MapInstance.setZoom(Math.max(currentZoom, STEP2_SELECT_ZOOM));
+      mapInstance.panTo(pos);
+      const currentZoom = mapInstance.getZoom() ?? STEP2_SELECT_ZOOM;
+      mapInstance.setZoom(Math.max(currentZoom, STEP2_SELECT_ZOOM));
     }
   }
 }
@@ -4531,8 +4351,8 @@ function estimateMinutes(km: number): number {
 
 async function renderStep3(body: HTMLElement): Promise<void> {
   if (!selectedZone || !selectedBasecamp) {
-    step = 2;
-    await renderStep2(body);
+    step = 1;
+    await renderStep1(body);
     return;
   }
 
