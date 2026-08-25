@@ -816,10 +816,14 @@
   transform: translate(-50%, -50%) scale(var(--zone-zoom-scale));
   text-align: center;
   cursor: pointer;
-  pointer-events: auto;
-  transition: transform 150ms ease;
+  /* 참고용 정보라 평소엔 지도를 덮지 않게 숨겨두고, 그 권역(폴리곤) 위에 마우스가 있을
+     때만(.zone-hovered) 보여줌 — pointer-events도 같이 꺼서 숨어있는 동안은 클릭도 안 먹음 */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease, transform 150ms ease;
 }
-.sl-map-zone-label:hover { transform: translate(-50%, -50%) scale(calc(var(--zone-zoom-scale) * 1.05)); }
+.sl-map-zone-label.zone-hovered { opacity: 1; pointer-events: auto; }
+.sl-map-zone-label.zone-hovered:hover { transform: translate(-50%, -50%) scale(calc(var(--zone-zoom-scale) * 1.05)); }
 /* 작은 권역(도형이 좁은 경우)에서 라벨이 도형 폭을 거의 다 차지해 안에 있는 마커를
    가려 보이던 문제 — 가독성 유지되는 선에서 폰트·패딩을 축소해 필 자체의 자리 차지를 줄임 */
 .sl-map-label-name {
@@ -1387,6 +1391,22 @@ button.sl-cond-star:hover { color: #E0BC4A; }
 .sl-cand-action svg { width: 11px; height: 11px; }
 .sl-cand-action:hover { background: #E4EDF7; color: var(--sl-navy); }
 .sl-cand-elim:hover { background: #FDEEEC; color: #C0392B; }
+
+/* 예약 링크가 아직 연동 안 된 카드 — 점선 테두리로 "연동된 링크(실선)"와 구분 */
+.sl-cand-link-empty { background: transparent; border: 1px dashed var(--sl-border); color: #94A3B8; }
+.sl-cand-link-empty:hover { background: #F1F6FB; color: var(--sl-navy); }
+
+.sl-cand-link-hint {
+  flex-basis: 100%;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--sl-bg);
+  border: 1px solid var(--sl-border);
+  font-size: 11.5px;
+  color: #64748B;
+  line-height: 1.5;
+}
 
 /* ── 탈락 사유 선택 ── */
 .sl-elim-picker {
