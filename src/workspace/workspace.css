@@ -715,6 +715,25 @@
 .ws-youtube-link { flex-basis: 100%; color: #E0332B; }
 .ws-youtube-link:hover { color: #B91C1C; }
 
+/* 숙소 카드 상세에서만 보이는 예약 사이트 검색 링크 — Google/YouTube 링크와 같은 톤이지만
+   사이트별 파비콘 + 짧은 안내문(날짜/인원이 실제로 반영되는지)을 같이 보여줘야 해서 카드형 */
+.ws-booking-sites { display: flex; flex-direction: column; gap: 6px; }
+.ws-booking-site-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(11,42,92,0.1);
+  border-radius: 10px;
+  background: #F8FBFE;
+  text-decoration: none;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.ws-booking-site-link:hover { border-color: rgba(11,124,196,0.35); background: #EAF6FD; }
+.ws-booking-site-favicon { width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0; }
+.ws-booking-site-name { font-size: 12.5px; font-weight: 700; color: #0B2A5C; flex-shrink: 0; }
+.ws-booking-site-note { font-size: 11px; color: #94A3B8; margin-left: auto; text-align: right; }
+
 .ws-chip {
   display: inline-block;
   align-self: flex-start;

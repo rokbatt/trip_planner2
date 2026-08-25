@@ -4,7 +4,7 @@ import { navigate } from '../router';
 import { initChat, teardownChat, setBadgeListener, countUnreadSince, markAsRead, renderChatPanelUI } from '../chat/chat';
 import { initComments, teardownComments, renderCommentsUI } from '../comments/comments';
 import { initHotelVoteChannel, teardownHotelVoteChannel } from '../collab/hotelVote';
-import { loadDestinations, resolveActiveDestination, ACTIVE_DESTINATION_CHANGED_EVENT } from '../trips/destinations';
+import { loadDestinations, resolveActiveDestination, syntheticDestinationName, ACTIVE_DESTINATION_CHANGED_EVENT } from '../trips/destinations';
 import type { Database, TripDestination } from '../types/database';
 import type { ChatMessage } from '../types/database';
 import './workspace.css';
@@ -772,6 +772,54 @@ const DETAIL_GATES: Array<{ key: string; label: string }> = [
   { key: '숙소', label: 'STAY' },
 ];
 
+/**
+ * 숙소(mood==='숙소') 카드 상세에서 예약 사이트(Trip.com/Booking.com/Agoda) 검색으로
+ * 바로 넘어가는 링크. API 호출 없이 URL만 조합 — shortlist.ts STAY Step1의 HOTEL_SITES와
+ * 같은 원칙(3-1): 인원/날짜 파라미터가 실제로 반영되는지 확인된 사이트에만 붙이고, 확인 안 된
+ * 사이트(Agoda/Trip.com — 지역 고유 ID 기반 검색이라 정확한 딥링크를 만들 수 없음)는 이름
+ * 검색만 지원한다고 화면에 그대로 밝힌다. 인원/숙박일은 매번 store의 현재 트립 값을 그대로
+ * 읽어 조합하므로, 트립 인원이나 날짜가 바뀌면 다음에 이 Drawer를 열 때 자동으로 반영된다.
+ */
+function buildBookingSiteLinksHtml(place: any): string {
+  const trip = store.get('currentTrip') as Trip | null;
+  const location = place.address || syntheticDestinationName(trip);
+  const query = [place.name, location].filter(Boolean).join(' ');
+  const headcount = trip?.headcount ?? 2;
+  const checkin = trip?.start_date ? String(trip.start_date).slice(0, 10) : null;
+  const checkout = trip?.end_date ? String(trip.end_date).slice(0, 10) : null;
+
+  const bookingUrl = new URL('https://www.booking.com/searchresults.ko.html');
+  bookingUrl.searchParams.set('ss', query);
+  if (checkin && checkout) {
+    bookingUrl.searchParams.set('checkin', checkin);
+    bookingUrl.searchParams.set('checkout', checkout);
+  }
+  bookingUrl.searchParams.set('group_adults', String(headcount));
+  bookingUrl.searchParams.set('no_rooms', '1');
+  bookingUrl.searchParams.set('group_children', '0');
+
+  const sites: Array<{ name: string; domain: string; url: string; note: string }> = [
+    { name: 'Booking.com', domain: 'booking.com', url: bookingUrl.toString(), note: (checkin && checkout ? '날짜 · ' : '') + '인원 ' + headcount + '명 반영' },
+    { name: 'Agoda', domain: 'agoda.com', url: 'https://www.agoda.com/ko-kr/search?text=' + encodeURIComponent(query), note: '이름으로 검색 · 날짜/인원 직접 확인' },
+    { name: 'Trip.com', domain: 'trip.com', url: 'https://www.trip.com/hotels/list?keyword=' + encodeURIComponent(query), note: '이름으로 검색 · 날짜/인원 직접 확인' },
+  ];
+
+  const cards = sites.map((s) => [
+    '<a class="ws-booking-site-link" href="' + s.url + '" target="_blank" rel="noopener noreferrer">',
+    '  <img class="ws-booking-site-favicon" src="https://www.google.com/s2/favicons?domain=' + s.domain + '&sz=64" alt="" />',
+    '  <span class="ws-booking-site-name">' + escapeHtml(s.name) + '</span>',
+    '  <span class="ws-booking-site-note">' + escapeHtml(s.note) + '</span>',
+    '</a>',
+  ].join('')).join('');
+
+  return [
+    '<div class="ws-detail-section">',
+    '  <span class="ws-detail-label">예약 사이트에서 찾기</span>',
+    '  <div class="ws-booking-sites">' + cards + '</div>',
+    '</div>',
+  ].join('');
+}
+
 /** 카드 상세 Drawer 콘텐츠 */
 function buildDetailPanelShell(place: any): string {
   const photo = place.photo_url
@@ -813,6 +861,8 @@ function buildDetailPanelShell(place: any): string {
     '</a>',
   ].join('');
 
+  const bookingSites = place.mood === '숙소' ? buildBookingSiteLinksHtml(place) : '';
+
   const address = place.address
     ? '<div class="ws-detail-section"><span class="ws-detail-label">주소</span><div class="ws-detail-text">' + escapeHtml(place.address) + '</div></div>'
     : '';
@@ -844,6 +894,7 @@ function buildDetailPanelShell(place: any): string {
     '    </div>',
     '    <span class="ws-detail-save-hint" id="detail-name-hint"></span>',
     '    <div class="ws-detail-links">' + mapsLink + searchLink + youtubeLink + '</div>',
+         bookingSites,
          category,
          address,
          hours,
