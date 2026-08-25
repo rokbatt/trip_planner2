@@ -7,7 +7,8 @@ import { supabase } from '../supabase';
 import { insertGooglePlace } from './addGooglePlace';
 import { getCategoryLabel } from '../utils/googleMaps';
 import type { GooglePlaceResult } from '../utils/googleMaps';
-import type { ChatMessage } from '../types/database';
+import type { ChatMessage, Trip } from '../types/database';
+import { loadDestinations, resolveActiveDestination, isSyntheticDestination } from './destinations';
 
 export type LinkCategory = 'STAY' | 'PLACE' | 'FOOD' | 'ACTIVITY' | 'VIDEO' | 'ARTICLE' | 'OTHER';
 export const LINK_CATEGORIES: LinkCategory[] = ['STAY', 'PLACE', 'FOOD', 'ACTIVITY', 'VIDEO', 'ARTICLE', 'OTHER'];
@@ -109,8 +110,17 @@ async function tryAutoImportHotelFromLink(tripId: string, url: string, ogTitle: 
   if (!name) return;
 
   try {
-    const { data: trip } = await supabase.from('trips').select('destinations').eq('id', tripId).maybeSingle();
-    const contextHint = trip?.destinations?.[0] ?? '';
+    const { data: trip } = await supabase.from('trips').select('*').eq('id', tripId).maybeSingle();
+    if (!trip) return;
+
+    // 사용자가 지금 보고 있는(마지막으로 활성화한) 여행지로 담아야 한다 — 항상 첫 번째
+    // 여행지로 고정하면 여러 여행지를 오가며 채팅할 때 엉뚱한 여행지에 숙소가 쌓인다.
+    // BOARD/shortlist가 공유하는 세션 내 활성 여행지 상태(resolveActiveDestination)를
+    // 그대로 재사용 — 아직 아무 화면에서도 활성값을 고르지 않았다면 첫 여행지로 폴백.
+    const dests = await loadDestinations(trip as Trip);
+    const activeDest = dests.length ? resolveActiveDestination(tripId, dests) : null;
+    const contextHint = activeDest?.name ?? '';
+    const destinationId = activeDest && !isSyntheticDestination(activeDest.id) ? activeDest.id : undefined;
 
     const res = await fetch('/api/import-hotel', {
       method: 'POST',
@@ -134,7 +144,7 @@ async function tryAutoImportHotelFromLink(tripId: string, url: string, ogTitle: 
     };
 
     // insertGooglePlace가 같은 트립에 같은 google_place_id가 이미 있으면 중복 생성하지 않음
-    await insertGooglePlace(tripId, undefined, '숙소', result, 'link_auto_import');
+    await insertGooglePlace(tripId, destinationId, '숙소', result, 'link_auto_import');
   } catch (e) {
     console.error('[Links] 숙소 자동 추가 실패(링크 카드는 정상 저장됨):', (e as Error).message);
   }
