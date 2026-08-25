@@ -197,6 +197,20 @@ let zones: Zone[] = [];
 /** ZONE_ASSIGN_MAX_KM보다 멀어 어느 권역에도 배정되지 않은 장소(예: 공항) — 권역 카드
  *  통계에는 안 들어가지만, Step1 지도에는 계속 마커로 보여줌 */
 let unassignedPlaces: Place[] = [];
+/** fetchDestinationZones()로 받아온 원본 권역 좌표 — 실시간으로 장소가 추가/삭제될 때마다
+ *  네트워크 호출 없이(3-2 원칙) assignPlacesToZones()만 다시 돌려서 재배정하기 위해 보관 */
+let zoneSeedsCache: ZoneSeed[] = [];
+let shortlistRealtimeChannel: any = null;
+let realtimeRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+/** 이 클라이언트가 방금 직접 저장한 place id — board.ts의 같은 패턴과 동일한 이유로 필요:
+ *  이 화면에서 가격/탈락/선택 등을 저장하면 그 UPDATE가 realtime으로 그대로 되돌아오는데,
+ *  이미 로컬에서 반영해둔 걸 또 다시 그리면 막 입력 중이던 다른 입력창(포커스/타이핑 중인
+ *  값)까지 통째로 다시 그려져 날아간다. 짧은 유예시간 동안만 그 echo를 무시한다. */
+const recentlyMutatedIds = new Set<string>();
+function markRecentlyMutated(id: string): void {
+  recentlyMutatedIds.add(id);
+  setTimeout(() => recentlyMutatedIds.delete(id), 2500);
+}
 let step: 1 | 2 | 3 = 1;
 let selectedZone: Zone | null = null;
 let zoneDataSource = 'curated';
@@ -324,6 +338,15 @@ let distancePolyline: any = null;
 let distanceInfoWindow: any = null;
 
 export function teardownShortlist(): void {
+  if (shortlistRealtimeChannel) {
+    supabase.removeChannel(shortlistRealtimeChannel);
+    shortlistRealtimeChannel = null;
+  }
+  if (realtimeRefreshTimer) {
+    clearTimeout(realtimeRefreshTimer);
+    realtimeRefreshTimer = null;
+  }
+  zoneSeedsCache = [];
   if (shellResizeHandler) {
     window.removeEventListener('resize', shellResizeHandler);
     shellResizeHandler = null;
@@ -386,6 +409,99 @@ export function teardownShortlist(): void {
   zoneLabelOverlays = [];
   zoneBlobPoints = new Map();
   markersByZone = new Map();
+}
+
+/**
+ * allPlaces가 바뀐 뒤 zones/unassignedPlaces를 네트워크 호출 없이 다시 계산 —
+ * fetchDestinationZones()로 받아온 seeds(zoneSeedsCache)는 destination이 바뀌지 않는 한
+ * 그대로이므로, 로컬 좌표 계산만 다시 돌리면 된다(3-2 원칙: 불필요한 API 재호출 방지).
+ * selectedZone이 가리키던 Zone 객체는 이 과정에서 새로 만들어지므로, 있으면 같은 id로
+ * 다시 찾아 이어준다 — 안 그러면 Step2가 옛 places 배열(새로 들어온 후보 없음)을 계속 본다.
+ */
+function recomputeZonesFromPlaces(): void {
+  const selectedZoneId = selectedZone?.id ?? null;
+
+  if (zoneDataSource === 'places_only') {
+    zones = buildFallbackZoneFromPlaces(allPlaces, getTripDestination());
+    unassignedPlaces = [];
+  } else if (zoneSeedsCache.length > 0) {
+    zones = assignPlacesToZones(zoneSeedsCache, allPlaces);
+    const assignedIds = new Set(zones.flatMap((z) => z.places.map((p) => p.id)));
+    unassignedPlaces = allPlaces.filter((p) => p.lat != null && p.lng != null && !assignedIds.has(p.id));
+  } else {
+    return; // 아직 zone 데이터를 한 번도 못 받아온 상태 — 호출부에서 전체 재로드로 처리
+  }
+
+  if (selectedZoneId) {
+    selectedZone = zones.find((z) => z.id === selectedZoneId) ?? selectedZone;
+  }
+}
+
+/** 실시간으로 들어온 places 변경 하나를 allPlaces/zones에 반영하고, 화면을 다시 그리도록
+ *  예약한다. 여러 건이 짧은 시간에 연달아 오면(예: 여러 숙소를 빠르게 붙여넣기) 매번 다시
+ *  그리지 않고 마지막 한 번만 반영되도록 살짝 묶어서(디바운스) 처리한다. */
+function applyRealtimePlaceChange(kind: 'INSERT' | 'UPDATE' | 'DELETE', row: Place): void {
+  if (recentlyMutatedIds.has(row.id)) return;
+  if (kind === 'DELETE') {
+    const existed = allPlaces.some((p) => p.id === row.id);
+    if (!existed) return;
+    allPlaces = allPlaces.filter((p) => p.id !== row.id);
+  } else {
+    // 다른 여행지에 속한 장소는 이 화면(활성 여행지) 대상이 아님
+    if (slActiveDest && !placeBelongsToDestination(row, slActiveDest)) return;
+    const idx = allPlaces.findIndex((p) => p.id === row.id);
+    if (idx >= 0) allPlaces[idx] = row;
+    else allPlaces.push(row);
+  }
+
+  const hadNoZoneData = zones.length === 0 && unassignedPlaces.length === 0 && zoneSeedsCache.length === 0;
+  if (hadNoZoneData) {
+    // 아직 zone을 한 번도 못 구한 상태(예: 빈 화면에서 첫 장소가 막 들어온 경우) — 저렴한
+    // 로컬 재계산으로는 해결 안 되니 처음 화면을 그릴 때 쓰던 전체 로직을 다시 탄다.
+    scheduleShortlistRealtimeRefresh(true);
+    return;
+  }
+
+  recomputeZonesFromPlaces();
+  scheduleShortlistRealtimeRefresh(false);
+}
+
+function scheduleShortlistRealtimeRefresh(fullReload: boolean): void {
+  if (realtimeRefreshTimer) clearTimeout(realtimeRefreshTimer);
+  realtimeRefreshTimer = setTimeout(() => {
+    realtimeRefreshTimer = null;
+    if (!slContainer) return;
+    if (fullReload) {
+      void renderShortlistContent(slContainer, currentTripId);
+    } else if (step === 1 || step === 2) {
+      void renderStep(slContainer);
+    }
+    // Step3는 이미 확정된 후보 하나만 보는 화면이라 실시간 변경으로 다시 그릴 이유가 적어
+    // 그대로 둔다(불필요한 재렌더 방지) — 다음에 Step1/2로 돌아오면 최신 상태로 보인다.
+  }, 600);
+}
+
+/** 다른 화면(BOARD 등)이나 다른 협업자가 이 트립의 places를 추가/수정/삭제해도 STAY 화면이
+ *  자동으로 따라가도록 구독 — 예전엔 이 화면을 나갔다 다시 들어와야만 반영됐다. */
+function subscribeShortlistRealtime(tripId: string): void {
+  shortlistRealtimeChannel = supabase
+    .channel('shortlist-places:' + tripId)
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'places', filter: 'trip_id=eq.' + tripId },
+      (payload) => applyRealtimePlaceChange('INSERT', payload.new as Place)
+    )
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'places', filter: 'trip_id=eq.' + tripId },
+      (payload) => applyRealtimePlaceChange('UPDATE', payload.new as Place)
+    )
+    .on(
+      'postgres_changes',
+      { event: 'DELETE', schema: 'public', table: 'places', filter: 'trip_id=eq.' + tripId },
+      (payload) => applyRealtimePlaceChange('DELETE', payload.old as Place)
+    )
+    .subscribe();
 }
 
 function escapeHtml(str: string): string {
@@ -673,6 +789,7 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
   teardownShortlist();
   currentTripId = tripId;
   slContainer = container;
+  subscribeShortlistRealtime(tripId);
 
   container.innerHTML = '<div class="sl-loading">STAY 준비 중...</div>';
 
@@ -736,6 +853,7 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
     unassignedPlaces = [];
   } else {
     zoneDataSource = source;
+    zoneSeedsCache = seeds;
     zones = assignPlacesToZones(seeds, allPlaces);
     const assignedIds = new Set(zones.flatMap((z) => z.places.map((p) => p.id)));
     unassignedPlaces = allPlaces.filter((p) => p.lat != null && p.lng != null && !assignedIds.has(p.id));
@@ -2442,9 +2560,9 @@ const STEP1_PIN_TAIL_RATIO = 1.5;
 /** 회색이 아니라 mood(4개 게이트)별 색으로 채운 물방울 모양 핀 — ROUTE의 "아직 담지 않은 후보"
  *  핀과 같은 실루엣·아이콘 스타일(선 아이콘 + 그림자)을 쓰되, 색은 회청색이 아니라 이 화면이
  *  원래 쓰던 mood색을, 크기도 이 화면 크기(STEP1_PIN_HEAD_R) 그대로 유지한다.
- *  Step1 지도(Brainstorm에서 담긴 장소 전체 조망)에서만 쓰고, Step2/3의 buildCategoryIcon(배경
- *  없는 순수 이모지)은 그대로 둔다 — 두 화면의 핀 스타일이 서로 다른 의미(전부 다 보기 vs
- *  후보 비교)를 갖고 있어 일부러 구분. */
+ *  Step1 지도(Brainstorm에서 담긴 장소 전체 조망)와, Step2 지도의 숙소 후보 마커(집 모양 이모지
+ *  대신 Step1과 같은 파란 핀으로 통일해달라는 요청)에 쓴다. Step2의 숙소 외 배경 장소와 Step3는
+ *  여전히 buildCategoryIcon(배경 없는 순수 이모지)을 그대로 쓴다. */
 function buildStep1GatePin(g: any, mood: string | null, category?: string | null, name?: string | null): any {
   const iconSvg = isAirportPlace(name, category)
     ? PIN_IC_PLANE
@@ -3707,6 +3825,7 @@ async function savePriceFields(
   const place = allPlaces.find((p) => p.id === placeId);
   if (!place) return;
 
+  markRecentlyMutated(placeId);
   const { error } = await supabase.from('places').update(patch).eq('id', placeId);
   if (error) {
     console.error('숙소 비교 정보 저장 실패:', error.message);
@@ -3738,6 +3857,7 @@ async function eliminateCandidate(body: HTMLElement, candidates: Place[], placeI
   const place = allPlaces.find((p) => p.id === placeId);
   if (!place) return;
 
+  markRecentlyMutated(placeId);
   const { error } = await supabase
     .from('places')
     .update({ is_excluded: true, excluded_reason: reason })
@@ -3765,6 +3885,7 @@ async function restoreCandidate(body: HTMLElement, candidates: Place[], placeId:
   const place = allPlaces.find((p) => p.id === placeId);
   if (!place) return;
 
+  markRecentlyMutated(placeId);
   const { error } = await supabase
     .from('places')
     .update({ is_excluded: false, excluded_reason: null })
@@ -3787,6 +3908,7 @@ function selectCandidate(body: HTMLElement, candidates: Place[], placeId: string
     if (place?.is_excluded) {
       place.is_excluded = false;
       place.excluded_reason = null;
+      markRecentlyMutated(placeId);
       void supabase.from('places').update({ is_excluded: false, excluded_reason: null }).eq('id', placeId);
     }
   }
@@ -4156,6 +4278,7 @@ async function handleImportHotelLink(body: HTMLElement, candidates: Place[]): Pr
     }
 
     // 화면 상태에 즉시 반영 (다시 불러오지 않고 메모리에서 바로 추가)
+    markRecentlyMutated(inserted.id);
     allPlaces.push(inserted);
     selectedZone.places.push(inserted);
     candidates.push(inserted);
@@ -4185,7 +4308,7 @@ function addMarkerForNewCandidate(place: Place): void {
     position: { lat: place.lat, lng: place.lng },
     map: step2MapInstance,
     title: place.name,
-    icon: buildCategoryIcon(g, place.mood, place.category, place.name),
+    icon: buildStep1GatePin(g, place.mood, place.category, place.name),
     zIndex: 20,
   });
   step2Markers.set(place.id, marker);
@@ -4257,7 +4380,7 @@ async function initMapStep2(body: HTMLElement, candidates: Place[]): Promise<voi
       position: { lat: p.lat, lng: p.lng },
       map,
       title: p.name,
-      icon: buildCategoryIcon(g, p.mood, p.category, p.name),
+      icon: buildStep1GatePin(g, p.mood, p.category, p.name),
       zIndex: 20,
     });
     step2Markers.set(p.id, marker);
