@@ -644,6 +644,8 @@ function makeAdhocPlace(name: string, lat: number, lng: number): Place {
     price_currency: null,
     room_condition: null,
     excluded_reason: null,
+    linked_url: null,
+    linked_url_title: null,
   };
 }
 
@@ -700,6 +702,8 @@ function googleResultToPlace(g: GooglePlaceResult): Place {
     price_currency: null,
     room_condition: null,
     excluded_reason: null,
+    linked_url: null,
+    linked_url_title: null,
   };
 }
 
@@ -982,6 +986,8 @@ function makeAnchorPlace(
     price_currency: null,
     room_condition: null,
     excluded_reason: null,
+    linked_url: null,
+    linked_url_title: null,
   };
 }
 
