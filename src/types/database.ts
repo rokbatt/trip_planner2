@@ -119,6 +119,8 @@ export interface Database {
           price_currency: string | null;
           room_condition: number | null;
           excluded_reason: string | null;
+          linked_url: string | null;
+          linked_url_title: string | null;
         };
         Insert: {
           id?: string;
@@ -151,6 +153,8 @@ export interface Database {
           price_currency?: string | null;
           room_condition?: number | null;
           excluded_reason?: string | null;
+          linked_url?: string | null;
+          linked_url_title?: string | null;
         };
         Update: Partial<Database['public']['Tables']['places']['Insert']>;
         Relationships: [];

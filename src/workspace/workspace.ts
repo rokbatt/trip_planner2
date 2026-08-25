@@ -4,7 +4,7 @@ import { navigate } from '../router';
 import { initChat, teardownChat, setBadgeListener, countUnreadSince, markAsRead, renderChatPanelUI } from '../chat/chat';
 import { initComments, teardownComments, renderCommentsUI } from '../comments/comments';
 import { initHotelVoteChannel, teardownHotelVoteChannel } from '../collab/hotelVote';
-import { loadDestinations, resolveActiveDestination, syntheticDestinationName, ACTIVE_DESTINATION_CHANGED_EVENT } from '../trips/destinations';
+import { loadDestinations, resolveActiveDestination, ACTIVE_DESTINATION_CHANGED_EVENT } from '../trips/destinations';
 import type { Database, TripDestination } from '../types/database';
 import type { ChatMessage } from '../types/database';
 import './workspace.css';
@@ -727,6 +727,9 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
     bindDetailNotes(place);
     bindDetailNameSave(place.id);
     bindDetailGatePicker(place, tripId, (updatedPlace) => openDetailPanel(updatedPlace));
+    if (place.mood === '숙소') {
+      bindStayLinkSection(place, tripId, (updatedPlace) => openDetailPanel(updatedPlace));
+    }
 
     const commentsBody = panelEl.querySelector('#detail-comments-body') as HTMLElement | null;
     if (commentsBody) {
@@ -773,51 +776,97 @@ const DETAIL_GATES: Array<{ key: string; label: string }> = [
 ];
 
 /**
- * 숙소(mood==='숙소') 카드 상세에서 예약 사이트(Trip.com/Booking.com/Agoda) 검색으로
- * 바로 넘어가는 링크. API 호출 없이 URL만 조합 — shortlist.ts STAY Step1의 HOTEL_SITES와
- * 같은 원칙(3-1): 인원/날짜 파라미터가 실제로 반영되는지 확인된 사이트에만 붙이고, 확인 안 된
- * 사이트(Agoda/Trip.com — 지역 고유 ID 기반 검색이라 정확한 딥링크를 만들 수 없음)는 이름
- * 검색만 지원한다고 화면에 그대로 밝힌다. 인원/숙박일은 매번 store의 현재 트립 값을 그대로
- * 읽어 조합하므로, 트립 인원이나 날짜가 바뀌면 다음에 이 Drawer를 열 때 자동으로 반영된다.
+ * 숙소(mood==='숙소') 카드 상세에 붙는 "예약 링크" 섹션. 사이트를 추측해 검색 URL을
+ * 만들어주는 대신, 이미 채팅/LINKS 탭에서 저장해둔 실제 숙소 링크(trip_links, category
+ * 'STAY') 중 사용자가 직접 하나를 골라 카드에 연동해두는 방식 — 연동해두면 이후에는 그
+ * 링크를 바로 클릭해서 이동할 수 있다. 고른 링크는 place.linked_url/linked_url_title에
+ * 저장된다(places 테이블 컬럼, supabase/place_linked_url.sql).
  */
-function buildBookingSiteLinksHtml(place: any): string {
-  const trip = store.get('currentTrip') as Trip | null;
-  const location = place.address || syntheticDestinationName(trip);
-  const query = [place.name, location].filter(Boolean).join(' ');
-  const headcount = trip?.headcount ?? 2;
-  const checkin = trip?.start_date ? String(trip.start_date).slice(0, 10) : null;
-  const checkout = trip?.end_date ? String(trip.end_date).slice(0, 10) : null;
-
-  const bookingUrl = new URL('https://www.booking.com/searchresults.ko.html');
-  bookingUrl.searchParams.set('ss', query);
-  if (checkin && checkout) {
-    bookingUrl.searchParams.set('checkin', checkin);
-    bookingUrl.searchParams.set('checkout', checkout);
-  }
-  bookingUrl.searchParams.set('group_adults', String(headcount));
-  bookingUrl.searchParams.set('no_rooms', '1');
-  bookingUrl.searchParams.set('group_children', '0');
-
-  const sites: Array<{ name: string; domain: string; url: string; note: string }> = [
-    { name: 'Booking.com', domain: 'booking.com', url: bookingUrl.toString(), note: (checkin && checkout ? '날짜 · ' : '') + '인원 ' + headcount + '명 반영' },
-    { name: 'Agoda', domain: 'agoda.com', url: 'https://www.agoda.com/ko-kr/search?text=' + encodeURIComponent(query), note: '이름으로 검색 · 날짜/인원 직접 확인' },
-    { name: 'Trip.com', domain: 'trip.com', url: 'https://www.trip.com/hotels/list?keyword=' + encodeURIComponent(query), note: '이름으로 검색 · 날짜/인원 직접 확인' },
-  ];
-
-  const cards = sites.map((s) => [
-    '<a class="ws-booking-site-link" href="' + s.url + '" target="_blank" rel="noopener noreferrer">',
-    '  <img class="ws-booking-site-favicon" src="https://www.google.com/s2/favicons?domain=' + s.domain + '&sz=64" alt="" />',
-    '  <span class="ws-booking-site-name">' + escapeHtml(s.name) + '</span>',
-    '  <span class="ws-booking-site-note">' + escapeHtml(s.note) + '</span>',
-    '</a>',
-  ].join('')).join('');
+function buildStayLinkSectionHtml(place: any): string {
+  const body = place.linked_url
+    ? [
+        '<div class="ws-linked-url-row">',
+        '  <a class="ws-linked-url-link" href="' + escapeHtml(place.linked_url) + '" target="_blank" rel="noopener noreferrer">',
+             IC.link,
+        '    <span>' + escapeHtml(place.linked_url_title || place.linked_url) + '</span>',
+        '  </a>',
+        '  <button type="button" class="ws-link-action-btn" id="ws-link-relink-btn">변경</button>',
+        '  <button type="button" class="ws-link-action-btn" id="ws-link-unlink-btn">연동 해제</button>',
+        '</div>',
+      ].join('')
+    : [
+        '<button type="button" class="ws-link-connect-btn" id="ws-link-connect-btn">',
+             IC.link,
+        '  <span>링크 연동하기</span>',
+        '</button>',
+      ].join('');
 
   return [
-    '<div class="ws-detail-section">',
-    '  <span class="ws-detail-label">예약 사이트에서 찾기</span>',
-    '  <div class="ws-booking-sites">' + cards + '</div>',
+    '<div class="ws-detail-section" id="ws-stay-link-section">',
+    '  <span class="ws-detail-label">예약 링크</span>',
+         body,
+    '  <div class="ws-link-picker" id="ws-link-picker" hidden></div>',
     '</div>',
   ].join('');
+}
+
+/** LINKS 탭에 저장된 숙소(STAY) 링크 중 하나를 골라 place.linked_url로 연동 — 고르면
+ * Drawer 전체를 다시 그려 다른 바인딩(메모/댓글 등)도 최신 place로 이어지게 한다. */
+function bindStayLinkSection(place: any, tripId: string, onLinked: (updatedPlace: any) => void): void {
+  const connectBtn = document.getElementById('ws-link-connect-btn');
+  const relinkBtn = document.getElementById('ws-link-relink-btn');
+  const unlinkBtn = document.getElementById('ws-link-unlink-btn');
+  const pickerEl = document.getElementById('ws-link-picker') as HTMLElement | null;
+  if (!pickerEl) return;
+  const picker: HTMLElement = pickerEl;
+
+  async function saveLink(url: string | null, title: string | null): Promise<void> {
+    const { error } = await supabase.from('places').update({ linked_url: url, linked_url_title: title }).eq('id', place.id);
+    if (error) {
+      console.error('숙소 링크 연동 저장 실패:', error.message);
+      return;
+    }
+    onLinked({ ...place, linked_url: url, linked_url_title: title });
+  }
+
+  async function openPicker(): Promise<void> {
+    picker.hidden = false;
+    picker.innerHTML = '<div class="ws-link-picker-loading">불러오는 중...</div>';
+
+    const { data, error } = await supabase
+      .from('trip_links')
+      .select('id,url,title,site_name')
+      .eq('trip_id', tripId)
+      .eq('category', 'STAY')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      picker.innerHTML = '<div class="ws-link-picker-empty">링크를 불러오지 못했어요</div>';
+      return;
+    }
+    if (!data || data.length === 0) {
+      picker.innerHTML = '<div class="ws-link-picker-empty">아직 저장된 숙소 링크가 없어요. 채팅에 숙소 링크를 붙여넣으면 여기서 고를 수 있어요.</div>';
+      return;
+    }
+
+    picker.innerHTML = data.map((link) => [
+      '<button type="button" class="ws-link-picker-item" data-link-url="' + escapeHtml(link.url) + '" data-link-title="' + escapeHtml(link.title || link.site_name || link.url) + '">',
+      '  <span class="ws-link-picker-item-title">' + escapeHtml(link.title || link.site_name || link.url) + '</span>',
+      '  <span class="ws-link-picker-item-url">' + escapeHtml(link.url) + '</span>',
+      '</button>',
+    ].join('')).join('');
+
+    picker.querySelectorAll('.ws-link-picker-item').forEach((item) => {
+      item.addEventListener('click', () => {
+        const el = item as HTMLElement;
+        void saveLink(el.dataset.linkUrl || null, el.dataset.linkTitle || null);
+      });
+    });
+  }
+
+  connectBtn?.addEventListener('click', () => void openPicker());
+  relinkBtn?.addEventListener('click', () => void openPicker());
+  unlinkBtn?.addEventListener('click', () => void saveLink(null, null));
 }
 
 /** 카드 상세 Drawer 콘텐츠 */
@@ -861,7 +910,7 @@ function buildDetailPanelShell(place: any): string {
     '</a>',
   ].join('');
 
-  const bookingSites = place.mood === '숙소' ? buildBookingSiteLinksHtml(place) : '';
+  const stayLinkSection = place.mood === '숙소' ? buildStayLinkSectionHtml(place) : '';
 
   const address = place.address
     ? '<div class="ws-detail-section"><span class="ws-detail-label">주소</span><div class="ws-detail-text">' + escapeHtml(place.address) + '</div></div>'
@@ -894,7 +943,7 @@ function buildDetailPanelShell(place: any): string {
     '    </div>',
     '    <span class="ws-detail-save-hint" id="detail-name-hint"></span>',
     '    <div class="ws-detail-links">' + mapsLink + searchLink + youtubeLink + '</div>',
-         bookingSites,
+         stayLinkSection,
          category,
          address,
          hours,

@@ -715,24 +715,94 @@
 .ws-youtube-link { flex-basis: 100%; color: #E0332B; }
 .ws-youtube-link:hover { color: #B91C1C; }
 
-/* 숙소 카드 상세에서만 보이는 예약 사이트 검색 링크 — Google/YouTube 링크와 같은 톤이지만
-   사이트별 파비콘 + 짧은 안내문(날짜/인원이 실제로 반영되는지)을 같이 보여줘야 해서 카드형 */
-.ws-booking-sites { display: flex; flex-direction: column; gap: 6px; }
-.ws-booking-site-link {
-  display: flex;
+/* 숙소 카드 상세의 "예약 링크" 섹션 — 사이트를 추측해 검색 링크를 만드는 대신, LINKS 탭에
+   저장해둔 실제 숙소 링크 중 하나를 골라 카드에 연동해두는 방식(연동 전/후 상태가 다름) */
+.ws-link-connect-btn {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0B7CC4;
+  background: #EAF6FD;
+  border: 1px dashed rgba(11,124,196,0.4);
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+.ws-link-connect-btn:hover { background: #DCEFFB; border-color: #0B7CC4; }
+.ws-link-connect-btn svg { width: 13px; height: 13px; }
+
+.ws-linked-url-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ws-linked-url-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0B2A5C;
+  background: #F8FBFE;
+  border: 1px solid rgba(11,42,92,0.12);
+  border-radius: 8px;
+  padding: 7px 10px;
+  text-decoration: none;
+  max-width: 220px;
+  overflow: hidden;
+}
+.ws-linked-url-link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-linked-url-link:hover { border-color: rgba(11,124,196,0.35); background: #EAF6FD; }
+.ws-linked-url-link svg { width: 13px; height: 13px; flex-shrink: 0; }
+
+.ws-link-action-btn {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #94A3B8;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 2px;
+  transition: color 150ms ease;
+}
+.ws-link-action-btn:hover { color: #0B7CC4; }
+
+.ws-link-picker {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.ws-link-picker-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
   padding: 8px 10px;
   border: 1px solid rgba(11,42,92,0.1);
-  border-radius: 10px;
+  border-radius: 8px;
   background: #F8FBFE;
-  text-decoration: none;
+  cursor: pointer;
   transition: border-color 150ms ease, background 150ms ease;
 }
-.ws-booking-site-link:hover { border-color: rgba(11,124,196,0.35); background: #EAF6FD; }
-.ws-booking-site-favicon { width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0; }
-.ws-booking-site-name { font-size: 12.5px; font-weight: 700; color: #0B2A5C; flex-shrink: 0; }
-.ws-booking-site-note { font-size: 11px; color: #94A3B8; margin-left: auto; text-align: right; }
+.ws-link-picker-item:hover { border-color: rgba(11,124,196,0.35); background: #EAF6FD; }
+.ws-link-picker-item-title { font-size: 12.5px; font-weight: 700; color: #0B2A5C; }
+.ws-link-picker-item-url {
+  font-size: 11px;
+  color: #94A3B8;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-link-picker-loading, .ws-link-picker-empty {
+  font-size: 12px;
+  color: #94A3B8;
+  padding: 8px 2px;
+  line-height: 1.6;
+}
 
 .ws-chip {
   display: inline-block;
