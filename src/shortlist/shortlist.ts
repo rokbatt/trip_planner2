@@ -57,6 +57,7 @@ const IC_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
 const IC_EXTLINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>';
 const IC_XCLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
 const IC_SWAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3L3 7l4 4M3 7h13a4 4 0 0 1 4 4v1M17 21l4-4-4-4M21 17H8a4 4 0 0 1-4-4v-1"/></svg>';
+const IC_LINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
 const IC_ROUTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>';
 const IC_CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>';
 const IC_PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-7.58 7-12A7 7 0 0 0 5 10c0 4.42 7 12 7 12z"/><circle cx="12" cy="10" r="2.4"/></svg>';
@@ -240,6 +241,8 @@ let step2CompareMode = false;
 let step2ShowExcluded = false;
 /** 탈락 사유를 고르는 중인 후보 id (사유를 고르기 전엔 실제로 제외되지 않음) */
 let step2ElimTargetId: string | null = null;
+/** 예약 링크가 연동 안 된 카드의 안내 문구를 보여주는 중인 후보 id */
+let step2LinkHintTargetId: string | null = null;
 
 /** 비교 모드에서 한 번에 놓고 볼 수 있는 최대 후보 수 — 넘으면 표가 가로로 뭉개진다 */
 const STEP2_MAX_COMPARE = 4;
@@ -384,6 +387,7 @@ export function teardownShortlist(): void {
   step2CompareMode = false;
   step2ShowExcluded = false;
   step2ElimTargetId = null;
+  step2LinkHintTargetId = null;
   stayFilters = { budget: '', customMinKRW: null, customMaxKRW: null };
   confirmedIds = new Set();
   mapInstance = null;
@@ -2896,6 +2900,10 @@ async function initMap(body: HTMLElement): Promise<void> {
     const overlay = createZoneLabelOverlay(g, zone, color, ringCentroid(hullPoints));
     overlay.setMap(mapInstance);
     zoneLabelOverlays.push(overlay);
+
+    // 이름표가 지도를 계속 덮지 않도록, 이 권역(폴리곤) 위에 마우스가 있을 때만 보여줌
+    polygon.addListener('mouseover', () => overlay.setHovered(true));
+    polygon.addListener('mouseout', () => overlay.setHovered(false));
   });
 
   // 어느 권역에도 배정되지 않은 장소(예: 공항)도 지도에는 계속 표시 — 권역 카드 통계에는
@@ -3032,15 +3040,8 @@ function createZoneLabelOverlay(g: any, zone: Zone, color: string, labelPos: { l
       div.style.setProperty('--zone-zoom-scale', String(zoneLabelZoomScale()));
       div.innerHTML = '<span class="sl-map-label-name">' + escapeHtml(zone.name) + '</span>';
 
-      div.addEventListener('click', () => {
-        pendingSelectedZoneId = zone.id;
-        highlightZone(zone.id);
-        const bodyEl = document.querySelector('.sl-step1') as HTMLElement;
-        if (bodyEl) {
-          renderZoneCards(bodyEl);
-          renderSelectBar(bodyEl);
-        }
-      });
+      // 권역은 이제 선택 대상이 아니라 참고 정보라 클릭도 폴리곤과 같은 동작(잠깐 강조)만 함
+      div.addEventListener('click', () => highlightZone(zone.id));
 
       this.div = div;
       const panes = this.getPanes();
@@ -3067,6 +3068,13 @@ function createZoneLabelOverlay(g: any, zone: Zone, color: string, labelPos: { l
     updateSelected(isSelected: boolean) {
       if (!this.div) return;
       this.div.classList.toggle('selected', isSelected);
+    }
+
+    /** 지도가 항상 권역 이름표로 덮여 보이지 않도록, 그 권역(폴리곤) 위에 마우스가 있을
+     *  때만 이름표를 보여준다 — 참고용 정보라 평소엔 숨겨둬도 된다. */
+    setHovered(hovered: boolean) {
+      if (!this.div) return;
+      this.div.classList.toggle('zone-hovered', hovered);
     }
 
     /** 지도를 축소해도 라벨이 상대적으로 커 보이지 않게 줌 레벨에 맞춰 크기를 다시 계산 */
@@ -3470,12 +3478,6 @@ function conditionStarsHtml(placeId: string, value: number | null, editable: boo
   return '<span class="sl-cond-stars">' + stars + '</span>';
 }
 
-function candidateExternalUrl(p: Place): string {
-  return p.google_place_id
-    ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(p.name) + '&query_place_id=' + p.google_place_id
-    : 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(p.name);
-}
-
 function renderCandidateCards(body: HTMLElement, candidates: Place[]): void {
   const listEl = body.querySelector('#sl-basecamp-list') as HTMLElement | null;
   if (!listEl) return;
@@ -3505,6 +3507,7 @@ function renderCandidateCards(body: HTMLElement, candidates: Place[]): void {
       const inCompare = step2CompareIds.has(c.id);
       const m = candidateMetrics(c);
       const isElimTarget = step2ElimTargetId === c.id;
+      const isLinkHintTarget = step2LinkHintTargetId === c.id;
 
       const metricBits: string[] = [];
       if (m.spotAccessMin != null) {
@@ -3540,11 +3543,14 @@ function renderCandidateCards(body: HTMLElement, candidates: Place[]): void {
         '    <div class="sl-cand-cond-row"><span class="sl-cand-cond-label">객실 컨디션</span>' + conditionStarsHtml(c.id, m.roomCondition, true) + '</div>',
         '  </div>',
         '  <div class="sl-cand-actions">',
-        '    <a class="sl-cand-action" href="' + candidateExternalUrl(c) + '" target="_blank" rel="noopener noreferrer" data-stop-select="1" title="지도에서 열기">' + IC_EXTLINK + '</a>',
+        c.linked_url
+          ? '    <a class="sl-cand-action" href="' + escapeHtml(c.linked_url) + '" target="_blank" rel="noopener noreferrer" data-stop-select="1" title="연동된 링크로 이동">' + IC_LINK + '</a>'
+          : '    <button type="button" class="sl-cand-action sl-cand-link-empty" data-link-hint-place="' + c.id + '" title="연동된 링크가 없어요">' + IC_LINK + '</button>',
         '    <button type="button" class="sl-cand-action sl-cand-elim" data-elim-place="' + c.id + '" title="이 후보 탈락시키기">' + IC_XCLOSE + '</button>',
         '  </div>',
         isSelected ? '  <span class="sl-basecamp-selected-badge">' + IC_CHECK + '</span>' : '',
         isElimTarget ? eliminationPickerHtml(c.id) : '',
+        isLinkHintTarget ? '  <div class="sl-cand-link-hint" data-stop-select="1">아이디어보드에서 이 숙소 카드에 예약 링크를 연동해보세요.</div>' : '',
         '</div>',
       ].join('');
     })
@@ -3585,7 +3591,7 @@ function bindCandidateCardEvents(body: HTMLElement, candidates: Place[], scope: 
     el.addEventListener('click', (e) => {
       const target = e.target as HTMLElement;
       // 카드 안의 조작 요소(체크박스·입력·별점·링크·탈락 UI)는 카드 선택과 별개로 동작
-      if (target.closest('input, select, a, button, .sl-elim-picker, .sl-cand-check')) return;
+      if (target.closest('input, select, a, button, .sl-elim-picker, .sl-cand-check, .sl-cand-link-hint')) return;
       selectCandidate(body, candidates, pendingHotelId === placeId ? null : placeId);
     });
 
@@ -3653,6 +3659,16 @@ function bindCandidateCardEvents(body: HTMLElement, candidates: Place[], scope: 
       e.stopPropagation();
       const id = (btn as HTMLElement).dataset.elimPlace!;
       step2ElimTargetId = step2ElimTargetId === id ? null : id;
+      renderBasecampList(body, candidates);
+    });
+  });
+
+  // 연동된 링크가 없는 카드 — 누르면 아이디어보드에서 링크를 연동하라는 안내를 잠깐 보여줌
+  scope.querySelectorAll('[data-link-hint-place]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = (btn as HTMLElement).dataset.linkHintPlace!;
+      step2LinkHintTargetId = step2LinkHintTargetId === id ? null : id;
       renderBasecampList(body, candidates);
     });
   });
