@@ -609,6 +609,17 @@
   font-size: 13px; font-weight: 800; color: var(--tl-ink);
   font-variant-numeric: tabular-nums;
 }
+/* 관련 자료(DOCUMENTS 게이트) — 하루 요약 줄에 같은 모양으로 한 칸만 덧붙인다 */
+.tl-hstat-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+.tl-hstat-link:hover .tl-hstat-v { color: var(--tl-blue); }
+.tl-hstat-link:hover .tl-hstat-k { color: var(--tl-ink-2); }
+
 .tl-dayhead-note { margin-top: 7px; font-size: 10px; color: var(--tl-ink-4); }
 .tl-est-loading { color: var(--tl-ink-3); }
 

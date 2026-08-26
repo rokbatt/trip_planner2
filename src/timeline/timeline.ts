@@ -145,6 +145,10 @@ let basecampIds = new Set<string>();
  * 여기서 다시 구글 API를 부르지 않고 그대로 읽어 쓴다(원칙 3-2). */
 let airportPlaceByName = new Map<string, Place>();
 
+/** DAY 번호 → 그 DAY에 걸어둔 공용 문서·메모 수 (DOCUMENTS 게이트가 만든 데이터).
+ *  타임라인 화면 자체는 그대로 두고, 하루 요약 줄에 "관련 자료" 한 칸만 덧붙인다. */
+let dayAttachments = new Map<number, { documents: number; notes: number }>();
+
 let days: TlDay[] = [];
 let activeDayIndex = 0;
 let viewMode: ViewMode = 'day';
@@ -185,6 +189,7 @@ let mapOpen = true;
 /* ══════════════ 정리 ══════════════ */
 
 export function teardownTimeline(): void {
+  dayAttachments = new Map();
   // 화면을 떠날 때 대기 중인 저장은 버리지 않고 커밋한다 (Claude.md 알려진 버그 패턴)
   if (saveTimer) {
     clearTimeout(saveTimer);
@@ -427,6 +432,7 @@ export async function renderTimelineContent(host: HTMLElement, tripId: string): 
   subscribeRoutePlan(tripId, () => { void reloadFromRemote(); });
   void loadRealLegsForActiveDay();
   void initMap();
+  void loadDayAttachments(tripId);
 
   // "지금" 표시는 분 단위로만 움직이면 충분하다
   nowTimer = setInterval(() => { if (todayDayIndex() >= 0) renderNowMarker(); }, 60_000);
@@ -708,6 +714,55 @@ function dayScheduleHtml(): string {
   return ['<div class="tl-day">', dayHeadHtml(day, s), '  <ol class="tl-list" id="tl-list">' + rows.join('') + '</ol>', '</div>'].join('');
 }
 
+/** DOCUMENTS 게이트에 저장된 "관련 DAY" 정보를 읽어와 하루 요약 줄에 반영한다.
+ *  문서함을 아직 안 쓰는 여행이면 빈 Map이 와서 화면이 그대로 유지된다. */
+async function loadDayAttachments(tripId: string): Promise<void> {
+  try {
+    const mod = await import('../docs/docsStore');
+    const counts = await mod.loadDayAttachmentCounts(tripId);
+    if (currentTripId !== tripId) return; // 그 사이 다른 트립으로 옮겼으면 버린다
+    dayAttachments = counts;
+    paintAttachmentChip();
+  } catch (e) {
+    console.error('[Timeline] 관련 문서 수 로드 실패:', (e as Error).message);
+  }
+}
+
+/** "DAY 3" 라벨에서 여행 전체 기준 DAY 번호를 뽑는다(여행지가 여러 개면 번호가 이어짐) */
+function dayNumberOf(day: TlDay): number | null {
+  const matched = /(\d+)/.exec(day.label);
+  return matched ? Number(matched[1]) : null;
+}
+
+/** 이 DAY에 걸린 문서·메모가 있을 때만 한 칸 — 없으면 아무것도 그리지 않는다 */
+function attachmentChipHtml(day: TlDay): string {
+  const num = dayNumberOf(day);
+  const found = num === null ? undefined : dayAttachments.get(num);
+  if (!found || found.documents + found.notes === 0) return '';
+  const parts: string[] = [];
+  if (found.documents > 0) parts.push('문서 ' + found.documents);
+  if (found.notes > 0) parts.push('메모 ' + found.notes);
+  return (
+    '<button type="button" class="tl-hstat tl-hstat-link" id="tl-day-docs" title="DOCUMENTS에서 보기">' +
+    '<span class="tl-hstat-k">관련 자료</span><span class="tl-hstat-v">' + parts.join(' · ') + '</span></button>'
+  );
+}
+
+/** 문서 수는 화면을 다 그린 뒤 따라오므로, 다시 그리지 않고 그 한 칸만 갈아끼운다 */
+function paintAttachmentChip(): void {
+  const day = activeDay();
+  const statsEl = document.querySelector('.tl-dayhead-stats');
+  if (!day || !statsEl) return;
+  statsEl.querySelector('#tl-day-docs')?.remove();
+  const html = attachmentChipHtml(day);
+  if (html) statsEl.insertAdjacentHTML('beforeend', html);
+  bindAttachmentChip();
+}
+
+function bindAttachmentChip(): void {
+  document.querySelector('#tl-day-docs')?.addEventListener('click', () => gotoGate('docs'));
+}
+
 /** 하루의 요약은 별도 패널이 아니라 제목 옆 한 줄로 — 화면을 나눠 쓰지 않고도 다 읽힌다 */
 function dayHeadHtml(day: TlDay, s: DaySchedule): string {
   const estNote =
@@ -725,6 +780,8 @@ function dayHeadHtml(day: TlDay, s: DaySchedule): string {
     ['예상 교통비', s.totalCost.toLocaleString() + ' ' + s.currency],
   ];
 
+  const attachment = attachmentChipHtml(day);
+
   return [
     '  <div class="tl-dayhead">',
     '    <div class="tl-dayhead-title">',
@@ -735,7 +792,7 @@ function dayHeadHtml(day: TlDay, s: DaySchedule): string {
     '    <div class="tl-dayhead-stats">',
     stats.map(([k, v]) =>
       '<span class="tl-hstat"><span class="tl-hstat-k">' + k + '</span><span class="tl-hstat-v">' + escapeHtml(v) + '</span></span>'
-    ).join(''),
+    ).join('') + attachment,
     '    </div>',
     // 원칙 3-1 — 실측/추정을 섞어 쓰므로 어느 쪽인지 반드시 밝힌다
     estNote ? '    <div class="tl-dayhead-note">* ' + estNote + '예요</div>' : '',
@@ -1707,6 +1764,7 @@ function findStop(key: string): { day: TlDay; stop: TlStop; index: number } | nu
 
 function bindDaySchedule(main: HTMLElement): void {
   main.querySelector('#tl-day-go-route')?.addEventListener('click', () => gotoGate('route'));
+  bindAttachmentChip();
 
   main.querySelectorAll('.tl-photo').forEach((el) => {
     const url = (el as HTMLElement).dataset.photo;
