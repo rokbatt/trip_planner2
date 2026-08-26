@@ -16,6 +16,7 @@
 
 import { supabase } from '../supabase';
 import { store } from '../store';
+import { loadDestinations, destinationDayCount } from '../trips/destinations';
 import type { Database, Trip, TripDocUser, TripDocument, TripNote } from '../types/database';
 
 type DocumentUpdate = Database['public']['Tables']['trip_documents']['Update'];
@@ -95,12 +96,46 @@ function markIfMissing(error: { code?: string; message?: string } | null): boole
 /* ══════════════ DAY ↔ 날짜 ══════════════ */
 
 /** 이 여행의 DAY 개수 — 시작/종료일이 있으면 그 일수, 없으면 넉넉히 7일치 */
-export function tripDayCount(trip: Trip | null): number {
-  if (!trip?.start_date || !trip?.end_date) return 7;
-  const diff = Math.round(
-    (new Date(trip.end_date).getTime() - new Date(trip.start_date).getTime()) / 86400000
-  );
-  return Math.max(1, Math.min(diff + 1, 30));
+export interface DayOption {
+  /** 여행 전체 기준으로 이어지는 DAY 번호 — Timeline·Route와 같은 번호 체계 */
+  day: number;
+  /** 선택지에 보여줄 문자열 — 날짜가 있으면 "10.26"(여행지가 여럿이면 "10.26 (방콕)"),
+   *  날짜를 전혀 모르면 "DAY N"으로 폴백 */
+  label: string;
+}
+
+function shortDateLabel(iso: string, plusDays: number): string {
+  const d = new Date(iso + 'T00:00:00');
+  d.setDate(d.getDate() + plusDays);
+  return d.getMonth() + 1 + '.' + String(d.getDate()).padStart(2, '0');
+}
+
+/**
+ * 관련 DAY 선택지 — "DAY 1/2/3" 대신 실제 날짜(여행지가 둘 이상이면 날짜 뒤에 여행지명)로
+ * 보여준다. Route/Timeline과 같은 `destinationDayCount` 계산을 그대로 써서, 문서/메모에
+ * 붙는 DAY 번호가 Timeline의 DAY 번호와 어긋나지 않게 한다(loadDayAttachmentCounts와 짝).
+ */
+export async function loadDayOptions(trip: Trip | null): Promise<DayOption[]> {
+  if (!trip) return [];
+  const destinations = await loadDestinations(trip);
+  const sorted = [...destinations].sort((a, b) => (a.start_date ?? '').localeCompare(b.start_date ?? ''));
+  const showDestName = sorted.length > 1;
+
+  const options: DayOption[] = [];
+  let day = 1;
+  for (const dest of sorted) {
+    const count = destinationDayCount(dest, trip);
+    const start = dest.start_date ?? trip.start_date;
+    for (let i = 0; i < count; i += 1) {
+      const dateLabel = start ? shortDateLabel(start, i) : null;
+      options.push({
+        day,
+        label: dateLabel ? (showDestName ? dateLabel + ' (' + dest.name + ')' : dateLabel) : 'DAY ' + day,
+      });
+      day += 1;
+    }
+  }
+  return options;
 }
 
 /** DAY 번호 → 실제 날짜 문자열(10.26). 여행 날짜가 없으면 null */

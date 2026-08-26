@@ -22,16 +22,16 @@ import {
   normalizeNoteCategory,
   setNoteChecked,
   setNotePinned,
-  tripDayCount,
   updateNote,
   dayRangeLabel,
 } from './docsStore';
-import type { NoteCategory } from './docsStore';
+import type { DayOption, NoteCategory } from './docsStore';
 import { IC, NOTE_CATEGORY_ICON, escapeHtml, formatDay } from './docsIcons';
 
 interface NotesHost {
   tripId: string;
   trip: Trip | null;
+  dayOptions: DayOption[];
   getSearch: () => string;
   onDataChange: () => void;
 }
@@ -390,13 +390,13 @@ export function openNoteEditor(id?: string): void {
   if (!rootEl || sheetOpen) return;
   editingId = id ?? null;
   const note = id ? notes.find((n) => n.id === id) ?? null : null;
-  const dayCount = tripDayCount(host?.trip ?? null);
+  const options = host?.dayOptions ?? [];
 
-  const dayOptions = (selected: number | null, placeholder: string): string =>
+  const noteDayOptionsHtml = (selected: number | null, placeholder: string): string =>
     ['<option value="">' + placeholder + '</option>']
       .concat(
-        Array.from({ length: dayCount }, (_, i) => i + 1).map(
-          (d) => '<option value="' + d + '"' + (selected === d ? ' selected' : '') + '>DAY ' + d + '</option>'
+        options.map(
+          (o) => '<option value="' + o.day + '"' + (selected === o.day ? ' selected' : '') + '>' + escapeHtml(o.label) + '</option>'
         )
       )
       .join('');
@@ -436,8 +436,8 @@ export function openNoteEditor(id?: string): void {
     '    <div class="dn-field">',
     '      <span class="dn-field-label">관련 DAY <em>선택</em></span>',
     '      <div class="dn-field-row">',
-    '        <select class="dn-input dn-select" id="dn-note-day-start">' + dayOptions(note?.day_start ?? null, '지정 안 함') + '</select>',
-    '        <select class="dn-input dn-select" id="dn-note-day-end">' + dayOptions(note?.day_end ?? null, '종료일 없음') + '</select>',
+    '        <select class="dn-input dn-select" id="dn-note-day-start">' + noteDayOptionsHtml(note?.day_start ?? null, '지정 안 함') + '</select>',
+    '        <select class="dn-input dn-select" id="dn-note-day-end">' + noteDayOptionsHtml(note?.day_end ?? null, '종료일 없음') + '</select>',
     '      </div>',
     '    </div>',
     '  </div>',
