@@ -30,6 +30,7 @@ import {
   getUnlockedUserId,
   isStorageReady,
   isValidPin,
+  loadDayOptions,
   loadDocUsers,
   loadPersonalDocuments,
   loadSharedDocuments,
@@ -39,12 +40,11 @@ import {
   setLastTab,
   setUnlockedUserId,
   signedUrlFor,
-  tripDayCount,
   updateDocument,
   uploadDocFile,
   verifyPin,
 } from './docsStore';
-import type { DocCategory, DocScope, DocsTab, UploadedFile } from './docsStore';
+import type { DayOption, DocCategory, DocScope, DocsTab, UploadedFile } from './docsStore';
 import {
   DOC_CATEGORY_ICON,
   IC,
@@ -74,6 +74,7 @@ let trip: Trip | null = null;
 let tab: DocsTab = 'documents';
 let scope: DocScope = 'SHARED';
 let searchQuery = '';
+let dayOptions: DayOption[] = [];
 
 let docUsers: TripDocUser[] = [];
 let unlockedUser: TripDocUser | null = null;
@@ -103,6 +104,7 @@ export function teardownDocs(): void {
   personalDocs = [];
   selectedDocId = null;
   searchQuery = '';
+  dayOptions = [];
   sheetOpen = false;
 }
 
@@ -130,10 +132,12 @@ export async function renderDocsContent(
   restoreUnlocked();
   sharedDocs = await loadSharedDocuments(tripId);
   if (unlockedUser) personalDocs = await loadPersonalDocuments(tripId, unlockedUser.id);
+  dayOptions = await loadDayOptions(trip);
 
   await initNotes({
     tripId,
     trip,
+    dayOptions,
     getSearch: () => searchQuery,
     onDataChange: () => {
       if (tab === 'documents') renderCrossHint();
@@ -517,8 +521,8 @@ function bindDropZone(scopeEl: HTMLElement): void {
   drop.addEventListener('drop', (e) => {
     e.preventDefault();
     drop.classList.remove('is-over');
-    const file = (e as DragEvent).dataTransfer?.files?.[0];
-    if (file) openDocumentSheet(null, file);
+    const files = Array.from((e as DragEvent).dataTransfer?.files ?? []);
+    if (files.length > 0) openDocumentSheet(null, files);
   });
 }
 
@@ -793,23 +797,31 @@ function bindPersonalUnlock(scopeEl: HTMLElement): void {
 
 /* ══════════════ 문서 추가/수정 시트 ══════════════ */
 
-function openDocumentSheet(existing: TripDocument | null, presetFile?: File): void {
+/** 파일 이름에서 확장자를 떼고 구분자를 공백으로 바꿔 문서 제목 후보로 쓴다(여러 개를 한
+ *  번에 올릴 때 개별 제목 입력칸 대신 파일명을 그대로 제목으로 쓰기 위함) */
+function titleFromFileName(fileName: string): string {
+  const withoutExt = fileName.replace(/\.[a-zA-Z0-9]{1,8}$/, '');
+  return withoutExt.replace(/[_-]+/g, ' ').trim() || fileName;
+}
+
+function docDayOptionsHtml(selected: number | null, placeholder: string): string {
+  return ['<option value="">' + placeholder + '</option>']
+    .concat(
+      dayOptions.map(
+        (o) => '<option value="' + o.day + '"' + (selected === o.day ? ' selected' : '') + '>' + escapeHtml(o.label) + '</option>'
+      )
+    )
+    .join('');
+}
+
+function openDocumentSheet(existing: TripDocument | null, presetFiles?: File[]): void {
   if (!rootEl || sheetOpen) return;
   if (!isStorageReady()) return;
 
-  const dayCount = tripDayCount(trip);
-  const dayOptions = (selected: number | null, placeholder: string): string =>
-    ['<option value="">' + placeholder + '</option>']
-      .concat(
-        Array.from({ length: dayCount }, (_, i) => i + 1).map(
-          (d) => '<option value="' + d + '"' + (selected === d ? ' selected' : '') + '>DAY ' + d + '</option>'
-        )
-      )
-      .join('');
-
   let category: DocCategory = existing ? normalizeDocCategory(existing.category) : 'STAY';
   let visibility: DocScope = existing ? (existing.visibility as DocScope) : scope;
-  let pickedFile: File | null = presetFile ?? null;
+  // 새 문서를 만들 때만 여러 파일을 한 번에 받는다 — 기존 문서 수정은 파일 1개 교체만 지원
+  let pickedFiles: File[] = existing ? [] : (presetFiles ?? []);
   const canPersonal = !!unlockedUser;
   if (visibility === 'PERSONAL' && !canPersonal) visibility = 'SHARED';
 
@@ -823,11 +835,12 @@ function openDocumentSheet(existing: TripDocument | null, presetFile?: File): vo
     '    <button type="button" class="dn-icon-btn" id="dn-sheet-close" aria-label="닫기">' + IC.close + '</button>',
     '  </div>',
     '  <div class="dn-sheet-body">',
-    '    <div class="dn-field">',
+    '    <div class="dn-field" id="dn-title-field">',
     '      <label class="dn-field-label" for="dn-doc-title">제목</label>',
     '      <input class="dn-input" id="dn-doc-title" type="text" maxlength="80" placeholder="숙소 예약 확인서" value="' +
       escapeHtml(existing?.title ?? '') + '" />',
     '    </div>',
+    '    <div class="dn-field-hint is-hidden" id="dn-title-multi-hint">파일 이름을 각 문서의 제목으로 사용해요. 저장 후 각각 수정할 수 있어요.</div>',
     '    <div class="dn-field">',
     '      <span class="dn-field-label">카테고리</span>',
     '      <div class="dn-pick" id="dn-doc-cats">',
@@ -841,8 +854,8 @@ function openDocumentSheet(existing: TripDocument | null, presetFile?: File): vo
     '    <div class="dn-field">',
     '      <span class="dn-field-label">관련 DAY <em>선택</em></span>',
     '      <div class="dn-field-row">',
-    '        <select class="dn-input dn-select" id="dn-doc-day-start">' + dayOptions(existing?.day_start ?? null, '전체 일정') + '</select>',
-    '        <select class="dn-input dn-select" id="dn-doc-day-end">' + dayOptions(existing?.day_end ?? null, '종료일 없음') + '</select>',
+    '        <select class="dn-input dn-select" id="dn-doc-day-start">' + docDayOptionsHtml(existing?.day_start ?? null, '전체 일정') + '</select>',
+    '        <select class="dn-input dn-select" id="dn-doc-day-end">' + docDayOptionsHtml(existing?.day_end ?? null, '종료일 없음') + '</select>',
     '      </div>',
     '    </div>',
     '    <div class="dn-field">',
@@ -858,10 +871,10 @@ function openDocumentSheet(existing: TripDocument | null, presetFile?: File): vo
     '    <div class="dn-field">',
     '      <span class="dn-field-label">파일 <em>선택</em></span>',
     '      <button type="button" class="dn-file-pick" id="dn-file-pick">',
-    '        ' + IC.upload + '<span id="dn-file-name">' +
-      escapeHtml(presetFile?.name ?? existing?.file_name ?? '파일 선택 또는 드래그 앤 드롭') + '</span>',
+    '        ' + IC.upload + '<span id="dn-file-name">' + escapeHtml(existing?.file_name ?? '파일 선택 또는 드래그 앤 드롭') + '</span>',
     '      </button>',
-    '      <input type="file" id="dn-file-input" accept="' + ACCEPTED_FILE_TYPES + '" hidden />',
+    '      <input type="file" id="dn-file-input" accept="' + ACCEPTED_FILE_TYPES + '"' + (existing ? '' : ' multiple') + ' hidden />',
+    '      <div class="dn-file-list" id="dn-file-list"></div>',
     '    </div>',
     '    <div class="dn-field">',
     '      <span class="dn-field-label">공개 범위</span>',
@@ -890,6 +903,8 @@ function openDocumentSheet(existing: TripDocument | null, presetFile?: File): vo
   sheetOpen = true;
   requestAnimationFrame(() => sheet.classList.add('is-open'));
 
+  const titleField = sheet.querySelector('#dn-title-field') as HTMLElement;
+  const titleMultiHint = sheet.querySelector('#dn-title-multi-hint') as HTMLElement;
   const titleEl = sheet.querySelector('#dn-doc-title') as HTMLInputElement;
   const descEl = sheet.querySelector('#dn-doc-desc') as HTMLTextAreaElement;
   const refEl = sheet.querySelector('#dn-doc-ref') as HTMLInputElement;
@@ -897,6 +912,7 @@ function openDocumentSheet(existing: TripDocument | null, presetFile?: File): vo
   const dayEndEl = sheet.querySelector('#dn-doc-day-end') as HTMLSelectElement;
   const fileInput = sheet.querySelector('#dn-file-input') as HTMLInputElement;
   const fileNameEl = sheet.querySelector('#dn-file-name') as HTMLElement;
+  const fileListEl = sheet.querySelector('#dn-file-list') as HTMLElement;
   const errorEl = sheet.querySelector('#dn-sheet-error') as HTMLElement;
   const saveEl = sheet.querySelector('#dn-doc-save') as HTMLButtonElement;
   const scopeRow = sheet.querySelector('#dn-doc-scope') as HTMLElement;
@@ -905,6 +921,41 @@ function openDocumentSheet(existing: TripDocument | null, presetFile?: File): vo
     sheetOpen = false;
     sheet.remove();
   };
+
+  /** 파일 선택 버튼 텍스트 + (2개 이상일 때) 개별 제거 가능한 목록, 그리고 파일이 여러
+   *  개면 "제목" 칸을 숨기고 파일명을 쓴다는 안내로 바꾼다 */
+  function renderFilePicker(): void {
+    if (pickedFiles.length === 0) {
+      fileNameEl.textContent = existing?.file_name ?? '파일 선택 또는 드래그 앤 드롭';
+      fileListEl.innerHTML = '';
+    } else if (pickedFiles.length === 1) {
+      fileNameEl.textContent = pickedFiles[0].name;
+      fileListEl.innerHTML = '';
+    } else {
+      fileNameEl.textContent = pickedFiles.length + '개 파일 선택됨';
+      fileListEl.innerHTML = pickedFiles
+        .map(
+          (f, i) =>
+            '<div class="dn-file-row">' +
+            '<span class="dn-file-row-name">' + escapeHtml(f.name) + '</span>' +
+            '<button type="button" class="dn-icon-btn" data-remove-file="' + i + '" aria-label="목록에서 제거">' + IC.close + '</button>' +
+            '</div>'
+        )
+        .join('');
+      fileListEl.querySelectorAll('[data-remove-file]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const idx = Number((btn as HTMLElement).dataset.removeFile);
+          pickedFiles.splice(idx, 1);
+          renderFilePicker();
+        });
+      });
+    }
+
+    const multi = pickedFiles.length > 1;
+    titleField.classList.toggle('is-hidden', multi);
+    titleMultiHint.classList.toggle('is-hidden', !multi);
+  }
+  renderFilePicker();
 
   sheet.querySelectorAll('#dn-doc-cats .dn-pick-item').forEach((el) => {
     el.addEventListener('click', () => {
@@ -930,23 +981,26 @@ function openDocumentSheet(existing: TripDocument | null, presetFile?: File): vo
 
   sheet.querySelector('#dn-file-pick')?.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', () => {
-    const file = fileInput.files?.[0] ?? null;
-    if (file && file.size > MAX_FILE_BYTES) {
-      errorEl.textContent = '파일은 20MB까지 올릴 수 있어요.';
-      fileInput.value = '';
-      return;
-    }
-    pickedFile = file;
-    fileNameEl.textContent = file?.name ?? '파일 선택 또는 드래그 앤 드롭';
-    errorEl.textContent = '';
+    const chosen = Array.from(fileInput.files ?? []);
+    fileInput.value = ''; // 같은 파일을 지웠다가 다시 선택해도 change가 다시 뜨도록
+    if (chosen.length === 0) return;
+
+    const oversized = chosen.filter((f) => f.size > MAX_FILE_BYTES);
+    const valid = chosen.filter((f) => f.size <= MAX_FILE_BYTES);
+    errorEl.textContent = oversized.length > 0 ? '20MB가 넘는 파일 ' + oversized.length + '개는 제외했어요.' : '';
+
+    // <input multiple>은 매번 새로 고른 파일 전체를 돌려준다 — 이전 선택에 더하지 않고 교체한다
+    pickedFiles = valid;
+    renderFilePicker();
   });
 
   sheet.querySelector('#dn-sheet-close')?.addEventListener('click', close);
   sheet.querySelector('#dn-sheet-overlay')?.addEventListener('click', close);
 
   saveEl.addEventListener('click', async () => {
+    const isBatch = pickedFiles.length > 1;
     const title = titleEl.value.trim();
-    if (!title) {
+    if (!isBatch && !title) {
       titleEl.focus();
       titleEl.classList.add('is-invalid');
       return;
@@ -959,13 +1013,68 @@ function openDocumentSheet(existing: TripDocument | null, presetFile?: File): vo
     const dayStart = dayStartEl.value ? Number(dayStartEl.value) : null;
     const rawEnd = dayEndEl.value ? Number(dayEndEl.value) : null;
     const dayEnd = dayStart && rawEnd && rawEnd >= dayStart ? rawEnd : null;
+    const sharedFields = {
+      category,
+      description: descEl.value.trim() || null,
+      referenceCode: refEl.value.trim() || null,
+      dayStart,
+      dayEnd,
+      visibility,
+      ownerId: visibility === 'PERSONAL' ? unlockedUser!.id : null,
+    };
 
     saveEl.disabled = true;
-    saveEl.textContent = pickedFile ? '올리는 중...' : '저장 중...';
+
+    // 파일 여러 개 — 카테고리/DAY/설명/공개범위는 공통으로 쓰고, 파일마다 문서를 하나씩 만든다.
+    // 제목은 파일명에서 뽑는다(저장 후 각 문서를 따로 열어 수정 가능).
+    if (isBatch) {
+      let created = 0;
+      let failed = 0;
+      for (const file of pickedFiles) {
+        saveEl.textContent = '올리는 중 (' + (created + failed) + '/' + pickedFiles.length + ')...';
+        const result = await uploadDocFile(currentTripId, visibility, file);
+        if (result.error || !result.file) {
+          failed += 1;
+          continue;
+        }
+        const doc = await createDocument(currentTripId, {
+          ...sharedFields,
+          title: titleFromFileName(file.name),
+          file: result.file,
+        });
+        if (!doc) {
+          failed += 1;
+          continue;
+        }
+        const list = doc.visibility === 'SHARED' ? sharedDocs : personalDocs;
+        if (!list.some((d) => d.id === doc.id)) list.unshift(doc);
+        selectedDocId = doc.id;
+        created += 1;
+      }
+
+      if (created === 0) {
+        errorEl.textContent = '문서를 저장하지 못했어요.';
+        saveEl.disabled = false;
+        saveEl.textContent = '저장';
+        return;
+      }
+      if (visibility !== scope) {
+        scope = visibility;
+        setLastScope(currentTripId, scope);
+      }
+      if (failed > 0) alert(created + '개 저장했어요. ' + failed + '개는 실패했어요.');
+
+      close();
+      renderDocuments();
+      updateTabCounts();
+      return;
+    }
+
+    saveEl.textContent = pickedFiles.length > 0 ? '올리는 중...' : '저장 중...';
 
     let uploaded: UploadedFile | null = null;
-    if (pickedFile) {
-      const result = await uploadDocFile(currentTripId, visibility, pickedFile);
+    if (pickedFiles.length === 1) {
+      const result = await uploadDocFile(currentTripId, visibility, pickedFiles[0]);
       if (result.error || !result.file) {
         errorEl.textContent = result.error ?? '파일을 올리지 못했어요.';
         saveEl.disabled = false;
@@ -976,14 +1085,8 @@ function openDocumentSheet(existing: TripDocument | null, presetFile?: File): vo
     }
 
     const draft = {
+      ...sharedFields,
       title,
-      category,
-      description: descEl.value.trim() || null,
-      referenceCode: refEl.value.trim() || null,
-      dayStart,
-      dayEnd,
-      visibility,
-      ownerId: visibility === 'PERSONAL' ? unlockedUser!.id : null,
       ...(uploaded ? { file: uploaded } : {}),
     };
 
@@ -991,21 +1094,21 @@ function openDocumentSheet(existing: TripDocument | null, presetFile?: File): vo
       const updated = await updateDocument(existing.id, draft);
       if (updated) replaceDoc(updated);
     } else {
-      const created = await createDocument(currentTripId, draft);
-      if (!created) {
+      const createdDoc = await createDocument(currentTripId, draft);
+      if (!createdDoc) {
         errorEl.textContent = '문서를 저장하지 못했어요.';
         saveEl.disabled = false;
         saveEl.textContent = '저장';
         return;
       }
-      const list = created.visibility === 'SHARED' ? sharedDocs : personalDocs;
-      if (!list.some((d) => d.id === created.id)) list.unshift(created);
+      const list = createdDoc.visibility === 'SHARED' ? sharedDocs : personalDocs;
+      if (!list.some((d) => d.id === createdDoc.id)) list.unshift(createdDoc);
       // 방금 올린 문서를 바로 확인할 수 있도록 그 탭으로 옮기고 상세를 연다
-      if (created.visibility !== scope) {
-        scope = created.visibility as DocScope;
+      if (createdDoc.visibility !== scope) {
+        scope = createdDoc.visibility as DocScope;
         setLastScope(currentTripId, scope);
       }
-      selectedDocId = created.id;
+      selectedDocId = createdDoc.id;
     }
 
     close();
