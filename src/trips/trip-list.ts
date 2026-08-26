@@ -13,6 +13,7 @@ type Trip = Database['public']['Tables']['trips']['Row'];
 const ICON_SUITCASE = `<svg class="trip-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="7" width="18" height="14"/><path d="M8 7V4H16V7"/></svg>`;
 const ICON_ROUTE_ARROW = `<svg class="route-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12H19M13 6L19 12L13 18"/></svg>`;
 const ICON_EDIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>`;
+const ICON_PLANE = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 16.5v-2l-8.5-5V3.5c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v6l-8.5 5v2l8.5-2.5V19l-2.5 2v1.5l4-1 4 1V21l-2.5-2v-5.5l8.5 2.5z"/></svg>`;
 const DI = {
   trip: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="5" width="18" height="16"/><path d="M3 10H21M8 3V7M16 3V7"/></svg>`,
   setting: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="4" y="4" width="16" height="16"/><path d="M9 4V20M4 9H20"/></svg>`,
@@ -147,8 +148,9 @@ function createTripCard(trip: Trip, index: number, onChanged: () => void): HTMLE
 
         ${dday ? `<span class="fi-dday">${dday}</span>` : ''}
       </div>
-      <div class="trip-card-img-wrap">
-        <div class="trip-card-img" id="trip-img-${trip.id}"></div>
+      <div class="trip-card-stub">
+        <div class="trip-card-stub-plane">${ICON_PLANE}</div>
+        <div class="trip-card-stub-code">${escapeHtml(destCode)}</div>
         <div class="trip-card-barcode"></div>
       </div>
     </div>
@@ -168,35 +170,7 @@ function createTripCard(trip: Trip, index: number, onChanged: () => void): HTMLE
     openEditTripModal(trip, onChanged);
   });
 
-  if (trip.destinations?.[0]) {
-    loadCityImage(trip.destinations[0]).then((url) => {
-      if (url) {
-        const imgEl = card.querySelector(`#trip-img-${trip.id}`) as HTMLElement | null;
-        if (imgEl) imgEl.style.backgroundImage = `url('${url}')`;
-      }
-    });
-  }
-
   return card;
-}
-
-async function loadCityImage(cityKo: string): Promise<string | null> {
-  const cacheKey = `city_img_${cityKo}`;
-  const cached = localStorage.getItem(cacheKey);
-  if (cached) {
-    const parsed: { url: string; ts: number } = JSON.parse(cached);
-    if (Date.now() - parsed.ts < 24 * 60 * 60 * 1000) return parsed.url;
-  }
-
-  const { data } = await supabase
-    .from('city_images')
-    .select('image_url')
-    .eq('city_ko', cityKo)
-    .single<{ image_url: string }>();
-
-  const url = data?.image_url ?? null;
-  if (url) localStorage.setItem(cacheKey, JSON.stringify({ url, ts: Date.now() }));
-  return url;
 }
 
 /* ── 네비 렌더 ── */

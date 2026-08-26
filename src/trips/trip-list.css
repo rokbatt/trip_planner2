@@ -360,33 +360,68 @@
   letter-spacing: -0.01em;
 }
 
-/* ── 우측 이미지 영역 ── */
-.trip-card-img-wrap {
+/*
+ * ── 우측 "탑승권 스텁" 영역 ──
+ * 원래는 여행지 사진을 직접 넣을 계획이었으나, 여행지마다 사진을 구해 채워야 하는
+ * 유지비용이 커서(city_images 큐레이션) 사진 없이도 항상 고급스러운, 실제 항공권
+ * 스텁을 참조한 그래픽으로 바꿨다. 데이터는 이미 계산해둔 공항코드(destCode)만
+ * 재사용 — 여행지별로 사진을 구해 채울 필요가 없다.
+ */
+.trip-card-stub {
   flex: 1;
   position: relative;
   overflow: hidden;
-  background: #EAF6FD;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0B2A5C 0%, #15315F 55%, #0A2247 100%);
 }
-.trip-card-img-wrap::before {
+/* 은은한 골드 스윕 + 하단 음영 — 라운지 유리 질감 */
+.trip-card-stub::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    to bottom,
-    rgba(255,255,255,0.06) 0%,
-    rgba(255,255,255,0) 45%,
-    rgba(15,30,45,0.08) 100%
-  );
+  background:
+    linear-gradient(155deg, rgba(192,138,46,0.18) 0%, transparent 38%),
+    linear-gradient(to bottom, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0.14) 100%);
   pointer-events: none;
   z-index: 1;
 }
-.trip-card-img {
-  width: 100%;
-  height: 100%;
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-color: #EAF6FD;
+/* 절취선 강조 — 실제 항공권 스텁의 트림 라인 참조 */
+.trip-card-stub::after {
+  content: '';
+  position: absolute;
+  left: 16px;
+  right: 34px;
+  bottom: 22px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(192,138,46,0.6) 18%, rgba(192,138,46,0.6) 100%);
+  z-index: 1;
+}
+
+/* 배경의 커다란 비행기 워터마크 */
+.trip-card-stub-plane {
+  position: absolute;
+  right: -14px;
+  bottom: -20px;
+  width: 108px;
+  height: 108px;
+  color: rgba(255,255,255,0.07);
+  transform: rotate(-18deg);
+  pointer-events: none;
+}
+.trip-card-stub-plane svg { width: 100%; height: 100%; }
+
+/* 사진 대신 이 카드의 주인공 — 공항코드를 큼직한 고스트 타이포로 */
+.trip-card-stub-code {
+  position: relative;
+  z-index: 2;
+  font-family: 'SF Mono', ui-monospace, monospace;
+  font-size: clamp(30px, 4.2vw, 42px);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: rgba(255,255,255,0.96);
+  text-shadow: 0 2px 18px rgba(0,0,0,0.28);
 }
 
 /* 미니멀 바코드 — 실제 항공권 우측 끝 배치 참조 */
@@ -397,7 +432,7 @@
   right: 14px;
   width: 24px;
   z-index: 2;
-  opacity: 0.12;
+  opacity: 0.2;
   background: repeating-linear-gradient(
     90deg,
     #ffffff 0px, #ffffff 1px,
@@ -477,6 +512,6 @@
     border-bottom: 1px dashed rgba(130,150,170,0.32);
   }
 
-  .trip-card-img-wrap { min-height: 140px; }
+  .trip-card-stub { min-height: 140px; }
   .trip-card-barcode { width: 24px; }
 }
