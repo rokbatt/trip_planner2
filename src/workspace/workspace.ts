@@ -41,6 +41,8 @@ const IC = {
   expense: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
   link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
   invite: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>',
+  documents: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>',
+  notes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4a2 2 0 0 1 2-2h7l5 5v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/><path d="M14 2v5h5M9 12h6M9 16h4"/></svg>',
   mobile: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg>',
   placeholder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></svg>',
   routeArrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
@@ -69,6 +71,8 @@ const MAIN_NAV: NavItem[] = [
 const SUB_NAV: NavItem[] = [
   { key: 'go',        label: 'Companion', icon: IC.mobile },
   { key: 'checklist', label: 'Checklist', icon: IC.checklist },
+  { key: 'docs',      label: 'Documents', icon: IC.documents },
+  { key: 'notes',     label: 'Notes',     icon: IC.notes },
   { key: 'expense',   label: 'Expense',   icon: IC.expense },
   { key: 'links',     label: 'Links',     icon: IC.link },
 ];
@@ -82,6 +86,8 @@ const GATE_TITLES: Record<string, string> = {
   checklist: 'CHECKLIST',
   expense: 'EXPENSE',
   links: 'LINKS',
+  docs: 'DOCUMENTS',
+  notes: 'NOTES',
 };
 
 type PanelTab = 'chat' | 'ai' | 'detail';
@@ -429,6 +435,7 @@ let timelineModuleRef: { teardownTimeline: () => void } | null = null;
 let linksModuleRef: { teardownLinks: () => void } | null = null;
 let expenseModuleRef: { teardownExpense: () => void } | null = null;
 let mobileModuleRef: { teardownMobile: () => void } | null = null;
+let docsModuleRef: { teardownDocs: () => void } | null = null;
 let navigateGateHandlerRef: EventListener | null = null;
 let openVoteTargetHandlerRef: EventListener | null = null;
 let activeDestChangeHandler: ((e: Event) => void) | null = null;
@@ -461,6 +468,11 @@ async function renderGate(body: HTMLElement, tripId: string, gate: string): Prom
   if (gate !== 'go' && mobileModuleRef) {
     mobileModuleRef.teardownMobile();
     mobileModuleRef = null;
+  }
+  // DOCUMENTS와 NOTES는 같은 모듈의 두 탭이라, 둘 사이 이동은 정리 대상이 아니다
+  if (gate !== 'docs' && gate !== 'notes' && docsModuleRef) {
+    docsModuleRef.teardownDocs();
+    docsModuleRef = null;
   }
 
   // MOBILE(Companion)은 자체 셸이 화면을 꽉 채우고 스스로 스크롤한다 — 바깥 컨테이너까지
@@ -495,6 +507,10 @@ async function renderGate(body: HTMLElement, tripId: string, gate: string): Prom
     const mod = await import('../mobile/mobile');
     mobileModuleRef = mod;
     await mod.renderMobileContent(body, tripId);
+  } else if (gate === 'docs' || gate === 'notes') {
+    const mod = await import('../docs/docs');
+    docsModuleRef = mod;
+    await mod.renderDocsContent(body, tripId, gate === 'notes' ? 'notes' : 'documents');
   } else {
     const title = GATE_TITLES[gate] || gate;
     body.innerHTML = [
@@ -544,6 +560,8 @@ function bindEvents(page: HTMLElement, tripId: string): void {
     linksModuleRef = null;
     expenseModuleRef?.teardownExpense();
     expenseModuleRef = null;
+    docsModuleRef?.teardownDocs();
+    docsModuleRef = null;
     navigate('trips');
   });
 

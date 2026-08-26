@@ -638,6 +638,57 @@ TODAY·TIMELINE·WALLET은 전부 "지금 이 하루"를 다루고, MORE는 하�
 
 ---
 
+## 5-5. DOCUMENTS & NOTES 아키텍처 (신규)
+
+여행 중 필요한 원본 자료와, 준비하면서 적어둔 정보를 한곳에 모으는 게이트. 사이드바의
+**Documents / Notes** 두 항목이 같은 모듈의 두 탭을 가리킨다(`#trip/:id/docs`, `#trip/:id/notes`).
+
+### 역할 구분 (섞지 말 것)
+- **DOCUMENTS** = 원본 자료(항공권·예약증·보험증서). 파일이 본체다.
+- **NOTES** = 기억해둘 정보(수하물 규정·체크인 시간·준비물). 텍스트가 본체다.
+- **CHECKLIST**(`trip_checklist`, 모바일 MORE)와도 다르다 — 체크리스트는 *여행 중 해야 하는 행동*,
+  노트의 체크는 *그 정보를 확인했다*는 표시다. 화면 문구도 "확인 완료"로만 쓴다.
+
+### 데이터 (`supabase/trip_documents.sql`)
+- `trip_documents` — visibility(`SHARED`/`PERSONAL`) · category · day_start/day_end · file_path 등.
+  PERSONAL은 반드시 `owner_id`(= `trip_doc_users.id`)를 갖고 SHARED는 갖지 않는다(체크 제약).
+- `trip_notes` — category · title · body · `checked_at`(확인) · `pinned_at`(고정) · day 범위.
+- `trip_doc_users` — 개인 문서용 멤버 프로필. PIN은 평문 저장하지 않고 **사용자별 랜덤 salt +
+  SHA-256 해시**만 저장한다(WebCrypto).
+- 파일은 **비공개 버킷 `trip-docs`** (`{trip_id}/{shared|personal}/{uuid}.{ext}`). 열 때마다
+  10분짜리 signed URL을 발급해서 미리보기/다운로드한다 — 공개 버킷인 place-photos/link-previews와
+  다르다(항공권·여권 사본이 URL만으로 열리면 안 되므로).
+- 마이그레이션 전에도 앱은 그대로 동작한다 — 게이트에 "준비 중" 안내만 뜬다(3-2 graceful degradation).
+
+### 개인 문서 잠금에 대한 정직한 선 (중요)
+4자리 PIN은 **멤버끼리 개인 문서를 섞이지 않게 하는 잠금**이지 인증 시스템이 아니다. RLS는 이
+앱의 다른 테이블과 같은 "그 트립의 멤버인가"까지만 본다. 대신 화면은
+(1) 잠금 전에는 PERSONAL을 아예 조회하지 않고 (2) 잠금 후에도 `owner_id`가 본인인 행만 조회하며
+(3) 잠금 상태는 sessionStorage에만 둔다(탭을 닫으면 잠김). 나중에 Supabase Auth 기준 소유권으로
+올릴 수 있도록 `trip_doc_users.user_id`와 정책 초안을 SQL 주석에 남겨 뒀다. **UI에서 이걸 실제
+보안인 것처럼 표현하지 말 것** — 등록 화면에 그 한계를 그대로 적어 두었다.
+
+### 파일 구성
+- `src/docs/docs.ts` — 게이트 셸(탭·검색·추가 버튼), DOCUMENTS 목록·상세 패널·추가 시트, PIN 화면
+- `src/docs/notes.ts` — NOTES 탭(카드 목록·고정·확인·편집 시트). 게이트가 뜰 때 한 번 로드하고
+  realtime을 구독한다 — DOCUMENTS 탭에서도 "메모에서도 N건" 교차 검색 안내를 즉시 띄우기 위해서
+- `src/docs/docsStore.ts` — Supabase I/O 단일 창구(문서·메모·사용자·PIN 해시·Storage·DAY 집계)
+- `src/docs/docsIcons.ts` — 두 화면이 공유하는 선 아이콘·포맷 유틸
+
+### Timeline 연결
+문서/메모의 `day_start~day_end`는 Timeline의 DAY 번호(여행 전체 기준)와 같은 값이다.
+`loadDayAttachmentCounts(tripId)`가 DAY별 개수를 돌려주고, Timeline은 하루 요약 줄에
+"관련 자료 문서 2 · 메모 1" **한 칸만** 덧붙인다(없으면 아무것도 그리지 않음). 타임라인 화면
+구조는 건드리지 않는다.
+
+### UX 원칙
+폴더를 만들지 않는다. 분류는 카테고리 칩과 개인/공용 두 갈래뿐이고, 원하는 자료까지 항상
+1~2번 클릭이면 닿는다. 문서를 눌러도 페이지를 옮기지 않고 오른쪽 상세 패널이 열린다
+(좁은 화면에선 전체 화면). 마지막으로 보던 탭(DOCUMENTS/NOTES)과 범위(PERSONAL/SHARED)는
+트립별로 기억한다.
+
+---
+
 ## 6. 파일 구조
 
 ```
@@ -654,6 +705,10 @@ src/
   mobile/checklist.ts                ← 여행 준비 체크리스트 I/O + 실시간 (Mobile 전용, 5-4 참고)
   expense/expense.ts, expense.css    ← Expense 게이트 (예산·지출·도넛 차트·정산, 5-2 참고)
   expense/expenseModel.ts            ← 집계·정산·환율의 단일 기준 (Expense/Mobile 공용, 5-2 참고)
+  docs/docs.ts, docs.css             ← DOCUMENTS & NOTES 게이트 (문서함·상세 패널·PIN, 5-5 참고)
+  docs/notes.ts                      ← NOTES 탭 (메모 CRUD·고정·확인, 5-5 참고)
+  docs/docsStore.ts                  ← 문서·메모·PIN·Storage I/O의 단일 창구 (5-5 참고)
+  docs/docsIcons.ts                  ← DOCUMENTS/NOTES 공용 아이콘·포맷 유틸
   workspace/workspace.ts             ← 게이트 라우팅, 사이드바
   utils/googleMaps.ts                ← Google Maps 로더, GooglePlaceResult 추출/카테고리 매핑 (공유 유틸)
   utils/travelEstimate.ts            ← 이동시간·거리·요금·체류시간 계산의 단일 기준 (Route/Timeline 공용, 5-3 참고)
@@ -696,11 +751,15 @@ api/                                  ← Vercel 서버리스 함수 (각각 완
    12개 상한이라 **Supabase Edge Functions로 뺀다**(3-7). `trip_stop_progress.sql`과
    `trip_checklist.sql` 마이그레이션을 Supabase에서 실행해야 각 기능이 저장된다(안 해도 앱은
    정상 동작 — 해당 기능만 조용히 접힌다). 로드맵은 `docs/MOBILE_STRATEGY.md`
-4. **PC Checklist 게이트** — 아직 빈 플레이스홀더. 데이터 모델(`trip_checklist`)은 모바일 MORE가
+4. **DOCUMENTS & NOTES 게이트** — 구현됨(5-5). `supabase/trip_documents.sql`을 Supabase에서
+   실행해야 저장된다(안 해도 앱은 정상 동작 — 해당 게이트만 "준비 중" 안내로 접힌다). 다음 단계
+   후보: 개인 문서를 Supabase Auth 기준 소유권으로 올리기(SQL 주석의 정책 초안), 문서 만료일
+   알림, 모바일 Companion에서 오늘의 문서 바로 열기
+5. **PC Checklist 게이트** — 아직 빈 플레이스홀더. 데이터 모델(`trip_checklist`)은 모바일 MORE가
    이미 만들어 뒀으므로, PC 화면을 붙일 땐 그 테이블을 그대로 쓰면 된다(5-4 참고).
    **Links 탭**은 채팅 링크를 자동 수집 + og:title/og:image 미리보기 + STAY/PLACE/FOOD/ACTIVITY/VIDEO/ARTICLE/OTHER 자동분류(애매하면 OTHER, 드래그로 수동 재분류 가능)까지 구현됨(`src/links/links.ts`, `src/trips/addLink.ts`, `api/cache-photo.ts`의 `kind:'link-preview'`, `supabase/trip_links.sql`) — 직접 추가 UI는 없음(채팅이 유일한 입력 경로). **Expense 탭**은 구현됨(아래 5-2 참고) — `supabase/trip_expenses.sql` 마이그레이션을 Supabase에서 실행해야 동작
-5. **`google.maps.Marker` → `AdvancedMarkerElement` 마이그레이션** — 지금은 폐기 예정 경고만 뜨는 상태, 급하진 않음 (최소 12개월 유예)
-6. **방콕 외 도시의 `stay_zones` 큐레이션** — 현재 방콕만 실제 조사된 데이터, 나머지 도시는 AI 폴백 상태
+6. **`google.maps.Marker` → `AdvancedMarkerElement` 마이그레이션** — 지금은 폐기 예정 경고만 뜨는 상태, 급하진 않음 (최소 12개월 유예)
+7. **방콕 외 도시의 `stay_zones` 큐레이션** — 현재 방콕만 실제 조사된 데이터, 나머지 도시는 AI 폴백 상태
 
 ---
 

@@ -561,6 +561,117 @@ export interface Database {
         Relationships: [];
       };
 
+      /* DOCUMENTS & NOTES 게이트 — 여행 문서함·메모(supabase/trip_documents.sql) */
+      trip_doc_users: {
+        Row: {
+          id: string;
+          trip_id: string;
+          name: string;
+          pin_salt: string;
+          pin_hash: string;
+          user_id: string | null;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          trip_id: string;
+          name: string;
+          pin_salt: string;
+          pin_hash: string;
+          user_id?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['trip_doc_users']['Insert']>;
+        Relationships: [];
+      };
+
+      trip_documents: {
+        Row: {
+          id: string;
+          trip_id: string;
+          /** 'SHARED'(멤버 전원 공개) | 'PERSONAL'(owner_id 본인만) */
+          visibility: string;
+          /** PERSONAL일 때만 채워짐 — trip_doc_users.id */
+          owner_id: string | null;
+          title: string;
+          category: string;
+          description: string | null;
+          reference_code: string | null;
+          /** 관련 DAY(1부터). null이면 전체 일정에 걸리는 문서 */
+          day_start: number | null;
+          day_end: number | null;
+          /** 비공개 버킷 'trip-docs' 내 경로 — 열 때마다 signed URL 발급 */
+          file_path: string | null;
+          file_name: string | null;
+          file_type: string | null;
+          file_size: number | null;
+          uploaded_by: string | null;
+          uploaded_by_name: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          trip_id: string;
+          visibility?: string;
+          owner_id?: string | null;
+          title: string;
+          category?: string;
+          description?: string | null;
+          reference_code?: string | null;
+          day_start?: number | null;
+          day_end?: number | null;
+          file_path?: string | null;
+          file_name?: string | null;
+          file_type?: string | null;
+          file_size?: number | null;
+          uploaded_by?: string | null;
+          uploaded_by_name?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['trip_documents']['Insert']>;
+        Relationships: [];
+      };
+
+      trip_notes: {
+        Row: {
+          id: string;
+          trip_id: string;
+          category: string;
+          title: string;
+          body: string | null;
+          /** null이면 미확인 — "할 일 완료"가 아니라 "내용을 확인함" 표시 */
+          checked_at: string | null;
+          pinned_at: string | null;
+          day_start: number | null;
+          day_end: number | null;
+          created_by: string | null;
+          created_by_name: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          trip_id: string;
+          category?: string;
+          title: string;
+          body?: string | null;
+          checked_at?: string | null;
+          pinned_at?: string | null;
+          day_start?: number | null;
+          day_end?: number | null;
+          created_by?: string | null;
+          created_by_name?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['trip_notes']['Insert']>;
+        Relationships: [];
+      };
+
       place_comments: {
         Row: {
           id: string;
@@ -670,3 +781,6 @@ export type TripDestination = Database['public']['Tables']['trip_destinations'][
 export type StaySegment = Database['public']['Tables']['stay_segments']['Row'];
 export type TripExpense = Database['public']['Tables']['trip_expenses']['Row'];
 export type TripExpenseBudget = Database['public']['Tables']['trip_expense_budgets']['Row'];
+export type TripDocUser = Database['public']['Tables']['trip_doc_users']['Row'];
+export type TripDocument = Database['public']['Tables']['trip_documents']['Row'];
+export type TripNote = Database['public']['Tables']['trip_notes']['Row'];
