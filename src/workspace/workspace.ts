@@ -5,27 +5,14 @@ import { initChat, teardownChat, setBadgeListener, countUnreadSince, markAsRead,
 import { initComments, teardownComments, renderCommentsUI } from '../comments/comments';
 import { initHotelVoteChannel, teardownHotelVoteChannel } from '../collab/hotelVote';
 import { loadDestinations, resolveActiveDestination, ACTIVE_DESTINATION_CHANGED_EVENT } from '../trips/destinations';
+import { toAirportCode } from '../trips/airports';
 import type { Database, TripDestination } from '../types/database';
 import type { ChatMessage } from '../types/database';
 import './workspace.css';
 
 type Trip = Database['public']['Tables']['trips']['Row'];
 
-/* ── 도시 → IATA 공항코드 ── */
-const AIRPORT_CODE: Record<string, string> = {
-  '서울': 'ICN', '인천': 'ICN', '뉴욕': 'JFK', '방콕': 'BKK', '도쿄': 'NRT',
-  '오사카': 'KIX', '파리': 'CDG', '런던': 'LHR', '로마': 'FCO', '바르셀로나': 'BCN',
-  '싱가포르': 'SIN', '홍콩': 'HKG', '타이베이': 'TPE', '하노이': 'HAN',
-  '다낭': 'DAD', '나트랑': 'CXR', '발리': 'DPS', '푸켓': 'HKT', '오키나와': 'OKA',
-  '시드니': 'SYD', '두바이': 'DXB', '로스앤젤레스': 'LAX', '샌프란시스코': 'SFO',
-  '미국': 'JFK', '베트남': 'HAN', '태국': 'BKK', '일본': 'NRT', '유럽': 'CDG',
-};
-
-function toAirportCode(city: string): string {
-  const cleaned = city.trim();
-  if (AIRPORT_CODE[cleaned]) return AIRPORT_CODE[cleaned];
-  return cleaned.slice(0, 3).toUpperCase();
-}
+/* 도시 → IATA 공항코드 매핑은 trips/airports.ts 한 곳에서 관리한다(trip-list.ts와 공유) */
 
 /* ── SVG 아이콘 ── */
 const IC = {

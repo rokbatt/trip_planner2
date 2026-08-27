@@ -4,6 +4,7 @@ import { navigate } from '../router';
 import { signOut } from '../auth/auth';
 import { openCreateTripModal } from './trip-create';
 import { openEditTripModal } from './trip-edit';
+import { toAirportCode, toAirportCityEn, airportCityEnByCode } from './airports';
 import type { Database } from '../types/database';
 import './trip-list.css';
 
@@ -15,20 +16,64 @@ const ICON_ROUTE_ARROW = `<svg class="route-arrow" viewBox="0 0 24 24" fill="non
 const ICON_EDIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>`;
 const ICON_PLANE = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 16.5v-2l-8.5-5V3.5c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v6l-8.5 5v2l8.5-2.5V19l-2.5 2v1.5l4-1 4 1V21l-2.5-2v-5.5l8.5 2.5z"/></svg>`;
 
-/** 실제 항공권 바코드(PDF417)처럼 두께가 들쭉날쭉한 세로 막대를 미리 정해둔 패턴으로
- * 하나만 만들어 재사용 — 장식용이라 실제 정보를 담지 않는다(스캔 대상 아님). */
-const BARCODE_SVG = (() => {
-  const widths = [2, 1, 1, 3, 1, 2, 1, 1, 4, 1, 2, 1, 3, 1, 1, 2, 1, 4, 1, 1, 2, 3, 1, 1, 2, 1, 3, 1, 1, 4, 1, 2];
+/**
+ * 바코드/QR은 실제 정보를 담지 않는 장식이라 무작위 패턴으로 그린다. 다만 Math.random을
+ * 그대로 쓰면 카드가 다시 그려질 때마다 모양이 바뀌어 깜빡이므로, 트립 id를 시드로 쓰는
+ * xorshift32로 "트립마다 다르지만 항상 같은" 무작위 패턴을 만든다.
+ */
+function seededRandom(seed: string): () => number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < seed.length; i++) {
+    h = (h ^ seed.charCodeAt(i)) >>> 0;
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return () => {
+    h = (h ^ (h << 13)) >>> 0;
+    h = (h ^ (h >>> 17)) >>> 0;
+    h = (h ^ (h << 5)) >>> 0;
+    return h / 4294967296;
+  };
+}
+
+/** 실제 항공권 하단의 굵기가 제각각인 세로 막대 바코드 */
+function barcodeSvg(seed: string): string {
+  const rand = seededRandom(seed);
+  const bars: string[] = [];
   let x = 0;
-  const rects = widths
-    .map((w, i) => {
-      const rect = i % 4 === 3 ? '' : `<rect x="${x}" width="${w}" height="26"/>`;
-      x += w + 1.4;
-      return rect;
-    })
-    .join('');
-  return `<svg viewBox="0 0 ${x} 26" preserveAspectRatio="none" fill="#fff">${rects}</svg>`;
-})();
+  while (x < 168) {
+    const w = 1 + Math.floor(rand() * 3);
+    bars.push(`<rect x="${x}" y="0" width="${w}" height="30"/>`);
+    x += w + 1 + Math.floor(rand() * 2);
+  }
+  return `<svg viewBox="0 0 ${x} 30" preserveAspectRatio="none" fill="#1E3A6B">${bars.join('')}</svg>`;
+}
+
+/** 모바일 탑승권의 QR — 모서리 3곳의 인식 패턴(finder)만 실제 QR처럼 두고 나머지는 무작위 */
+function qrSvg(seed: string): string {
+  const rand = seededRandom(seed + ':qr');
+  const N = 21; // 실제 QR 최소 버전과 같은 21×21 격자
+  const inFinder = (r: number, c: number) =>
+    (r < 8 && c < 8) || (r < 8 && c >= N - 8) || (r >= N - 8 && c < 8);
+  const cells: string[] = [];
+  for (let r = 0; r < N; r++) {
+    for (let c = 0; c < N; c++) {
+      if (inFinder(r, c) || rand() > 0.45) continue;
+      cells.push(`<rect x="${c}" y="${r}" width="1" height="1"/>`);
+    }
+  }
+  const finder = (x: number, y: number) =>
+    `<rect x="${x}" y="${y}" width="7" height="7"/>` +
+    `<rect x="${x + 1}" y="${y + 1}" width="5" height="5" fill="#FFFFFF"/>` +
+    `<rect x="${x + 2}" y="${y + 2}" width="3" height="3"/>`;
+  return (
+    `<svg viewBox="0 0 ${N} ${N}" fill="#1E3A6B">` +
+    cells.join('') +
+    finder(0, 0) +
+    finder(N - 7, 0) +
+    finder(0, N - 7) +
+    '</svg>'
+  );
+}
 const DI = {
   trip: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="5" width="18" height="16"/><path d="M3 10H21M8 3V7M16 3V7"/></svg>`,
   setting: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="4" y="4" width="16" height="16"/><path d="M9 4V20M4 9H20"/></svg>`,
@@ -36,21 +81,7 @@ const DI = {
   logout: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="4" width="10" height="16"/><path d="M21 12H9M17 8L21 12L17 16"/></svg>`,
 };
 
-/* ── 도시 → IATA 공항코드 매핑 ── */
-const AIRPORT_CODE: Record<string, string> = {
-  '서울': 'ICN', '인천': 'ICN', '뉴욕': 'JFK', '방콕': 'BKK', '도쿄': 'NRT',
-  '오사카': 'KIX', '파리': 'CDG', '런던': 'LHR', '로마': 'FCO', '바르셀로나': 'BCN',
-  '싱가포르': 'SIN', '홍콩': 'HKG', '타이베이': 'TPE', '하노이': 'HAN',
-  '다낭': 'DAD', '나트랑': 'CXR', '발리': 'DPS', '푸켓': 'HKT', '오키나와': 'OKA',
-  '시드니': 'SYD', '두바이': 'DXB', '로스앤젤레스': 'LAX', '샌프란시스코': 'SFO',
-  '미국': 'JFK', '베트남': 'HAN', '태국': 'BKK', '일본': 'NRT', '유럽': 'CDG',
-};
-
-function toAirportCode(city: string): string {
-  const cleaned = city.trim();
-  if (AIRPORT_CODE[cleaned]) return AIRPORT_CODE[cleaned];
-  return cleaned.slice(0, 3).toUpperCase();
-}
+/* 도시 → IATA 공항코드 매핑은 airports.ts 한 곳에서 관리한다(workspace.ts와 공유) */
 
 /* ── 유저 정보 ── */
 function getUserInfo() {
@@ -100,10 +131,17 @@ function formatDDay(start: string | null): string | null {
   return `D+${Math.abs(diffDays)}`;
 }
 
-/** 보딩패스 스텁의 "REF" 필드용 — 실제 예약번호는 없으니 지어내는 대신, 이 트립의
- * 실제 id에서 그대로 뽑은 코드를 보여준다(트립마다 항상 같은 값으로 고정됨). */
-function refCode(tripId: string): string {
-  return tripId.replace(/-/g, '').slice(0, 6).toUpperCase();
+/** 스텁의 TRIP ID — 예약번호를 지어내는 대신 이 트립의 실제 정보(출발지·도착지·출발일)를
+ * 조합해 만든다. 예: MGS-ICNBKK-1026 */
+function tripIdCode(destCode: string, start: string | null): string {
+  const mmdd = start ? formatMMDD(start).replace('.', '') : '0000';
+  return `MGS-ICN${destCode}-${mmdd}`;
+}
+
+/** 스텁의 DATE — "10.26 – 10.30, 2026" */
+function formatStubRange(start: string | null, end: string | null): string {
+  if (!start || !end) return '-';
+  return `${formatMMDD(start)} – ${formatMMDD(end)}, ${new Date(start).getFullYear()}`;
 }
 
 /* ── 내 여행 목록 로드 ── */
@@ -139,6 +177,7 @@ function createTripCard(trip: Trip, index: number, onChanged: () => void): HTMLE
 
   const destCity = trip.destinations?.[0] ?? trip.name;
   const destCode = toAirportCode(destCity);
+  const destCityEn = toAirportCityEn(destCity);
   const dday = formatDDay(trip.start_date);
 
   card.innerHTML = `
@@ -170,27 +209,44 @@ function createTripCard(trip: Trip, index: number, onChanged: () => void): HTMLE
         ${dday ? `<span class="fi-dday">${dday}</span>` : ''}
       </div>
       <div class="trip-card-stub">
-        <div class="trip-card-stub-row">
-          <span class="trip-card-stub-eyebrow">BOARDING PASS</span>
-          <span class="trip-card-stub-plane">${ICON_PLANE}</span>
-        </div>
-        <div class="trip-card-stub-main">
-          <div class="trip-card-stub-dest">
-            <span class="stub-field-label">TO</span>
-            <span class="trip-card-stub-code">${escapeHtml(destCode)}</span>
+        <div class="stub-head">
+          <div>
+            <span class="stub-label">TRIP ID</span>
+            <span class="stub-tripid">${escapeHtml(tripIdCode(destCode, trip.start_date))}</span>
           </div>
-          <div class="trip-card-stub-fields">
-            <div class="stub-field">
-              <span class="stub-field-label">PAX</span>
-              <span class="stub-field-value">${trip.headcount ?? '-'}</span>
-            </div>
-            <div class="stub-field">
-              <span class="stub-field-label">REF</span>
-              <span class="stub-field-value">${refCode(trip.id)}</span>
-            </div>
+          <span class="stub-plane">${ICON_PLANE}</span>
+        </div>
+
+        <div class="stub-fields">
+          <div class="stub-field">
+            <span class="stub-label">DATE</span>
+            <span class="stub-value">${formatStubRange(trip.start_date, trip.end_date)}</span>
+          </div>
+          <div class="stub-field">
+            <span class="stub-label">FROM</span>
+            <span class="stub-value"><b>ICN</b><span class="stub-city">${airportCityEnByCode('ICN') ?? ''}</span></span>
+          </div>
+          <div class="stub-field">
+            <span class="stub-label">TO</span>
+            <span class="stub-value"><b>${escapeHtml(destCode)}</b><span class="stub-city">${escapeHtml(destCityEn ?? '')}</span></span>
+          </div>
+          <div class="stub-field">
+            <span class="stub-label">PAX</span>
+            <span class="stub-value">${trip.headcount ?? '-'}</span>
+          </div>
+          <div class="stub-field">
+            <span class="stub-label">DAYS</span>
+            <span class="stub-value">${formatDays(trip.start_date, trip.end_date)}</span>
           </div>
         </div>
-        <div class="trip-card-barcode">${BARCODE_SVG}</div>
+
+        <div class="stub-foot">
+          <div class="stub-qr">${qrSvg(trip.id)}</div>
+          <div class="stub-code">
+            <div class="stub-barcode">${barcodeSvg(trip.id)}</div>
+            <span class="stub-brand">MONGSIL TRAVEL WORKSPACE</span>
+          </div>
+        </div>
       </div>
     </div>
   `;
