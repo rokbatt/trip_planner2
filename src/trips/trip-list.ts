@@ -12,7 +12,6 @@ type Trip = Database['public']['Tables']['trips']['Row'];
 
 /* ── SVG ── */
 const ICON_SUITCASE = `<svg class="trip-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="7" width="18" height="14"/><path d="M8 7V4H16V7"/></svg>`;
-const ICON_ROUTE_ARROW = `<svg class="route-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12H19M13 6L19 12L13 18"/></svg>`;
 const ICON_EDIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>`;
 const ICON_PLANE = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 16.5v-2l-8.5-5V3.5c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v6l-8.5 5v2l8.5-2.5V19l-2.5 2v1.5l4-1 4 1V21l-2.5-2v-5.5l8.5 2.5z"/></svg>`;
 
@@ -138,10 +137,16 @@ function tripIdCode(destCode: string, start: string | null): string {
   return `MGS-ICN${destCode}-${mmdd}`;
 }
 
-/** 스텁의 DATE — "10.26 – 10.30, 2026" */
+/** 스텁의 DATE — "10.26 → 10.30, 2026" */
 function formatStubRange(start: string | null, end: string | null): string {
   if (!start || !end) return '-';
-  return `${formatMMDD(start)} – ${formatMMDD(end)}, ${new Date(start).getFullYear()}`;
+  return `${formatMMDD(start)} → ${formatMMDD(end)}, ${new Date(start).getFullYear()}`;
+}
+
+/** 스텁의 PAX — 항공권처럼 두 자리로 0을 채운다(2명 → 02). 인원수 미입력이면 '--' */
+function formatPax(headcount: number | null): string {
+  if (headcount == null || !Number.isFinite(headcount)) return '--';
+  return String(headcount).padStart(2, '0');
 }
 
 /* ── 내 여행 목록 로드 ── */
@@ -180,73 +185,90 @@ function createTripCard(trip: Trip, index: number, onChanged: () => void): HTMLE
   const destCityEn = toAirportCityEn(destCity);
   const dday = formatDDay(trip.start_date);
 
+  const tripNo = tripIdCode(destCode, trip.start_date);
+  const originEn = airportCityEnByCode('ICN') ?? '';
+
   card.innerHTML = `
     <button class="trip-card-edit" id="edit-${trip.id}" title="편집">${ICON_EDIT}</button>
     <div class="trip-card-clip">
-      <div class="trip-card-info">
-        <span class="trip-pass-label">TRAVEL PASS</span>
-        <div class="trip-card-route">
-          <span>ICN</span>${ICON_ROUTE_ARROW}<span>${escapeHtml(destCode)}</span>
-        </div>
-        <div class="trip-card-name">${escapeHtml(trip.name)}</div>
-        <div class="trip-info-divider"></div>
 
-        <div class="trip-card-flightinfo">
-          <div class="fi-col">
-            <span class="fi-label">DEPART</span>
-            <span class="fi-value">${formatMMDD(trip.start_date)}</span>
+      <!-- ── 왼쪽: 본권(여행의 얼굴) ── -->
+      <div class="tp-main">
+        <div class="tp-brand">
+          <span class="tp-brand-mark">${ICON_PLANE}</span>
+          <span class="tp-brand-name">MONGSIL</span>
+          <span class="tp-brand-sub">TRAVEL PASS</span>
+        </div>
+
+        <div class="tp-route">
+          <div class="tp-port">
+            <span class="tp-port-code">ICN</span>
+            <span class="tp-port-city">${escapeHtml(originEn)}</span>
           </div>
-          <div class="fi-col">
-            <span class="fi-label">ARRIVE</span>
-            <span class="fi-value">${formatMMDD(trip.end_date)}</span>
-          </div>
-          <div class="fi-col">
-            <span class="fi-label">DAYS</span>
-            <span class="fi-value">${formatDays(trip.start_date, trip.end_date)}</span>
+          <div class="tp-route-line"><span class="tp-route-plane">${ICON_PLANE}</span></div>
+          <div class="tp-port tp-port-to">
+            <span class="tp-port-code">${escapeHtml(destCode)}</span>
+            <span class="tp-port-city">${escapeHtml(destCityEn ?? destCity)}</span>
           </div>
         </div>
 
-        ${dday ? `<span class="fi-dday">${dday}</span>` : ''}
+        <div class="tp-theme">${escapeHtml(trip.name)}</div>
+
+        <div class="tp-meta">
+          <div class="tp-meta-item">
+            <span class="tp-label">DEPART</span>
+            <span class="tp-value">${formatMMDD(trip.start_date)}</span>
+          </div>
+          <div class="tp-meta-item">
+            <span class="tp-label">RETURN</span>
+            <span class="tp-value">${formatMMDD(trip.end_date)}</span>
+          </div>
+          <div class="tp-meta-item">
+            <span class="tp-label">DAYS</span>
+            <span class="tp-value">${formatDays(trip.start_date, trip.end_date)}</span>
+          </div>
+          ${dday ? `<span class="tp-dday">${dday}</span>` : ''}
+        </div>
       </div>
-      <div class="trip-card-stub">
-        <div class="stub-head">
-          <div>
-            <span class="stub-label">TRIP ID</span>
-            <span class="stub-tripid">${escapeHtml(tripIdCode(destCode, trip.start_date))}</span>
-          </div>
-          <span class="stub-plane">${ICON_PLANE}</span>
+
+      <!-- ── 오른쪽: 절취 스텁 ── -->
+      <div class="tp-stub">
+        <div class="tp-stub-field">
+          <span class="tp-label">TRIP NO.</span>
+          <span class="tp-stub-no">${escapeHtml(tripNo)}</span>
         </div>
 
-        <div class="stub-fields">
-          <div class="stub-field">
-            <span class="stub-label">DATE</span>
-            <span class="stub-value">${formatStubRange(trip.start_date, trip.end_date)}</span>
+        <div class="tp-stub-grid">
+          <div class="tp-stub-field tp-stub-field-wide">
+            <span class="tp-label">DATE</span>
+            <span class="tp-stub-value">${formatStubRange(trip.start_date, trip.end_date)}</span>
           </div>
-          <div class="stub-field">
-            <span class="stub-label">FROM</span>
-            <span class="stub-value"><b>ICN</b><span class="stub-city">${airportCityEnByCode('ICN') ?? ''}</span></span>
+          <div class="tp-stub-field">
+            <span class="tp-label">FROM</span>
+            <span class="tp-stub-value">ICN<i>${escapeHtml(originEn)}</i></span>
           </div>
-          <div class="stub-field">
-            <span class="stub-label">TO</span>
-            <span class="stub-value"><b>${escapeHtml(destCode)}</b><span class="stub-city">${escapeHtml(destCityEn ?? '')}</span></span>
+          <div class="tp-stub-field">
+            <span class="tp-label">TO</span>
+            <span class="tp-stub-value">${escapeHtml(destCode)}<i>${escapeHtml(destCityEn ?? '')}</i></span>
           </div>
-          <div class="stub-field">
-            <span class="stub-label">PAX</span>
-            <span class="stub-value">${trip.headcount ?? '-'}</span>
+          <div class="tp-stub-field">
+            <span class="tp-label">PAX</span>
+            <span class="tp-stub-value">${formatPax(trip.headcount)}</span>
           </div>
-          <div class="stub-field">
-            <span class="stub-label">DAYS</span>
-            <span class="stub-value">${formatDays(trip.start_date, trip.end_date)}</span>
+          <div class="tp-stub-field">
+            <span class="tp-label">DAYS</span>
+            <span class="tp-stub-value">${formatDays(trip.start_date, trip.end_date)}</span>
           </div>
         </div>
 
-        <div class="stub-foot">
-          <div class="stub-qr">${qrSvg(trip.id)}</div>
-          <div class="stub-code">
-            <div class="stub-barcode">${barcodeSvg(trip.id)}</div>
-            <span class="stub-brand">MONGSIL TRAVEL WORKSPACE</span>
+        <div class="tp-scan">
+          <div class="tp-qr">${qrSvg(trip.id)}</div>
+          <div class="tp-scan-code">
+            <div class="tp-barcode">${barcodeSvg(trip.id)}</div>
+            <span class="tp-scan-no">${escapeHtml(tripNo)}</span>
           </div>
         </div>
+        <span class="tp-stub-brand">MONGSIL TRAVEL WORKSPACE</span>
       </div>
     </div>
   `;

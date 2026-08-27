@@ -179,27 +179,45 @@
   font-size: 12px;
   letter-spacing: 0.06em;
 }
-
 /* ============================================================
-   보딩 패스 카드
+   MONGSIL TRAVEL PASS — 카드 전체가 하나의 보딩패스
+   ------------------------------------------------------------
+   "웹 카드에 항공권 장식을 얹은 것"이 아니라 레이아웃 자체가 실제 보딩패스의
+   정보 구조를 갖도록 재설계했다.
+     본권(왼쪽)  = 브랜드 → 공항코드(가장 큰 정보) → 여행 테마 → 날짜/기간
+     스텁(오른쪽) = TRIP NO./DATE/FROM/TO/PAX/DAYS + QR + 바코드
+     둘 사이     = 세로 점선 + 위아래 반원 노치(실제 절취선)
+
+   색은 4계열로 제한한다 — Navy=핵심정보/브랜드, Aero=항공·이동·강조,
+   Slate=메타데이터, Paper=티켓 종이. 알록달록해지지 않도록 아래 토큰만 쓴다.
    ============================================================ */
 
 .trip-card {
+  --tp-navy: #102F63;
+  --tp-paper: #F8FAFC;
+  --tp-aero: #6FB9E8;
+  --tp-slate: #8296AA;
+  --tp-line: rgba(16, 47, 99, 0.12);
+  --tp-stub-w: 300px;
+
+  position: relative;
   display: flex;
   align-items: stretch;
-  min-height: 132px;
+  min-height: 168px;
   background: #FFFFFF;
-  border: 1.5px solid #8FD8F8;
-  border-radius: 16px;
-  position: relative;
+  /* SaaS 카드처럼 둥글지 않게 — 실제 티켓에 가까운 낮은 radius */
+  border-radius: 8px;
+  /* 하늘색 테두리를 두르는 대신, 종이가 떠 있는 듯한 옅은 네이비 그림자로 */
+  border: 1px solid var(--tp-line);
+  box-shadow: 0 1px 2px rgba(16, 47, 99, 0.04), 0 6px 18px rgba(16, 47, 99, 0.05);
   cursor: pointer;
-  overflow: visible; /* notch가 카드 밖으로 살짝 파이므로 hidden 금지 */
-  transition: border-color 180ms cubic-bezier(0.2,0.8,0.2,1),
-              box-shadow 180ms cubic-bezier(0.2,0.8,0.2,1);
+  overflow: visible; /* 노치가 카드 밖으로 파이므로 hidden 금지 */
+  transition: box-shadow 200ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
 
   opacity: 0;
   transform: translateY(16px);
-  animation: card-rise 0.6s cubic-bezier(0.2,0.8,0.2,1) forwards;
+  animation: card-rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
 }
 
 @keyframes card-rise {
@@ -207,274 +225,304 @@
 }
 
 .trip-card:hover {
-  border-color: #8FD8F8;
-  box-shadow: 0 8px 28px rgba(11,124,196,0.14);
+  transform: translateY(-2px);
+  box-shadow: 0 2px 4px rgba(16, 47, 99, 0.05), 0 14px 34px rgba(16, 47, 99, 0.13);
 }
 
-/* 실제 카드 내용은 border-radius를 유지한 채 클립되도록 내부 래퍼 사용 */
 .trip-card-clip {
   display: flex;
   flex: 1;
-  border-radius: 16px;
+  min-width: 0;
+  border-radius: 8px;
   overflow: hidden;
   position: relative;
 }
 
-/* Light sweep — 유리 위 빛 반사 */
-.trip-card-clip::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(115deg, transparent 40%, rgba(255,255,255,0.4) 50%, transparent 60%);
-  transform: translateX(-130%);
-  transition: transform 600ms cubic-bezier(0.2,0.8,0.2,1);
-  pointer-events: none;
-  z-index: 3;
-}
-.trip-card:hover .trip-card-clip::after { transform: translateX(130%); }
-
-/* ── 절취선 Notch (반원 홈) ── */
+/* ── 절취선 노치 — 스텁 경계에 실제 종이를 떼어낸 듯한 반원 홈 ── */
 .trip-card::before,
 .trip-card::after {
   content: '';
   position: absolute;
-  left: 280px; /* trip-card-info 폭과 동일 */
-  transform: translateX(-50%);
-  width: 20px;
-  height: 20px;
-  background: #FFFFFF; /* .trip-list-page 배경색과 동일해야 "파인" 효과가 남 */
+  right: var(--tp-stub-w);
+  transform: translateX(50%);
+  width: 18px;
+  height: 18px;
+  background: #FFFFFF;            /* .trip-list-page 배경과 같아야 "파인" 효과가 남 */
+  border: 1px solid var(--tp-line);
   border-radius: 50%;
   z-index: 4;
 }
-.trip-card::before { top: -10px; }
-.trip-card::after { bottom: -10px; }
+.trip-card::before { top: -10px; clip-path: inset(50% 0 0 0); }  /* 아래쪽 반원만 */
+.trip-card::after  { bottom: -10px; clip-path: inset(0 0 50% 0); } /* 위쪽 반원만 */
 
-/* ── 좌측 정보 영역 ── */
-.trip-card-info {
-  width: 280px;
-  flex-shrink: 0;
-  padding: 16px 26px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  position: relative;
-  background-image: linear-gradient(rgba(130,150,170,0.28) 0 0);
-  background-size: 1px 100%;
-  background-position: right center;
-  background-repeat: no-repeat;
-}
-.trip-card-info::after {
-  content: '';
-  position: absolute;
-  top: 14px;
-  bottom: 14px;
-  right: 0;
-  width: 0;
-  border-right: 1px dashed rgba(130,150,170,0.32);
-}
-
-/* 공항 코드 라인 */
-.trip-pass-label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: #79BDF8;
-  margin-bottom: 0;
-}
-.trip-card-route {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: #0B2A5C;
-  font-variant-numeric: tabular-nums;
-}
-.trip-card-route .route-arrow {
-  width: 16px;
-  height: 16px;
-  color: #8FD8F8;
-  flex-shrink: 0;
-}
-
-/* 한글 타이틀 서브 매핑 */
-.trip-card-name {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: #64748B;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-top: 0;
-}
-.trip-info-divider {
-  height: 1px;
-  background: rgba(130,150,170,0.15);
-  margin: 4px 0 2px;
-}
-/* ── 탑승 정보 3열 그리드 ── */
-.trip-card-flightinfo {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 14px;
-  margin-top: auto;
-}
-
-.fi-col {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.fi-label {
-  font-family: 'SF Mono', ui-monospace, monospace;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: #94A3B8;
-}
-
-.fi-value {
-  font-family: 'SF Mono', ui-monospace, monospace;
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: #334155;
-}
-
-.fi-dday {
-  display: inline-flex;
-  align-items: center;
-  align-self: flex-start;
-  padding: 4px 9px;
-  border-radius: 6px;
-  background: #EAF6FD;
-  color: #0B7CC4;
-  font-family: 'SF Mono', ui-monospace, monospace;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-
-/*
- * ── 우측 "보딩패스 스텁" 영역 ──
- * 원래는 여행지 사진을 직접 넣을 계획이었으나, 여행지마다 사진을 구해 채워야 하는
- * 유지비용이 커서(city_images 큐레이션) 사진 없이도 항상 고급스러운, 실제 항공권을
- * 참조한 그래픽으로 바꿨다. 큰 고스트 타이포 한 방으로는 "보딩패스처럼" 안 읽힌다는
- * 피드백으로 — 실제 보딩패스는 라벨(작게, 자간 넓게) 위에 값(굵게)을 얹은 필드 여러
- * 개 + 큼직한 바코드로 한눈에 "이건 보딩패스구나" 하고 알아보게 되는 것이라, 그
- * 구조를 그대로 가져왔다. PAX/REF는 지어낸 값이 아니라 실제 인원수(trip.headcount)와
- * 이 트립 고유 id에서 그대로 뽑은 값이다.
- */
-.trip-card-stub {
-  flex: 1;
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 15px 22px 14px;
-  background: #FBFDFF;
-}
-
-/* ── 상단: TRIP ID + 비행기 아이콘 ── */
-.stub-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-.stub-tripid {
-  display: block;
-  margin-top: 3px;
-  font-family: 'SF Mono', ui-monospace, monospace;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  color: #2E5FD9;
-}
-.stub-plane {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  color: #79BDF8;
-  transform: rotate(90deg); /* 위를 향한 아이콘을 진행 방향(오른쪽)으로 */
-}
-.stub-plane svg { width: 100%; height: 100%; }
-
-/* ── 중단: 라벨 + 값 필드들 ── */
-.stub-fields {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 9px 28px;
-}
-.stub-field {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.stub-label {
-  font-family: 'SF Mono', ui-monospace, monospace;
-  font-size: 8.5px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: #A8B7C7;
-}
-.stub-value {
-  font-family: 'SF Mono', ui-monospace, monospace;
-  font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: #334155;
-  white-space: nowrap;
-}
-.stub-value b {
-  font-weight: 800;
-  color: #0B2A5C;
-}
-.stub-city {
-  margin-left: 5px;
-  font-weight: 600;
-  color: #94A3B8;
-}
-
-/* ── 하단: QR + 바코드 + 브랜드 ── */
-.stub-foot {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-}
-.stub-qr {
-  width: 38px;
-  height: 38px;
-  flex-shrink: 0;
-  padding: 2px;
-  border-radius: 3px;
-  background: #FFFFFF;
-}
-.stub-qr svg { width: 100%; height: 100%; display: block; }
-
-.stub-code {
+/* ══════════ 왼쪽: 본권 ══════════ */
+.tp-main {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  padding: 18px 26px 16px;
+}
+
+/* ── 항공사 브랜드 영역 ── */
+.tp-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.tp-brand-mark {
+  align-self: center;
+  width: 17px;
+  height: 17px;
+  color: var(--tp-navy);
+  flex-shrink: 0;
+  transform: rotate(90deg);
+}
+.tp-brand-mark svg { width: 100%; height: 100%; }
+.tp-brand-name {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: var(--tp-navy);
+}
+.tp-brand-sub {
+  font-family: 'SF Mono', ui-monospace, monospace;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--tp-aero);
+}
+
+/* ── 공항 코드 — 카드에서 가장 강한 정보 ── */
+.tp-route {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.tp-port {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.tp-port-to { text-align: right; align-items: flex-end; }
+
+.tp-port-code {
+  font-family: 'SF Mono', ui-monospace, monospace;
+  font-size: clamp(30px, 3.4vw, 40px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--tp-navy);
+}
+.tp-port-city {
+  font-family: 'SF Mono', ui-monospace, monospace;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--tp-slate);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* 두 공항을 잇는 점선 + 가운데 비행기 */
+.tp-route-line {
+  flex: 1;
+  min-width: 26px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  margin-top: -8px; /* 코드 글자의 시각적 중심에 맞춤 */
+  height: 16px;
+}
+.tp-route-line::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: repeating-linear-gradient(90deg, var(--tp-aero) 0 3px, transparent 3px 8px);
+  opacity: 0.85;
+}
+.tp-route-plane {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 0 7px;
+  background: #FFFFFF;
+  color: var(--tp-aero);
+}
+.tp-route-plane svg { width: 15px; height: 15px; transform: rotate(90deg); }
+
+/* ── 여행 테마/지역 ── */
+.tp-theme {
+  margin-top: 9px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #46536B;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── 날짜/기간 + D-day ── */
+.tp-meta {
+  display: flex;
+  align-items: flex-end;
+  gap: 26px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--tp-line);
+}
+.tp-meta-item {
+  display: flex;
+  flex-direction: column;
   gap: 4px;
 }
-.stub-barcode { height: 26px; }
-.stub-barcode svg { width: 100%; height: 100%; display: block; }
-.stub-brand {
+.tp-label {
   font-family: 'SF Mono', ui-monospace, monospace;
-  font-size: 8px;
-  font-weight: 600;
+  font-size: 8.5px;
+  font-weight: 700;
   letter-spacing: 0.18em;
-  color: #B0BCC9;
+  text-transform: uppercase;
+  color: var(--tp-slate);
+  white-space: nowrap;
+}
+.tp-value {
+  font-family: 'SF Mono', ui-monospace, monospace;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: var(--tp-navy);
+}
+.tp-dday {
+  margin-left: auto;
+  align-self: center;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: var(--tp-navy);
+  color: #FFFFFF;
+  font-family: 'SF Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* ══════════ 오른쪽: 절취 스텁 ══════════ */
+.tp-stub {
+  width: var(--tp-stub-w);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 18px 22px 14px;
+  background: var(--tp-paper);
+  /* 세로 점선 = 절취선 */
+  border-left: 1px dashed rgba(16, 47, 99, 0.22);
+}
+
+.tp-stub-no {
+  display: block;
+  margin-top: 3px;
+  font-family: 'SF Mono', ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--tp-navy);
+}
+
+/* 2열 그리드로 정보를 압축 — 여백이 뜨지 않게 */
+.tp-stub-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 14px;
+}
+.tp-stub-field-wide { grid-column: 1 / -1; }
+
+.tp-stub-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.tp-stub-value {
+  font-family: 'SF Mono', ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--tp-navy);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* FROM/TO의 영문 도시명 — 코드보다 한 단계 약하게 */
+.tp-stub-value i {
+  margin-left: 5px;
+  font-style: normal;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--tp-slate);
+}
+
+/* ── 스캔 영역: QR + 바코드 ── */
+.tp-scan {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--tp-line);
+}
+.tp-qr {
+  width: 54px;
+  height: 54px;
+  flex-shrink: 0;
+  padding: 4px;
+  background: #FFFFFF;
+  border-radius: 2px;
+}
+.tp-qr svg { width: 100%; height: 100%; display: block; }
+
+.tp-scan-code {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.tp-barcode { height: 30px; }
+.tp-barcode svg { width: 100%; height: 100%; display: block; }
+/* 실제 보딩패스처럼 바코드 아래에 사람이 읽을 수 있는 코드를 함께 인쇄 */
+.tp-scan-no {
+  font-family: 'SF Mono', ui-monospace, monospace;
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--tp-slate);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tp-stub-brand {
+  font-family: 'SF Mono', ui-monospace, monospace;
+  font-size: 7.5px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  color: #A8B7C7;
   text-align: center;
 }
 
@@ -518,31 +566,21 @@
     gap: 18px;
   }
 
+  /* 좁은 화면에서는 본권 위 / 스텁 아래로 접고, 절취선도 가로로 눕힌다 */
   .trip-card { min-height: auto; }
   .trip-card-clip { flex-direction: column; }
 
-  .trip-card::before,
-  .trip-card::after {
-    left: 50%;
-    top: unset;
-  }
-  .trip-card::before { top: -10px; }
-  .trip-card::after { bottom: -10px; }
+  .tp-main { padding: 16px 18px 14px; }
 
-  .trip-card-info {
+  .tp-stub {
     width: 100%;
-    background-image: none;
-  }
-  .trip-card-info::after {
-    top: unset;
-    bottom: 0;
-    left: 14px;
-    right: 14px;
-    width: unset;
-    height: 0;
-    border-right: none;
-    border-bottom: 1px dashed rgba(130,150,170,0.32);
+    border-left: none;
+    border-top: 1px dashed rgba(16, 47, 99, 0.22);
+    padding: 14px 18px 12px;
   }
 
-  .trip-card-stub { min-height: 140px; }
+  /* 세로 배치에서는 절취선이 가로로 눕는데, 그 정확한 y좌표는 본권 높이에 따라
+     달라져 CSS만으로는 맞출 수 없다. 어긋난 노치를 두느니 점선만 남긴다. */
+  .trip-card::before,
+  .trip-card::after { display: none; }
 }
