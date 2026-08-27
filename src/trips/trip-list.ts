@@ -14,6 +14,21 @@ const ICON_SUITCASE = `<svg class="trip-empty-icon" viewBox="0 0 24 24" fill="no
 const ICON_ROUTE_ARROW = `<svg class="route-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12H19M13 6L19 12L13 18"/></svg>`;
 const ICON_EDIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>`;
 const ICON_PLANE = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 16.5v-2l-8.5-5V3.5c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v6l-8.5 5v2l8.5-2.5V19l-2.5 2v1.5l4-1 4 1V21l-2.5-2v-5.5l8.5 2.5z"/></svg>`;
+
+/** 실제 항공권 바코드(PDF417)처럼 두께가 들쭉날쭉한 세로 막대를 미리 정해둔 패턴으로
+ * 하나만 만들어 재사용 — 장식용이라 실제 정보를 담지 않는다(스캔 대상 아님). */
+const BARCODE_SVG = (() => {
+  const widths = [2, 1, 1, 3, 1, 2, 1, 1, 4, 1, 2, 1, 3, 1, 1, 2, 1, 4, 1, 1, 2, 3, 1, 1, 2, 1, 3, 1, 1, 4, 1, 2];
+  let x = 0;
+  const rects = widths
+    .map((w, i) => {
+      const rect = i % 4 === 3 ? '' : `<rect x="${x}" width="${w}" height="26"/>`;
+      x += w + 1.4;
+      return rect;
+    })
+    .join('');
+  return `<svg viewBox="0 0 ${x} 26" preserveAspectRatio="none" fill="#fff">${rects}</svg>`;
+})();
 const DI = {
   trip: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="5" width="18" height="16"/><path d="M3 10H21M8 3V7M16 3V7"/></svg>`,
   setting: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="4" y="4" width="16" height="16"/><path d="M9 4V20M4 9H20"/></svg>`,
@@ -85,6 +100,12 @@ function formatDDay(start: string | null): string | null {
   return `D+${Math.abs(diffDays)}`;
 }
 
+/** 보딩패스 스텁의 "REF" 필드용 — 실제 예약번호는 없으니 지어내는 대신, 이 트립의
+ * 실제 id에서 그대로 뽑은 코드를 보여준다(트립마다 항상 같은 값으로 고정됨). */
+function refCode(tripId: string): string {
+  return tripId.replace(/-/g, '').slice(0, 6).toUpperCase();
+}
+
 /* ── 내 여행 목록 로드 ── */
 async function loadTrips(): Promise<Trip[]> {
   const user = store.get('user');
@@ -149,9 +170,27 @@ function createTripCard(trip: Trip, index: number, onChanged: () => void): HTMLE
         ${dday ? `<span class="fi-dday">${dday}</span>` : ''}
       </div>
       <div class="trip-card-stub">
-        <div class="trip-card-stub-plane">${ICON_PLANE}</div>
-        <div class="trip-card-stub-code">${escapeHtml(destCode)}</div>
-        <div class="trip-card-barcode"></div>
+        <div class="trip-card-stub-row">
+          <span class="trip-card-stub-eyebrow">BOARDING PASS</span>
+          <span class="trip-card-stub-plane">${ICON_PLANE}</span>
+        </div>
+        <div class="trip-card-stub-main">
+          <div class="trip-card-stub-dest">
+            <span class="stub-field-label">TO</span>
+            <span class="trip-card-stub-code">${escapeHtml(destCode)}</span>
+          </div>
+          <div class="trip-card-stub-fields">
+            <div class="stub-field">
+              <span class="stub-field-label">PAX</span>
+              <span class="stub-field-value">${trip.headcount ?? '-'}</span>
+            </div>
+            <div class="stub-field">
+              <span class="stub-field-label">REF</span>
+              <span class="stub-field-value">${refCode(trip.id)}</span>
+            </div>
+          </div>
+        </div>
+        <div class="trip-card-barcode">${BARCODE_SVG}</div>
       </div>
     </div>
   `;

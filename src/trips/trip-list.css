@@ -361,19 +361,23 @@
 }
 
 /*
- * ── 우측 "탑승권 스텁" 영역 ──
+ * ── 우측 "보딩패스 스텁" 영역 ──
  * 원래는 여행지 사진을 직접 넣을 계획이었으나, 여행지마다 사진을 구해 채워야 하는
- * 유지비용이 커서(city_images 큐레이션) 사진 없이도 항상 고급스러운, 실제 항공권
- * 스텁을 참조한 그래픽으로 바꿨다. 데이터는 이미 계산해둔 공항코드(destCode)만
- * 재사용 — 여행지별로 사진을 구해 채울 필요가 없다.
+ * 유지비용이 커서(city_images 큐레이션) 사진 없이도 항상 고급스러운, 실제 항공권을
+ * 참조한 그래픽으로 바꿨다. 큰 고스트 타이포 한 방으로는 "보딩패스처럼" 안 읽힌다는
+ * 피드백으로 — 실제 보딩패스는 라벨(작게, 자간 넓게) 위에 값(굵게)을 얹은 필드 여러
+ * 개 + 큼직한 바코드로 한눈에 "이건 보딩패스구나" 하고 알아보게 되는 것이라, 그
+ * 구조를 그대로 가져왔다. PAX/REF는 지어낸 값이 아니라 실제 인원수(trip.headcount)와
+ * 이 트립 고유 id에서 그대로 뽑은 값이다.
  */
 .trip-card-stub {
   flex: 1;
   position: relative;
   overflow: hidden;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  padding: 14px 18px 16px;
+  gap: 10px;
   background: linear-gradient(135deg, #0B2A5C 0%, #15315F 55%, #0A2247 100%);
 }
 /* 은은한 골드 스윕 + 하단 음영 — 라운지 유리 질감 */
@@ -382,69 +386,93 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(155deg, rgba(192,138,46,0.18) 0%, transparent 38%),
+    linear-gradient(155deg, rgba(192,138,46,0.16) 0%, transparent 42%),
     linear-gradient(to bottom, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0.14) 100%);
   pointer-events: none;
-  z-index: 1;
-}
-/* 절취선 강조 — 실제 항공권 스텁의 트림 라인 참조 */
-.trip-card-stub::after {
-  content: '';
-  position: absolute;
-  left: 16px;
-  right: 34px;
-  bottom: 22px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(192,138,46,0.6) 18%, rgba(192,138,46,0.6) 100%);
-  z-index: 1;
+  z-index: 0;
 }
 
-/* 배경의 커다란 비행기 워터마크 */
+.trip-card-stub-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.trip-card-stub-eyebrow {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(192,138,46,0.85);
+}
 .trip-card-stub-plane {
-  position: absolute;
-  right: -14px;
-  bottom: -20px;
-  width: 108px;
-  height: 108px;
-  color: rgba(255,255,255,0.07);
-  transform: rotate(-18deg);
-  pointer-events: none;
+  width: 15px;
+  height: 15px;
+  color: rgba(255,255,255,0.55);
 }
 .trip-card-stub-plane svg { width: 100%; height: 100%; }
 
-/* 사진 대신 이 카드의 주인공 — 공항코드를 큼직한 고스트 타이포로 */
-.trip-card-stub-code {
+.trip-card-stub-main {
   position: relative;
-  z-index: 2;
-  font-family: 'SF Mono', ui-monospace, monospace;
-  font-size: clamp(30px, 4.2vw, 42px);
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  color: rgba(255,255,255,0.96);
-  text-shadow: 0 2px 18px rgba(0,0,0,0.28);
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 0;
 }
 
-/* 미니멀 바코드 — 실제 항공권 우측 끝 배치 참조 */
-.trip-card-barcode {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  right: 14px;
-  width: 24px;
-  z-index: 2;
-  opacity: 0.2;
-  background: repeating-linear-gradient(
-    90deg,
-    #ffffff 0px, #ffffff 1px,
-    transparent 1px, transparent 2px,
-    #ffffff 2px, #ffffff 4px,
-    transparent 4px, transparent 5px,
-    #ffffff 5px, #ffffff 6px,
-    transparent 6px, transparent 9px
-  );
-  pointer-events: none;
-  mix-blend-mode: overlay;
+.trip-card-stub-dest {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
+/* 사진 대신 이 카드의 주인공 — 목적지 공항코드를 보딩패스의 FROM/TO처럼 */
+.trip-card-stub-code {
+  font-family: 'SF Mono', ui-monospace, monospace;
+  font-size: clamp(26px, 3.6vw, 34px);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: #FFFFFF;
+}
+
+.trip-card-stub-fields {
+  display: flex;
+  gap: 18px;
+  flex-shrink: 0;
+}
+.stub-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.stub-field-label {
+  font-family: 'SF Mono', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.5);
+}
+.stub-field-value {
+  font-family: 'SF Mono', ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: rgba(255,255,255,0.94);
+}
+
+/* 실제 보딩패스 하단의 PDF417 바코드 참조 — 장식용(스캔 대상 아님) */
+.trip-card-barcode {
+  position: relative;
+  z-index: 1;
+  height: 24px;
+  opacity: 0.85;
+}
+.trip-card-barcode svg { width: 100%; height: 100%; display: block; }
 
 /* ── Empty state ── */
 .trip-empty {
@@ -513,5 +541,4 @@
   }
 
   .trip-card-stub { min-height: 140px; }
-  .trip-card-barcode { width: 24px; }
 }
