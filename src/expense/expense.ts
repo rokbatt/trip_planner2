@@ -282,10 +282,11 @@ function statsHtml(): string {
   const pct = totalBudget != null && totalBudget > 0 ? Math.round((usage / totalBudget) * 100) : null;
   const over = remaining != null && remaining < 0;
   const people = Math.max(1, headcount);
-  const perPerson = usage / people;
-
   const sharedUsage = sumPaidByMode('SHARED');
   const personalUsage = sumPaidByMode('PERSONAL');
+  // 개인 지출은 그 사람 혼자 부담하는 돈이라 나눠 가질 대상이 아님 — 1인당 부담액은
+  // "다 같이 나눠 낼 돈"인 공동 지출만 인원수로 나눈다(전체 사용액을 그냥 나누면 안 됨)
+  const perPerson = sharedUsage / people;
   const sharedPct = usage > 0 ? Math.round((sharedUsage / usage) * 100) : 0;
   const personalPct = usage > 0 ? 100 - sharedPct : 0;
 
@@ -324,7 +325,7 @@ function statsHtml(): string {
     '  <div class="ex-stat-card al-glass">',
     '    <div class="ex-stat-card-top"><span class="ex-stat-label">1인당 예상 부담액</span>' + IC_WALLET + '</div>',
     '    <div class="ex-stat-value">' + fmtKRW(perPerson) + '</div>',
-    '    <div class="ex-stat-foot">' + people + '명 평균</div>',
+    '    <div class="ex-stat-foot">' + people + '명 평균 · 공동 지출 기준</div>',
     '    <button type="button" class="ex-more-link" id="ex-perperson-detail">상세 보기</button>',
     '  </div>',
     '</div>',
