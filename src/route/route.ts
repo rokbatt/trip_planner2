@@ -1691,10 +1691,38 @@ function handleLegClick(fromId: string, toId: string, anchor?: HTMLElement): voi
   openModeOverridePopover(legKey(fromId, toId), anchor);
 }
 
+/** ROUTE의 이동수단 ↔ 구글맵 travelmode 파라미터 매핑 */
+function gmTravelMode(mode: Leg['mode']): string {
+  return mode === 'WALK' ? 'walking' : mode === 'TRANSIT' ? 'transit' : 'driving';
+}
+
+/** 두 지점 사이를 구글맵 경로 화면으로 여는 링크 — 출발/도착이 자동으로 채워진 채 열린다.
+ *  좌표만 있으면 되므로(장소 자체를 조회하지 않음) 추가 API 호출이 들지 않는다. */
+function googleMapsDirUrl(from: { lat: number; lng: number }, to: { lat: number; lng: number }, mode: Leg['mode']): string {
+  return (
+    'https://www.google.com/maps/dir/?api=1&origin=' + from.lat + ',' + from.lng +
+    '&destination=' + to.lat + ',' + to.lng + '&travelmode=' + gmTravelMode(mode)
+  );
+}
+
 function openModeOverridePopover(key: string, anchor?: HTMLElement): void {
   document.querySelectorAll('.rt-mode-popover').forEach((el) => el.remove());
   const cur = legModeOverride.get(key);
   const measured = realLegs.get(key);
+
+  // "구글맵에서 경로 보기" — 지금 화면에 쓰는(override가 있으면 그것, 없으면 자동 선택된)
+  // 이동수단 그대로 구글맵 경로 화면을 연다. 좌표만 있으면 되니 API 호출은 추가로 들지 않는다.
+  const [fromId, toId] = key.split('>');
+  const fromPlace = placeById.get(fromId);
+  const toPlace = placeById.get(toId);
+  const gmUrl =
+    fromPlace?.lat != null && fromPlace?.lng != null && toPlace?.lat != null && toPlace?.lng != null
+      ? googleMapsDirUrl(
+          { lat: fromPlace.lat, lng: fromPlace.lng },
+          { lat: toPlace.lat, lng: toPlace.lng },
+          estimateLegWithOverride(fromPlace, toPlace, cur).mode
+        )
+      : null;
 
   /** 모드별 실제 소요시간·요금을 나란히 보여줘 사용자가 직접 비교해 고르게 한다 */
   const row = (mode: string, icon: string, label: string) => {
@@ -1724,6 +1752,10 @@ function openModeOverridePopover(key: string, anchor?: HTMLElement): void {
     row('TAXI', IC_TAXI, '자동차'),
     row('AUTO', IC_SPARK, '자동 선택'),
     measured ? '' : '<div class="rt-mode-popover-note">실제 경로를 불러오는 중이거나<br>불러오지 못해 추정치를 쓰고 있어요</div>',
+    gmUrl
+      ? '<div class="rt-mode-popover-divider"></div><a class="rt-mode-popover-gmaps" href="' + gmUrl +
+        '" target="_blank" rel="noopener noreferrer">' + IC_EXTLINK + ' 구글맵에서 경로 보기</a>'
+      : '',
   ].join('');
   document.body.appendChild(pop);
   const r = anchor?.getBoundingClientRect();
@@ -3201,15 +3233,27 @@ function updateStopInfoPanel(
   const legRow = (arrow: string, leg: Leg | null, place: Place | null, manual: boolean): string => {
     if (!leg || !place) return '';
     const extra = leg.mode === 'WALK' ? fmtKm(leg.km) : (leg.costTHB > 0 ? fmtCost(leg.costTHB, currency) : '무료');
+    // 이 구간을 누르면 구글맵 경로 화면으로 — "←"는 place→p, "→"는 p→place 방향.
+    const gmUrl =
+      p.lat != null && p.lng != null && place.lat != null && place.lng != null
+        ? googleMapsDirUrl(
+            arrow === '←' ? { lat: place.lat, lng: place.lng } : { lat: p.lat, lng: p.lng },
+            arrow === '←' ? { lat: p.lat, lng: p.lng } : { lat: place.lat, lng: place.lng },
+            leg.mode
+          )
+        : null;
+    const tag = gmUrl ? 'a' : 'div';
     return [
-      '<div class="rt-stopinfo-leg">',
+      '<' + tag + ' class="rt-stopinfo-leg"' +
+        (gmUrl ? ' href="' + gmUrl + '" target="_blank" rel="noopener noreferrer" title="구글맵에서 경로 보기"' : '') + '>',
       '  <span class="rt-stopinfo-leg-arrow">' + arrow + '</span>',
       '  <span class="rt-stopinfo-leg-name">' + escapeHtml(place.name) + '</span>',
       '  <span class="rt-stopinfo-leg-mode">' + modeIcon(leg.mode) + '</span>',
       '  <span class="rt-stopinfo-leg-time">' + fmtMin(leg.min) + ' <b>·</b> ' + extra + '</span>',
       !leg.real ? '  <span class="rt-stopinfo-leg-est" title="실제 경로를 못 받아 직선거리로 추정한 값이에요">추정</span>' : '',
       manual ? '  <span class="rt-stopinfo-leg-manual" title="직접 지정한 이동수단"></span>' : '',
-      '</div>',
+      gmUrl ? '  <span class="rt-stopinfo-leg-gmaps">' + IC_EXTLINK + '</span>' : '',
+      '</' + tag + '>',
     ].join('');
   };
   const prevManual = prevPlace ? legModeOverride.has(legKey(prevPlace.id, p.id)) : false;
