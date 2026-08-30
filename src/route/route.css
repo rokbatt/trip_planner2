@@ -798,6 +798,14 @@
   font-size: 9px; color: var(--rt-ink-4); text-align: center;
   padding: 0 12px 8px; flex-shrink: 0;
 }
+/* "실제 경로 보기" — 누르기 전까진 Route Matrix API를 안 부른다(비용 절감) */
+.rt-legs-real-btn {
+  border: none; background: none; padding: 0; margin-left: 2px;
+  color: var(--rt-blue); font-size: 9px; font-weight: 700; font-family: inherit;
+  text-decoration: underline; cursor: pointer;
+}
+.rt-legs-real-btn:hover { color: var(--rt-navy); }
+.rt-legs-real-btn:disabled { color: var(--rt-ink-4); cursor: default; text-decoration: none; }
 
 .rt-panel-actions { display: flex; gap: 8px; padding: 0 12px 14px; flex-shrink: 0; }
 .rt-panel-action {
