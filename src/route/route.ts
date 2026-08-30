@@ -876,6 +876,8 @@ async function loadRealLegsForActiveDay(container: HTMLElement): Promise<void> {
 function setLegLoading(container: HTMLElement, on: boolean): void {
   const el = container.querySelector('#rt-legs-loading') as HTMLElement | null;
   if (el) el.style.display = on ? '' : 'none';
+  const btn = container.querySelector('#rt-legs-real-btn') as HTMLButtonElement | null;
+  if (btn) btn.disabled = on;
 }
 
 /** dayIndex(0-based)의 실제 캘린더 날짜(YYYY-MM-DD). 시작일을 모르면 null */
@@ -1133,7 +1135,8 @@ export async function renderRouteContent(container: HTMLElement, tripId: string)
 
   // 같은 트립을 보고 있는 다른 멤버의 변경을 실시간으로 반영
   subscribeRoutePlan(tripId, () => { void reloadFromRemote(); });
-  void loadRealLegsForActiveDay(container);
+  // 실제 경로(Route Matrix API)는 더 이상 자동으로 부르지 않는다 — API 비용을 줄이려고
+  // "실제 경로 보기"를 눌렀을 때만 호출한다(estimateNoteHtml의 버튼 참고).
 }
 
 /** 다른 멤버가 동선을 바꿨을 때 — 내 편집 중인 상태를 버리지 않도록 저장 예약을 먼저 비운다 */
@@ -1750,12 +1753,52 @@ function openModeOverridePopover(key: string, anchor?: HTMLElement): void {
 }
 
 /**
+ * 여행지 이름(사용자가 직접 입력한 도시명, 예: "방콕", "프라하")으로 현지 통화를 추정 —
+ * 실측 요금이 아직 없는 추정 구간의 통화 폴백에 쓴다. 국가별 공식 통화(ISO 4217)는 실제
+ * 사실 데이터라 원칙 3-1(지어내지 않기)에 어긋나지 않는다 — 예전엔 이 폴백이 무조건
+ * THB(태국)였는데, 방콕이 아닌 다른 여행지에서도 늘 THB로 나오던 버그의 원인이었다.
+ * 목록에 없는 도시는 임의로 특정 나라를 짚어 맞추지 않고 USD로 무난하게 폴백한다.
+ */
+const DEST_CURRENCY_KEYWORDS: Array<[string[], string]> = [
+  [['방콕', '파타야', '푸켓', '치앙마이', '끄라비', '태국', 'bangkok', 'phuket', 'thailand'], 'THB'],
+  [['도쿄', '오사카', '교토', '삿포로', '후쿠오카', '오키나와', '나고야', '일본', 'tokyo', 'osaka', 'japan'], 'JPY'],
+  [['다낭', '하노이', '호치민', '나트랑', '호이안', '푸꾸옥', '베트남', 'vietnam'], 'VND'],
+  [['프라하', '체코', 'prague', 'czech'], 'CZK'],
+  [
+    ['파리', '로마', '베를린', '뮌헨', '바르셀로나', '마드리드', '암스테르담', '비엔나', '빈', '밀라노', '피렌체', '베네치아',
+      '리스본', '아테네', '더블린', '브뤼셀', '독일', '프랑스', '이탈리아', '스페인', '포르투갈', '오스트리아', '그리스', '네덜란드', '아일랜드'],
+    'EUR',
+  ],
+  [['런던', '영국', 'london'], 'GBP'],
+  [['뉴욕', '라스베가스', '로스앤젤레스', '샌프란시스코', '하와이', '괌', '미국', 'new york', 'usa'], 'USD'],
+  [['타이베이', '타이페이', '가오슝', '대만', 'taipei', 'taiwan'], 'TWD'],
+  [['홍콩', 'hong kong'], 'HKD'],
+  [['상하이', '베이징', '광저우', '청두', '시안', '중국', 'china'], 'CNY'],
+  [['싱가포르', 'singapore'], 'SGD'],
+  [['쿠알라룸푸르', '코타키나발루', '페낭', '말레이시아', 'malaysia'], 'MYR'],
+  [['발리', '자카르타', '인도네시아', 'bali', 'indonesia'], 'IDR'],
+  [['세부', '마닐라', '보라카이', '팔라완', '필리핀', 'philippines'], 'PHP'],
+  [['시드니', '멜버른', '브리즈번', '호주', 'sydney', 'australia'], 'AUD'],
+  [['오클랜드', '퀸스타운', '뉴질랜드', 'new zealand'], 'NZD'],
+  [['두바이', '아부다비', 'dubai'], 'AED'],
+  [['취리히', '제네바', '스위스', 'zurich', 'switzerland'], 'CHF'],
+  [['토론토', '밴쿠버', '캐나다', 'toronto', 'vancouver', 'canada'], 'CAD'],
+  [['델리', '뭄바이', '인도', 'india'], 'INR'],
+];
+function guessCurrencyForDestination(name: string | null): string {
+  if (!name) return 'USD';
+  const n = name.toLowerCase();
+  const hit = DEST_CURRENCY_KEYWORDS.find(([keywords]) => keywords.some((k) => n.includes(k.toLowerCase())));
+  return hit?.[1] ?? 'USD';
+}
+
+/**
  * 화면에 쓸 통화 코드. 실측 대중교통 요금이 오면 그 통화를 그대로 쓰고(여행지가 어디든 정확),
- * 없으면 추정 로직이 방콕 기준이라 THB로 폴백한다.
+ * 없으면 이 여행지 이름으로 추정한 현지 통화로 폴백한다.
  */
 function currencyOf(legs: Leg[]): string {
   const withFare = legs.find((l) => l.fare?.currency);
-  return withFare?.fare?.currency ?? 'THB';
+  return withFare?.fare?.currency ?? guessCurrencyForDestination(activeDestName);
 }
 
 // "예상 교통비 원화로 보기" 토글 — 켜져 있으면 fmtCost가 캐시된 환율로 원화 환산해 보여준다.
@@ -1797,16 +1840,24 @@ function estimateNoteHtml(legs: Leg[]): string {
   const realCount = legs.filter((l) => l.real).length;
   const hasTaxi = legs.some((l) => l.mode === 'TAXI');
   const fareEstimated = legs.some((l) => l.mode === 'TRANSIT' && l.real && !l.fare);
+  const allReal = realCount === legs.length;
+
+  // 실제 경로(Route Matrix)는 더 이상 자동으로 안 부르고, 이 버튼을 눌렀을 때만 호출한다
+  // (API 비용 절감) — 아직 하나라도 추정치인 구간이 남아있으면 계속 보여준다.
+  const realBtn = allReal
+    ? ''
+    : ' <button type="button" class="rt-legs-real-btn" id="rt-legs-real-btn">실제 경로 보기</button>';
+  const loadingSpan = '<span id="rt-legs-loading" style="display:none">실제 경로 확인 중… </span>';
 
   if (realCount === 0) {
-    return '<span id="rt-legs-loading" style="display:none">실제 경로 확인 중… </span>* 직선거리 기반 추정치예요';
+    return loadingSpan + '* 직선거리 기반 추정치예요' + realBtn;
   }
   const base =
-    realCount === legs.length
+    allReal
       ? '* 이동시간·거리는 실제 경로 기준'
       : '* 이동시간·거리는 일부만 실제 경로 기준 (' + realCount + '/' + legs.length + '), 나머지는 추정치';
   const costNote = hasTaxi || fareEstimated ? ', 요금은 추정치' : '';
-  return '<span id="rt-legs-loading" style="display:none">실제 경로 확인 중… </span>' + base + costNote + '예요';
+  return loadingSpan + base + costNote + '예요' + realBtn;
 }
 
 /* ── 시간 계산 (수동 오버라이드가 있으면 그 시각을 기준으로 이어서 계산) ── */
@@ -2639,6 +2690,10 @@ function renderRightPanel(container: HTMLElement): void {
 
 function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
   el.querySelector('#rt-ai-plan')?.addEventListener('click', () => openAiPlanNotesModal(container));
+  el.querySelector('#rt-legs-real-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    void loadRealLegsForActiveDay(container);
+  });
   el.querySelectorAll('.rt-panel-remove').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -2814,9 +2869,10 @@ function refreshAll(container: HTMLElement, opts: { refit: boolean } = { refit: 
   renderLeftPanel(container);
   renderRightPanel(container);
   drawRouteOnMap(opts.refit);
-  // 변경이 실제로 있을 때만 저장되고(지문 비교), 새로 생긴 구간은 실측 데이터를 채운다.
+  // 변경이 실제로 있을 때만 저장된다(지문 비교). 실제 경로는 여기서 자동으로 다시 불러오지
+  // 않는다 — 장소를 추가/재배열할 때마다 Route Matrix API를 부르면 비용이 커지므로, 새로
+  // 생긴 구간은 "실제 경로 보기"를 다시 눌러야 실측으로 채워진다(estimateNoteHtml 참고).
   scheduleSave();
-  void loadRealLegsForActiveDay(container);
 }
 
 /* ══════════════════ 지도 ══════════════════ */
