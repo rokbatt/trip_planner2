@@ -196,7 +196,10 @@ export function dwellMinutes(key: CatKey): number {
 /* ══════════════ 표기 ══════════════ */
 
 export function modeLabel(mode: TravelMode): string {
-  return mode === 'WALK' ? '도보' : mode === 'TRANSIT' ? 'BTS·지하철' : '택시';
+  // TRANSIT은 예전에 방콕 기준으로 "BTS·지하철"이라 박혀 있었는데, 다른 여행지에서도
+  // 그대로 나오던 버그였다 — 도시마다 실제 수단(지하철/트램/버스 등)이 다르니 무난한
+  // 일반 명칭으로 통일.
+  return mode === 'WALK' ? '도보' : mode === 'TRANSIT' ? '대중교통' : '택시';
 }
 
 export function modeColorClass(mode: TravelMode): string {

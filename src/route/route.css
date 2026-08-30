@@ -497,9 +497,16 @@
 .rt-stopinfo-leg {
   display: flex; align-items: center; gap: 6px; padding: 8px 10px;
   font-size: 11px; font-weight: 700; color: var(--rt-ink); white-space: nowrap;
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: tabular-nums; text-decoration: none;
+  transition: background var(--rt-ease);
 }
+/* href가 있을 때만(=좌표가 있어 구글맵 링크를 만들 수 있을 때만) <a>로 렌더되어 눌러진다 */
+a.rt-stopinfo-leg { cursor: pointer; }
+a.rt-stopinfo-leg:hover { background: var(--rt-mist); }
 .rt-stopinfo-leg + .rt-stopinfo-leg { border-top: var(--rt-dash); }
+.rt-stopinfo-leg-gmaps { display: flex; color: var(--rt-ink-4); flex-shrink: 0; }
+.rt-stopinfo-leg-gmaps svg { width: 11px; height: 11px; }
+a.rt-stopinfo-leg:hover .rt-stopinfo-leg-gmaps { color: var(--rt-blue); }
 .rt-stopinfo-leg-arrow { color: var(--rt-ink-4); font-weight: 800; flex-shrink: 0; }
 .rt-stopinfo-leg-name {
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--rt-ink-2); font-weight: 600;
@@ -1040,41 +1047,51 @@
 .rt-revisit-confirm:hover { filter: brightness(1.1); }
 
 /* ── 이동수단 변경 팝오버 ── */
+/* .rt-mode-popover는 document.body에 직접 붙는 팝오버라(.rt-shell 밖) --rt-* 토큰이
+   상속되지 않는다(#134에서 겪은 것과 같은 문제) — 모든 var()에 리터럴 폴백을 같이 적는다. */
 .rt-mode-popover {
   position: fixed; z-index: 70; min-width: 158px;
-  background: #fff; border: 1px solid var(--rt-line); border-radius: 12px;
-  box-shadow: var(--rt-shadow-lg); padding: 6px;
+  background: #fff; border: 1px solid var(--rt-line, rgba(130,150,170,0.18)); border-radius: 12px;
+  box-shadow: var(--rt-shadow-lg, 0 10px 28px rgba(11,42,92,0.14)); padding: 6px;
   display: flex; flex-direction: column; gap: 2px;
   animation: rt-pop-in 140ms ease-out;
 }
 .rt-mode-popover-title {
-  font-size: 9.5px; font-weight: 700; color: var(--rt-ink-3);
+  font-size: 9.5px; font-weight: 700; color: var(--rt-ink-3, #94A3B8);
   letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 10px 5px;
 }
 .rt-mode-popover button {
   display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
   padding: 8px 10px; border-radius: 8px; border: none; background: none;
-  font-size: 12px; font-weight: 700; color: var(--rt-ink); cursor: pointer; font-family: inherit;
+  font-size: 12px; font-weight: 700; color: var(--rt-ink, #0B2A5C); cursor: pointer; font-family: inherit;
 }
-.rt-mode-popover button:hover { background: var(--rt-mist); }
-.rt-mode-popover button.selected { background: var(--rt-ice); color: var(--rt-blue); }
-.rt-mode-popover button svg { width: 13px; height: 13px; color: var(--rt-ink-2); flex-shrink: 0; }
-.rt-mode-popover button.selected svg { color: var(--rt-blue); }
-.rt-mode-popover button .rt-mode-check { margin-left: auto; width: 12px; height: 12px; color: var(--rt-blue); }
+.rt-mode-popover button:hover { background: var(--rt-mist, #F1F6FB); }
+.rt-mode-popover button.selected { background: var(--rt-ice, #EAF6FD); color: var(--rt-blue, #0B7CC4); }
+.rt-mode-popover button svg { width: 13px; height: 13px; color: var(--rt-ink-2, #64748B); flex-shrink: 0; }
+.rt-mode-popover button.selected svg { color: var(--rt-blue, #0B7CC4); }
+.rt-mode-popover button .rt-mode-check { margin-left: auto; width: 12px; height: 12px; color: var(--rt-blue, #0B7CC4); }
 .rt-mode-popover .rt-mode-name { flex-shrink: 0; }
 /* 모드별 실제 소요시간·요금 — 나란히 비교할 수 있게 우측 정렬 */
 .rt-mode-popover .rt-mode-meta {
-  margin-left: auto; font-size: 10.5px; font-weight: 700; color: var(--rt-ink-2);
+  margin-left: auto; font-size: 10.5px; font-weight: 700; color: var(--rt-ink-2, #64748B);
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
-.rt-mode-popover button.selected .rt-mode-meta { color: var(--rt-blue); }
-.rt-mode-popover .rt-mode-meta.rt-mode-na { color: var(--rt-ink-4); font-weight: 600; }
+.rt-mode-popover button.selected .rt-mode-meta { color: var(--rt-blue, #0B7CC4); }
+.rt-mode-popover .rt-mode-meta.rt-mode-na { color: var(--rt-ink-4, #B0BAC5); font-weight: 600; }
 .rt-mode-popover button .rt-mode-check + .rt-mode-meta,
 .rt-mode-popover button .rt-mode-meta + .rt-mode-check { margin-left: 6px; }
 .rt-mode-popover-note {
-  font-size: 10px; color: var(--rt-ink-4); line-height: 1.5;
-  padding: 6px 10px 3px; border-top: var(--rt-dash); margin-top: 4px;
+  font-size: 10px; color: var(--rt-ink-4, #B0BAC5); line-height: 1.5;
+  padding: 6px 10px 3px; border-top: var(--rt-dash, 1px dashed rgba(130,150,170,0.22)); margin-top: 4px;
 }
+.rt-mode-popover-divider { height: 1px; background: var(--rt-line, rgba(130,150,170,0.18)); margin: 4px 6px; }
+/* "구글맵에서 경로 보기" — 파란색 계열로 눈에 띄게, 나머지 버튼들과 톤을 분리 */
+.rt-mode-popover-gmaps {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px;
+  font-size: 12px; font-weight: 700; color: var(--rt-blue, #0B7CC4); text-decoration: none;
+}
+.rt-mode-popover-gmaps:hover { background: var(--rt-ice, #EAF6FD); }
+.rt-mode-popover-gmaps svg { width: 13px; height: 13px; flex-shrink: 0; }
 
 /* 실측이 아닌 추정 구간임을 커넥터에 아주 작게 표시 (원칙 3-1) */
 .rt-panel-connector-est {
