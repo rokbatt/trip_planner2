@@ -2920,9 +2920,12 @@ const AERO_BLUE_TINT = 'rgba(47,134,214,0.1)';
 // 검정에 가까워 보인다는 피드백으로, 이 앱 전체에서 이미 쓰는 네이비(--rt-navy)로 교체.
 const ROUTE_NEXT = '#0B2A5C';
 const ROUTE_GRAY = '#9AA7B8';
-// 동선(경로선) 색 — 지도가 구글 기본색(파란 물 포함)이라 핀과 같은 파랑을 쓰면 배경에
-// 묻혀서, 핀은 계속 Aero Blue를 쓰고 "길" 자체만 Tangerine(주황)으로 분리했다.
-const ROUTE_LINE_COLOR = '#F4801F';
+// 동선(경로선) 색 — 핀과 같은 Aero Blue로 통일해 "이 색 = 내 동선"이라는 정체성을 하나로
+// 모았다. 예전엔 지도의 파란 물과 안 섞이게 선만 Tangerine(주황)으로 분리했었는데, 이젠
+// buildLegPolyline이 선 밑에 흰 테두리(halo)를 깔아 지도 배경이 뭐든 선이 도드라지게
+// 하므로, 색을 굳이 따로 뺄 필요가 없어졌다.
+const ROUTE_LINE_COLOR = AERO_BLUE;
+const ROUTE_LINE_HALO = '#FFFFFF';
 // "숙소 들르기"(짐 두기 등 목적만 있는 재방문 스탑) 전용색 — 다른 어떤 카테고리/강조색과도
 // 안 겹치는 바이올렛. 우측 패널 배지·타임라인 카드가 이 색 하나로 서로 짝을 맞춘다.
 const LODGING_REVISIT_COLOR = '#7C5CFC';
@@ -3154,9 +3157,9 @@ function drawRouteOnMap(refit: boolean): void {
     // 포커스가 있는데 이 구간이 아니면 회색으로 물러난다.
     const selected = focusIdx >= 0 && i + 1 === focusIdx;
     const dimmed = focusIdx >= 0 && !selected;
-    const line = buildLegPolyline(g, stops[i], stops[i + 1], leg, { overlapIndex, selected, dimmed });
-    line.addListener('click', () => handleLegClick(stops[i].id, stops[i + 1].id));
-    routePolylines.push(line);
+    const { halo, main } = buildLegPolyline(g, stops[i], stops[i + 1], leg, { overlapIndex, selected, dimmed });
+    main.addListener('click', () => handleLegClick(stops[i].id, stops[i + 1].id));
+    routePolylines.push(halo, main);
 
     // 이동수단이 바뀌는 지점에 작은 노드 (첫 구간이거나 앞 구간과 모드가 다를 때)
     if (i > 0 && legs[i - 1] && legs[i - 1].mode !== leg.mode) {
@@ -3802,7 +3805,10 @@ interface LegDrawOpts {
   dimmed: boolean;
 }
 
-function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDrawOpts): any {
+/** 경로선 한 구간 = 흰 테두리(halo) + 그 위의 색 선 두 폴리라인 한 쌍. halo는 지도 배경이
+ *  뭐든(도로 흰색·물 파랑·공원 초록) 선이 항상 도드라지게 해주는 절대다수 경로 앱들의
+ *  공통 기법 — clickable:false라 클릭은 항상 위의 색 선(main)만 받는다. */
+function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDrawOpts): { halo: any; main: any } {
   const style = MODE_STYLE[leg.mode];
 
   let path: LatLngLit[];
@@ -3816,16 +3822,29 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
   const color = opts.dimmed ? ROUTE_GRAY : ROUTE_LINE_COLOR;
   const opacity = opts.dimmed ? 0.5 : opts.selected ? 1 : 0.85;
   const weight = opts.selected ? style.weight + 1 : style.weight;
+  const zBase = opts.selected ? 12 : 10;
 
-  return new g.maps.Polyline({
+  const halo = new g.maps.Polyline({
+    map: mapInstance,
+    path,
+    geodesic: true,
+    strokeColor: ROUTE_LINE_HALO,
+    strokeOpacity: opacity * 0.95,
+    strokeWeight: weight + 4,
+    clickable: false,
+    zIndex: zBase - 1,
+  });
+  const main = new g.maps.Polyline({
     map: mapInstance,
     path,
     geodesic: true,
     strokeColor: color,
     strokeOpacity: opacity,
     strokeWeight: weight,
-    zIndex: opts.selected ? 12 : 10,
+    zIndex: zBase,
   });
+
+  return { halo, main };
 }
 
 /**
