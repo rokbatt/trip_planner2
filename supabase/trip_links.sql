@@ -23,6 +23,7 @@ create table if not exists trip_links (
   added_by        uuid references auth.users(id) on delete set null,
   display_name    text,
   avatar_url      text,
+  note            text,          -- 사용자가 직접 남기는 요약/메모(자동으로 가져온 og:title과 별개)
   created_at      timestamptz not null default now()
 );
 create index if not exists trip_links_trip_id_idx on trip_links(trip_id);
@@ -32,6 +33,7 @@ alter table if exists trip_links add column if not exists title        text;
 alter table if exists trip_links add column if not exists image_url    text;
 alter table if exists trip_links add column if not exists site_name    text;
 alter table if exists trip_links add column if not exists category    text not null default 'OTHER';
+alter table if exists trip_links add column if not exists note        text;
 
 do $$
 begin

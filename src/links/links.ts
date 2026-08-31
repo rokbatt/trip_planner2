@@ -5,11 +5,17 @@
  * 방식으로 바꿨다. 저장(제목/썸네일 가져오기 + 자동분류)은 addLink.ts가 보낸 사람 쪽에서
  * 1회만 하고, 여기서는 trip_links를 읽고 realtime으로 반영 + 삭제만 담당한다(직접 추가
  * UI는 없음 — 채팅이 유일한 입력 경로).
+ *
+ * "그룹 모으기": category(자동분류, 고정 7종)와는 완전히 별개인 사용자 정의 정리축.
+ * 여행지별/자유 주제별로 원하는 이름의 그룹을 만들고 링크를 여러 그룹에 동시에 담을 수
+ * 있다(다대다) — 나중에 다시 찾아보거나 다른 멤버와 공유할 목적. trip_link_groups +
+ * trip_link_group_links(중간 테이블) 스키마는 supabase/trip_link_groups.sql 참고.
  */
 import { supabase } from '../supabase';
+import { store } from '../store';
 import { LINK_CATEGORIES } from '../trips/addLink';
 import type { LinkCategory } from '../trips/addLink';
-import type { TripLink } from '../types/database';
+import type { TripLink, TripLinkGroup } from '../types/database';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import './links.css';
 
@@ -22,8 +28,10 @@ const IC_PLAY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const IC_DOC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>';
 const IC_DOTS = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
 const IC_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z"/></svg>';
-const IC_REFRESH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.36-6.36L21 8M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.36 6.36L3 16M3 21v-5h5"/></svg>';
 const IC_SEARCH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
+const IC_FOLDER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><path d="M12 11v4M10 13h4"/></svg>';
+const IC_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+const IC_PENCIL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 
 const CATEGORY_META: Record<LinkCategory, { label: string; icon: string }> = {
   STAY: { label: '숙소', icon: IC_BED },
@@ -38,12 +46,22 @@ const CATEGORY_META: Record<LinkCategory, { label: string; icon: string }> = {
 type CategoryFilter = LinkCategory | 'ALL';
 
 let channel: RealtimeChannel | null = null;
+let groupsChannel: RealtimeChannel | null = null;
 let listEl: HTMLElement | null = null;
 let chipsEl: HTMLElement | null = null;
+let groupChipsEl: HTMLElement | null = null;
+let currentTripId: string | null = null;
 let links: TripLink[] = [];
+let groups: TripLinkGroup[] = [];
+/** linkId -> 그 링크가 속한 groupId 집합. 다대다라 배열 대신 Map<Set>으로 관리 */
+let groupMemberships: Map<string, Set<string>> = new Map();
+let destinations: Array<{ id: string; name: string }> = [];
 let searchQuery = '';
 let activeCategory: CategoryFilter = 'ALL';
+let activeGroupFilter: string | 'ALL' = 'ALL';
 let openCategoryMenuId: string | null = null;
+let openGroupMenuId: string | null = null;
+let editingNoteId: string | null = null;
 let outsideClickHandler: ((e: MouseEvent) => void) | null = null;
 
 function escapeHtml(str: string): string {
@@ -105,12 +123,44 @@ function normalizeCategory(raw: string): LinkCategory {
 
 function matchesFilter(link: TripLink): boolean {
   if (activeCategory !== 'ALL' && normalizeCategory(link.category) !== activeCategory) return false;
+  if (activeGroupFilter !== 'ALL' && !groupMemberships.get(link.id)?.has(activeGroupFilter)) return false;
   if (!searchQuery) return true;
-  const haystack = [displayTitle(link), link.site_name, hostnameOf(link.url), link.message, link.display_name]
+  const haystack = [displayTitle(link), link.site_name, hostnameOf(link.url), link.message, link.display_name, link.note]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
   return haystack.includes(searchQuery);
+}
+
+function groupMenuHtml(link: TripLink): string {
+  const memberIds = groupMemberships.get(link.id) ?? new Set<string>();
+  const open = openGroupMenuId === link.id;
+  const items = groups
+    .map((g) => {
+      const selected = memberIds.has(g.id);
+      return (
+        '<button type="button" class="lk-group-menu-item' + (selected ? ' is-selected' : '') + '" data-toggle-group="' + g.id + '">' +
+        '<span class="lk-group-menu-check">' + (selected ? IC_CHECK : '') + '</span>' +
+        '<span class="lk-group-menu-name">' + escapeHtml(g.name) + '</span>' +
+        '</button>'
+      );
+    })
+    .join('');
+  const destOptions = destinations.map((d) => '<option value="' + d.id + '">' + escapeHtml(d.name) + '</option>').join('');
+
+  return [
+    '<div class="lk-group-menu' + (open ? ' is-open' : '') + '" data-group-menu>',
+    items,
+    groups.length > 0 ? '<div class="lk-group-menu-divider"></div>' : '',
+    '<div class="lk-group-menu-create">',
+    '  <input type="text" class="lk-group-create-name" placeholder="새 그룹 이름" maxlength="40" autocomplete="off" />',
+    destinations.length > 0
+      ? '  <select class="lk-group-create-dest"><option value="">여행지 연결 안 함</option>' + destOptions + '</select>'
+      : '',
+    '  <button type="button" class="lk-group-create-submit" data-create-group>만들기</button>',
+    '</div>',
+    '</div>',
+  ].join('');
 }
 
 function cardHtml(link: TripLink): string {
@@ -126,9 +176,9 @@ function cardHtml(link: TripLink): string {
     ? '<div class="lk-card-media"><img src="' + escapeHtml(link.image_url) + '" alt="" loading="lazy" /></div>'
     : '<div class="lk-card-media lk-card-media-fallback">' + CATEGORY_META[category].icon + '</div>';
 
-  const menuOpen = openCategoryMenuId === link.id;
+  const catMenuOpen = openCategoryMenuId === link.id;
   const categoryMenu = [
-    '<div class="lk-cat-menu' + (menuOpen ? ' is-open' : '') + '" data-cat-menu="' + link.id + '">',
+    '<div class="lk-cat-menu' + (catMenuOpen ? ' is-open' : '') + '" data-cat-menu="' + link.id + '">',
     LINK_CATEGORIES.map(
       (cat) =>
         '<button type="button" class="lk-cat-menu-item' + (cat === category ? ' is-current' : '') + '" data-set-category="' + cat + '">' +
@@ -136,6 +186,28 @@ function cardHtml(link: TripLink): string {
     ).join(''),
     '</div>',
   ].join('');
+
+  const memberGroupIds = groupMemberships.get(link.id) ?? new Set<string>();
+  const memberGroups = groups.filter((g) => memberGroupIds.has(g.id));
+  const groupChipsRow =
+    memberGroups.length > 0
+      ? '<div class="lk-card-groups">' + memberGroups.map((g) => '<span class="lk-card-group-chip">' + escapeHtml(g.name) + '</span>').join('') + '</div>'
+      : '';
+
+  const noteSection =
+    editingNoteId === link.id
+      ? [
+          '<div class="lk-card-note-edit">',
+          '  <textarea class="lk-card-note-input" placeholder="이 링크에 대한 메모를 남겨보세요" rows="2">' + escapeHtml(link.note ?? '') + '</textarea>',
+          '  <div class="lk-card-note-edit-actions">',
+          '    <button type="button" class="lk-card-note-cancel" data-cancel-note>취소</button>',
+          '    <button type="button" class="lk-card-note-save" data-save-note>저장</button>',
+          '  </div>',
+          '</div>',
+        ].join('')
+      : link.note
+      ? '<button type="button" class="lk-card-note" data-edit-note>' + IC_PENCIL + '<span>' + escapeHtml(link.note) + '</span></button>'
+      : '<button type="button" class="lk-card-note lk-card-note-empty" data-edit-note>' + IC_PENCIL + '<span>메모 추가</span></button>';
 
   return [
     '<div class="lk-card" data-link-id="' + link.id + '" data-url="' + escapeHtml(link.url) + '">',
@@ -149,14 +221,19 @@ function cardHtml(link: TripLink): string {
     '      </div>',
     '      <span class="lk-card-domain">' + escapeHtml(domain) + '</span>',
     '    </div>',
+    groupChipsRow,
     '    <div class="lk-card-meta">',
     '      <span class="lk-card-avatar">' + avatar + '</span>',
     '      <span class="lk-card-sender">' + escapeHtml(link.display_name || '익명') + '</span>',
     '      <span class="lk-card-time">' + formatDateTime(link.created_at) + '</span>',
     '    </div>',
+    noteSection,
     '  </div>',
-    '  <div class="lk-card-actions">',
-    '    <button type="button" class="lk-card-retry" data-link-id="' + link.id + '" aria-label="미리보기 다시 가져오기" title="미리보기 다시 가져오기">' + IC_REFRESH + '</button>',
+    '  <div class="lk-card-actions' + (openGroupMenuId === link.id ? ' is-pinned' : '') + '">',
+    '    <div class="lk-group-picker">',
+    '      <button type="button" class="lk-card-group-btn" data-group-toggle aria-label="그룹에 담기" title="그룹에 담기">' + IC_FOLDER + '</button>',
+    groupMenuHtml(link),
+    '    </div>',
     '    <button type="button" class="lk-card-remove" data-link-id="' + link.id + '" aria-label="이 링크 삭제" title="삭제">' + IC_TRASH + '</button>',
     '  </div>',
     '</div>',
@@ -189,6 +266,47 @@ function renderChips(): void {
   });
 }
 
+/** 그룹이 하나도 없으면 빈 필터 줄을 보여줄 필요가 없어 아예 비워둔다 — 그룹은
+ * 카드의 "그룹에 담기"에서 만들게 되므로, 첫 그룹이 생기기 전까진 조용히 숨어있는다. */
+function renderGroupChips(): void {
+  if (!groupChipsEl) return;
+  if (groups.length === 0) {
+    groupChipsEl.innerHTML = '';
+    return;
+  }
+
+  const chips: Array<{ key: string; label: string; removable: boolean }> = [
+    { key: 'ALL', label: '전체 그룹', removable: false },
+    ...groups.map((g) => ({ key: g.id, label: g.name, removable: true })),
+  ];
+  groupChipsEl.innerHTML = chips
+    .map((c) => {
+      const count = c.key === 'ALL' ? links.length : links.filter((l) => groupMemberships.get(l.id)?.has(c.key)).length;
+      const active = c.key === activeGroupFilter ? ' is-active' : '';
+      return (
+        '<div class="lk-chip lk-group-chip' + active + '" data-group-filter="' + c.key + '">' +
+        IC_FOLDER + '<span>' + escapeHtml(c.label) + '</span><span class="lk-chip-count">' + count + '</span>' +
+        (c.removable ? '<button type="button" class="lk-group-chip-delete" data-delete-group="' + c.key + '" aria-label="그룹 삭제" title="그룹 삭제">×</button>' : '') +
+        '</div>'
+      );
+    })
+    .join('');
+
+  groupChipsEl.querySelectorAll('[data-group-filter]').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('.lk-group-chip-delete')) return;
+      activeGroupFilter = (el as HTMLElement).dataset.groupFilter as string;
+      renderAll();
+    });
+  });
+  groupChipsEl.querySelectorAll('.lk-group-chip-delete').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      void deleteGroup((btn as HTMLElement).dataset.deleteGroup!);
+    });
+  });
+}
+
 function renderList(): void {
   if (!listEl) return;
   if (links.length === 0) {
@@ -214,6 +332,7 @@ function renderList(): void {
 
 function renderAll(): void {
   renderChips();
+  renderGroupChips();
   renderList();
 }
 
@@ -221,6 +340,13 @@ function closeCategoryMenu(): void {
   if (openCategoryMenuId === null) return;
   openCategoryMenuId = null;
   listEl?.querySelectorAll('.lk-cat-menu.is-open').forEach((m) => m.classList.remove('is-open'));
+}
+
+function closeGroupMenu(): void {
+  if (openGroupMenuId === null) return;
+  openGroupMenuId = null;
+  listEl?.querySelectorAll('.lk-group-menu.is-open').forEach((m) => m.classList.remove('is-open'));
+  listEl?.querySelectorAll('.lk-card-actions.is-pinned').forEach((a) => a.classList.remove('is-pinned'));
 }
 
 function bindCards(): void {
@@ -231,19 +357,17 @@ function bindCards(): void {
     const url = card.dataset.url!;
 
     card.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('.lk-card-actions')) return;
-      if ((e.target as HTMLElement).closest('.lk-cat-picker')) return;
+      const target = e.target as HTMLElement;
+      if (target.closest('.lk-card-actions')) return;
+      if (target.closest('.lk-cat-picker')) return;
+      if (target.closest('.lk-card-note')) return;
+      if (target.closest('.lk-card-note-edit')) return;
       window.open(url, '_blank', 'noopener,noreferrer');
     });
 
     card.querySelector('.lk-card-remove')?.addEventListener('click', (e) => {
       e.stopPropagation();
       void deleteLink(linkId);
-    });
-
-    card.querySelector('.lk-card-retry')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      void retryLinkPreview(linkId, url, e.currentTarget as HTMLButtonElement);
     });
 
     card.querySelector('[data-cat-toggle]')?.addEventListener('click', (e) => {
@@ -264,6 +388,57 @@ function bindCards(): void {
         void updateLinkCategory(linkId, newCategory);
       });
     });
+
+    card.querySelector('[data-group-toggle]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const wasOpen = openGroupMenuId === linkId;
+      closeGroupMenu();
+      if (!wasOpen) {
+        openGroupMenuId = linkId;
+        card.querySelector('.lk-group-menu')?.classList.add('is-open');
+        card.querySelector('.lk-card-actions')?.classList.add('is-pinned');
+      }
+    });
+
+    card.querySelectorAll('.lk-group-menu-item').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const groupId = (btn as HTMLElement).dataset.toggleGroup!;
+        const isMember = groupMemberships.get(linkId)?.has(groupId) ?? false;
+        void toggleLinkGroup(linkId, groupId, isMember);
+      });
+    });
+
+    card.querySelector('[data-create-group]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const nameInput = card.querySelector('.lk-group-create-name') as HTMLInputElement | null;
+      const destSelect = card.querySelector('.lk-group-create-dest') as HTMLSelectElement | null;
+      const name = nameInput?.value.trim() ?? '';
+      if (!name) {
+        nameInput?.focus();
+        return;
+      }
+      void createGroupAndAssign(linkId, name, destSelect?.value || null);
+    });
+
+    card.querySelector('[data-edit-note]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      editingNoteId = linkId;
+      renderAll();
+      (listEl?.querySelector('.lk-card[data-link-id="' + linkId + '"] .lk-card-note-input') as HTMLTextAreaElement | null)?.focus();
+    });
+
+    card.querySelector('[data-cancel-note]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      editingNoteId = null;
+      renderAll();
+    });
+
+    card.querySelector('[data-save-note]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const textarea = card.querySelector('.lk-card-note-input') as HTMLTextAreaElement | null;
+      void updateLinkNote(linkId, textarea?.value ?? '');
+    });
   });
 }
 
@@ -281,48 +456,72 @@ async function updateLinkCategory(linkId: string, category: LinkCategory): Promi
   }
 }
 
-/** 이미 저장된 카드는 저장 당시 스크래핑 결과를 DB에 그대로 갖고 있어서, 서버의 스크래핑
- * 로직을 나중에 개선해도 자동으로 다시 반영되지 않는다(예: 카카오/텔레그램 봇 UA 추가 —
- * 새로 보내는 링크부터만 적용됨). 카드마다 다시 가져오기 버튼을 둬서, 링크를 지우고 다시
- * 보내지 않고도 최신 스크래핑 로직으로 재시도할 수 있게 한다. 카테고리는 사용자가 수동으로
- * 옮겼을 수 있으니 건드리지 않고 제목/이미지/사이트명만 갱신한다. */
-async function retryLinkPreview(linkId: string, url: string, button: HTMLButtonElement): Promise<void> {
-  button.disabled = true;
-  button.classList.add('is-loading');
-  try {
-    const res = await fetch('/api/cache-photo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'link-preview', url, linkId }),
-    });
-    if (!res.ok) {
-      console.error('링크 미리보기 재시도 실패: HTTP ' + res.status);
-      return;
-    }
-    const preview = (await res.json()) as { title: string | null; imageUrl: string | null; siteName: string | null };
-
-    const { error } = await supabase
-      .from('trip_links')
-      .update({ title: preview.title, image_url: preview.imageUrl, site_name: preview.siteName })
-      .eq('id', linkId);
-    if (error) {
-      console.error('링크 미리보기 재시도 저장 실패:', error.message);
-      return;
-    }
-
-    const link = links.find((l) => l.id === linkId);
-    if (link) {
-      link.title = preview.title;
-      link.image_url = preview.imageUrl;
-      link.site_name = preview.siteName;
-      renderAll();
-    }
-  } catch (e) {
-    console.error('링크 미리보기 재시도 예외:', (e as Error).message);
-  } finally {
-    button.disabled = false;
-    button.classList.remove('is-loading');
+async function updateLinkNote(linkId: string, note: string): Promise<void> {
+  const link = links.find((l) => l.id === linkId);
+  if (!link) return;
+  const value = note.trim() || null;
+  const previous = link.note;
+  editingNoteId = null;
+  link.note = value;
+  renderAll();
+  const { error } = await supabase.from('trip_links').update({ note: value }).eq('id', linkId);
+  if (error) {
+    console.error('메모 저장 실패:', error.message);
+    link.note = previous;
+    renderAll();
   }
+}
+
+/** 그룹 담기/빼기 — 링크 하나가 여러 그룹에 동시에 속할 수 있어 중간 테이블 행을
+ * insert/delete한다. 실패하면 로컬 상태를 되돌린다(낙관적 업데이트). */
+async function toggleLinkGroup(linkId: string, groupId: string, isMember: boolean): Promise<void> {
+  const current = groupMemberships.get(linkId) ?? new Set<string>();
+  const next = new Set(current);
+  if (isMember) next.delete(groupId);
+  else next.add(groupId);
+  groupMemberships.set(linkId, next);
+  renderAll();
+
+  const { error } = isMember
+    ? await supabase.from('trip_link_group_links').delete().eq('group_id', groupId).eq('link_id', linkId)
+    : await supabase.from('trip_link_group_links').insert({ group_id: groupId, link_id: linkId });
+
+  if (error) {
+    console.error('그룹 담기 상태 변경 실패:', error.message);
+    const reverted = new Set(groupMemberships.get(linkId) ?? new Set<string>());
+    if (isMember) reverted.add(groupId);
+    else reverted.delete(groupId);
+    groupMemberships.set(linkId, reverted);
+    renderAll();
+  }
+}
+
+/** "+ 새 그룹" — 그룹을 만들자마자 지금 보고 있던 링크를 바로 담아준다(따로 또
+ * 담는 걸 누르게 하지 않음). destinationId는 선택사항. */
+async function createGroupAndAssign(linkId: string, name: string, destinationId: string | null): Promise<void> {
+  if (!currentTripId) return;
+  const user = store.get('user');
+  const { data, error } = await supabase
+    .from('trip_link_groups')
+    .insert({ trip_id: currentTripId, name, destination_id: destinationId, created_by: user?.id ?? null })
+    .select()
+    .single();
+  if (error || !data) {
+    console.error('그룹 생성 실패:', error?.message);
+    return;
+  }
+  if (!groups.some((g) => g.id === data.id)) groups.push(data);
+  await toggleLinkGroup(linkId, data.id, false);
+}
+
+async function deleteGroup(groupId: string): Promise<void> {
+  if (!window.confirm('이 그룹을 삭제할까요? (그룹에 담긴 링크 자체는 삭제되지 않아요)')) return;
+  groups = groups.filter((g) => g.id !== groupId);
+  groupMemberships.forEach((set) => set.delete(groupId));
+  if (activeGroupFilter === groupId) activeGroupFilter = 'ALL';
+  renderAll();
+  const { error } = await supabase.from('trip_link_groups').delete().eq('id', groupId);
+  if (error) console.error('그룹 삭제 실패:', error.message);
 }
 
 async function deleteLink(linkId: string): Promise<void> {
@@ -338,39 +537,55 @@ export function teardownLinks(): void {
     supabase.removeChannel(channel);
     channel = null;
   }
+  if (groupsChannel) {
+    supabase.removeChannel(groupsChannel);
+    groupsChannel = null;
+  }
   if (outsideClickHandler) {
     document.removeEventListener('click', outsideClickHandler);
     outsideClickHandler = null;
   }
   listEl = null;
   chipsEl = null;
+  groupChipsEl = null;
+  currentTripId = null;
   links = [];
+  groups = [];
+  groupMemberships = new Map();
+  destinations = [];
   searchQuery = '';
   activeCategory = 'ALL';
+  activeGroupFilter = 'ALL';
   openCategoryMenuId = null;
+  openGroupMenuId = null;
+  editingNoteId = null;
 }
 
 export async function renderLinksContent(container: HTMLElement, tripId: string): Promise<void> {
   teardownLinks();
+  currentTripId = tripId;
 
   container.innerHTML = [
     '<div class="lk-wrap">',
     '  <div class="lk-toolbar">',
     '    <div class="lk-search">',
     '      ' + IC_SEARCH,
-    '      <input type="text" id="lk-search-input" placeholder="제목, 사이트, 보낸 사람으로 검색" autocomplete="off" />',
+    '      <input type="text" id="lk-search-input" placeholder="제목, 사이트, 메모, 보낸 사람으로 검색" autocomplete="off" />',
     '    </div>',
     '    <div class="lk-chips" id="lk-chips"></div>',
+    '    <div class="lk-chips" id="lk-group-chips"></div>',
     '  </div>',
     '  <div class="lk-list" id="lk-list"><div class="lk-loading">불러오는 중...</div></div>',
     '</div>',
   ].join('');
   listEl = container.querySelector('#lk-list') as HTMLElement;
   chipsEl = container.querySelector('#lk-chips') as HTMLElement;
+  groupChipsEl = container.querySelector('#lk-group-chips') as HTMLElement;
 
   outsideClickHandler = (e: MouseEvent) => {
-    if ((e.target as HTMLElement).closest('.lk-cat-picker')) return;
-    closeCategoryMenu();
+    const target = e.target as HTMLElement;
+    if (!target.closest('.lk-cat-picker')) closeCategoryMenu();
+    if (!target.closest('.lk-group-picker')) closeGroupMenu();
   };
   document.addEventListener('click', outsideClickHandler);
 
@@ -380,18 +595,35 @@ export async function renderLinksContent(container: HTMLElement, tripId: string)
     renderList();
   });
 
-  const { data, error } = await supabase
-    .from('trip_links')
-    .select('*')
-    .eq('trip_id', tripId)
-    .order('created_at', { ascending: false })
-    .limit(500);
+  const [linksRes, groupsRes, destRes] = await Promise.all([
+    supabase.from('trip_links').select('*').eq('trip_id', tripId).order('created_at', { ascending: false }).limit(500),
+    supabase.from('trip_link_groups').select('*').eq('trip_id', tripId).order('created_at', { ascending: true }),
+    supabase.from('trip_destinations').select('id, name').eq('trip_id', tripId).order('sort_order', { ascending: true }),
+  ]);
 
-  if (error) {
-    // trip_links 테이블이 아직 마이그레이션 전이어도(3-2 graceful degradation) 빈 목록으로 처리
-    console.error('Trip links load error:', error.message);
+  // trip_links/trip_link_groups 테이블이 아직 마이그레이션 전이어도(3-2 graceful degradation) 빈 목록으로 처리
+  if (linksRes.error) console.error('Trip links load error:', linksRes.error.message);
+  if (groupsRes.error) console.error('Trip link groups load error:', groupsRes.error.message);
+  if (destRes.error) console.error('Trip destinations load error:', destRes.error.message);
+
+  links = linksRes.data ?? [];
+  groups = groupsRes.data ?? [];
+  destinations = destRes.data ?? [];
+
+  groupMemberships = new Map();
+  if (groups.length > 0) {
+    const { data: memberRows, error: memberError } = await supabase
+      .from('trip_link_group_links')
+      .select('group_id, link_id')
+      .in('group_id', groups.map((g) => g.id));
+    if (memberError) console.error('Trip link group memberships load error:', memberError.message);
+    (memberRows ?? []).forEach((m) => {
+      const set = groupMemberships.get(m.link_id) ?? new Set<string>();
+      set.add(m.group_id);
+      groupMemberships.set(m.link_id, set);
+    });
   }
-  links = data ?? [];
+
   renderAll();
 
   channel = supabase
@@ -424,6 +656,58 @@ export async function renderLinksContent(container: HTMLElement, tripId: string)
         const idx = links.findIndex((l) => l.id === updated.id);
         if (idx === -1) return;
         links[idx] = updated;
+        renderAll();
+      }
+    )
+    .subscribe();
+
+  groupsChannel = supabase
+    .channel('trip-link-groups:' + tripId)
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'trip_link_groups', filter: 'trip_id=eq.' + tripId },
+      (payload) => {
+        const g = payload.new as TripLinkGroup;
+        if (groups.some((x) => x.id === g.id)) return;
+        groups.push(g);
+        renderAll();
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: 'DELETE', schema: 'public', table: 'trip_link_groups', filter: 'trip_id=eq.' + tripId },
+      (payload) => {
+        const oldRow = payload.old as { id: string };
+        if (!groups.some((x) => x.id === oldRow.id)) return;
+        groups = groups.filter((x) => x.id !== oldRow.id);
+        groupMemberships.forEach((set) => set.delete(oldRow.id));
+        if (activeGroupFilter === oldRow.id) activeGroupFilter = 'ALL';
+        renderAll();
+      }
+    )
+    // trip_link_group_links엔 trip_id 컬럼이 없어 서버 필터가 불가능 — 우리 그룹 목록에
+    // 있는 group_id인지 클라이언트에서 한 번 더 걸러낸다(다른 트립 이벤트 무시).
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'trip_link_group_links' },
+      (payload) => {
+        const row = payload.new as { group_id: string; link_id: string };
+        if (!groups.some((g) => g.id === row.group_id)) return;
+        const set = groupMemberships.get(row.link_id) ?? new Set<string>();
+        if (set.has(row.group_id)) return;
+        set.add(row.group_id);
+        groupMemberships.set(row.link_id, set);
+        renderAll();
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: 'DELETE', schema: 'public', table: 'trip_link_group_links' },
+      (payload) => {
+        const row = payload.old as { group_id: string; link_id: string };
+        const set = groupMemberships.get(row.link_id);
+        if (!set || !set.has(row.group_id)) return;
+        set.delete(row.group_id);
         renderAll();
       }
     )

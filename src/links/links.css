@@ -271,8 +271,9 @@
 }
 .lk-card:hover .lk-card-actions { opacity: 1; }
 .lk-card-actions:focus-within { opacity: 1; }
+.lk-card-actions.is-pinned { opacity: 1; } /* 그룹 메뉴가 열려있으면 마우스가 벗어나도 숨지 않게 */
 
-.lk-card-retry,
+.lk-card-group-btn,
 .lk-card-remove {
   width: 20px;
   height: 20px;
@@ -286,14 +287,206 @@
   justify-content: center;
   transition: color 150ms ease, background 150ms ease;
 }
-.lk-card-retry svg,
+.lk-card-group-btn svg,
 .lk-card-remove svg { width: 12px; height: 12px; }
-.lk-card-retry:hover { color: #185FA5; background: #EAF2FA; }
-.lk-card-retry:disabled { cursor: default; opacity: 0.6; }
-.lk-card-retry.is-loading svg { animation: lk-spin 0.7s linear infinite; }
+.lk-card-group-btn:hover { color: #185FA5; background: #EAF2FA; }
 .lk-card-remove:hover { color: #C0392B; background: #FDEEEC; }
 
-@keyframes lk-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+/* ── 그룹에 담기 팝오버 ── */
+.lk-group-picker { position: relative; }
+
+.lk-group-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  flex-direction: column;
+  gap: 1px;
+  width: 200px;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid rgba(130, 150, 170, 0.22);
+  background: #FFFFFF;
+  box-shadow: 0 10px 28px rgba(11, 42, 92, 0.16);
 }
+.lk-group-menu.is-open { display: flex; }
+
+.lk-group-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: #46536B;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.lk-group-menu-item:hover { background: #F1F6FB; }
+.lk-group-menu-item.is-selected { color: #0B2A5C; font-weight: 700; }
+.lk-group-menu-check {
+  width: 14px; height: 14px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #2F9E6B;
+}
+.lk-group-menu-check svg { width: 12px; height: 12px; }
+.lk-group-menu-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lk-group-menu-divider {
+  height: 1px;
+  margin: 4px 2px;
+  background: rgba(130, 150, 170, 0.18);
+}
+
+.lk-group-menu-create {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 4px 2px 2px;
+}
+.lk-group-create-name,
+.lk-group-create-dest {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 7px;
+  border: 1px solid rgba(130, 150, 170, 0.28);
+  font-size: 11.5px;
+  font-family: inherit;
+  color: #1E293B;
+  background: #F8FBFE;
+  box-sizing: border-box;
+}
+.lk-group-create-name:focus,
+.lk-group-create-dest:focus { outline: none; border-color: #8FD8F8; background: #FFFFFF; }
+.lk-group-create-submit {
+  padding: 6px 8px;
+  border-radius: 7px;
+  border: none;
+  background: #0B2A5C;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.lk-group-create-submit:hover { background: #123B7A; }
+
+/* ── 카드에 표시되는 소속 그룹 칩 ── */
+.lk-card-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.lk-card-group-chip {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: #8A6D3B;
+  background: #FBF3E3;
+  border-radius: 999px;
+  padding: 1.5px 7px;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 그룹 필터 칩(툴바) — 삭제 버튼이 있어 <button> 대신 <div>로 렌더링 ── */
+.lk-group-chip { position: relative; padding-right: 20px; }
+.lk-group-chip-delete {
+  position: absolute;
+  top: 50%;
+  right: 3px;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: inherit;
+  opacity: 0.5;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.lk-group-chip:hover .lk-group-chip-delete { display: flex; }
+.lk-group-chip-delete:hover { opacity: 1; background: rgba(0,0,0,0.08); }
+
+/* ── 메모 ── */
+.lk-card-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #64748B;
+}
+.lk-card-note svg { width: 11px; height: 11px; flex-shrink: 0; margin-top: 2px; color: #B0BCC9; }
+.lk-card-note span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.lk-card-note-empty { color: #B0BCC9; }
+.lk-card-note-empty span { -webkit-line-clamp: 1; }
+.lk-card-note:hover span { color: #0B2A5C; }
+
+.lk-card-note-edit {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.lk-card-note-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 40px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  border: 1px solid rgba(130, 150, 170, 0.28);
+  font-size: 11.5px;
+  font-family: inherit;
+  color: #1E293B;
+  background: #F8FBFE;
+  box-sizing: border-box;
+}
+.lk-card-note-input:focus { outline: none; border-color: #8FD8F8; background: #FFFFFF; }
+.lk-card-note-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.lk-card-note-cancel,
+.lk-card-note-save {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: none;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.lk-card-note-cancel { background: #F1F6FB; color: #64748B; }
+.lk-card-note-cancel:hover { background: #E6EEF6; }
+.lk-card-note-save { background: #0B2A5C; color: #fff; }
+.lk-card-note-save:hover { background: #123B7A; }
