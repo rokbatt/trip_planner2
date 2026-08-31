@@ -402,6 +402,16 @@
   color: var(--sl-muted);
   font-size: 13px;
 }
+/* new google.maps.Map(mapEl, ...)가 생성되는 순간 mapEl 내부가 지도 캔버스로 통째로
+   교체되므로, 이 로딩 문구는 지도가 뜨는 즉시 자연히 사라진다(따로 지우는 코드 불필요) */
+.sl-map-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--sl-muted);
+  font-size: 13px;
+}
 .sl-map-legend {
   position: absolute;
   left: 14px;
