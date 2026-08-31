@@ -2,7 +2,7 @@ import { supabase } from '../supabase';
 import { store } from '../store';
 import type { ChatMessage } from '../types/database';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { saveTripLinkFromChatMessage } from '../trips/addLink';
+import { saveTripLinkFromChatMessage, hostnameOf } from '../trips/addLink';
 import './chat.css';
 
 /* ── 모듈 내부 상태 (워크스페이스 페이지 하나당 하나의 채팅 세션) ── */
@@ -266,6 +266,34 @@ const CHECK_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
 const CLOSE_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+const LINK_ARROW_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M7 7h10v10"/></svg>';
+
+/** 메시지 안의 URL을 찾아 쪼개기 위한 전역 정규식 — 캡처 그룹을 두면 split() 결과에
+ * 구분자(URL)도 배열에 포함된다. URL_RE(첫 링크 감지용)와 별개로 둔다. */
+const URL_RE_SPLIT = /(https?:\/\/[^\s<>"']+)/gi;
+
+/** 긴 URL을 그대로 보여주면 채팅창이 가로로 넓어지므로, 파비콘+도메인만 보이는
+ * 작은 칩으로 대체한다(실제 파비콘 — shortlist/board의 숙소 사이트 카드와 같은 방식). */
+function linkChipHtml(url: string): string {
+  const domain = hostnameOf(url);
+  return [
+    '<a class="chat-link-chip" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">',
+    '  <img class="chat-link-chip-icon" src="https://www.google.com/s2/favicons?domain=' + escapeHtml(domain) + '&sz=64" alt="" />',
+    '  <span class="chat-link-chip-domain">' + escapeHtml(domain) + '</span>',
+    '  <span class="chat-link-chip-arrow">' + LINK_ARROW_ICON + '</span>',
+    '</a>',
+  ].join('');
+}
+
+/** 메시지 본문 안의 URL만 링크 칩으로 바꾸고 나머지 텍스트는 그대로 이스케이프해서 합친다.
+ * URL_RE_SPLIT이 이미 공백/따옴표/꺾쇠괄호를 제외하고 매칭하므로 href에 별도 인코딩이 필요 없다. */
+function renderMessageBody(text: string): string {
+  return text
+    .split(URL_RE_SPLIT)
+    .map((part, i) => (i % 2 === 1 ? linkChipHtml(part) : escapeHtml(part)))
+    .join('');
+}
 
 function bubbleHtml(msg: ChatMessage, isMe: boolean): string {
   const initial = (msg.display_name || '?').charAt(0);
@@ -273,6 +301,7 @@ function bubbleHtml(msg: ChatMessage, isMe: boolean): string {
     ? '<img src="' + msg.avatar_url + '" alt="" referrerpolicy="no-referrer" />'
     : escapeHtml(initial);
   const editedLabel = msg.edited_at ? ' <span class="chat-edited">(수정됨)</span>' : '';
+  const body = renderMessageBody(msg.message);
 
   if (isMe) {
     return [
@@ -282,7 +311,7 @@ function bubbleHtml(msg: ChatMessage, isMe: boolean): string {
       '    <button type="button" class="chat-action-btn chat-delete-btn" title="삭제" aria-label="메시지 삭제">' + DELETE_ICON + '</button>',
       '  </div>',
       '  <div class="chat-bubble-wrap">',
-      '    <div class="chat-bubble me">' + escapeHtml(msg.message) + '</div>',
+      '    <div class="chat-bubble me">' + body + '</div>',
       '    <span class="chat-time">' + formatTime(msg.created_at) + editedLabel + '</span>',
       '  </div>',
       '</div>',
@@ -295,7 +324,7 @@ function bubbleHtml(msg: ChatMessage, isMe: boolean): string {
     '  <div class="chat-bubble-col">',
     '    <span class="chat-sender">' + escapeHtml(msg.display_name || '익명') + '</span>',
     '    <div class="chat-bubble-wrap">',
-    '      <div class="chat-bubble them">' + escapeHtml(msg.message) + '</div>',
+    '      <div class="chat-bubble them">' + body + '</div>',
     '      <span class="chat-time">' + formatTime(msg.created_at) + editedLabel + '</span>',
     '    </div>',
     '  </div>',

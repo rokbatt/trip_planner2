@@ -79,6 +79,49 @@
   border-bottom-right-radius: 4px;
 }
 
+/* ── 메시지 안의 긴 URL을 대체하는 링크 칩 ── */
+.chat-link-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 3px 9px 3px 5px;
+  margin: 1px 0;
+  border-radius: 999px;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 600;
+  vertical-align: middle;
+  transition: background 150ms ease;
+}
+.chat-bubble.them .chat-link-chip {
+  background: #EAF2FA;
+  border: 1px solid rgba(130,150,170,0.22);
+  color: #0B2A5C;
+}
+.chat-bubble.them .chat-link-chip:hover { background: #DCEBF9; }
+.chat-bubble.me .chat-link-chip {
+  background: rgba(255,255,255,0.16);
+  border: 1px solid rgba(255,255,255,0.32);
+  color: #FFFFFF;
+}
+.chat-bubble.me .chat-link-chip:hover { background: rgba(255,255,255,0.26); }
+
+.chat-link-chip-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.chat-link-chip-domain {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-link-chip-arrow { flex-shrink: 0; opacity: 0.7; }
+.chat-link-chip-arrow svg { width: 11px; height: 11px; display: block; }
+
 .chat-time {
   font-size: 9.5px;
   color: #B0BCC9;
