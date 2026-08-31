@@ -10,9 +10,16 @@
  * 여행지별/자유 주제별로 원하는 이름의 그룹을 만들고 링크를 여러 그룹에 동시에 담을 수
  * 있다(다대다) — 나중에 다시 찾아보거나 다른 멤버와 공유할 목적. trip_link_groups +
  * trip_link_group_links(중간 테이블) 스키마는 supabase/trip_link_groups.sql 참고.
+ *
+ * "노트 작성": 링크마다 짧은 텍스트 메모를 직접 입력하게 했던 첫 시도는 철회했다 —
+ * 실제로 필요한 건 블로그를 읽고 든 생각을 제대로 적을 공간이라, 이미 있는
+ * DOCUMENTS & NOTES 게이트(trip_notes)로 바로 연결한다. 이 링크의 제목/URL을 채운
+ * 새 노트를 만들고 NOTES 탭으로 이동시켜, 거기서 본문을 마저 쓰게 한다.
  */
 import { supabase } from '../supabase';
 import { store } from '../store';
+import { navigate } from '../router';
+import { createNote } from '../docs/docsStore';
 import { LINK_CATEGORIES } from '../trips/addLink';
 import type { LinkCategory } from '../trips/addLink';
 import type { TripLink, TripLinkGroup } from '../types/database';
@@ -61,7 +68,6 @@ let activeCategory: CategoryFilter = 'ALL';
 let activeGroupFilter: string | 'ALL' = 'ALL';
 let openCategoryMenuId: string | null = null;
 let openGroupMenuId: string | null = null;
-let editingNoteId: string | null = null;
 let outsideClickHandler: ((e: MouseEvent) => void) | null = null;
 
 function escapeHtml(str: string): string {
@@ -125,7 +131,7 @@ function matchesFilter(link: TripLink): boolean {
   if (activeCategory !== 'ALL' && normalizeCategory(link.category) !== activeCategory) return false;
   if (activeGroupFilter !== 'ALL' && !groupMemberships.get(link.id)?.has(activeGroupFilter)) return false;
   if (!searchQuery) return true;
-  const haystack = [displayTitle(link), link.site_name, hostnameOf(link.url), link.message, link.display_name, link.note]
+  const haystack = [displayTitle(link), link.site_name, hostnameOf(link.url), link.message, link.display_name]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
@@ -194,21 +200,6 @@ function cardHtml(link: TripLink): string {
       ? '<div class="lk-card-groups">' + memberGroups.map((g) => '<span class="lk-card-group-chip">' + escapeHtml(g.name) + '</span>').join('') + '</div>'
       : '';
 
-  const noteSection =
-    editingNoteId === link.id
-      ? [
-          '<div class="lk-card-note-edit">',
-          '  <textarea class="lk-card-note-input" placeholder="이 링크에 대한 메모를 남겨보세요" rows="2">' + escapeHtml(link.note ?? '') + '</textarea>',
-          '  <div class="lk-card-note-edit-actions">',
-          '    <button type="button" class="lk-card-note-cancel" data-cancel-note>취소</button>',
-          '    <button type="button" class="lk-card-note-save" data-save-note>저장</button>',
-          '  </div>',
-          '</div>',
-        ].join('')
-      : link.note
-      ? '<button type="button" class="lk-card-note" data-edit-note>' + IC_PENCIL + '<span>' + escapeHtml(link.note) + '</span></button>'
-      : '<button type="button" class="lk-card-note lk-card-note-empty" data-edit-note>' + IC_PENCIL + '<span>메모 추가</span></button>';
-
   return [
     '<div class="lk-card" data-link-id="' + link.id + '" data-url="' + escapeHtml(link.url) + '">',
     media,
@@ -227,9 +218,9 @@ function cardHtml(link: TripLink): string {
     '      <span class="lk-card-sender">' + escapeHtml(link.display_name || '익명') + '</span>',
     '      <span class="lk-card-time">' + formatDateTime(link.created_at) + '</span>',
     '    </div>',
-    noteSection,
     '  </div>',
     '  <div class="lk-card-actions' + (openGroupMenuId === link.id ? ' is-pinned' : '') + '">',
+    '    <button type="button" class="lk-card-note-btn" data-write-note aria-label="노트 작성" title="이 링크로 노트 작성">' + IC_PENCIL + '</button>',
     '    <div class="lk-group-picker">',
     '      <button type="button" class="lk-card-group-btn" data-group-toggle aria-label="그룹에 담기" title="그룹에 담기">' + IC_FOLDER + '</button>',
     groupMenuHtml(link),
@@ -360,8 +351,6 @@ function bindCards(): void {
       const target = e.target as HTMLElement;
       if (target.closest('.lk-card-actions')) return;
       if (target.closest('.lk-cat-picker')) return;
-      if (target.closest('.lk-card-note')) return;
-      if (target.closest('.lk-card-note-edit')) return;
       window.open(url, '_blank', 'noopener,noreferrer');
     });
 
@@ -421,23 +410,9 @@ function bindCards(): void {
       void createGroupAndAssign(linkId, name, destSelect?.value || null);
     });
 
-    card.querySelector('[data-edit-note]')?.addEventListener('click', (e) => {
+    card.querySelector('[data-write-note]')?.addEventListener('click', (e) => {
       e.stopPropagation();
-      editingNoteId = linkId;
-      renderAll();
-      (listEl?.querySelector('.lk-card[data-link-id="' + linkId + '"] .lk-card-note-input') as HTMLTextAreaElement | null)?.focus();
-    });
-
-    card.querySelector('[data-cancel-note]')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      editingNoteId = null;
-      renderAll();
-    });
-
-    card.querySelector('[data-save-note]')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const textarea = card.querySelector('.lk-card-note-input') as HTMLTextAreaElement | null;
-      void updateLinkNote(linkId, textarea?.value ?? '');
+      void writeNoteForLink(linkId);
     });
   });
 }
@@ -456,20 +431,26 @@ async function updateLinkCategory(linkId: string, category: LinkCategory): Promi
   }
 }
 
-async function updateLinkNote(linkId: string, note: string): Promise<void> {
+/** 링크의 제목/URL을 채운 새 노트를 만들고 NOTES 탭으로 이동한다 — 이 링크를 읽고 든
+ * 생각을 짧은 메모가 아니라 제대로 된 공간(trip_notes)에 적게 하려는 것. 새 노트는
+ * created_at 최신순 목록의 맨 위에 바로 보이므로, 이동 후 사용자가 그걸 열어 본문을
+ * 마저 쓰면 된다(에디터를 자동으로 열어주는 딥링크는 아직 없음). */
+async function writeNoteForLink(linkId: string): Promise<void> {
+  if (!currentTripId) return;
   const link = links.find((l) => l.id === linkId);
   if (!link) return;
-  const value = note.trim() || null;
-  const previous = link.note;
-  editingNoteId = null;
-  link.note = value;
-  renderAll();
-  const { error } = await supabase.from('trip_links').update({ note: value }).eq('id', linkId);
-  if (error) {
-    console.error('메모 저장 실패:', error.message);
-    link.note = previous;
-    renderAll();
+  const note = await createNote(currentTripId, {
+    title: displayTitle(link),
+    body: link.url,
+    category: 'OTHER',
+    dayStart: null,
+    dayEnd: null,
+  });
+  if (!note) {
+    console.error('노트 생성 실패');
+    return;
   }
+  navigate('trip/' + currentTripId + '/notes');
 }
 
 /** 그룹 담기/빼기 — 링크 하나가 여러 그룹에 동시에 속할 수 있어 중간 테이블 행을
@@ -558,7 +539,6 @@ export function teardownLinks(): void {
   activeGroupFilter = 'ALL';
   openCategoryMenuId = null;
   openGroupMenuId = null;
-  editingNoteId = null;
 }
 
 export async function renderLinksContent(container: HTMLElement, tripId: string): Promise<void> {

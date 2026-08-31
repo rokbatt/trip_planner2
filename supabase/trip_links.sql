@@ -23,7 +23,6 @@ create table if not exists trip_links (
   added_by        uuid references auth.users(id) on delete set null,
   display_name    text,
   avatar_url      text,
-  note            text,          -- 사용자가 직접 남기는 요약/메모(자동으로 가져온 og:title과 별개)
   created_at      timestamptz not null default now()
 );
 create index if not exists trip_links_trip_id_idx on trip_links(trip_id);
@@ -33,7 +32,12 @@ alter table if exists trip_links add column if not exists title        text;
 alter table if exists trip_links add column if not exists image_url    text;
 alter table if exists trip_links add column if not exists site_name    text;
 alter table if exists trip_links add column if not exists category    text not null default 'OTHER';
-alter table if exists trip_links add column if not exists note        text;
+
+-- 링크마다 짧은 메모를 직접 입력하게 했던 시도는 철회 — 실제로 필요했던 건 짧은 메모가
+-- 아니라 블로그를 읽고 든 생각을 제대로 적을 공간이었어서, DOCUMENTS & NOTES 게이트의
+-- trip_notes로 연결하는 쪽으로 바꿨다(links.ts의 "노트 작성" 버튼). 컬럼을 실제로 써본
+-- 적이 거의 없어(막 추가했다가 바로 철회) 안전하게 제거.
+alter table if exists trip_links drop column if exists note;
 
 do $$
 begin

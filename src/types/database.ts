@@ -468,7 +468,6 @@ export interface Database {
           added_by: string | null;
           display_name: string | null;
           avatar_url: string | null;
-          note: string | null;
           created_at: string;
         };
         Insert: {
@@ -484,7 +483,6 @@ export interface Database {
           added_by?: string | null;
           display_name?: string | null;
           avatar_url?: string | null;
-          note?: string | null;
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['trip_links']['Insert']>;
