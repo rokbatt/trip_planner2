@@ -60,6 +60,7 @@ const ICON_SWAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const ICON_EXPAND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
 const ICON_COLLAPSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v3a2 2 0 0 1-2 2H4M15 3v3a2 2 0 0 0 2 2h3M4 15h3a2 2 0 0 1 2 2v3M21 15h-3a2 2 0 0 0-2 2v3"/></svg>';
 const ICON_GROUP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.8"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.8"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.8"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.8"/></svg>';
+const ICON_MAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4L3 6.5v13L9 17l6 2.5 6-2.5v-13L15 6.5 9 4z"/><path d="M9 4v13M15 6.5v13"/></svg>';
 
 /** 게이트 하나에 그룹이 2개 이상일 때 서로 구분되도록 순환시키는 팔레트.
  * 첫 색은 기존 "활주로 조명" 주황을 그대로 유지(그룹이 1개뿐인 기존 화면은 안 바뀜). */
@@ -71,6 +72,15 @@ const GATES: GateConfig[] = [
   { key: '하고싶어', step: 'GATE 03', label: 'ACTIVITY', icon: ICON_TICKET },
   { key: '숙소',     step: 'GATE 04', label: 'STAY',     icon: ICON_BED },
 ];
+
+/** "지도로 보기"에서 핀 색을 게이트별로 구분 — STAY 화면 지도 범례와 같은 색을 그대로 써서
+ *  앱 전체에서 같은 의미(VISIT/FOOD/ACTIVITY/STAY)가 같은 색으로 일관되게 보이도록 함 */
+const BOARD_MOOD_COLOR: Record<string, string> = {
+  '가고싶어': '#E24B4A',
+  '먹고싶어': '#1D9E75',
+  '하고싶어': '#7F77DD',
+  '숙소': '#185FA5',
+};
 
 /* ── 규칙 기반 분류 (진짜 AI 아님) ──
  * 키워드 매칭 점수로 게이트를 추천. 향후 Gemini 연동 시 이 함수만 교체하면 됨. */
@@ -221,6 +231,14 @@ let boardContainer: HTMLElement | null = null; // 여행지 전환 시 재렌더
 let boardDestinations: TripDestination[] = [];
 let boardActiveDest: TripDestination | null = null;
 
+/* ── 지도로 보기 (보드 전체가 지도 화면으로 전환) ──
+ * 이미 메모리에 있는 placesCache를 그대로 쓰고(추가 API 호출 없음), Google Maps 스크립트도
+ * 버튼을 눌렀을 때만 불러온다 — STAY 등 다른 화면에서 이미 불러온 적 있으면 캐시돼 있어
+ * 거의 즉시 뜬다(3-2 원칙: 불필요한 API 재호출 방지). */
+let boardMapViewActive = false;
+let boardMapInstance: any = null;
+let boardMapMarkers: any[] = [];
+
 /* ── 게이트 하나만 크게 보기(포커스 모드) ──
  * 저장된 장소 데이터는 전혀 건드리지 않는다 — 이미 그려진 DOM에 클래스만 토글해서
  * 인박스/시큐리티/다른 게이트를 잠깐 숨기고 이 게이트의 카드 목록만 가로로 넓게 펼친다.
@@ -290,6 +308,9 @@ export function teardownBoard(): void {
   cleanupAutocomplete();
   exitGroupSelectMode();
   closeAiExportModal();
+  boardMapViewActive = false;
+  boardMapInstance = null;
+  boardMapMarkers = [];
 }
 
 /** 자동완성 드롭다운/디바운스 타이머 정리 */
@@ -454,6 +475,7 @@ export async function renderBoardContent(container: HTMLElement, tripId: string)
     '<div class="bd-layout" id="bd-layout">',
     '  <div class="bd-loading">보드를 불러오는 중...</div>',
     '</div>',
+    '<div class="bd-map-view" id="bd-map-view" hidden></div>',
     '<div class="bd-toast-container" id="bd-toast-container"></div>',
   ].join('');
 
@@ -536,30 +558,32 @@ function destMeta(d: TripDestination): string {
 }
 
 /**
- * 상단 여행지 바. 마이그레이션 전(합성 여행지)에는 렌더하지 않아 기존 화면과 동일.
- * 실제 여행지가 여러 곳이면 "여행지 변경" 드롭다운만 보여준다 — 여행지 목록을 카드/탭으로
- * 늘어놓지 않는다(워크스페이스 헤더의 여행지·날짜 표시가 활성 여행지를 실시간으로 따라가므로
- * 여기서 또 보여주면 중복). 여행지 추가·이름/기간 편집·삭제는 이제 이 보드가 아니라
+ * 상단 여행지 바. "지도로 보기" 토글은 여행지 마이그레이션 여부와 무관하게 항상 보여주고,
+ * "여행지 변경" 드롭다운은 실제 여행지가 여러 곳일 때만 같은 줄에 덧붙인다 — 여행지 목록을
+ * 카드/탭으로 늘어놓지 않는다(워크스페이스 헤더의 여행지·날짜 표시가 활성 여행지를 실시간으로
+ * 따라가므로 여기서 또 보여주면 중복). 여행지 추가·이름/기간 편집·삭제는 이제 이 보드가 아니라
  * "내 여행" 카드의 편집 모달에서 이뤄진다 — 보드는 "전환"만 담당.
  */
 function renderDestBar(container: HTMLElement, tripId: string): void {
   const wrap = container.querySelector('#bd-dest-bar-wrap') as HTMLElement | null;
   if (!wrap) return;
 
-  // 마이그레이션 전(합성 단일 여행지) → 바 없음(기존과 동일)
-  if (!boardActiveDest || isSyntheticDestination(boardActiveDest.id)) {
-    wrap.innerHTML = '';
-    return;
-  }
+  const destSwitchBtn = (!boardActiveDest || isSyntheticDestination(boardActiveDest.id))
+    ? ''
+    : '<button type="button" class="bd-dest-switch" id="bd-dest-switch">' + ICON_SWAP + ' 여행지 변경</button>';
 
   wrap.innerHTML = [
     '<div class="bd-dest-bar" id="bd-dest-bar">',
-    '  <button type="button" class="bd-dest-switch" id="bd-dest-switch">' + ICON_SWAP + ' 여행지 변경</button>',
+    '  <button type="button" class="bd-map-view-btn" id="bd-map-view-btn">' + ICON_MAP + ' 지도로 보기</button>',
+    destSwitchBtn,
     '</div>',
   ].join('');
 
   wrap.querySelector('#bd-dest-switch')?.addEventListener('click', (e) => {
     openDestSwitcher(container, tripId, e.currentTarget as HTMLElement);
+  });
+  wrap.querySelector('#bd-map-view-btn')?.addEventListener('click', () => {
+    void toggleBoardMapView(container, tripId);
   });
 }
 
@@ -621,6 +645,142 @@ function openDestSwitcher(container: HTMLElement, tripId: string, anchor: HTMLEl
     }
   };
   setTimeout(() => document.addEventListener('mousedown', destSwitcherDismiss!), 0);
+}
+
+/* ══════════════════ 지도로 보기 ══════════════════
+ * 보드 레이아웃(인박스+게이트)을 통째로 지도 화면으로 바꿔치기한다. 새로 서버에 물어보지
+ * 않고 이미 메모리에 있는 placesCache를 그대로 지도에 뿌리고, Google Maps 스크립트도
+ * 버튼을 누른 시점에만 불러온다(다른 화면에서 이미 불러온 적 있으면 캐시돼 있어 즉시 뜬다). */
+
+/** 지도 전환/복귀에 맞춰 토글 버튼 라벨도 같이 바꿔준다 */
+function updateMapViewButtonLabel(container: HTMLElement): void {
+  const btn = container.querySelector('#bd-map-view-btn') as HTMLElement | null;
+  if (!btn) return;
+  btn.innerHTML = boardMapViewActive
+    ? ICON_BACK_ARROW + ' 보드로 돌아가기'
+    : ICON_MAP + ' 지도로 보기';
+}
+
+async function toggleBoardMapView(container: HTMLElement, tripId: string): Promise<void> {
+  boardMapViewActive = !boardMapViewActive;
+  updateMapViewButtonLabel(container);
+
+  const layout = container.querySelector('#bd-layout') as HTMLElement | null;
+  const mapView = container.querySelector('#bd-map-view') as HTMLElement | null;
+  if (!layout || !mapView) return;
+
+  if (!boardMapViewActive) {
+    layout.hidden = false;
+    mapView.hidden = true;
+    return;
+  }
+
+  layout.hidden = true;
+  mapView.hidden = false;
+  await renderBoardMapView(mapView, tripId);
+}
+
+/** 원(circle) 심볼 마커 — 게이트별 색만 다르고 나머지는 동일한 아주 단순한 핀.
+ *  STAY 지도의 정교한 물방울 핀과 스타일은 다르지만 "같은 색 = 같은 게이트" 언어는 그대로 맞춤. */
+function buildBoardMapMarkerIcon(g: any, mood: string | null): any {
+  const color = BOARD_MOOD_COLOR[mood ?? ''] ?? '#6B7A93';
+  return {
+    path: g.maps.SymbolPath.CIRCLE,
+    fillColor: color,
+    fillOpacity: 1,
+    strokeColor: '#FFFFFF',
+    strokeWeight: 2,
+    scale: 8,
+  };
+}
+
+async function renderBoardMapView(mapView: HTMLElement, tripId: string): Promise<void> {
+  mapView.innerHTML = [
+    '<div class="bd-map-view-canvas" id="bd-map-view-canvas">',
+    '  <div class="bd-map-view-loading">지도를 불러오는 중...</div>',
+    '</div>',
+    '<div class="bd-map-view-legend">',
+    '  <span><span class="bd-map-legend-dot" style="--dot:' + BOARD_MOOD_COLOR['가고싶어'] + '"></span>관광(VISIT)</span>',
+    '  <span><span class="bd-map-legend-dot" style="--dot:' + BOARD_MOOD_COLOR['먹고싶어'] + '"></span>맛집(FOOD)</span>',
+    '  <span><span class="bd-map-legend-dot" style="--dot:' + BOARD_MOOD_COLOR['하고싶어'] + '"></span>액티비티(ACTIVITY)</span>',
+    '  <span><span class="bd-map-legend-dot" style="--dot:' + BOARD_MOOD_COLOR['숙소'] + '"></span>숙소(STAY)</span>',
+    '</div>',
+  ].join('');
+
+  const mapEl = mapView.querySelector('#bd-map-view-canvas') as HTMLElement;
+
+  try {
+    await loadGoogleMapsScript();
+  } catch (e) {
+    mapEl.innerHTML = '<div class="bd-map-view-empty">지도를 불러오지 못했어요.</div>';
+    return;
+  }
+  // 로딩되는 동안 사용자가 다시 보드로 돌아갔으면 여기서 멈춘다(뒤늦게 지도가 튀어나오지 않게)
+  if (!boardMapViewActive) return;
+
+  const g = (window as any).google;
+  if (!g?.maps) return;
+
+  const places = (boardActiveDest
+    ? Array.from(placesCache.values()).filter((p) => placeBelongsToDestination(p, boardActiveDest!))
+    : Array.from(placesCache.values())
+  ).filter((p) => p.lat != null && p.lng != null);
+
+  if (places.length === 0) {
+    mapEl.innerHTML = '<div class="bd-map-view-empty">지도에 표시할 장소가 아직 없어요.<br/>구글 검색으로 담은 장소(좌표가 있는 장소)부터 지도에 표시돼요.</div>';
+    return;
+  }
+
+  mapEl.innerHTML = '';
+  const avgLat = places.reduce((s, p) => s + p.lat!, 0) / places.length;
+  const avgLng = places.reduce((s, p) => s + p.lng!, 0) / places.length;
+
+  // 구글 기본 스타일(디테일 버전) 그대로 — styles를 따로 지정하지 않음
+  const map = new g.maps.Map(mapEl, {
+    center: { lat: avgLat, lng: avgLng },
+    zoom: 13,
+    gestureHandling: 'greedy',
+  });
+  boardMapInstance = map;
+
+  boardMapMarkers.forEach((m) => m.setMap(null));
+  boardMapMarkers = [];
+
+  const bounds = new g.maps.LatLngBounds();
+  const infoWindow = new g.maps.InfoWindow();
+
+  places.forEach((p) => {
+    const marker = new g.maps.Marker({
+      position: { lat: p.lat, lng: p.lng },
+      map,
+      title: p.name,
+      icon: buildBoardMapMarkerIcon(g, p.mood),
+    });
+
+    marker.addListener('click', () => {
+      const gate = GATES.find((gt) => gt.key === p.mood);
+      infoWindow.setContent([
+        '<div class="bd-map-infowin">',
+        p.photo_url ? '<div class="bd-map-infowin-photo" style="background-image:url(\'' + p.photo_url + '\')"></div>' : '',
+        '<div class="bd-map-infowin-name">' + escapeHtml(p.name) + '</div>',
+        gate ? '<div class="bd-map-infowin-gate">' + gate.label + '</div>' : '',
+        typeof p.google_rating === 'number' ? '<div class="bd-map-infowin-rating">★ ' + p.google_rating.toFixed(1) + '</div>' : '',
+        '<button type="button" class="bd-map-infowin-detail" id="bd-map-infowin-detail">상세보기</button>',
+        '</div>',
+      ].join(''));
+      infoWindow.open({ map, anchor: marker });
+      g.maps.event.addListenerOnce(infoWindow, 'domready', () => {
+        document.getElementById('bd-map-infowin-detail')?.addEventListener('click', () => {
+          mapEl.dispatchEvent(new CustomEvent('mongsil:openPlaceDetail', { detail: { place: p }, bubbles: true }));
+        });
+      });
+    });
+
+    boardMapMarkers.push(marker);
+    bounds.extend({ lat: p.lat, lng: p.lng });
+  });
+
+  if (!bounds.isEmpty()) map.fitBounds(bounds, 48);
 }
 
 /* ── 실시간 동기화 ── */

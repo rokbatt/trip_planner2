@@ -815,7 +815,13 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
   }
 
   const destination = slActiveDest?.name || getTripDestination();
-  const { seeds, source } = await fetchDestinationZones(destination);
+  // 지역(zone) 정보와 숙소 구간 정보는 서로 의존하지 않으므로(둘 다 trip/slActiveDest만
+  // 있으면 됨) 순서대로 기다리지 않고 동시에 불러온다 — STAY 진입 로딩 시간 단축.
+  const segmentsPromise = trip && slActiveDest ? loadStaySegments(trip, slActiveDest) : null;
+  const [{ seeds, source }, loadedSegments] = await Promise.all([
+    fetchDestinationZones(destination),
+    segmentsPromise,
+  ]);
 
   if (seeds.length === 0) {
     // 큐레이션 DB에도 없고 AI 폴백까지 실패한 여행지 — 그래도 브레인스토밍에 담아둔
@@ -843,9 +849,9 @@ export async function renderShortlistContent(container: HTMLElement, tripId: str
     unassignedPlaces = allPlaces.filter((p) => p.lat != null && p.lng != null && !assignedIds.has(p.id));
   }
 
-  // 활성 여행지의 숙소 구간들을 로드하고, 활성 구간의 저장 상태를 복원
-  if (trip && slActiveDest) {
-    slSegments = sortSegmentsByDate(await loadStaySegments(trip, slActiveDest));
+  // 위에서 이미 동시에 불러온 숙소 구간으로 활성 구간의 저장 상태를 복원
+  if (trip && slActiveDest && loadedSegments) {
+    slSegments = sortSegmentsByDate(loadedSegments);
     await repairAdjacentSegmentGaps(trip, slActiveDest, slSegments);
     slActiveSegment = resolveActiveSegment(slActiveDest.id, slSegments);
     restoreStateFromSegment(slActiveSegment);
@@ -1825,7 +1831,7 @@ async function renderStep1(body: HTMLElement): Promise<void> {
 
     '    <div class="sl-step2-left">',
     '      <div class="sl-map-wrap">',
-    '        <div id="sl-map" class="sl-map"></div>',
+    '        <div id="sl-map" class="sl-map"><div class="sl-map-loading">지도를 불러오는 중...</div></div>',
     '        <div class="sl-map-legend">',
     '          <span><span class="sl-legend-dot" style="--dot:#E24B4A"></span>관광(VISIT)</span>',
     '          <span><span class="sl-legend-dot" style="--dot:#1D9E75"></span>맛집(FOOD)</span>',
@@ -3531,13 +3537,13 @@ function renderCandidateCards(body: HTMLElement, candidates: Place[]): void {
         typeof c.google_rating === 'number' ? '<span class="sl-basecamp-rating">★ ' + c.google_rating.toFixed(1) + '</span>' : '',
         '    </div>',
         '    <div class="sl-cand-price-row">',
-        '      <input type="number" min="0" step="1" class="sl-cand-price-input" data-price-place="' + c.id + '" placeholder="1박 가격" value="' + (m.pricePerNight ?? '') + '" />',
+        '      <input type="number" min="0" step="1" class="sl-cand-price-input" data-price-place="' + c.id + '" placeholder="전체 숙박비(' + nights + '박)" value="' + (m.totalPrice ?? '') + '" />',
         '      <select class="sl-cand-currency" data-currency-place="' + c.id + '">',
                STEP_2_CURRENCY_OPTIONS(m.currency),
         '      </select>',
-        m.totalPrice != null
-          ? '      <span class="sl-cand-total">' + nights + '박 총 ' + formatMoney(m.totalPrice, m.currency) + '</span>'
-          : '      <span class="sl-cand-total sl-cand-total-empty">가격을 적으면 총액이 계산돼요</span>',
+        m.pricePerNight != null
+          ? '      <span class="sl-cand-total">1박 평균 ' + formatMoney(m.pricePerNight, m.currency) + '</span>'
+          : '      <span class="sl-cand-total sl-cand-total-empty">전체 숙박비를 적으면 1박 평균이 계산돼요</span>',
         '    </div>',
         metricBits.length ? '    <div class="sl-cand-metrics">' + metricBits.join('') + '</div>' : '',
         '    <div class="sl-cand-cond-row"><span class="sl-cand-cond-label">객실 컨디션</span>' + conditionStarsHtml(c.id, m.roomCondition, true) + '</div>',
@@ -3622,8 +3628,11 @@ function bindCandidateCardEvents(body: HTMLElement, candidates: Place[], scope: 
     input.addEventListener('blur', () => {
       const id = (input as HTMLElement).dataset.pricePlace!;
       const raw = (input as HTMLInputElement).value.trim();
-      const num = raw === '' ? null : Number(raw);
-      void savePriceFields(body, candidates, id, { price_per_night: Number.isFinite(num as number) ? num : null }, false);
+      const total = raw === '' ? null : Number(raw);
+      // 입력은 전체 숙박비 기준(예약 사이트에 보통 그렇게 뜨니까) — 저장은 기존처럼
+      // 1박 가격(price_per_night)으로 해서 비교표의 "1박 가격" 행 등 다른 화면과 계속 호환됨
+      const perNight = total != null && Number.isFinite(total) ? total / currentStayNights() : null;
+      void savePriceFields(body, candidates, id, { price_per_night: perNight }, false);
     });
     input.addEventListener('keydown', (e) => {
       if ((e as KeyboardEvent).key === 'Enter') (input as HTMLInputElement).blur();
@@ -3771,10 +3780,10 @@ async function savePriceFields(
     '.sl-basecamp-card[data-place-id="' + placeId + '"] .sl-cand-total'
   ) as HTMLElement | null;
   if (totalEl) {
-    const hasPrice = m.totalPrice != null;
+    const hasPrice = m.pricePerNight != null;
     totalEl.textContent = hasPrice
-      ? currentStayNights() + '박 총 ' + formatMoney(m.totalPrice as number, m.currency)
-      : '가격을 적으면 총액이 계산돼요';
+      ? '1박 평균 ' + formatMoney(m.pricePerNight as number, m.currency)
+      : '전체 숙박비를 적으면 1박 평균이 계산돼요';
     totalEl.classList.toggle('sl-cand-total-empty', !hasPrice);
   }
   // 후보 수·진행 표시는 가격과 무관하지만, 비교 모드가 열려 있으면 표의 숫자는 바로 반영
@@ -4389,7 +4398,10 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     reviewSummaryPlaceId = basecamp.id;
   }
 
-  const others = zone.places.filter((p) => p.id !== basecamp.id);
+  // 권역 선택 단계가 없어지면서 selectedZone은 이 숙소 좌표만 가진 임시 권역이라
+  // zone.places가 항상 비어있다(reconstructZoneFromBasecamp) — "전체 장소 기준"이라는
+  // 타일 설명 그대로, 이 여행지에 담아둔 장소 전체를 기준으로 계산해야 한다.
+  const others = allPlaces.filter((p) => p.id !== basecamp.id);
   const withDistance: Step3Item[] = others
     .filter((p) => p.lat != null && p.lng != null)
     .map((p) => {

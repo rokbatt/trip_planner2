@@ -10,6 +10,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 8px;
   padding: 12px 28px 0;
   box-sizing: border-box;
 }
@@ -36,6 +37,84 @@
 }
 .bd-dest-switch:hover { border-color: #8FD8F8; background: #fff; }
 .bd-dest-switch svg { width: 13px; height: 13px; color: #0B7CC4; }
+
+/* "지도로 보기" 토글 — 여행지 변경 버튼과 같은 톤, 눌려있을 땐("보드로 돌아가기") 네이비로 강조 */
+.bd-map-view-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(130,150,170,0.24);
+  background: rgba(255,255,255,0.65);
+  color: #0B2A5C;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.bd-map-view-btn:hover { border-color: #8FD8F8; background: #fff; }
+.bd-map-view-btn svg { width: 13px; height: 13px; color: #0B7CC4; }
+
+/* ── 지도로 보기: 화면 전체가 지도로 바뀜 ── */
+.bd-map-view { width: 100%; max-width: 1800px; margin: 0 auto; padding: 12px 28px 28px; box-sizing: border-box; }
+.bd-map-view[hidden] { display: none; }
+.bd-map-view-canvas {
+  position: relative;
+  width: 100%;
+  height: calc(100dvh - 220px);
+  min-height: 420px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #F1F6FB;
+  border: 1px solid rgba(130,150,170,0.2);
+}
+.bd-map-view-loading,
+.bd-map-view-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  font-size: 13px;
+  color: #64748B;
+  line-height: 1.6;
+}
+.bd-map-view-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 0 4px;
+  font-size: 11.5px;
+  color: #64748B;
+}
+.bd-map-view-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.bd-map-legend-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dot); flex-shrink: 0; }
+
+/* 마커 클릭 시 뜨는 정보창 — Google 기본 InfoWindow 안에 들어가는 커스텀 콘텐츠 */
+.bd-map-infowin { width: 180px; font-family: inherit; }
+.bd-map-infowin-photo { width: 100%; height: 90px; border-radius: 8px; background-size: cover; background-position: center; margin-bottom: 6px; }
+.bd-map-infowin-name { font-size: 13px; font-weight: 700; color: #0B2A5C; line-height: 1.4; }
+.bd-map-infowin-gate { font-size: 11px; color: #64748B; margin-top: 2px; }
+.bd-map-infowin-rating { font-size: 11px; color: #C9A227; font-weight: 700; margin-top: 2px; }
+.bd-map-infowin-detail {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 0;
+  border: none;
+  border-radius: 8px;
+  background: #0B2A5C;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
 
 /* 바가 있을 때만 레이아웃 상단 여백을 줄여 이중 여백을 피함 */
 .bd-dest-bar-wrap:not(:empty) + .bd-layout { padding-top: 12px; min-height: calc(100% - 60px); }
