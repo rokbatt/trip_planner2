@@ -81,6 +81,42 @@ const BOARD_MOOD_COLOR: Record<string, string> = {
   '하고싶어': '#7F77DD',
   '숙소': '#185FA5',
 };
+/** "지도로 보기" 핀 안에 그릴 게이트별 선 아이콘 — 이미 있는 게이트 아이콘을 그대로 재사용 */
+const BOARD_MOOD_PIN_ICON: Record<string, string> = {
+  '가고싶어': ICON_PIN,
+  '먹고싶어': ICON_FORK,
+  '하고싶어': ICON_TICKET,
+  '숙소': ICON_BED,
+};
+
+/** 아이콘 svg 문자열에서 <svg> 껍데기만 벗겨 내부 마크업만 남긴다 — 핀 색상과 통일하기 위해
+ *  감싸는 <g>에서 색/굵기를 한 번에 지정(STAY 지도의 pinIconInner와 동일한 방식). */
+function pinIconInner(svg: string): string {
+  return svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
+}
+
+/** 반지름 r인 원(중심 cx,cy)에 외부 접선 두 개를 그어 tip에서 만나는 "물방울(핀)" 윤곽 경로 —
+ *  STAY 지도(shortlist.ts)의 pinTearPath와 같은 수식. 화면이 서로 달라 모듈을 공유하지
+ *  않고 복제했다(board.ts가 shortlist.ts 전체를 끌고 들어오면 번들이 얽힘). */
+function pinTearPath(cx: number, cy: number, r: number, tipY: number): string {
+  const d = tipY - cy;
+  const phi = Math.acos(r / d);
+  const a1 = Math.PI / 2 - phi;
+  const a2 = Math.PI / 2 + phi;
+  const t1x = cx + r * Math.cos(a1);
+  const t1y = cy + r * Math.sin(a1);
+  const t2x = cx + r * Math.cos(a2);
+  const t2y = cy + r * Math.sin(a2);
+  return (
+    'M' + t1x + ' ' + t1y +
+    ' A' + r + ' ' + r + ' 0 1 0 ' + t2x + ' ' + t2y +
+    ' L' + cx + ' ' + tipY +
+    ' Z'
+  );
+}
+
+const BOARD_PIN_HEAD_R = 12;
+const BOARD_PIN_TAIL_RATIO = 1.5;
 
 /* ── 규칙 기반 분류 (진짜 AI 아님) ──
  * 키워드 매칭 점수로 게이트를 추천. 향후 Gemini 연동 시 이 함수만 교체하면 됨. */
@@ -680,17 +716,39 @@ async function toggleBoardMapView(container: HTMLElement, tripId: string): Promi
   await renderBoardMapView(mapView, tripId);
 }
 
-/** 원(circle) 심볼 마커 — 게이트별 색만 다르고 나머지는 동일한 아주 단순한 핀.
- *  STAY 지도의 정교한 물방울 핀과 스타일은 다르지만 "같은 색 = 같은 게이트" 언어는 그대로 맞춤. */
+/** STAY 지도(shortlist.ts)와 같은 물방울 모양 핀 — 게이트 색으로 채운 몸통 + 흰 원 +
+ *  그 게이트의 선 아이콘. 앱 전체에서 핀 생김새가 하나로 통일되도록 STAY와 같은 수식을 씀. */
 function buildBoardMapMarkerIcon(g: any, mood: string | null): any {
   const color = BOARD_MOOD_COLOR[mood ?? ''] ?? '#6B7A93';
+  const iconSvg = BOARD_MOOD_PIN_ICON[mood ?? ''] ?? ICON_PIN;
+  const r = BOARD_PIN_HEAD_R;
+  const tail = r * BOARD_PIN_TAIL_RATIO;
+  const pad = 6;
+  const w = Math.ceil(r * 2 + pad);
+  const h = Math.ceil(r + tail + pad);
+  const cx = w / 2;
+  const tipY = h - pad / 2;
+  const headCy = tipY - tail;
+  const whiteR = r - r * 0.24;
+
+  const shadow =
+    '<ellipse cx="' + cx + '" cy="' + (tipY + r * 0.1) + '" rx="' + r * 0.42 + '" ry="' + r * 0.15 + '" fill="rgba(11,42,92,0.18)"/>';
+  const inner =
+    '<g transform="translate(' + (cx - 5.5) + ',' + (headCy - 5.5) + ') scale(0.46)" fill="none" stroke="' + color +
+    '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + pinIconInner(iconSvg) + '</g>';
+
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+    shadow +
+    '<path d="' + pinTearPath(cx, headCy, r, tipY) + '" fill="' + color + '"/>' +
+    '<circle cx="' + cx + '" cy="' + headCy + '" r="' + whiteR + '" fill="#FFFFFF"/>' +
+    inner +
+    '</svg>';
+
   return {
-    path: g.maps.SymbolPath.CIRCLE,
-    fillColor: color,
-    fillOpacity: 1,
-    strokeColor: '#FFFFFF',
-    strokeWeight: 2,
-    scale: 8,
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new g.maps.Size(w, h),
+    anchor: new g.maps.Point(cx, tipY),
   };
 }
 

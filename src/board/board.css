@@ -176,6 +176,10 @@
   box-sizing: border-box;
   overflow-x: hidden;
 }
+/* .bd-layout가 display:flex를 직접 지정하고 있어서(author 스타일이 [hidden]의 UA 기본
+   display:none보다 우선순위가 높음) hidden 속성만으로는 실제로 안 숨겨지던 버그 — 지도로
+   보기로 전환해도 이 레이아웃이 계속 보이고 그 아래로 지도가 이어 붙는 것처럼 보였다. */
+.bd-layout[hidden] { display: none; }
 
 .bd-loading {
   display: flex;
