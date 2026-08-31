@@ -37,15 +37,20 @@ const KEYWORD_RULES: Array<{ category: LinkCategory; words: string[] }> = [
   { category: 'ACTIVITY', words: ['투어', 'tour', '티켓', 'ticket', '액티비티', 'activity', '체험'] },
 ];
 
+/** URL의 호스트명(www. 제거) — 잘못된 URL이면 원본 문자열을 그대로 반환한다.
+ * classifyLink의 도메인 판단과 chat.ts의 링크 칩 표시(도메인만 짧게 보여주기)에서 공유해서 쓴다. */
+export function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+}
+
 /** URL(+가능하면 og:title/og:type)로 카테고리를 추정한다. 애매하면 OTHER — 화면에서
  * 드래그로 직접 옮길 수 있으므로 여기서 무리해서 맞히려 하지 않는다. */
 export function classifyLink(url: string, title: string | null, ogType: string | null): LinkCategory {
-  let host = '';
-  try {
-    host = new URL(url).hostname.replace(/^www\./, '');
-  } catch {
-    /* 잘못된 URL이면 도메인 판단은 건너뛰고 아래 폴백으로 */
-  }
+  const host = hostnameOf(url);
 
   const domainHit = DOMAIN_RULES.find((r) => r.hosts.some((h) => host === h || host.endsWith('.' + h)));
   if (domainHit) return domainHit.category;
