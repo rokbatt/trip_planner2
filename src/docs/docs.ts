@@ -30,7 +30,7 @@ import {
   getUnlockedUserId,
   isStorageReady,
   isValidPin,
-  loadDayOptions,
+  loadDayAndRegionOptions,
   loadDocUsers,
   loadPersonalDocuments,
   loadSharedDocuments,
@@ -75,6 +75,9 @@ let tab: DocsTab = 'documents';
 let scope: DocScope = 'SHARED';
 let searchQuery = '';
 let dayOptions: DayOption[] = [];
+let regionOptions: string[] = [];
+let activeCategory: DocCategory | 'ALL' = 'ALL';
+let activeRegion: string | 'ALL' = 'ALL';
 
 let docUsers: TripDocUser[] = [];
 let unlockedUser: TripDocUser | null = null;
@@ -105,6 +108,9 @@ export function teardownDocs(): void {
   selectedDocId = null;
   searchQuery = '';
   dayOptions = [];
+  regionOptions = [];
+  activeCategory = 'ALL';
+  activeRegion = 'ALL';
   sheetOpen = false;
 }
 
@@ -132,12 +138,15 @@ export async function renderDocsContent(
   restoreUnlocked();
   sharedDocs = await loadSharedDocuments(tripId);
   if (unlockedUser) personalDocs = await loadPersonalDocuments(tripId, unlockedUser.id);
-  dayOptions = await loadDayOptions(trip);
+  const opts = await loadDayAndRegionOptions(trip);
+  dayOptions = opts.dayOptions;
+  regionOptions = opts.regionOptions;
 
   await initNotes({
     tripId,
     trip,
     dayOptions,
+    regionOptions,
     getSearch: () => searchQuery,
     onDataChange: () => {
       if (tab === 'documents') renderCrossHint();
@@ -313,6 +322,7 @@ function matchesDoc(doc: TripDocument, q: string): boolean {
     doc.reference_code,
     doc.file_name,
     DOC_CATEGORY_LABEL[normalizeDocCategory(doc.category)],
+    doc.region,
     doc.uploaded_by_name,
   ]
     .filter(Boolean)
@@ -323,10 +333,72 @@ function matchesDoc(doc: TripDocument, q: string): boolean {
 
 function visibleDocs(): TripDocument[] {
   const q = searchQuery.trim().toLowerCase();
-  const list = currentDocs().filter((d) => (q ? matchesDoc(d, q) : true));
+  const list = currentDocs().filter((d) => {
+    if (activeCategory !== 'ALL' && normalizeDocCategory(d.category) !== activeCategory) return false;
+    if (activeRegion !== 'ALL' && (d.region ?? '') !== activeRegion) return false;
+    if (q && !matchesDoc(d, q)) return false;
+    return true;
+  });
   return list.sort((a, b) =>
     docSort === 'oldest' ? a.created_at.localeCompare(b.created_at) : b.created_at.localeCompare(a.created_at)
   );
+}
+
+/** 비어 있는 카테고리/지역 칩은 그리지 않는다 — Notes 칩과 같은 규칙(쓰지 않는 분류로
+ *  화면을 채우지 않기). "전체"는 항상 둔다 */
+function docCategoryChipsHtml(): string {
+  const list = currentDocs();
+  const used = DOC_CATEGORIES.filter((c) => list.some((d) => normalizeDocCategory(d.category) === c));
+  if (used.length === 0) return '';
+  if (activeCategory !== 'ALL' && !used.includes(activeCategory)) activeCategory = 'ALL';
+
+  const chips: Array<{ key: DocCategory | 'ALL'; label: string; count: number }> = [
+    { key: 'ALL', label: '전체', count: list.length },
+    ...used.map((c) => ({ key: c, label: DOC_CATEGORY_LABEL[c], count: list.filter((d) => normalizeDocCategory(d.category) === c).length })),
+  ];
+  return chips
+    .map(
+      (c) =>
+        '<button type="button" class="dn-chip' + (c.key === activeCategory ? ' is-active' : '') + '" data-doc-cat="' + c.key + '">' +
+        escapeHtml(c.label) + '<span class="dn-chip-count">' + c.count + '</span></button>'
+    )
+    .join('');
+}
+
+/** 여행지가 하나뿐이면 regionOptions가 비어 있어(docsStore) 이 칩 자체가 렌더되지 않는다 */
+function docRegionChipsHtml(): string {
+  if (regionOptions.length === 0) return '';
+  const list = currentDocs();
+  const used = regionOptions.filter((r) => list.some((d) => (d.region ?? '') === r));
+  if (used.length === 0) return '';
+  if (activeRegion !== 'ALL' && !used.includes(activeRegion)) activeRegion = 'ALL';
+
+  const chips: Array<{ key: string; label: string; count: number }> = [
+    { key: 'ALL', label: '전체 지역', count: list.length },
+    ...used.map((r) => ({ key: r, label: r, count: list.filter((d) => (d.region ?? '') === r).length })),
+  ];
+  return chips
+    .map(
+      (c) =>
+        '<button type="button" class="dn-chip' + (c.key === activeRegion ? ' is-active' : '') + '" data-doc-region="' + escapeHtml(c.key) + '">' +
+        escapeHtml(c.label) + '<span class="dn-chip-count">' + c.count + '</span></button>'
+    )
+    .join('');
+}
+
+function bindDocFilters(scopeEl: HTMLElement): void {
+  scopeEl.querySelectorAll('[data-doc-cat]').forEach((el) => {
+    el.addEventListener('click', () => {
+      activeCategory = (el as HTMLElement).dataset.docCat as DocCategory | 'ALL';
+      renderDocMain();
+    });
+  });
+  scopeEl.querySelectorAll('[data-doc-region]').forEach((el) => {
+    el.addEventListener('click', () => {
+      activeRegion = (el as HTMLElement).dataset.docRegion as string;
+      renderDocMain();
+    });
+  });
 }
 
 function renderDocuments(): void {
@@ -408,10 +480,13 @@ function renderDocMain(): void {
       ? '  <button type="button" class="dn-btn-ghost" id="dn-lock">' + IC.unlock + '잠그기</button>'
       : '',
     '</div>',
+    total > 0
+      ? '<div class="dn-doc-filters"><div class="dn-chips" id="dn-doc-cat-chips">' + docCategoryChipsHtml() + '</div><div class="dn-chips" id="dn-doc-region-chips">' + docRegionChipsHtml() + '</div></div>'
+      : '',
     total === 0
       ? emptyDocsHtml()
       : list.length === 0
-        ? '<div class="dn-empty"><div class="dn-empty-title">조건에 맞는 문서가 없어요</div><div class="dn-empty-hint">검색어를 바꾸거나 다른 탭을 확인해보세요</div></div>'
+        ? '<div class="dn-empty"><div class="dn-empty-title">조건에 맞는 문서가 없어요</div><div class="dn-empty-hint">검색어나 필터를 조정해보세요</div></div>'
         : '<div class="dn-list">' + list.map(docRowHtml).join('') + '</div>',
     '<div class="dn-drop" id="dn-drop" tabindex="0" role="button">',
     '  ' + IC.upload,
@@ -429,6 +504,7 @@ function renderDocMain(): void {
     updateTabCounts();
   });
 
+  bindDocFilters(mainEl);
   bindDocRows(mainEl);
   bindDropZone(mainEl);
   renderCrossHint();
@@ -482,6 +558,7 @@ function docRowHtml(doc: TripDocument): string {
     '    <span class="dn-tags">',
     '      <span class="dn-tag">' + escapeHtml(DOC_CATEGORY_LABEL[category]) + '</span>',
     day ? '      <span class="dn-tag is-day">' + escapeHtml(day) + '</span>' : '',
+    doc.region ? '      <span class="dn-tag">' + escapeHtml(doc.region) + '</span>' : '',
     '    </span>',
     infoParts.length > 0 ? '    <span class="dn-row-desc">' + escapeHtml(infoParts.join(' · ')) + '</span>' : '',
     '    <span class="dn-row-meta">업로드 ' + escapeHtml(uploader) + escapeHtml(formatDayTime(doc.created_at)) + '</span>',
@@ -547,6 +624,7 @@ function renderDetail(): void {
   const rows: Array<[string, string]> = [];
   rows.push(['카테고리', DOC_CATEGORY_LABEL[category]]);
   if (day) rows.push(['관련 DAY', day + (dateRange ? ' (' + dateRange + ')' : '')]);
+  if (doc.region) rows.push(['지역', doc.region]);
   if (doc.reference_code) rows.push(['예약번호', doc.reference_code]);
   if (doc.file_name) {
     const size = formatFileSize(doc.file_size);
@@ -820,6 +898,7 @@ function openDocumentSheet(existing: TripDocument | null, presetFiles?: File[]):
 
   let category: DocCategory = existing ? normalizeDocCategory(existing.category) : 'STAY';
   let visibility: DocScope = existing ? (existing.visibility as DocScope) : scope;
+  let region: string | null = existing?.region ?? null;
   // 새 문서를 만들 때만 여러 파일을 한 번에 받는다 — 기존 문서 수정은 파일 1개 교체만 지원
   let pickedFiles: File[] = existing ? [] : (presetFiles ?? []);
   const canPersonal = !!unlockedUser;
@@ -858,6 +937,22 @@ function openDocumentSheet(existing: TripDocument | null, presetFiles?: File[]):
     '        <select class="dn-input dn-select" id="dn-doc-day-end">' + docDayOptionsHtml(existing?.day_end ?? null, '종료일 없음') + '</select>',
     '      </div>',
     '    </div>',
+    regionOptions.length > 0
+      ? [
+          '    <div class="dn-field">',
+          '      <span class="dn-field-label">지역 <em>선택</em></span>',
+          '      <div class="dn-pick" id="dn-doc-region">',
+          regionOptions
+            .map(
+              (r) =>
+                '<button type="button" class="dn-pick-item' + (r === region ? ' is-active' : '') + '" data-region="' + escapeHtml(r) + '">' +
+                escapeHtml(r) + '</button>'
+            )
+            .join(''),
+          '      </div>',
+          '    </div>',
+        ].join('\n')
+      : '',
     '    <div class="dn-field">',
     '      <label class="dn-field-label" for="dn-doc-desc">설명 <em>선택</em></label>',
     '      <textarea class="dn-input dn-textarea" id="dn-doc-desc" rows="2" placeholder="3박 · 조식 포함">' +
@@ -965,6 +1060,18 @@ function openDocumentSheet(existing: TripDocument | null, presetFiles?: File[]):
     });
   });
 
+  // 지역은 선택 항목이라 같은 칩을 다시 누르면 "미지정"으로 되돌아간다(카테고리와 달리
+  // 항상 하나가 골라져 있어야 하는 필드가 아님)
+  sheet.querySelectorAll('#dn-doc-region .dn-pick-item').forEach((el) => {
+    el.addEventListener('click', () => {
+      const val = (el as HTMLElement).dataset.region!;
+      region = region === val ? null : val;
+      sheet.querySelectorAll('#dn-doc-region .dn-pick-item').forEach((b) =>
+        b.classList.toggle('is-active', (b as HTMLElement).dataset.region === region)
+      );
+    });
+  });
+
   // 공개 범위는 만들 때만 고른다 — 이미 저장된 문서의 범위를 바꾸면 파일 경로까지 옮겨야 해서,
   // 지금은 "삭제 후 다시 추가"로 안내하는 쪽이 정확하다
   scopeRow.querySelectorAll('.dn-radio').forEach((el) => {
@@ -1019,6 +1126,7 @@ function openDocumentSheet(existing: TripDocument | null, presetFiles?: File[]):
       referenceCode: refEl.value.trim() || null,
       dayStart,
       dayEnd,
+      region,
       visibility,
       ownerId: visibility === 'PERSONAL' ? unlockedUser!.id : null,
     };

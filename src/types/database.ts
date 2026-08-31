@@ -602,6 +602,8 @@ export interface Database {
           /** 관련 DAY(1부터). null이면 전체 일정에 걸리는 문서 */
           day_start: number | null;
           day_end: number | null;
+          /** 지역/도시(선택) — 다중 여행지 트립에서 필터링용 스냅샷 텍스트 */
+          region: string | null;
           /** 비공개 버킷 'trip-docs' 내 경로 — 열 때마다 signed URL 발급 */
           file_path: string | null;
           file_name: string | null;
@@ -623,6 +625,7 @@ export interface Database {
           reference_code?: string | null;
           day_start?: number | null;
           day_end?: number | null;
+          region?: string | null;
           file_path?: string | null;
           file_name?: string | null;
           file_type?: string | null;
@@ -648,6 +651,8 @@ export interface Database {
           pinned_at: string | null;
           day_start: number | null;
           day_end: number | null;
+          /** 지역/도시(선택) — 다중 여행지 트립에서 필터링용 스냅샷 텍스트 */
+          region: string | null;
           created_by: string | null;
           created_by_name: string | null;
           created_at: string;
@@ -663,6 +668,7 @@ export interface Database {
           pinned_at?: string | null;
           day_start?: number | null;
           day_end?: number | null;
+          region?: string | null;
           created_by?: string | null;
           created_by_name?: string | null;
           created_at?: string;

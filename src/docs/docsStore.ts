@@ -93,15 +93,21 @@ function markIfMissing(error: { code?: string; message?: string } | null): boole
   return false;
 }
 
-/* ══════════════ DAY ↔ 날짜 ══════════════ */
+/* ══════════════ DAY ↔ 날짜, 지역 ══════════════ */
 
-/** 이 여행의 DAY 개수 — 시작/종료일이 있으면 그 일수, 없으면 넉넉히 7일치 */
 export interface DayOption {
   /** 여행 전체 기준으로 이어지는 DAY 번호 — Timeline·Route와 같은 번호 체계 */
   day: number;
   /** 선택지에 보여줄 문자열 — 날짜가 있으면 "10.26"(여행지가 여럿이면 "10.26 (방콕)"),
    *  날짜를 전혀 모르면 "DAY N"으로 폴백 */
   label: string;
+}
+
+export interface DayAndRegionOptions {
+  dayOptions: DayOption[];
+  /** 여행지 이름 목록(날짜순). 여행지가 하나뿐이면 지역을 구분할 의미가 없어 빈 배열 —
+   *  화면은 이 배열이 비어 있으면 지역 선택/필터 UI 자체를 그리지 않는다 */
+  regionOptions: string[];
 }
 
 function shortDateLabel(iso: string, plusDays: number): string {
@@ -114,28 +120,32 @@ function shortDateLabel(iso: string, plusDays: number): string {
  * 관련 DAY 선택지 — "DAY 1/2/3" 대신 실제 날짜(여행지가 둘 이상이면 날짜 뒤에 여행지명)로
  * 보여준다. Route/Timeline과 같은 `destinationDayCount` 계산을 그대로 써서, 문서/메모에
  * 붙는 DAY 번호가 Timeline의 DAY 번호와 어긋나지 않게 한다(loadDayAttachmentCounts와 짝).
+ *
+ * 지역 선택지도 같은 `loadDestinations` 호출 결과에서 함께 뽑는다(중복 조회 방지).
  */
-export async function loadDayOptions(trip: Trip | null): Promise<DayOption[]> {
-  if (!trip) return [];
+export async function loadDayAndRegionOptions(trip: Trip | null): Promise<DayAndRegionOptions> {
+  if (!trip) return { dayOptions: [], regionOptions: [] };
   const destinations = await loadDestinations(trip);
   const sorted = [...destinations].sort((a, b) => (a.start_date ?? '').localeCompare(b.start_date ?? ''));
   const showDestName = sorted.length > 1;
 
-  const options: DayOption[] = [];
+  const dayOptions: DayOption[] = [];
   let day = 1;
   for (const dest of sorted) {
     const count = destinationDayCount(dest, trip);
     const start = dest.start_date ?? trip.start_date;
     for (let i = 0; i < count; i += 1) {
       const dateLabel = start ? shortDateLabel(start, i) : null;
-      options.push({
+      dayOptions.push({
         day,
         label: dateLabel ? (showDestName ? dateLabel + ' (' + dest.name + ')' : dateLabel) : 'DAY ' + day,
       });
       day += 1;
     }
   }
-  return options;
+
+  const regionOptions = showDestName ? sorted.map((d) => d.name).filter(Boolean) : [];
+  return { dayOptions, regionOptions };
 }
 
 /** DAY 번호 → 실제 날짜 문자열(10.26). 여행 날짜가 없으면 null */
@@ -352,6 +362,8 @@ export interface DocumentDraft {
   referenceCode: string | null;
   dayStart: number | null;
   dayEnd: number | null;
+  /** 지역/도시(선택) — loadDayAndRegionOptions가 돌려준 여행지 이름 중 하나, 또는 null */
+  region: string | null;
   visibility: DocScope;
   ownerId: string | null;
   file?: UploadedFile | null;
@@ -424,6 +436,7 @@ export async function createDocument(tripId: string, draft: DocumentDraft): Prom
       reference_code: draft.referenceCode,
       day_start: draft.dayStart,
       day_end: draft.dayEnd,
+      region: draft.region,
       file_path: draft.file?.path ?? null,
       file_name: draft.file?.name ?? null,
       file_type: draft.file?.type ?? null,
@@ -453,6 +466,7 @@ export async function updateDocument(
   if (patch.referenceCode !== undefined) row.reference_code = patch.referenceCode;
   if (patch.dayStart !== undefined) row.day_start = patch.dayStart;
   if (patch.dayEnd !== undefined) row.day_end = patch.dayEnd;
+  if (patch.region !== undefined) row.region = patch.region;
   if (patch.file !== undefined) {
     row.file_path = patch.file?.path ?? null;
     row.file_name = patch.file?.name ?? null;
@@ -507,6 +521,8 @@ export interface NoteDraft {
   category: NoteCategory;
   dayStart: number | null;
   dayEnd: number | null;
+  /** 지역/도시(선택) — loadDayAndRegionOptions가 돌려준 여행지 이름 중 하나, 또는 null */
+  region: string | null;
 }
 
 export async function createNote(tripId: string, draft: NoteDraft): Promise<TripNote | null> {
@@ -523,6 +539,7 @@ export async function createNote(tripId: string, draft: NoteDraft): Promise<Trip
       category: draft.category,
       day_start: draft.dayStart,
       day_end: draft.dayEnd,
+      region: draft.region,
       created_by: authUser?.id ?? null,
       created_by_name: authorName,
     })
@@ -544,6 +561,7 @@ export async function updateNote(id: string, patch: Partial<NoteDraft>): Promise
   if (patch.category !== undefined) row.category = patch.category;
   if (patch.dayStart !== undefined) row.day_start = patch.dayStart;
   if (patch.dayEnd !== undefined) row.day_end = patch.dayEnd;
+  if (patch.region !== undefined) row.region = patch.region;
 
   const { data, error } = await supabase.from('trip_notes').update(row).eq('id', id).select().single();
   if (error) {

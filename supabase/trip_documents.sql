@@ -74,6 +74,13 @@ create table if not exists trip_documents (
 create index if not exists trip_documents_trip_id_idx on trip_documents(trip_id);
 create index if not exists trip_documents_owner_idx on trip_documents(owner_id);
 
+-- 지역/도시(선택) — 다중 여행지 트립에서 "이 문서가 어느 여행지 것인지" 구분해 필터링하기
+-- 위한 스냅샷 텍스트. trip_destinations에 FK를 걸지 않는 이유: 여행지가 아직 실제 DB 행
+-- 없이 trips 컬럼만으로 합성되는 경우(trips/destinations.ts의 legacy 폴백)가 있어 FK가
+-- 항상 성립하지 않는다 — 그래서 선택 시점의 여행지 이름을 다른 스냅샷 필드(uploaded_by_name
+-- 등)와 같은 방식으로 문자열째 저장한다.
+alter table if exists trip_documents add column if not exists region text;
+
 do $$
 begin
   if not exists (select 1 from pg_constraint where conname = 'trip_documents_visibility_chk') then
@@ -116,6 +123,9 @@ create table if not exists trip_notes (
   updated_at      timestamptz not null default now()
 );
 create index if not exists trip_notes_trip_id_idx on trip_notes(trip_id);
+
+-- 지역/도시(선택) — trip_documents.region과 같은 이유·같은 방식(스냅샷 텍스트)
+alter table if exists trip_notes add column if not exists region text;
 
 do $$
 begin
