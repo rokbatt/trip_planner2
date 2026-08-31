@@ -1711,7 +1711,7 @@ function openStayDateEditor(): void {
     '      <input type="number" class="sl-seg-pop-input" data-extra-field="totalBudget" id="sp-budget-total" placeholder="예: 900000" value="' + (totalBudgetKRW ?? '') + '" />',
     '      <span class="sl-budget-custom-unit">원</span>',
     '    </div>',
-    '    <div class="sl-seg-pop-budget-hint">숙박일 수 × 인원수로 나눠서 "1박 1인" 기준으로 표기돼요</div>',
+    '    <div class="sl-seg-pop-budget-hint">이 숙박 기간 전체 비용을 그대로 적어주세요</div>',
     '  </div>',
   ].join('\n');
 
@@ -3510,6 +3510,7 @@ function renderCandidateCards(body: HTMLElement, candidates: Place[]): void {
   listEl.innerHTML = list
     .map((c) => {
       const isSelected = pendingHotelId === c.id;
+      const isConfirmed = !!basecampConfirmedAt && selectedBasecamp?.id === c.id;
       const inCompare = step2CompareIds.has(c.id);
       const m = candidateMetrics(c);
       const isElimTarget = step2ElimTargetId === c.id;
@@ -3524,7 +3525,7 @@ function renderCandidateCards(body: HTMLElement, candidates: Place[]): void {
       }
 
       return [
-        '<div class="sl-basecamp-card' + (isSelected ? ' selected' : '') + (inCompare ? ' in-compare' : '') + '" data-place-id="' + c.id + '">',
+        '<div class="sl-basecamp-card' + (isSelected ? ' selected' : '') + (isConfirmed ? ' confirmed' : '') + (inCompare ? ' in-compare' : '') + '" data-place-id="' + c.id + '">',
         '  <label class="sl-cand-check" title="비교 대상으로 선택">',
         '    <input type="checkbox" data-compare-place="' + c.id + '"' + (inCompare ? ' checked' : '') + ' />',
         '  </label>',
@@ -3554,7 +3555,9 @@ function renderCandidateCards(body: HTMLElement, candidates: Place[]): void {
           : '    <button type="button" class="sl-cand-action sl-cand-link-empty" data-link-hint-place="' + c.id + '" title="연동된 링크가 없어요">' + IC_LINK + '</button>',
         '    <button type="button" class="sl-cand-action sl-cand-elim" data-elim-place="' + c.id + '" title="이 후보 탈락시키기">' + IC_XCLOSE + '</button>',
         '  </div>',
-        isSelected ? '  <span class="sl-basecamp-selected-badge">' + IC_CHECK + '</span>' : '',
+        isConfirmed
+          ? '  <span class="sl-basecamp-selected-badge sl-basecamp-confirmed-badge">' + IC_CHECK + ' 확정됨</span>'
+          : isSelected ? '  <span class="sl-basecamp-selected-badge">' + IC_CHECK + '</span>' : '',
         isElimTarget ? eliminationPickerHtml(c.id) : '',
         isLinkHintTarget ? '  <div class="sl-cand-link-hint" data-stop-select="1">아이디어보드에서 이 숙소 카드에 예약 링크를 연동해보세요.</div>' : '',
         '</div>',
@@ -4427,13 +4430,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     });
 
   const closeCount = withDistance.filter((item) => item.km <= 1.5).length;
-  const stayNights = currentStayNights();
-  const stayHeadcount = getTripHeadcount();
-  const perNightPerPerson =
-    totalBudgetKRW != null && totalBudgetKRW > 0
-      ? Math.round(totalBudgetKRW / stayNights / stayHeadcount)
-      : null;
-  const budgetLabel = perNightPerPerson != null ? perNightPerPerson.toLocaleString() + '원' : '미입력';
+  const budgetLabel = totalBudgetKRW != null && totalBudgetKRW > 0 ? totalBudgetKRW.toLocaleString() + '원' : '미입력';
 
   void closeCount;
   // 스테퍼 줄 우측(#sl-stepper-extra)은 이제 renderShortlistDestBar가 "여행지 변경"을
@@ -4539,7 +4536,7 @@ async function renderStep3(body: HTMLElement): Promise<void> {
     '            <div class="sl-step3-summary-grid">',
     '              <div class="sl-step3-summary-field"><span class="sl-step3-summary-field-label">선택 지역</span><span class="sl-step3-summary-field-value">' + escapeHtml(zone.name) + '</span></div>',
     '              <div class="sl-step3-summary-field"><span class="sl-step3-summary-field-label">숙박 기간</span><span class="sl-step3-summary-field-value">' + escapeHtml(dateRange) + '</span></div>',
-    '              <div class="sl-step3-summary-field"><span class="sl-step3-summary-field-label">예산 (1박 1인)</span><span class="sl-step3-summary-field-value">' + escapeHtml(budgetLabel) + '</span></div>',
+    '              <div class="sl-step3-summary-field"><span class="sl-step3-summary-field-label">예산 (전체 숙박비)</span><span class="sl-step3-summary-field-value">' + escapeHtml(budgetLabel) + '</span></div>',
     '              <button class="sl-step2-summary-edit sl-step3-summary-edit" id="sl-back-2c">' + IC_EXTLINK + ' 수정</button>',
     '            </div>',
     '          </div>',
@@ -4706,9 +4703,13 @@ async function renderStep3(body: HTMLElement): Promise<void> {
       return;
     }
 
-    window.dispatchEvent(
-      new CustomEvent('mongsil:navigateGate', { detail: { tripId: currentTripId, gate: 'route' } })
-    );
+    // ROUTE로 자동 이동하면 그쪽 화면이 다시 로딩되는 데 시간이 걸려서 답답하다는
+    // 피드백에 따라, 확정 후 바로 넘어가지 않고 비교 화면(지도 단계)으로 돌아온다 —
+    // 그 화면 후보 카드에 "확정됨" 배지가 남아있어 확정됐다는 게 바로 보인다.
+    // ROUTE는 사용자가 원할 때 사이드바에서 직접 이동.
+    step = 1;
+    const container = body.closest('.sl-shell')!.parentElement as HTMLElement;
+    void renderStep(container);
   });
 
   body.querySelector('#sl-split-add')?.addEventListener('click', async (e) => {
