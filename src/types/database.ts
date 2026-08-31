@@ -468,6 +468,7 @@ export interface Database {
           added_by: string | null;
           display_name: string | null;
           avatar_url: string | null;
+          note: string | null;
           created_at: string;
         };
         Insert: {
@@ -483,9 +484,49 @@ export interface Database {
           added_by?: string | null;
           display_name?: string | null;
           avatar_url?: string | null;
+          note?: string | null;
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['trip_links']['Insert']>;
+        Relationships: [];
+      };
+
+      /** LINKS 그룹 모으기 — 링크를 여행지별/자유 주제별로 묶는 사용자 정의 정리축.
+       *  category(자동분류)와는 완전히 별개이고, 링크 하나가 여러 그룹에 동시에 속할 수
+       *  있어 실제 소속 관계는 trip_link_group_links(다대다)에 있다. */
+      trip_link_groups: {
+        Row: {
+          id: string;
+          trip_id: string;
+          name: string;
+          destination_id: string | null;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          trip_id: string;
+          name: string;
+          destination_id?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['trip_link_groups']['Insert']>;
+        Relationships: [];
+      };
+
+      trip_link_group_links: {
+        Row: {
+          group_id: string;
+          link_id: string;
+          created_at: string;
+        };
+        Insert: {
+          group_id: string;
+          link_id: string;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['trip_link_group_links']['Insert']>;
         Relationships: [];
       };
 
@@ -775,6 +816,8 @@ export type Place = Database['public']['Tables']['places']['Row'];
 export type CityImage = Database['public']['Tables']['city_images']['Row'];
 export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'];
 export type TripLink = Database['public']['Tables']['trip_links']['Row'];
+export type TripLinkGroup = Database['public']['Tables']['trip_link_groups']['Row'];
+export type TripLinkGroupLink = Database['public']['Tables']['trip_link_group_links']['Row'];
 export type TripChecklistItem = Database['public']['Tables']['trip_checklist']['Row'];
 export type PlaceComment = Database['public']['Tables']['place_comments']['Row'];
 export type TripDestination = Database['public']['Tables']['trip_destinations']['Row'];
