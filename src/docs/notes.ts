@@ -32,6 +32,8 @@ interface NotesHost {
   tripId: string;
   trip: Trip | null;
   dayOptions: DayOption[];
+  /** 여행지가 하나뿐이면 비어 있음(docsStore) — 그때는 지역 선택/필터 UI를 그리지 않는다 */
+  regionOptions: string[];
   getSearch: () => string;
   onDataChange: () => void;
 }
@@ -43,6 +45,7 @@ let channel: RealtimeChannel | null = null;
 let notes: TripNote[] = [];
 let rootEl: HTMLElement | null = null;
 let activeCategory: NoteCategory | 'ALL' = 'ALL';
+let activeRegion: string | 'ALL' = 'ALL';
 let sortMode: NoteSort = 'recent';
 let editingId: string | null = null;
 let sheetOpen = false;
@@ -88,6 +91,7 @@ export function teardownNotes(): void {
   notes = [];
   rootEl = null;
   activeCategory = 'ALL';
+  activeRegion = 'ALL';
   sortMode = 'recent';
   editingId = null;
   sheetOpen = false;
@@ -109,6 +113,7 @@ function matchesQuery(note: TripNote, q: string): boolean {
     note.title,
     note.body,
     NOTE_CATEGORY_LABEL[normalizeNoteCategory(note.category)],
+    note.region,
     note.created_by_name,
   ]
     .filter(Boolean)
@@ -121,6 +126,7 @@ function visibleNotes(): TripNote[] {
   const q = (host?.getSearch() ?? '').trim().toLowerCase();
   const filtered = notes.filter((n) => {
     if (activeCategory !== 'ALL' && normalizeNoteCategory(n.category) !== activeCategory) return false;
+    if (activeRegion !== 'ALL' && (n.region ?? '') !== activeRegion) return false;
     if (q && !matchesQuery(n, q)) return false;
     return true;
   });
@@ -151,6 +157,7 @@ export function mountNotes(container: HTMLElement): void {
     '      </select>',
     '    </label>',
     '  </div>',
+    '  <div class="dn-chips" id="dn-note-region-chips"></div>',
     '  <div class="dn-note-body" id="dn-note-body"></div>',
     '</div>',
   ].join('\n');
@@ -181,6 +188,7 @@ function renderIfMounted(): void {
 function render(): void {
   if (!rootEl) return;
   renderChips();
+  renderRegionChips();
   renderList();
 }
 
@@ -211,6 +219,44 @@ function renderChips(): void {
   chipsEl.querySelectorAll('.dn-chip').forEach((el) => {
     el.addEventListener('click', () => {
       activeCategory = (el as HTMLElement).dataset.cat as NoteCategory | 'ALL';
+      render();
+    });
+  });
+}
+
+/** 여행지가 하나뿐이면 host.regionOptions가 비어 있어(docsStore) 칩 자체가 그려지지 않는다 */
+function renderRegionChips(): void {
+  const chipsEl = rootEl?.querySelector('#dn-note-region-chips') as HTMLElement | null;
+  if (!chipsEl) return;
+  const regionOptions = host?.regionOptions ?? [];
+  if (regionOptions.length === 0) {
+    chipsEl.innerHTML = '';
+    return;
+  }
+
+  const used = regionOptions.filter((r) => notes.some((n) => (n.region ?? '') === r));
+  if (used.length === 0) {
+    chipsEl.innerHTML = '';
+    return;
+  }
+  if (activeRegion !== 'ALL' && !used.includes(activeRegion)) activeRegion = 'ALL';
+
+  const chips: Array<{ key: string; label: string; count: number }> = [
+    { key: 'ALL', label: '전체 지역', count: notes.length },
+    ...used.map((r) => ({ key: r, label: r, count: notes.filter((n) => (n.region ?? '') === r).length })),
+  ];
+
+  chipsEl.innerHTML = chips
+    .map(
+      (c) =>
+        '<button type="button" class="dn-chip' + (c.key === activeRegion ? ' is-active' : '') + '" data-region="' + escapeHtml(c.key) + '">' +
+        escapeHtml(c.label) + '<span class="dn-chip-count">' + c.count + '</span></button>'
+    )
+    .join('');
+
+  chipsEl.querySelectorAll('.dn-chip').forEach((el) => {
+    el.addEventListener('click', () => {
+      activeRegion = (el as HTMLElement).dataset.region as string;
       render();
     });
   });
@@ -273,6 +319,7 @@ function metaLine(note: TripNote): string {
   const parts = [NOTE_CATEGORY_LABEL[normalizeNoteCategory(note.category)]];
   const day = dayRangeLabel(note.day_start, note.day_end);
   if (day) parts.push(day);
+  if (note.region) parts.push(note.region);
   if (note.created_by_name) parts.push(note.created_by_name);
   parts.push(formatDay(note.created_at));
   return parts.map((p) => escapeHtml(p)).join('<span class="dn-dot">·</span>');
@@ -402,6 +449,8 @@ export function openNoteEditor(id?: string): void {
       .join('');
 
   const currentCategory: NoteCategory = note ? normalizeNoteCategory(note.category) : 'PACKING';
+  const regionOptions = host?.regionOptions ?? [];
+  const currentRegion: string | null = note?.region ?? null;
 
   const sheet = document.createElement('div');
   sheet.className = 'dn-sheet-layer';
@@ -440,6 +489,22 @@ export function openNoteEditor(id?: string): void {
     '        <select class="dn-input dn-select" id="dn-note-day-end">' + noteDayOptionsHtml(note?.day_end ?? null, '종료일 없음') + '</select>',
     '      </div>',
     '    </div>',
+    regionOptions.length > 0
+      ? [
+          '    <div class="dn-field">',
+          '      <span class="dn-field-label">지역 <em>선택</em></span>',
+          '      <div class="dn-pick" id="dn-note-region">',
+          regionOptions
+            .map(
+              (r) =>
+                '<button type="button" class="dn-pick-item' + (r === currentRegion ? ' is-active' : '') + '" data-region="' + escapeHtml(r) + '">' +
+                escapeHtml(r) + '</button>'
+            )
+            .join(''),
+          '      </div>',
+          '    </div>',
+        ].join('\n')
+      : '',
     '  </div>',
     '  <div class="dn-sheet-foot">',
     note ? '    <button type="button" class="dn-btn-ghost dn-btn-danger" id="dn-note-delete">삭제</button>' : '',
@@ -453,6 +518,7 @@ export function openNoteEditor(id?: string): void {
   requestAnimationFrame(() => sheet.classList.add('is-open'));
 
   let category: NoteCategory = currentCategory;
+  let region: string | null = currentRegion;
   const titleEl = sheet.querySelector('#dn-note-title') as HTMLInputElement;
   const textEl = sheet.querySelector('#dn-note-text') as HTMLTextAreaElement;
   const dayStartEl = sheet.querySelector('#dn-note-day-start') as HTMLSelectElement;
@@ -470,6 +536,17 @@ export function openNoteEditor(id?: string): void {
       category = (el as HTMLElement).dataset.cat as NoteCategory;
       sheet.querySelectorAll('#dn-note-cats .dn-pick-item').forEach((b) => b.classList.remove('is-active'));
       el.classList.add('is-active');
+    });
+  });
+
+  // 지역은 선택 항목이라 같은 칩을 다시 누르면 "미지정"으로 되돌아간다
+  sheet.querySelectorAll('#dn-note-region .dn-pick-item').forEach((el) => {
+    el.addEventListener('click', () => {
+      const val = (el as HTMLElement).dataset.region!;
+      region = region === val ? null : val;
+      sheet.querySelectorAll('#dn-note-region .dn-pick-item').forEach((b) =>
+        b.classList.toggle('is-active', (b as HTMLElement).dataset.region === region)
+      );
     });
   });
 
@@ -493,7 +570,7 @@ export function openNoteEditor(id?: string): void {
     const dayEnd = dayStart && rawEnd && rawEnd >= dayStart ? rawEnd : null;
 
     saveEl.disabled = true;
-    const draft = { title, body: textEl.value.trim() || null, category, dayStart, dayEnd };
+    const draft = { title, body: textEl.value.trim() || null, category, dayStart, dayEnd, region };
 
     if (editingId) {
       const updated = await updateNote(editingId, draft);
