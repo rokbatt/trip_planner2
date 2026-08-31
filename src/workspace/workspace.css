@@ -804,6 +804,41 @@
   line-height: 1.6;
 }
 
+/* 숙소 카드 상세의 "숙소 확정" 섹션 — STAY Step3의 확정하기와 같은 저장 대상이라 항상
+   같은 확정 상태를 반영한다. 예약 링크 버튼보다 무게감 있게(꽉 찬 네이비 배경) 표시해서
+   "이건 되돌리기 전엔 여행 전체에 영향을 주는 결정"이라는 느낌을 준다. */
+.ws-stay-confirm-btn {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 10px;
+  background: #0B2A5C;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.ws-stay-confirm-btn:hover { background: #0D3A7A; }
+.ws-stay-confirm-btn:disabled { opacity: 0.6; cursor: default; }
+
+.ws-stay-confirm-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ws-stay-confirm-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #fff;
+  background: #1D9E75;
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+.ws-stay-confirm-badge svg { width: 13px; height: 13px; }
+
+.ws-stay-confirm-loading { font-size: 12px; color: #94A3B8; }
+
 .ws-chip {
   display: inline-block;
   align-self: flex-start;

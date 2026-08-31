@@ -4,7 +4,8 @@ import { navigate } from '../router';
 import { initChat, teardownChat, setBadgeListener, countUnreadSince, markAsRead, renderChatPanelUI } from '../chat/chat';
 import { initComments, teardownComments, renderCommentsUI } from '../comments/comments';
 import { initHotelVoteChannel, teardownHotelVoteChannel } from '../collab/hotelVote';
-import { loadDestinations, resolveActiveDestination, ACTIVE_DESTINATION_CHANGED_EVENT } from '../trips/destinations';
+import { loadDestinations, resolveActiveDestination, loadStaySegments, resolveActiveSegment, saveStaySegment, ACTIVE_DESTINATION_CHANGED_EVENT } from '../trips/destinations';
+import type { SegmentState } from '../trips/destinations';
 import { toAirportCode } from '../trips/airports';
 import type { Database, TripDestination } from '../types/database';
 import type { ChatMessage } from '../types/database';
@@ -39,6 +40,7 @@ const IC = {
   mapPin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21C12 21 19 14.5 19 9.5C19 5.9 15.9 3 12 3C8.1 3 5 5.9 5 9.5C5 14.5 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.2"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
   play: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="4"/><path d="M10 9l5 3-5 3V9z" fill="currentColor" stroke="none"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
 };
 
 interface NavItem {
@@ -734,6 +736,7 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
     bindDetailGatePicker(place, tripId, (updatedPlace) => openDetailPanel(updatedPlace));
     if (place.mood === '숙소') {
       bindStayLinkSection(place, tripId, (updatedPlace) => openDetailPanel(updatedPlace));
+      void renderStayConfirmSection(place, tripId, (updatedPlace) => openDetailPanel(updatedPlace));
     }
 
     const commentsBody = panelEl.querySelector('#detail-comments-body') as HTMLElement | null;
@@ -874,6 +877,72 @@ function bindStayLinkSection(place: any, tripId: string, onLinked: (updatedPlace
   unlinkBtn?.addEventListener('click', () => void saveLink(null, null));
 }
 
+/** 숙소(mood==='숙소') 카드 상세의 "숙소 확정" 섹션 — 확정 여부에 따라 버튼/배지가 다르다. */
+function buildStayConfirmSectionHtml(isConfirmed: boolean): string {
+  const body = isConfirmed
+    ? [
+        '<div class="ws-stay-confirm-row">',
+        '  <span class="ws-stay-confirm-badge">' + IC.check + ' 확정된 숙소</span>',
+        '  <button type="button" class="ws-link-action-btn" id="ws-stay-unconfirm-btn">확정 해제</button>',
+        '</div>',
+      ].join('')
+    : '<button type="button" class="ws-stay-confirm-btn" id="ws-stay-confirm-btn">이 숙소로 확정하기</button>';
+
+  return [
+    '<div class="ws-detail-section" id="ws-stay-confirm-section">',
+    '  <span class="ws-detail-label">숙소 확정</span>',
+         body,
+    '</div>',
+  ].join('');
+}
+
+/**
+ * 이 숙소가 속한 여행지의 활성 숙소 구간(stay_segments)을 조회해 지금 확정된 숙소인지
+ * 확인하고, 버튼을 누르면 그 구간의 basecamp_place_id/basecamp_confirmed_at을 갱신한다.
+ * STAY 화면의 Step3 "확정하기"와 같은 저장 대상 — 아이디어보드에서도 같은 자리에 저장되므로
+ * 두 화면이 항상 같은 확정 상태를 본다. place 자체엔 확정 여부를 저장하지 않는다(구간
+ * 단위 개념이라 place에 두면 숙소를 나눈 여러 구간을 구분할 수 없음).
+ */
+async function renderStayConfirmSection(place: any, tripId: string, onConfirmed: (updatedPlace: any) => void): Promise<void> {
+  const trip = await getTrip(tripId);
+  if (!trip) return;
+
+  const destinations = await loadDestinations(trip);
+  const destination = (place.destination_id ? destinations.find((d) => d.id === place.destination_id) : null) ?? destinations[0];
+  if (!destination) return;
+
+  const segments = await loadStaySegments(trip, destination);
+  const activeSegment = resolveActiveSegment(destination.id, segments);
+
+  // 이 사이 Drawer가 닫혔거나 다른 장소로 바뀌었으면 조용히 중단(엉뚱한 장소에 그려지지 않게)
+  const sectionEl = document.getElementById('ws-stay-confirm-section');
+  if (!sectionEl || !activeSegment) return;
+
+  const isConfirmed = activeSegment.basecamp_place_id === place.id && !!activeSegment.basecamp_confirmed_at;
+  sectionEl.outerHTML = buildStayConfirmSectionHtml(isConfirmed);
+
+  async function saveConfirm(confirm: boolean): Promise<void> {
+    const state: SegmentState = {
+      zone_name: activeSegment!.zone_name,
+      zone_place_ids: activeSegment!.zone_place_ids,
+      basecamp_place_id: confirm ? place.id : null,
+      confirmed_place_ids: activeSegment!.confirmed_place_ids,
+      total_budget_krw: activeSegment!.total_budget_krw,
+      basecamp_confirmed_at: confirm ? new Date().toISOString() : null,
+    };
+    await saveStaySegment(trip!, destination!, activeSegment!, state);
+    onConfirmed(place);
+  }
+
+  document.getElementById('ws-stay-confirm-btn')?.addEventListener('click', (e) => {
+    const btn = e.currentTarget as HTMLButtonElement;
+    btn.disabled = true;
+    btn.textContent = '확정하는 중...';
+    void saveConfirm(true);
+  });
+  document.getElementById('ws-stay-unconfirm-btn')?.addEventListener('click', () => void saveConfirm(false));
+}
+
 /** 카드 상세 Drawer 콘텐츠 */
 function buildDetailPanelShell(place: any): string {
   const photo = place.photo_url
@@ -916,6 +985,12 @@ function buildDetailPanelShell(place: any): string {
   ].join('');
 
   const stayLinkSection = place.mood === '숙소' ? buildStayLinkSectionHtml(place) : '';
+  // 확정 여부는 이 숙소가 속한 숙소 구간(stay_segments)을 따로 조회해야 알 수 있어서
+  // (place 자체엔 저장 안 됨) 여기선 자리만 잡아두고, renderStayConfirmSection이 비동기로
+  // 채운다 — 댓글 섹션과 같은 패턴(동기 셸 먼저 그리고, 비동기 데이터로 나중에 채움).
+  const stayConfirmSection = place.mood === '숙소'
+    ? '<div class="ws-detail-section" id="ws-stay-confirm-section"><div class="ws-stay-confirm-loading">확정 여부 확인 중...</div></div>'
+    : '';
 
   const address = place.address
     ? '<div class="ws-detail-section"><span class="ws-detail-label">주소</span><div class="ws-detail-text">' + escapeHtml(place.address) + '</div></div>'
@@ -948,6 +1023,7 @@ function buildDetailPanelShell(place: any): string {
     '    </div>',
     '    <span class="ws-detail-save-hint" id="detail-name-hint"></span>',
     '    <div class="ws-detail-links">' + mapsLink + searchLink + youtubeLink + '</div>',
+         stayConfirmSection,
          stayLinkSection,
          category,
          address,
