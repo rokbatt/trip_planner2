@@ -173,10 +173,11 @@ function pinTearPath(cx: number, cy: number, r: number, tipY: number): string {
   );
 }
 
-const BOARD_PIN_HEAD_R = 13;
+const BOARD_PIN_HEAD_R = 15.6; // 13 * 1.2 — 핀 전체 크기를 20% 키워달라는 요청
 const BOARD_PIN_TAIL_RATIO = 1.45;
-/** 핀 바깥 흰 테두리 두께 — 지도 배경색과 상관없이 핀이 또렷하게 떠 보이게 하는 핵심 */
-const BOARD_PIN_RING = 1.8;
+/** 핀 바깥 흰 테두리 두께 — 지도 배경색과 상관없이 핀이 또렷하게 떠 보이는 핵심.
+ *  머리 반지름과 같은 비율로 키워서 두께감이 이전과 동일하게 유지되도록 함. */
+const BOARD_PIN_RING = 2.16; // 1.8 * 1.2
 /** 마우스오버/선택 시 핀 확대 배율 */
 const BOARD_PIN_HOVER_SCALE = 1.22;
 
