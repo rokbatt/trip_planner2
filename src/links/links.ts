@@ -445,6 +445,7 @@ async function writeNoteForLink(linkId: string): Promise<void> {
     category: 'OTHER',
     dayStart: null,
     dayEnd: null,
+    region: null,
   });
   if (!note) {
     console.error('노트 생성 실패');

@@ -14,6 +14,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { loadGoogleMapsScript, extractPlaceResult, suggestGateFromCategory, getPlacePredictions, getPlaceDetails, getCategoryLabel, resetGoogleServices } from '../utils/googleMaps';
 import type { GooglePlaceResult, PlacePrediction } from '../utils/googleMaps';
 import { insertGooglePlace, rehostPhoto } from '../trips/addGooglePlace';
+import { MarkerClusterer } from '@googlemaps/markerclusterer';
 import './board.css';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -81,13 +82,70 @@ const BOARD_MOOD_COLOR: Record<string, string> = {
   '하고싶어': '#7F77DD',
   '숙소': '#185FA5',
 };
-/** "지도로 보기" 핀 안에 그릴 게이트별 선 아이콘 — 이미 있는 게이트 아이콘을 그대로 재사용 */
-const BOARD_MOOD_PIN_ICON: Record<string, string> = {
-  '가고싶어': ICON_PIN,
-  '먹고싶어': ICON_FORK,
-  '하고싶어': ICON_TICKET,
-  '숙소': ICON_BED,
+/* 핀 전용 선 아이콘 — 위쪽 UI용 ICON_* 는 작은 버튼에 맞춰 획이 얇아서, 지도 위에서 축소돼도
+ * 형태가 읽히도록 획이 굵고 실루엣이 단순한 별도 세트를 쓴다(STAY 지도의 PIN_IC_* 와 같은 그림).
+ * shortlist.ts와 모듈을 공유하지 않는 것은 pinTearPath와 같은 이유(번들 분리). */
+const BD_PIN_IC_LANDMARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M4 21V10M20 21V10M2 10l10-6 10 6M6 10v7M10 10v7M14 10v7M18 10v7"/></svg>';
+const BD_PIN_IC_FORK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v7a2 2 0 0 0 2 2v11M7 2v7M9 2v7M11 2v7M16 2c-1.5 0-3 1.5-3 4s1.5 4 3 4v10"/></svg>';
+const BD_PIN_IC_TARGET = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/></svg>';
+const BD_PIN_IC_BED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6M3 18v2M21 18v2M3 12V8a2 2 0 0 1 2-2h4v6"/></svg>';
+const BD_PIN_IC_BAG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l1 12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L6 8Z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>';
+const BD_PIN_IC_PLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 19.5l19-7.5-19-7.5 4 7.5-4 7.5z"/></svg>';
+const BD_PIN_IC_COFFEE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13v6a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V8Z"/><path d="M17 9h1.5a2.5 2.5 0 0 1 0 5H17"/><path d="M8 2v2M11 2v2M14 2v2"/></svg>';
+const BD_PIN_IC_BREAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c-4 0-9 3-9 8 0 6 5 10 9 10s9-4 9-10c0-5-5-8-9-8Z"/><path d="M7 14c1-2 2-3 5-3s4 1 5 3"/></svg>';
+const BD_PIN_IC_GLASS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14l-7 9-7-9Z"/><path d="M12 12v9M8 21h8"/></svg>';
+const BD_PIN_IC_TREE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 7 9h3l-4 6h4l-3 5h10l-3-5h4l-4-6h3L12 2Z"/><path d="M12 22v-4"/></svg>';
+const BD_PIN_IC_TEMPLE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v3M12 5l8 6H4l8-6Z"/><path d="M5 11v9h14v-9"/><path d="M10 20v-5h4v5"/></svg>';
+const BD_PIN_IC_FERRIS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16M6.3 6.3l11.4 11.4M17.7 6.3 6.3 17.7"/></svg>';
+
+/** place.category → 핀 아이콘. 게이트 색(4종)만으로는 같은 색 안에서 카페/식당/박물관이 구분되지
+ *  않아서, 색은 게이트로 두고 "무엇인지"는 아이콘으로 한 겹 더 나눈다. STAY 지도의
+ *  PIN_CATEGORY_ICON과 같은 매핑이라 두 화면의 같은 장소가 같은 그림으로 보인다. */
+const BOARD_CATEGORY_PIN_ICON: Record<string, string> = {
+  '카페': BD_PIN_IC_COFFEE,
+  '음식점': BD_PIN_IC_FORK,
+  '베이커리': BD_PIN_IC_BREAD,
+  '바': BD_PIN_IC_GLASS,
+  '나이트라이프': BD_PIN_IC_GLASS,
+  '관광명소': BD_PIN_IC_LANDMARK,
+  '박물관': BD_PIN_IC_LANDMARK,
+  '미술관': BD_PIN_IC_LANDMARK,
+  '공원': BD_PIN_IC_TREE,
+  '종교시설': BD_PIN_IC_TEMPLE,
+  '명소': BD_PIN_IC_LANDMARK,
+  '테마파크': BD_PIN_IC_FERRIS,
+  '쇼핑': BD_PIN_IC_BAG,
+  '숙소': BD_PIN_IC_BED,
+  '공항': BD_PIN_IC_PLANE,
 };
+/** category가 비어 있을 때의 게이트별 폴백 아이콘 */
+const BOARD_MOOD_PIN_FALLBACK: Record<string, string> = {
+  '가고싶어': BD_PIN_IC_LANDMARK,
+  '먹고싶어': BD_PIN_IC_FORK,
+  '하고싶어': BD_PIN_IC_TARGET,
+  '숙소': BD_PIN_IC_BED,
+};
+
+/** 지도 범례 칩에 쓰는 게이트 라벨 — 게이트 이름(VISIT 등)만으로는 뜻이 안 와닿아 한글을 같이 씀 */
+const BOARD_GATE_LEGEND_LABEL: Record<string, string> = {
+  '가고싶어': '관광(VISIT)',
+  '먹고싶어': '맛집(FOOD)',
+  '하고싶어': '액티비티(ACTIVITY)',
+  '숙소': '숙소(STAY)',
+};
+
+/** 보드 지도 스타일 — 구글 기본 업체 POI 아이콘(작은 색색 마커들)을 지우고 나머지 POI도
+ *  채도를 낮춰서, 지도 위에서 "색이 있는 건 내가 담은 장소뿐"이 되도록 한다.
+ *  ROUTE/타임라인/STAY 지도가 이미 같은 이유로 각자 스타일을 쓰고 있었는데 이 화면만
+ *  구글 기본 스타일이라 우리 핀이 구글 POI에 묻혀 있었다(= 핀이 구분 안 되던 주된 원인).
+ *  도로·건물·지명은 그대로 둬서 "어디쯤인지" 맥락은 잃지 않는다. */
+const MAP_STYLE_BOARD = [
+  { featureType: 'poi.business', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.business', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi', elementType: 'labels.icon', stylers: [{ saturation: -55 }, { lightness: 35 }] },
+  { featureType: 'poi', elementType: 'labels.text', stylers: [{ visibility: 'simplified' }] },
+  { featureType: 'transit', elementType: 'labels.icon', stylers: [{ saturation: -50 }, { lightness: 30 }] },
+];
 
 /** 아이콘 svg 문자열에서 <svg> 껍데기만 벗겨 내부 마크업만 남긴다 — 핀 색상과 통일하기 위해
  *  감싸는 <g>에서 색/굵기를 한 번에 지정(STAY 지도의 pinIconInner와 동일한 방식). */
@@ -115,8 +173,12 @@ function pinTearPath(cx: number, cy: number, r: number, tipY: number): string {
   );
 }
 
-const BOARD_PIN_HEAD_R = 12;
-const BOARD_PIN_TAIL_RATIO = 1.5;
+const BOARD_PIN_HEAD_R = 13;
+const BOARD_PIN_TAIL_RATIO = 1.45;
+/** 핀 바깥 흰 테두리 두께 — 지도 배경색과 상관없이 핀이 또렷하게 떠 보이게 하는 핵심 */
+const BOARD_PIN_RING = 1.8;
+/** 마우스오버/선택 시 핀 확대 배율 */
+const BOARD_PIN_HOVER_SCALE = 1.22;
 
 /* ── 규칙 기반 분류 (진짜 AI 아님) ──
  * 키워드 매칭 점수로 게이트를 추천. 향후 Gemini 연동 시 이 함수만 교체하면 됨. */
@@ -274,6 +336,11 @@ let boardActiveDest: TripDestination | null = null;
 let boardMapViewActive = false;
 let boardMapInstance: any = null;
 let boardMapMarkers: any[] = [];
+/** 마커를 게이트(mood)와 짝지어 들고 있는 목록 — 범례 필터가 게이트별로 켜고 끄는 데 씀 */
+let boardMapEntries: Array<{ marker: any; mood: string }> = [];
+let boardMapClusterer: any = null;
+/** 범례에서 꺼둔 게이트들. 지도를 다시 열어도 유지되도록 모듈 수준에 둔다 */
+const boardMapHiddenMoods = new Set<string>();
 
 /* ── 게이트 하나만 크게 보기(포커스 모드) ──
  * 저장된 장소 데이터는 전혀 건드리지 않는다 — 이미 그려진 DOM에 클래스만 토글해서
@@ -346,7 +413,10 @@ export function teardownBoard(): void {
   closeAiExportModal();
   boardMapViewActive = false;
   boardMapInstance = null;
+  boardMapClusterer?.clearMarkers();
+  boardMapClusterer = null;
   boardMapMarkers = [];
+  boardMapEntries = [];
 }
 
 /** 자동완성 드롭다운/디바운스 타이머 정리 */
@@ -716,31 +786,54 @@ async function toggleBoardMapView(container: HTMLElement, tripId: string): Promi
   await renderBoardMapView(mapView, tripId);
 }
 
-/** STAY 지도(shortlist.ts)와 같은 물방울 모양 핀 — 게이트 색으로 채운 몸통 + 흰 원 +
- *  그 게이트의 선 아이콘. 앱 전체에서 핀 생김새가 하나로 통일되도록 STAY와 같은 수식을 씀. */
-function buildBoardMapMarkerIcon(g: any, mood: string | null): any {
+/** STAY 지도(shortlist.ts)와 같은 물방울 모양 핀 — 게이트 색으로 채운 몸통 + 흰 테두리 +
+ *  흰 원 + 카테고리 선 아이콘. 앱 전체에서 핀 생김새가 하나로 통일되도록 STAY와 같은 수식을 씀.
+ *  흰 테두리(ring)는 지도 배경이 어떤 색이든 핀 실루엣이 끊겨 보이지 않게 하는 장치라
+ *  구분이 잘 되게 하는 데 색 자체보다 효과가 크다.
+ *  scale로 확대 핀(마우스오버/선택 상태)을 같은 수식에서 만든다. */
+function buildBoardMapMarkerIcon(
+  g: any,
+  mood: string | null,
+  category?: string | null,
+  opts?: { scale?: number },
+): any {
   const color = BOARD_MOOD_COLOR[mood ?? ''] ?? '#6B7A93';
-  const iconSvg = BOARD_MOOD_PIN_ICON[mood ?? ''] ?? ICON_PIN;
-  const r = BOARD_PIN_HEAD_R;
+  const iconSvg =
+    BOARD_CATEGORY_PIN_ICON[category ?? ''] ||
+    BOARD_MOOD_PIN_FALLBACK[mood ?? ''] ||
+    BD_PIN_IC_LANDMARK;
+  const scale = opts?.scale ?? 1;
+  const r = BOARD_PIN_HEAD_R * scale;
   const tail = r * BOARD_PIN_TAIL_RATIO;
-  const pad = 6;
-  const w = Math.ceil(r * 2 + pad);
-  const h = Math.ceil(r + tail + pad);
+  const ring = BOARD_PIN_RING * scale;
+  const pad = 6 * scale;
+  // 원래 도형(그림자 포함)을 ring만큼 사방으로 띄운 캔버스 — 테두리가 잘리지 않게
+  const w = Math.ceil(r * 2 + pad + ring * 2);
+  const h = Math.ceil(r + tail + pad + ring * 2);
   const cx = w / 2;
-  const tipY = h - pad / 2;
+  const tipY = h - ring - pad / 2;
   const headCy = tipY - tail;
-  const whiteR = r - r * 0.24;
+  const whiteR = r - r * 0.26;
+  // 아이콘이 흰 원을 꽉 채우면 관람차·과녁처럼 선이 많은 그림이 뭉개져서 살짝 여백을 둔다
+  const iconSize = whiteR * 1.42;
+  const iconScale = iconSize / 24;
+  // 화면상 실제 획 두께를 고정(1.65px)하기 위해 아이콘 축소배율만큼 되곱해준다
+  const iconStroke = 1.65 / iconScale;
 
+  const tear = pinTearPath(cx, headCy, r, tipY);
   const shadow =
     '<ellipse cx="' + cx + '" cy="' + (tipY + r * 0.1) + '" rx="' + r * 0.42 + '" ry="' + r * 0.15 + '" fill="rgba(11,42,92,0.18)"/>';
   const inner =
-    '<g transform="translate(' + (cx - 5.5) + ',' + (headCy - 5.5) + ') scale(0.46)" fill="none" stroke="' + color +
-    '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + pinIconInner(iconSvg) + '</g>';
+    '<g transform="translate(' + (cx - iconSize / 2) + ',' + (headCy - iconSize / 2) + ') scale(' + iconScale +
+    ')" fill="none" stroke="' + color + '" stroke-width="' + iconStroke +
+    '" stroke-linecap="round" stroke-linejoin="round">' + pinIconInner(iconSvg) + '</g>';
 
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
     shadow +
-    '<path d="' + pinTearPath(cx, headCy, r, tipY) + '" fill="' + color + '"/>' +
+    // 같은 경로를 흰 굵은 선으로 한 번 먼저 그려 바깥 테두리를 만들고, 그 위에 색을 채운다
+    '<path d="' + tear + '" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="' + ring * 2 + '" stroke-linejoin="round"/>' +
+    '<path d="' + tear + '" fill="' + color + '"/>' +
     '<circle cx="' + cx + '" cy="' + headCy + '" r="' + whiteR + '" fill="#FFFFFF"/>' +
     inner +
     '</svg>';
@@ -752,16 +845,39 @@ function buildBoardMapMarkerIcon(g: any, mood: string | null): any {
   };
 }
 
+/** 축소했을 때 겹치는 핀들을 묶어 보여주는 클러스터 버블 — 핀과 같은 흰 테두리 + 남색 계열로
+ *  통일해서, 지도 위 요소가 "핀 아니면 핀 묶음" 두 가지로만 읽히게 한다. */
+function buildBoardClusterIcon(g: any, count: number): any {
+  const size = count < 10 ? 38 : count < 30 ? 46 : 54;
+  const c = size / 2;
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">' +
+    '<circle cx="' + c + '" cy="' + c + '" r="' + (c - 1) + '" fill="rgba(11,42,92,0.16)"/>' +
+    '<circle cx="' + c + '" cy="' + c + '" r="' + (c - 3) + '" fill="#FFFFFF"/>' +
+    '<circle cx="' + c + '" cy="' + c + '" r="' + (c - 5) + '" fill="#0B2A5C"/>' +
+    '<text x="' + c + '" y="' + c + '" text-anchor="middle" dominant-baseline="central" ' +
+    'font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" ' +
+    'font-size="' + (size * 0.36) + '" font-weight="700" fill="#FFFFFF">' + count + '</text>' +
+    '</svg>';
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new g.maps.Size(size, size),
+    anchor: new g.maps.Point(c, c),
+  };
+}
+
 async function renderBoardMapView(mapView: HTMLElement, tripId: string): Promise<void> {
   mapView.innerHTML = [
     '<div class="bd-map-view-canvas" id="bd-map-view-canvas">',
     '  <div class="bd-map-view-loading">지도를 불러오는 중...</div>',
     '</div>',
     '<div class="bd-map-view-legend">',
-    '  <span><span class="bd-map-legend-dot" style="--dot:' + BOARD_MOOD_COLOR['가고싶어'] + '"></span>관광(VISIT)</span>',
-    '  <span><span class="bd-map-legend-dot" style="--dot:' + BOARD_MOOD_COLOR['먹고싶어'] + '"></span>맛집(FOOD)</span>',
-    '  <span><span class="bd-map-legend-dot" style="--dot:' + BOARD_MOOD_COLOR['하고싶어'] + '"></span>액티비티(ACTIVITY)</span>',
-    '  <span><span class="bd-map-legend-dot" style="--dot:' + BOARD_MOOD_COLOR['숙소'] + '"></span>숙소(STAY)</span>',
+    ...GATES.map((gt) =>
+      '  <button type="button" class="bd-map-legend-chip" data-legend-mood="' + gt.key + '" aria-pressed="true">' +
+      '<span class="bd-map-legend-dot" style="--dot:' + BOARD_MOOD_COLOR[gt.key] + '"></span>' +
+      escapeHtml(BOARD_GATE_LEGEND_LABEL[gt.key] ?? gt.label) +
+      '</button>'),
+    '  <span class="bd-map-legend-hint">칩을 눌러 켜고 끌 수 있어요</span>',
     '</div>',
   ].join('');
 
@@ -793,29 +909,54 @@ async function renderBoardMapView(mapView: HTMLElement, tripId: string): Promise
   const avgLat = places.reduce((s, p) => s + p.lat!, 0) / places.length;
   const avgLng = places.reduce((s, p) => s + p.lng!, 0) / places.length;
 
-  // 구글 기본 스타일(디테일 버전) 그대로 — styles를 따로 지정하지 않음
+  // 구글 기본 POI 아이콘을 눌러 우리 핀이 묻히지 않게 함(MAP_STYLE_BOARD 주석 참고).
+  // clickableIcons:false — 구글 POI를 눌러도 구글 정보창이 뜨지 않게(우리 정보창만 뜨도록)
   const map = new g.maps.Map(mapEl, {
     center: { lat: avgLat, lng: avgLng },
     zoom: 13,
     gestureHandling: 'greedy',
+    styles: MAP_STYLE_BOARD,
+    clickableIcons: false,
   });
   boardMapInstance = map;
 
+  boardMapClusterer?.clearMarkers();
+  boardMapClusterer = null;
   boardMapMarkers.forEach((m) => m.setMap(null));
   boardMapMarkers = [];
+  boardMapEntries = [];
 
   const bounds = new g.maps.LatLngBounds();
   const infoWindow = new g.maps.InfoWindow();
+  // 마우스오버/선택으로 확대된 핀을 원래 크기로 되돌리기 위해 기본 아이콘을 들고 있는다
+  let selectedMarker: any = null;
 
   places.forEach((p) => {
+    const baseIcon = buildBoardMapMarkerIcon(g, p.mood, p.category);
+    const bigIcon = buildBoardMapMarkerIcon(g, p.mood, p.category, { scale: BOARD_PIN_HOVER_SCALE });
     const marker = new g.maps.Marker({
       position: { lat: p.lat, lng: p.lng },
-      map,
       title: p.name,
-      icon: buildBoardMapMarkerIcon(g, p.mood),
+      icon: baseIcon,
+    });
+
+    marker.addListener('mouseover', () => {
+      if (marker === selectedMarker) return;
+      marker.setIcon(bigIcon);
+      marker.setZIndex(900);
+    });
+    marker.addListener('mouseout', () => {
+      if (marker === selectedMarker) return;
+      marker.setIcon(baseIcon);
+      marker.setZIndex(null);
     });
 
     marker.addListener('click', () => {
+      // 직전에 선택돼 있던 핀은 기본 크기로 되돌린다
+      if (selectedMarker && selectedMarker !== marker) selectedMarker.__bdReset?.();
+      selectedMarker = marker;
+      marker.setIcon(bigIcon);
+      marker.setZIndex(1000);
       const gate = GATES.find((gt) => gt.key === p.mood);
       infoWindow.setContent([
         '<div class="bd-map-infowin">',
@@ -834,11 +975,74 @@ async function renderBoardMapView(mapView: HTMLElement, tripId: string): Promise
       });
     });
 
+    // 선택 해제 시 되돌리는 방법을 마커 자신이 들고 있게 해서, 위 click 핸들러가
+    // 다른 마커의 baseIcon을 몰라도 되도록 한다
+    marker.__bdReset = () => {
+      marker.setIcon(baseIcon);
+      marker.setZIndex(null);
+    };
+
     boardMapMarkers.push(marker);
+    boardMapEntries.push({ marker, mood: p.mood ?? '' });
     bounds.extend({ lat: p.lat, lng: p.lng });
   });
 
+  // 정보창을 닫으면 선택 상태도 푼다
+  infoWindow.addListener('closeclick', () => {
+    selectedMarker?.__bdReset?.();
+    selectedMarker = null;
+  });
+
+  // 축소하면 겹치는 핀들을 개수 버블로 묶는다 — 핀이 빽빽할 때 서로 가려지는 문제 해결.
+  // 지도를 닫았다 다시 열어도 범례에서 꺼둔 게이트는 계속 꺼져 있어야 하므로 처음부터 걸러서 넣는다
+  boardMapClusterer = new MarkerClusterer({
+    map,
+    markers: boardMapEntries.filter((e) => !boardMapHiddenMoods.has(e.mood)).map((e) => e.marker),
+    renderer: {
+      render: ({ count, position }: any) =>
+        new g.maps.Marker({
+          position,
+          icon: buildBoardClusterIcon(g, count),
+          zIndex: 500 + count,
+        }),
+    },
+  });
+
+  bindBoardMapLegendFilter(mapView);
+
   if (!bounds.isEmpty()) map.fitBounds(bounds, 48);
+}
+
+/** 범례 칩 = 게이트별 표시/숨김 토글. 담은 장소가 많아지면 네 게이트가 한 지도에 다 겹쳐서
+ *  보기 어려워지므로, 지금 보고 싶은 게이트만 남길 수 있게 한다. */
+function bindBoardMapLegendFilter(mapView: HTMLElement): void {
+  mapView.querySelectorAll('[data-legend-mood]').forEach((el) => {
+    const chip = el as HTMLButtonElement;
+    const mood = chip.dataset.legendMood!;
+    chip.setAttribute('aria-pressed', String(!boardMapHiddenMoods.has(mood)));
+    chip.classList.toggle('off', boardMapHiddenMoods.has(mood));
+
+    chip.addEventListener('click', () => {
+      if (boardMapHiddenMoods.has(mood)) boardMapHiddenMoods.delete(mood);
+      else boardMapHiddenMoods.add(mood);
+      chip.setAttribute('aria-pressed', String(!boardMapHiddenMoods.has(mood)));
+      chip.classList.toggle('off', boardMapHiddenMoods.has(mood));
+      applyBoardMapMoodFilter();
+    });
+  });
+}
+
+/** 숨긴 게이트의 마커를 지도와 클러스터러 양쪽에서 빼고, 남은 것만 다시 묶는다.
+ *  (클러스터러가 마커의 지도 표시를 직접 관리하므로 setMap만 만져서는 안 되고
+ *   clearMarkers → addMarkers로 대상 집합 자체를 갈아끼워야 한다) */
+function applyBoardMapMoodFilter(): void {
+  if (!boardMapClusterer) return;
+  const visible = boardMapEntries.filter((e) => !boardMapHiddenMoods.has(e.mood)).map((e) => e.marker);
+  boardMapClusterer.clearMarkers();
+  boardMapEntries.forEach((e) => {
+    if (boardMapHiddenMoods.has(e.mood)) e.marker.setMap(null);
+  });
+  boardMapClusterer.addMarkers(visible);
 }
 
 /* ── 실시간 동기화 ── */

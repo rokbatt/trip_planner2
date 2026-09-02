@@ -96,6 +96,26 @@
 .bd-map-view-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .bd-map-legend-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dot); flex-shrink: 0; }
 
+/* 범례 = 게이트별 표시/숨김 토글 버튼. 꺼진 칩은 색을 빼고 점만 테두리로 남겨 "지금 안 보이는 것"임을 알린다 */
+.bd-map-legend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid rgba(130,150,170,0.32);
+  border-radius: 999px;
+  background: #FFFFFF;
+  font: inherit;
+  font-size: 11.5px;
+  color: #334155;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease;
+}
+.bd-map-legend-chip:hover { background: #F1F6FB; border-color: rgba(130,150,170,0.55); }
+.bd-map-legend-chip.off { background: #F8FAFC; color: #94A3B8; opacity: 0.75; }
+.bd-map-legend-chip.off .bd-map-legend-dot { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
+.bd-map-legend-hint { font-size: 11px; color: #94A3B8; }
+
 /* 마커 클릭 시 뜨는 정보창 — Google 기본 InfoWindow 안에 들어가는 커스텀 콘텐츠 */
 .bd-map-infowin { width: 180px; font-family: inherit; }
 .bd-map-infowin-photo { width: 100%; height: 90px; border-radius: 8px; background-size: cover; background-position: center; margin-bottom: 6px; }

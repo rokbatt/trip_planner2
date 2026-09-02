@@ -10,6 +10,7 @@
     "types": "npx supabase gen types typescript --project-id YOUR_PROJECT_ID > src/types/database.ts"
   },
   "dependencies": {
+    "@googlemaps/markerclusterer": "^2.6.2",
     "@supabase/supabase-js": "^2.49.1",
     "@turf/bbox": "^7.3.5",
     "@turf/convex": "^7.3.5",
