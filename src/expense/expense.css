@@ -117,6 +117,22 @@
   cursor: pointer;
   font-family: var(--font-sans);
 }
+.ex-stat-copy-btn {
+  border: none;
+  background: none;
+  padding: 3px;
+  border-radius: 6px;
+  color: var(--al-text-tertiary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--al-duration) var(--al-ease);
+}
+.ex-stat-copy-btn:hover { background: rgba(130,150,170,0.14); color: var(--al-text); }
+.ex-stat-copy-btn svg { width: 14px; height: 14px; display: block; }
+.ex-stat-copy-btn.is-copied { color: #0a7d43; background: rgba(10,125,67,0.1); }
 .ex-stat-value {
   font-size: 22px;
   font-weight: 700;

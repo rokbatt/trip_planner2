@@ -238,6 +238,74 @@ export function settlementSummaryText(ctx: ExpenseCtx): string {
   return '[정산 안내]\n' + transfers.map((t) => memberName(ctx, t.from) + ' → ' + memberName(ctx, t.to) + ' : ' + fmtKRW(t.amount)).join('\n');
 }
 
+/**
+ * 멤버별 "실제 부담액" 텍스트 — 결제 완료된 개인 지출 + 결제 완료된 공동 지출의 n분의 1을
+ * 합산해 사람별로 정리한다. 지출명·메모까지 포함해 AI에 붙여넣어 예산 효율을 분석하기
+ * 좋게 만든 것 — "현재 사용" 카드의 복사 버튼이 쓴다.
+ *
+ * 예정(is_paid=false) 항목은 정산과 마찬가지로 포함하지 않는다 — "현재 사용" 카드가 보여주는
+ * 실제 지출 총액과 이 텍스트의 [전체 합계]가 항상 일치해야 신뢰할 수 있는 자료가 된다.
+ * 환산 불가 항목(krwOf가 null)도 조용히 빼지 않고 "환산 불가"로 표시하되 합계엔 0으로
+ * 반영한다(원칙 3-1 — sumPaid/computeSettlement와 같은 처리).
+ */
+export function buildPersonalBreakdownText(ctx: ExpenseCtx): string {
+  interface Bucket { lines: string[]; total: number; }
+  const UNASSIGNED = '__unassigned__';
+  const perMember = new Map<string, Bucket>();
+  const ensure = (uid: string): Bucket => {
+    if (!perMember.has(uid)) perMember.set(uid, { lines: [], total: 0 });
+    return perMember.get(uid)!;
+  };
+  ctx.members.forEach((m) => ensure(m.user_id));
+  const allIds = ctx.members.map((m) => m.user_id);
+
+  for (const e of ctx.expenses) {
+    if (!e.is_paid) continue;
+    const krw = krwOf(e);
+    const detail = e.memo ? e.title + ' · ' + e.memo : e.title;
+    const localNote = e.currency !== 'KRW' ? ' (' + fmtAmount(e.amount, e.currency) + ')' : '';
+
+    if (modeOf(e) === 'PERSONAL') {
+      const amt = krw ?? 0;
+      const line = '- ' + detail + localNote + ' : ' + (krw != null ? fmtKRW(amt) : '환산 불가');
+      const b = ensure(e.paid_by ?? UNASSIGNED);
+      b.lines.push(line);
+      b.total += amt;
+    } else {
+      const splitIds = e.split_user_ids && e.split_user_ids.length > 0 ? e.split_user_ids : allIds;
+      if (splitIds.length === 0) continue;
+      const share = krw != null ? krw / splitIds.length : 0;
+      const line = '- ' + detail + localNote + ' (공동 ' + splitIds.length + '인분의 1) : ' + (krw != null ? fmtKRW(share) : '환산 불가');
+      splitIds.forEach((uid) => {
+        const b = ensure(uid);
+        b.lines.push(line);
+        b.total += share;
+      });
+    }
+  }
+
+  const sections = ctx.members.map((m) => {
+    const b = perMember.get(m.user_id)!;
+    const body = b.lines.length > 0 ? b.lines.join('\n') : '- (내역 없음)';
+    return '■ ' + (m.display_name || '멤버') + '\n' + body + '\n합계: ' + fmtKRW(b.total);
+  });
+
+  const unassigned = perMember.get(UNASSIGNED);
+  if (unassigned) {
+    sections.push('■ 결제자 미지정\n' + unassigned.lines.join('\n') + '\n합계: ' + fmtKRW(unassigned.total));
+  }
+
+  const grandTotal = Array.from(perMember.values()).reduce((acc, b) => acc + b.total, 0);
+
+  return [
+    '[개인별 지출 내역]',
+    '',
+    sections.join('\n\n'),
+    '',
+    '[전체 합계] ' + fmtKRW(grandTotal),
+  ].join('\n');
+}
+
 /* ══════════════ 환율 · 저장 payload ══════════════ */
 
 /** 환율 캐시 — 같은 세션에서 통화당 1회만 조회(원칙 3-2) */
