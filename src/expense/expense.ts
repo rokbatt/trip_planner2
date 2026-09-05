@@ -157,7 +157,21 @@ function computeSettlement(): { rows: SettleRow[]; transfers: Array<{ from: stri
   return computeSettlementOf(ctx());
 }
 function settlementSummaryText(): string { return settlementSummaryTextOf(ctx()); }
-function buildPersonalBreakdownText(selectedUserIds?: string[]): string { return buildPersonalBreakdownTextOf(ctx(), selectedUserIds); }
+function buildPersonalBreakdownText(selectedUserIds?: string[]): string {
+  return buildPersonalBreakdownTextOf(ctx(), selectedUserIds, tripPeriodLabel());
+}
+
+/** 트립의 시작~종료일을 "12.18 – 12.20" 형태로 — 복사한 텍스트만 따로 떼어봐도
+ *  어느 여행 건인지 알 수 있게 제목 아래 붙인다. 날짜가 없으면 줄 자체를 생략(3-1). */
+function tripPeriodLabel(): string | null {
+  const trip = store.get('currentTrip');
+  if (!trip?.start_date || !trip?.end_date) return null;
+  const fmt = (d: string) => {
+    const dt = new Date(d + 'T00:00:00');
+    return (dt.getMonth() + 1) + '.' + String(dt.getDate()).padStart(2, '0');
+  };
+  return fmt(trip.start_date) + ' – ' + fmt(trip.end_date);
+}
 function fetchRate(currency: string): Promise<{ rate: number | null; source: string }> { return fetchRateOf(currency); }
 function buildExpensePayload(fields: {
   category: string; title: string; amount: number; currency: string; expenseDate: string | null;
@@ -406,13 +420,11 @@ function statsHtml(): string {
     gauge,
     (remaining != null ? '<div class="ex-stat-foot' + (over ? ' is-over' : '') + '">' + (over ? '예산 초과 ' : '남은 예산 ') + fmtKRW(Math.abs(remaining)) + '</div>' : ''),
     '  </div>',
-    '  <div class="ex-stat-card al-glass">',
+    '  <div class="ex-stat-card al-glass ex-stat-card-usage">',
     '    <div class="ex-stat-card-top"><span class="ex-stat-label">현재 사용</span>',
-    '      <div class="ex-copy-wrap">',
-    '        <button type="button" class="ex-stat-copy-btn" id="ex-copy-breakdown" title="개인별 지출 내역 텍스트로 복사(AI 분석용)">' + IC_COPY + '</button>',
-    '        <div class="ex-copy-popover' + (copyPopoverOpen ? ' is-open' : '') + '" id="ex-copy-popover">' + (copyPopoverOpen ? copyPopoverHtml() : '') + '</div>',
-    '      </div>',
+    '      <button type="button" class="ex-stat-copy-btn" id="ex-copy-breakdown" title="개인별 지출 내역 텍스트로 복사(AI 분석용)">' + IC_COPY + '</button>',
     '    </div>',
+    '    <div class="ex-copy-popover' + (copyPopoverOpen ? ' is-open' : '') + '" id="ex-copy-popover">' + (copyPopoverOpen ? copyPopoverHtml() : '') + '</div>',
     '    <div class="ex-stat-value">' + fmtKRW(usage) + '</div>',
     '    <div class="ex-usage-split">',
     '      <div class="ex-usage-split-bar"><span style="width:' + sharedPct + '%;background:var(--al-action)"></span><span style="width:' + personalPct + '%;background:var(--al-text-tertiary)"></span></div>',
@@ -1657,7 +1669,7 @@ export async function renderExpenseContent(container: HTMLElement, tripId: strin
       const catgridEl = rootEl?.querySelector('#ex-catgrid');
       if (catgridEl) { catgridEl.innerHTML = EXPENSE_CATEGORIES.map(categoryCardHtml).join(''); bindOverviewData(); }
     }
-    if (!(e.target as HTMLElement).closest('.ex-copy-wrap') && copyPopoverOpen) {
+    if (!(e.target as HTMLElement).closest('.ex-stat-card-usage') && copyPopoverOpen) {
       copyPopoverOpen = false;
       renderCopyPopover();
     }
