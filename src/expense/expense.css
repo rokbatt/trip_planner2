@@ -134,11 +134,16 @@
 .ex-stat-copy-btn svg { width: 14px; height: 14px; display: block; }
 .ex-stat-copy-btn.is-copied { color: #0a7d43; background: rgba(10,125,67,0.1); }
 
-.ex-copy-wrap { position: relative; display: inline-flex; }
+/* 팝오버는 버튼의 작은 wrap이 아니라 카드 자체(.ex-stat-card-usage)를 기준으로 위치를
+ * 잡는다 — 버튼 기준으로 앵커링하면 폭이 좁은 wrap 때문에 카드 경계를 넘어가 옆 카드
+ * 위에 걸치거나 잘려 보이는 문제가 있었음. left/right를 카드 안쪽 여백에 맞춰두면
+ * 카드 폭 안에 항상 딱 맞게 들어간다. */
+.ex-stat-card-usage { position: relative; }
 
 .ex-copy-popover {
   position: absolute;
-  top: 24px;
+  top: 34px;
+  left: 0;
   right: 0;
   background: #fff;
   border: 1px solid var(--al-divider);
@@ -148,7 +153,6 @@
   display: none;
   flex-direction: column;
   gap: var(--s2);
-  width: 220px;
   z-index: 30;
 }
 .ex-copy-popover.is-open { display: flex; }

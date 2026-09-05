@@ -253,8 +253,11 @@ export function settlementSummaryText(ctx: ExpenseCtx): string {
  * 실제 지출 총액과 (필터 없을 때의) [합계]가 항상 일치해야 신뢰할 수 있는 자료가 된다.
  * 환산 불가 항목(krwOf가 null)도 조용히 빼지 않고 "환산 불가"로 표시하되 합계엔 0으로
  * 반영한다(원칙 3-1 — sumPaid/computeSettlement와 같은 처리).
+ *
+ * `tripPeriod`(예: "12.18 – 12.20")를 주면 제목 바로 아래 한 줄로 붙는다 — 나중에 이
+ * 텍스트만 따로 떼어놓고 봐도 어느 여행 건인지 알 수 있게 하기 위함.
  */
-export function buildPersonalBreakdownText(ctx: ExpenseCtx, selectedUserIds?: string[]): string {
+export function buildPersonalBreakdownText(ctx: ExpenseCtx, selectedUserIds?: string[], tripPeriod?: string | null): string {
   interface Bucket { lines: string[]; total: number; }
   const UNASSIGNED = '__unassigned__';
   const perMember = new Map<string, Bucket>();
@@ -312,8 +315,10 @@ export function buildPersonalBreakdownText(ctx: ExpenseCtx, selectedUserIds?: st
     ? '[개인별 지출 내역 — 선택: ' + membersToShow.map((m) => m.display_name || '멤버').join(', ') + ']'
     : '[개인별 지출 내역]';
 
+  const headerLines = tripPeriod ? [title, tripPeriod] : [title];
+
   return [
-    title,
+    ...headerLines,
     '',
     sections.join('\n\n'),
     '',
