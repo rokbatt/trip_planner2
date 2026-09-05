@@ -49,6 +49,7 @@ import {
   unconvertedCount as unconvertedCountOf,
   computeSettlement as computeSettlementOf,
   settlementSummaryText as settlementSummaryTextOf,
+  buildPersonalBreakdownText as buildPersonalBreakdownTextOf,
   buildExpensePayload as buildExpensePayloadOf,
   fetchRate as fetchRateOf,
 } from './expenseModel';
@@ -74,6 +75,8 @@ const IC_CHEV_L = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const IC_CHEV_R = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>';
 const IC_CHEV_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
 const IC_CHEV_UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>';
+const IC_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>';
+const IC_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>';
 
 const TIPS = [
   '정산은 "결제 완료" + "공동 지출" 항목만 반영돼요.',
@@ -151,6 +154,7 @@ function computeSettlement(): { rows: SettleRow[]; transfers: Array<{ from: stri
   return computeSettlementOf(ctx());
 }
 function settlementSummaryText(): string { return settlementSummaryTextOf(ctx()); }
+function buildPersonalBreakdownText(): string { return buildPersonalBreakdownTextOf(ctx()); }
 function fetchRate(currency: string): Promise<{ rate: number | null; source: string }> { return fetchRateOf(currency); }
 function buildExpensePayload(fields: {
   category: string; title: string; amount: number; currency: string; expenseDate: string | null;
@@ -181,6 +185,28 @@ function shareSettlement(): void {
   navigator.clipboard.writeText(text).then(
     () => alert('정산 내역을 복사했어요. 채팅에 붙여넣어 공유해보세요!\n\n' + text),
     () => alert(text)
+  );
+}
+
+/** "현재 사용" 카드의 복사 버튼 — 멤버별 실제 부담액(개인 지출 + 공동 지출 n분의 1)을
+ *  지출명·메모까지 포함한 텍스트로 클립보드에 복사한다(ChatGPT 등 AI에 붙여넣어 예산
+ *  효율을 분석하기 좋게). 텍스트가 길어서 정산 공유처럼 alert에 그대로 띄우지 않고,
+ *  버튼 아이콘을 잠깐 체크 표시로 바꿔 성공을 알린다. */
+function copyPersonalBreakdown(btn: HTMLButtonElement): void {
+  const text = buildPersonalBreakdownText();
+  navigator.clipboard.writeText(text).then(
+    () => {
+      const original = btn.innerHTML;
+      btn.innerHTML = IC_CHECK;
+      btn.classList.add('is-copied');
+      setTimeout(() => {
+        btn.innerHTML = original;
+        btn.classList.remove('is-copied');
+      }, 1500);
+    },
+    () => {
+      window.prompt('복사에 실패했어요 — 아래 내용을 직접 복사하세요', text);
+    }
   );
 }
 
@@ -313,7 +339,7 @@ function statsHtml(): string {
     (remaining != null ? '<div class="ex-stat-foot' + (over ? ' is-over' : '') + '">' + (over ? '예산 초과 ' : '남은 예산 ') + fmtKRW(Math.abs(remaining)) + '</div>' : ''),
     '  </div>',
     '  <div class="ex-stat-card al-glass">',
-    '    <div class="ex-stat-card-top"><span class="ex-stat-label">현재 사용</span></div>',
+    '    <div class="ex-stat-card-top"><span class="ex-stat-label">현재 사용</span><button type="button" class="ex-stat-copy-btn" id="ex-copy-breakdown" title="개인별 지출 내역 텍스트로 복사(AI 분석용)">' + IC_COPY + '</button></div>',
     '    <div class="ex-stat-value">' + fmtKRW(usage) + '</div>',
     '    <div class="ex-usage-split">',
     '      <div class="ex-usage-split-bar"><span style="width:' + sharedPct + '%;background:var(--al-action)"></span><span style="width:' + personalPct + '%;background:var(--al-text-tertiary)"></span></div>',
@@ -450,6 +476,7 @@ function bindOverviewData(): void {
   if (!rootEl) return;
 
   rootEl.querySelector('#ex-edit-total')?.addEventListener('click', () => switchTab('settings'));
+  rootEl.querySelector('#ex-copy-breakdown')?.addEventListener('click', (ev) => copyPersonalBreakdown(ev.currentTarget as HTMLButtonElement));
   rootEl.querySelector('#ex-perperson-detail')?.addEventListener('click', () => switchTab('settlement'));
   rootEl.querySelector('#ex-settle-detail')?.addEventListener('click', () => switchTab('settlement'));
   rootEl.querySelector('#ex-settle-cta')?.addEventListener('click', shareSettlement);
