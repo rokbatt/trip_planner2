@@ -124,6 +124,9 @@ let listPageSize = 20;
 
 let editingBudgetCategory: string | null = null; // 카테고리 그리드에서 인라인 편집 중인 카테고리(또는 'TOTAL')
 let expandedBatchGroups = new Set<string>(); // 펼쳐진 개인 지출 배치 묶음(그룹 키)
+let copyPopoverOpen = false; // "현재 사용" 카드의 복사 대상 선택 팝오버
+let copySelectedMemberIds = new Set<string>(); // 복사 대상으로 고른 멤버(다중 선택)
+let copySelectionTouched = false; // 한 번이라도 사용자가 선택을 건드렸는지 — 안 건드렸으면 팝오버를 열 때 전체 선택으로 기본값 채움
 let lastUsedCurrency = 'KRW';
 let quickAddMode: 'direct' | 'receipt' | 'sms' = 'direct';
 
@@ -154,7 +157,7 @@ function computeSettlement(): { rows: SettleRow[]; transfers: Array<{ from: stri
   return computeSettlementOf(ctx());
 }
 function settlementSummaryText(): string { return settlementSummaryTextOf(ctx()); }
-function buildPersonalBreakdownText(): string { return buildPersonalBreakdownTextOf(ctx()); }
+function buildPersonalBreakdownText(selectedUserIds?: string[]): string { return buildPersonalBreakdownTextOf(ctx(), selectedUserIds); }
 function fetchRate(currency: string): Promise<{ rate: number | null; source: string }> { return fetchRateOf(currency); }
 function buildExpensePayload(fields: {
   category: string; title: string; amount: number; currency: string; expenseDate: string | null;
@@ -190,12 +193,77 @@ function shareSettlement(): void {
 
 /** "현재 사용" 카드의 복사 버튼 — 멤버별 실제 부담액(개인 지출 + 공동 지출 n분의 1)을
  *  지출명·메모까지 포함한 텍스트로 클립보드에 복사한다(ChatGPT 등 AI에 붙여넣어 예산
- *  효율을 분석하기 좋게). 텍스트가 길어서 정산 공유처럼 alert에 그대로 띄우지 않고,
- *  버튼 아이콘을 잠깐 체크 표시로 바꿔 성공을 알린다. */
-function copyPersonalBreakdown(btn: HTMLButtonElement): void {
-  const text = buildPersonalBreakdownText();
+ *  효율을 분석하기 좋게). 버튼을 누르면 바로 복사하지 않고, 누구 것을 복사할지 다중
+ *  선택하는 팝오버가 먼저 뜬다(전원 복사만 지원하던 이전 버전을 대체). */
+function copyPopoverHtml(): string {
+  if (members.length === 0) {
+    return '<div class="ex-copy-popover-empty">멤버가 없어요</div>';
+  }
+  const allSelected = members.every((m) => copySelectedMemberIds.has(m.user_id));
+  const chips = members.map((m) => {
+    const active = copySelectedMemberIds.has(m.user_id);
+    return '<button type="button" class="ex-copy-chip' + (active ? ' is-active' : '') + '" data-uid="' + m.user_id + '">' + avatarHtml(m.user_id, 'sm') + '<span>' + escapeHtml(m.display_name || '멤버') + '</span></button>';
+  }).join('');
+  const disabled = copySelectedMemberIds.size === 0;
+  return [
+    '<div class="ex-copy-popover-title">누구 걸 복사할까요?</div>',
+    '<div class="ex-copy-popover-members">' + chips + '</div>',
+    '<button type="button" class="ex-copy-popover-selectall" id="ex-copy-selectall">' + (allSelected ? '전체 해제' : '전체 선택') + '</button>',
+    '<button type="button" class="al-btn-primary ex-copy-popover-confirm" id="ex-copy-confirm"' + (disabled ? ' disabled' : '') + '>' + IC_COPY + ' 복사하기</button>',
+  ].join('');
+}
+
+function renderCopyPopover(): void {
+  const el = rootEl?.querySelector('#ex-copy-popover') as HTMLElement | null;
+  if (!el) return;
+  el.classList.toggle('is-open', copyPopoverOpen);
+  el.innerHTML = copyPopoverOpen ? copyPopoverHtml() : '';
+  if (copyPopoverOpen) bindCopyPopover();
+}
+
+function toggleCopyPopover(): void {
+  copyPopoverOpen = !copyPopoverOpen;
+  // 처음 열 때는(사용자가 아직 한 번도 건드린 적 없으면) 전원 선택을 기본값으로 채워둔다
+  if (copyPopoverOpen && !copySelectionTouched) {
+    members.forEach((m) => copySelectedMemberIds.add(m.user_id));
+  }
+  renderCopyPopover();
+}
+
+function bindCopyPopover(): void {
+  rootEl?.querySelectorAll('.ex-copy-chip').forEach((btn) => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const uid = (btn as HTMLElement).dataset.uid!;
+      copySelectionTouched = true;
+      if (copySelectedMemberIds.has(uid)) copySelectedMemberIds.delete(uid);
+      else copySelectedMemberIds.add(uid);
+      renderCopyPopover();
+    });
+  });
+  rootEl?.querySelector('#ex-copy-selectall')?.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    copySelectionTouched = true;
+    const allSelected = members.every((m) => copySelectedMemberIds.has(m.user_id));
+    if (allSelected) copySelectedMemberIds.clear();
+    else members.forEach((m) => copySelectedMemberIds.add(m.user_id));
+    renderCopyPopover();
+  });
+  rootEl?.querySelector('#ex-copy-confirm')?.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (copySelectedMemberIds.size === 0) return;
+    copyPersonalBreakdown(Array.from(copySelectedMemberIds));
+    copyPopoverOpen = false;
+    renderCopyPopover();
+  });
+}
+
+function copyPersonalBreakdown(selectedUserIds: string[]): void {
+  const text = buildPersonalBreakdownText(selectedUserIds);
+  const btn = rootEl?.querySelector('#ex-copy-breakdown') as HTMLButtonElement | null;
   navigator.clipboard.writeText(text).then(
     () => {
+      if (!btn) return;
       const original = btn.innerHTML;
       btn.innerHTML = IC_CHECK;
       btn.classList.add('is-copied');
@@ -339,7 +407,12 @@ function statsHtml(): string {
     (remaining != null ? '<div class="ex-stat-foot' + (over ? ' is-over' : '') + '">' + (over ? '예산 초과 ' : '남은 예산 ') + fmtKRW(Math.abs(remaining)) + '</div>' : ''),
     '  </div>',
     '  <div class="ex-stat-card al-glass">',
-    '    <div class="ex-stat-card-top"><span class="ex-stat-label">현재 사용</span><button type="button" class="ex-stat-copy-btn" id="ex-copy-breakdown" title="개인별 지출 내역 텍스트로 복사(AI 분석용)">' + IC_COPY + '</button></div>',
+    '    <div class="ex-stat-card-top"><span class="ex-stat-label">현재 사용</span>',
+    '      <div class="ex-copy-wrap">',
+    '        <button type="button" class="ex-stat-copy-btn" id="ex-copy-breakdown" title="개인별 지출 내역 텍스트로 복사(AI 분석용)">' + IC_COPY + '</button>',
+    '        <div class="ex-copy-popover' + (copyPopoverOpen ? ' is-open' : '') + '" id="ex-copy-popover">' + (copyPopoverOpen ? copyPopoverHtml() : '') + '</div>',
+    '      </div>',
+    '    </div>',
     '    <div class="ex-stat-value">' + fmtKRW(usage) + '</div>',
     '    <div class="ex-usage-split">',
     '      <div class="ex-usage-split-bar"><span style="width:' + sharedPct + '%;background:var(--al-action)"></span><span style="width:' + personalPct + '%;background:var(--al-text-tertiary)"></span></div>',
@@ -476,7 +549,11 @@ function bindOverviewData(): void {
   if (!rootEl) return;
 
   rootEl.querySelector('#ex-edit-total')?.addEventListener('click', () => switchTab('settings'));
-  rootEl.querySelector('#ex-copy-breakdown')?.addEventListener('click', (ev) => copyPersonalBreakdown(ev.currentTarget as HTMLButtonElement));
+  rootEl.querySelector('#ex-copy-breakdown')?.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    toggleCopyPopover();
+  });
+  if (copyPopoverOpen) bindCopyPopover();
   rootEl.querySelector('#ex-perperson-detail')?.addEventListener('click', () => switchTab('settlement'));
   rootEl.querySelector('#ex-settle-detail')?.addEventListener('click', () => switchTab('settlement'));
   rootEl.querySelector('#ex-settle-cta')?.addEventListener('click', shareSettlement);
@@ -1549,6 +1626,9 @@ export function teardownExpense(): void {
   listPageSize = 20;
   editingBudgetCategory = null;
   expandedBatchGroups = new Set();
+  copyPopoverOpen = false;
+  copySelectedMemberIds = new Set();
+  copySelectionTouched = false;
   tipIndex = 0;
   quickAddMode = 'direct';
 }
@@ -1572,11 +1652,14 @@ export async function renderExpenseContent(container: HTMLElement, tripId: strin
   rootEl.querySelector('#ex-fab')?.addEventListener('click', () => openSheet(null));
 
   outsideClickHandler = (e: MouseEvent) => {
-    if ((e.target as HTMLElement).closest('.ex-catcard-top')) return;
-    if (openCategoryMenu !== null) {
+    if (!(e.target as HTMLElement).closest('.ex-catcard-top') && openCategoryMenu !== null) {
       openCategoryMenu = null;
       const catgridEl = rootEl?.querySelector('#ex-catgrid');
       if (catgridEl) { catgridEl.innerHTML = EXPENSE_CATEGORIES.map(categoryCardHtml).join(''); bindOverviewData(); }
+    }
+    if (!(e.target as HTMLElement).closest('.ex-copy-wrap') && copyPopoverOpen) {
+      copyPopoverOpen = false;
+      renderCopyPopover();
     }
   };
   document.addEventListener('click', outsideClickHandler);

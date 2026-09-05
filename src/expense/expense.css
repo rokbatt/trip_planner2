@@ -133,6 +133,74 @@
 .ex-stat-copy-btn:hover { background: rgba(130,150,170,0.14); color: var(--al-text); }
 .ex-stat-copy-btn svg { width: 14px; height: 14px; display: block; }
 .ex-stat-copy-btn.is-copied { color: #0a7d43; background: rgba(10,125,67,0.1); }
+
+.ex-copy-wrap { position: relative; display: inline-flex; }
+
+.ex-copy-popover {
+  position: absolute;
+  top: 24px;
+  right: 0;
+  background: #fff;
+  border: 1px solid var(--al-divider);
+  border-radius: var(--al-radius);
+  box-shadow: var(--shadow-lg);
+  padding: var(--s3);
+  display: none;
+  flex-direction: column;
+  gap: var(--s2);
+  width: 220px;
+  z-index: 30;
+}
+.ex-copy-popover.is-open { display: flex; }
+.ex-copy-popover-title { font-size: 12px; font-weight: 700; color: var(--al-text); }
+.ex-copy-popover-empty { font-size: 12px; color: var(--al-text-tertiary); padding: var(--s2) 0; }
+
+.ex-copy-popover-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.ex-copy-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--al-divider);
+  background: #fff;
+  padding: 3px 10px 3px 3px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--al-text-secondary);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: all var(--al-duration) var(--al-ease);
+}
+.ex-copy-chip.is-active { border-color: var(--al-action); color: var(--al-text); background: rgba(47,134,214,0.06); font-weight: 600; }
+
+.ex-copy-popover-selectall {
+  align-self: flex-start;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--al-action);
+  cursor: pointer;
+  font-family: var(--font-sans);
+}
+.ex-copy-popover-confirm {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 12px;
+  font-size: 12px;
+}
+.ex-copy-popover-confirm svg { width: 14px; height: 14px; }
+.ex-copy-popover-confirm:disabled { opacity: 0.5; cursor: not-allowed; }
 .ex-stat-value {
   font-size: 22px;
   font-weight: 700;

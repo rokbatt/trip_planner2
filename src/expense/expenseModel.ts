@@ -243,12 +243,18 @@ export function settlementSummaryText(ctx: ExpenseCtx): string {
  * 합산해 사람별로 정리한다. 지출명·메모까지 포함해 AI에 붙여넣어 예산 효율을 분석하기
  * 좋게 만든 것 — "현재 사용" 카드의 복사 버튼이 쓴다.
  *
+ * `selectedUserIds`를 주면 그 사람들 섹션만 텍스트에 포함한다(다중 선택 복사).
+ * 단, n분의 1 계산 자체는 선택 여부와 무관하게 전체 멤버 기준으로 그대로 하고, 필터는
+ * 마지막에 "어느 섹션을 보여줄지"에만 적용한다 — 선택되지 않은 사람이 있어도 선택된
+ * 사람의 공동 지출 분담액은 원래 몫(전체 인원 n분의 1) 그대로여야 하기 때문이다.
+ * 생략하거나 빈 배열을 주면 전체 멤버(+ 결제자 미지정) 섹션을 모두 포함한다.
+ *
  * 예정(is_paid=false) 항목은 정산과 마찬가지로 포함하지 않는다 — "현재 사용" 카드가 보여주는
- * 실제 지출 총액과 이 텍스트의 [전체 합계]가 항상 일치해야 신뢰할 수 있는 자료가 된다.
+ * 실제 지출 총액과 (필터 없을 때의) [합계]가 항상 일치해야 신뢰할 수 있는 자료가 된다.
  * 환산 불가 항목(krwOf가 null)도 조용히 빼지 않고 "환산 불가"로 표시하되 합계엔 0으로
  * 반영한다(원칙 3-1 — sumPaid/computeSettlement와 같은 처리).
  */
-export function buildPersonalBreakdownText(ctx: ExpenseCtx): string {
+export function buildPersonalBreakdownText(ctx: ExpenseCtx, selectedUserIds?: string[]): string {
   interface Bucket { lines: string[]; total: number; }
   const UNASSIGNED = '__unassigned__';
   const perMember = new Map<string, Bucket>();
@@ -284,25 +290,34 @@ export function buildPersonalBreakdownText(ctx: ExpenseCtx): string {
     }
   }
 
-  const sections = ctx.members.map((m) => {
+  const filterSet = selectedUserIds && selectedUserIds.length > 0 ? new Set(selectedUserIds) : null;
+  const membersToShow = filterSet ? ctx.members.filter((m) => filterSet.has(m.user_id)) : ctx.members;
+
+  const sections = membersToShow.map((m) => {
     const b = perMember.get(m.user_id)!;
     const body = b.lines.length > 0 ? b.lines.join('\n') : '- (내역 없음)';
     return '■ ' + (m.display_name || '멤버') + '\n' + body + '\n합계: ' + fmtKRW(b.total);
   });
 
+  // 결제자 미지정 몫은 특정 사람을 고른 게 아니므로, 필터 없이 전체를 볼 때만 덧붙인다
   const unassigned = perMember.get(UNASSIGNED);
-  if (unassigned) {
+  if (!filterSet && unassigned) {
     sections.push('■ 결제자 미지정\n' + unassigned.lines.join('\n') + '\n합계: ' + fmtKRW(unassigned.total));
   }
 
-  const grandTotal = Array.from(perMember.values()).reduce((acc, b) => acc + b.total, 0);
+  const grandTotal = membersToShow.reduce((acc, m) => acc + (perMember.get(m.user_id)?.total ?? 0), 0)
+    + (!filterSet && unassigned ? unassigned.total : 0);
+
+  const title = filterSet
+    ? '[개인별 지출 내역 — 선택: ' + membersToShow.map((m) => m.display_name || '멤버').join(', ') + ']'
+    : '[개인별 지출 내역]';
 
   return [
-    '[개인별 지출 내역]',
+    title,
     '',
     sections.join('\n\n'),
     '',
-    '[전체 합계] ' + fmtKRW(grandTotal),
+    '[합계] ' + fmtKRW(grandTotal),
   ].join('\n');
 }
 
