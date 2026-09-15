@@ -2,11 +2,47 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- viewport-fit=cover: 노치·홈바 기기에서 env(safe-area-inset-*)가 동작하려면 필수 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+  <title>몽실이 — 친구와 함께 짜는 여행 계획</title>
+  <meta name="description" content="여행지가 정해진 다음이 진짜 시작입니다. 가고 싶은 곳을 자유롭게 모으고, 숙소를 정하고, 동선을 짜고, 여행 중엔 오늘 할 일만 봅니다. 친구와 실시간으로 함께 쓰는 여행 플래너." />
+  <link rel="canonical" href="%SITE_URL%/" />
+
+  <!-- ── 공유 미리보기 (카카오톡·페이스북·슬랙 등) ──
+       이 서비스의 사실상 유일한 유입 경로가 "단톡방에 초대 링크 붙여넣기"라
+       여기가 비면 링크가 빈 카드로 뜬다. 문구·이미지를 바꿀 땐 그 점을 기억할 것. -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="몽실이" />
+  <meta property="og:locale" content="ko_KR" />
+  <meta property="og:title" content="몽실이 — 친구와 함께 짜는 여행 계획" />
+  <meta property="og:description" content="가고 싶은 곳을 모으고, 숙소를 정하고, 동선을 짜고, 여행 중엔 오늘 할 일만. 친구와 실시간으로 함께 쓰는 여행 플래너." />
+  <meta property="og:url" content="%SITE_URL%/" />
+  <meta property="og:image" content="%SITE_URL%/hero.jpg" />
+  <meta property="og:image:type" content="image/jpeg" />
+  <meta property="og:image:width" content="1920" />
+  <meta property="og:image:height" content="1080" />
+  <meta property="og:image:alt" content="해질 무렵 공항 라운지에서 이륙하는 비행기를 바라보는 사람" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="몽실이 — 친구와 함께 짜는 여행 계획" />
+  <meta name="twitter:description" content="가고 싶은 곳을 모으고, 숙소를 정하고, 동선을 짜고, 여행 중엔 오늘 할 일만." />
+  <meta name="twitter:image" content="%SITE_URL%/hero.jpg" />
+
+  <!-- ── 아이콘 · PWA ── -->
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#0B2A5C" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="몽실이" />
+
+  <!-- 지도는 게이트에 들어갈 때 utils/googleMaps.ts가 지연 로드한다(원칙 3-2).
+       여기서 미리 연결만 터 둬서 그때 지연을 줄인다. -->
+  <link rel="preconnect" href="https://maps.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
-  <title>몽실이 — 여행 플래너</title>
-  <script src="https://maps.googleapis.com/maps/api/js?key=%VITE_GOOGLE_MAPS_KEY%&libraries=places"></script>
 </head>
 <body>
   <!-- SPA 셸: 라우터가 이 안을 교체함 -->

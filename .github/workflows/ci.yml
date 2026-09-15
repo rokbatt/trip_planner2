@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: 타입체크 · 빌드
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Claude.md 8장 체크리스트의 "수정 후 tsc --noEmit && vite build로 검증했는가"를
+      # 사람 기억이 아니라 CI가 강제하도록 옮긴 것
+      - name: 타입체크
+        run: npx tsc --noEmit
+
+      - name: 빌드
+        run: npx vite build
+
+      # 원칙 3-7 — api/*.ts 하나가 서버리스 함수 하나. Hobby 플랜은 배포당 12개가 상한이고,
+      # 넘으면 로컬 빌드는 전부 통과하는데 Vercel "배포" 단계에서만 실패해서 원인 찾기가 어렵다.
+      # 그래서 배포 전에 여기서 먼저 막는다.
+      - name: 서버리스 함수 개수 확인 (Hobby 상한 12개)
+        run: |
+          COUNT=$(ls api/*.ts 2>/dev/null | wc -l)
+          echo "api/*.ts: ${COUNT}개 / 상한 12개"
+          if [ "$COUNT" -gt 12 ]; then
+            echo "::error::서버리스 함수가 ${COUNT}개입니다. Vercel Hobby 플랜 상한(12개)을 넘으면 배포가 실패합니다. 기존 파일에 kind 분기로 합쳐주세요 (Claude.md 3-7)."
+            exit 1
+          fi
