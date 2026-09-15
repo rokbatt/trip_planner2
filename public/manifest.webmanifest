@@ -1,0 +1,19 @@
+{
+  "name": "몽실이 — 친구와 함께 짜는 여행 계획",
+  "short_name": "몽실이",
+  "description": "아이디어를 모으고, 숙소를 정하고, 동선을 짜고, 여행 중엔 오늘 할 일만 봅니다. 친구와 함께 쓰는 여행 플래너.",
+  "lang": "ko",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F8FBFE",
+  "theme_color": "#0B2A5C",
+  "categories": ["travel", "productivity"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

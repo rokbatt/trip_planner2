@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="몽실이">
+  <rect width="64" height="64" rx="14" fill="#0B2A5C"/>
+  <g transform="translate(13.6 13.6) scale(1.53)">
+    <path d="M2 12L22 5L15 22L11 14L2 12Z" fill="#FFFFFF"/>
+    <path d="M11 14L22 5" stroke="#0B2A5C" stroke-width="1.1" stroke-linecap="round"/>
+  </g>
+</svg>

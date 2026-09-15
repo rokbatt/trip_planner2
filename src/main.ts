@@ -139,6 +139,18 @@ if (originalHandleRoute()) {
   startRouter();
 }
 
+// ─── 서비스워커 등록 (홈 화면 추가용) ───
+// public/sw.js는 캐싱을 하지 않는다 — 등록의 목적은 설치 가능 상태를 만드는 것뿐이고,
+// 오프라인 팩은 docs/MOBILE_STRATEGY.md M2에서 별도로 설계한다.
+// dev에서는 등록하지 않는다(HMR과 섞이면 "왜 안 바뀌지"로 시간을 태운다).
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.warn('[SW] 등록 실패(앱 동작에는 영향 없음):', err);
+    });
+  });
+}
+
 // ─── 안전장치: 5초 타임아웃 ───
 setTimeout(() => {
   if (!store.get('authChecked')) {
