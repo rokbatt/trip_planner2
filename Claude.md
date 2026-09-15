@@ -775,7 +775,10 @@ api/                                  ← Vercel 서버리스 함수 (각각 완
 - [ ] hover를 쓴다면 클릭으로 만든 선택 상태를 덮어쓰지 않는 "일시적 미리보기"로만 쓰고 있는가, 명시적 해제 수단이 있는가 (3-3)
 - [ ] 공항 메타포·디자인 시스템 톤을 깨지 않는가
 - [ ] 새 Vercel 서버리스 함수(`api/*.ts`)를 추가한다면 전체 개수가 Hobby 플랜 한도(12개)를 넘지 않는가 — 넘으면 배포 자체가 실패함 (3-7)
-- [ ] 수정 후 `npx tsc --noEmit && npx vite build`로 검증했는가
+- [ ] 수정 후 `npx tsc --noEmit && npx vite build && npm test`로 검증했는가
+      (PR을 올리면 `.github/workflows/ci.yml`이 같은 걸 다시 돌린다 — 로컬에서 먼저 보는 게 빠를 뿐)
+- [ ] `expenseModel.ts`(돈)나 `travelEstimate.ts`(시간)의 계산을 건드렸다면, 옆의 `*.test.ts`가
+      여전히 통과하는가 — 통과하지 못한다면 **테스트를 고치기 전에 계산이 맞는지 먼저 의심할 것**
 
 ---
 
