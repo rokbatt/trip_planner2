@@ -178,18 +178,24 @@ export function renderLogin(): void {
             <div class="lp-split reveal">
               <div class="lp-split-text">
                 <p class="lp-sec-eyebrow">REAL-TIME</p>
-                <h2 class="lp-sec-title">떨어져 있어도<br>같은 화면에서.</h2>
+                <h2 class="lp-sec-title">단톡방에 던진 링크가,<br>보드 위 카드가 됩니다.</h2>
                 <p class="lp-sec-desc">
-                  누가 무엇을 추가했는지 실시간으로 보이고, 채팅으로
-                  바로 의견을 나눠요. 흩어지던 여행 이야기를 한곳에 모읍니다.
+                  채팅에 링크를 붙이면 미리보기를 불러와 숙소 · 맛집 · 액티비티로
+                  분류해 보드에 꽂아요. 누가 무엇을 올렸는지 모두에게 실시간으로 보입니다.
                 </p>
               </div>
               <div class="lp-split-demo">
                 <div class="demo-chat">
-                  <div class="chat-bubble them">현지인 오코노미야키 맛집 찾음 🔥 보드에 올렸어</div>
-                  <div class="chat-bubble me">오 봤어! AI 팁 보니까 18:30부터 웨이팅 피크라는데?</div>
-                  <div class="chat-bubble them">아 진짜? 그럼 오픈런으로 동선 최신화할게</div>
-                  <div class="chat-bubble me">인당 2.2만이면 가성비도 OK. Day 2 저녁 확정! 📍</div>
+                  <div class="chat-bubble them">여기 야경 미쳤대 instagram.com/reel/Cx9k2…</div>
+                  <div class="chat-bubble me">오 자동으로 담겼네</div>
+                  <div class="demo-linkcard">
+                    <div class="demo-linkcard-thumb"></div>
+                    <div class="demo-linkcard-body">
+                      <span class="demo-linkcard-chip">FOOD</span>
+                      <div class="demo-linkcard-title">옥타브 루프탑 바</div>
+                      <div class="demo-linkcard-host">instagram.com</div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -227,15 +233,42 @@ export function renderLogin(): void {
           <div class="lp-section-inner">
             <div class="lp-split reveal">
               <div class="lp-split-text">
-                <p class="lp-sec-eyebrow">MAP & ITINERARY</p>
-                <h2 class="lp-sec-title">확정하면<br>바로 동선이 돼요.</h2>
+                <p class="lp-sec-eyebrow">ROUTE & TIMELINE</p>
+                <h2 class="lp-sec-title">“18분”이라고 쓰여 있으면,<br>진짜 18분이에요.</h2>
                 <p class="lp-sec-desc">
-                  장소를 확정하는 순간 지도 위 동선과 이동 시간까지
-                  자동으로 정리됩니다.
+                  장소를 확정하면 지도 위 동선과 이동 시간이 시각표로 정리됩니다.
+                  실측 데이터가 있으면 실측을, 없으면 <strong>“추정”이라고 적어요.</strong>
+                  그래야 그 숫자를 믿고 일정을 짤 수 있으니까요.
                 </p>
               </div>
               <div class="lp-split-demo">
-                <div class="media-box wide">MAP PREVIEW</div>
+                <div class="demo-sched">
+                  <div class="demo-sched-row">
+                    <span class="demo-sched-time">09:00</span>
+                    <span class="demo-sched-name">호텔 출발</span>
+                    <span></span>
+                  </div>
+                  <div class="demo-sched-row is-leg">
+                    <span class="demo-sched-time">+18분</span>
+                    <span class="demo-sched-name">BTS 아쏙 → 사판탁신</span>
+                    <span class="demo-sched-badge real">실측</span>
+                  </div>
+                  <div class="demo-sched-row">
+                    <span class="demo-sched-time">09:18</span>
+                    <span class="demo-sched-name">왓 아룬</span>
+                    <span></span>
+                  </div>
+                  <div class="demo-sched-row is-leg">
+                    <span class="demo-sched-time">+12분</span>
+                    <span class="demo-sched-name">도보 이동</span>
+                    <span class="demo-sched-badge est">추정</span>
+                  </div>
+                  <div class="demo-sched-row">
+                    <span class="demo-sched-time">10:30</span>
+                    <span class="demo-sched-name">티엔 시장 점심</span>
+                    <span></span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -272,21 +305,21 @@ export function renderLogin(): void {
 
         <footer class="lp-footer">
           <div class="lp-footer-inner">
+            <!--
+              약관·개인정보처리방침·사업자정보는 실제 문서와 실제 값이 생긴 뒤에 넣는다.
+              빈 href="#" 링크와 자리표시용 사업자번호(000-00-00000)는 "비어 있는 것"이 아니라
+              "틀린 것"이라 신뢰를 깎는다 — 없는 것보다 나쁘다.
+              ⚠️ 제휴 링크나 유료화를 붙이려면 이용약관·개인정보처리방침이 법적으로 선행 조건이다.
+                 그때 이 자리에 실제 문서를 연결할 것.
+            -->
             <div class="lp-footer-top">
               <div class="lp-footer-brand">몽실이</div>
               <div class="lp-footer-links">
-                <a href="#" class="strong">서비스 소개</a>
-                <a href="#">이용약관</a>
-                <a href="#" class="strong">개인정보 처리방침</a>
-                <a href="#">위치정보 이용약관</a>
-                <a href="#">고객센터</a>
+                <a href="mailto:help@mongsil.app">문의하기</a>
               </div>
             </div>
             <div class="lp-footer-biz">
-              몽실이 (Mongsil) · 대표 OOO<br>
-              사업자등록번호 000-00-00000 · 통신판매업신고 제0000-지역-0000호<br>
-              주소 : 서울특별시 OO구 OO로 000, 0층 · 이메일 : help@mongsil.app<br>
-              고객센터 : 000-0000-0000 (평일 10:00–18:00)
+              친구와 함께 짜는 여행 계획 · 몽실이 (Mongsil)
             </div>
             <div class="lp-footer-copy">
               © ${new Date().getFullYear()} Mongsil. All rights reserved.
