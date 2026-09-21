@@ -23,15 +23,10 @@ export async function signOut(): Promise<void> {
 const ICON_PLANE = `<svg class="lp-hero-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M2 12L22 5L15 22L11 14L2 12Z"/><path d="M11 14L22 5"/></svg>`;
 const ICON_GOOGLE = `<svg class="lp-hero-btn-icon" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.9 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.1 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.1 29.5 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 10-2 13.6-5.2l-6.3-5.3C29.3 35.4 26.8 36 24 36c-5.3 0-9.6-3.1-11.3-7.6l-6.5 5C9.6 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.2 5.7l6.3 5.3C40.5 36.6 44 30.9 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>`;
 const ICON_GOOGLE_D = ICON_GOOGLE.replace('lp-hero-btn-icon', 'lp-cta-band-btn-icon');
-const ARROW = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" stroke-linejoin="miter"><path d="M4 12H20M13 5L20 12L13 19"/></svg>`;
 const CHEVRON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter"><path d="M5 8L12 15L19 8"/></svg>`;
 
-const ICON_GATE = `<svg class="flow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="4" y="3" width="16" height="18"/><path d="M4 9H20M9 21V9"/></svg>`;
-const ICON_GRID = `<svg class="flow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="3" width="7" height="8"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="11" width="7" height="10"/><rect x="3" y="14" width="7" height="7"/></svg>`;
-const ICON_ROUTE = `<svg class="flow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="18" r="2"/><path d="M5 8V14H19V16"/></svg>`;
-const ICON_USERS = `<svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="4" width="8" height="8"/><rect x="13" y="4" width="8" height="8"/><path d="M3 20V16H11V20M13 20V16H21V20"/></svg>`;
-const ICON_ZAP = `<svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M13 2L4 14H12L11 22L20 10H12L13 2Z"/></svg>`;
-const ICON_SPARK = `<svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M12 3V9M12 15V21M3 12H9M15 12H21"/></svg>`;
+/** 보딩패스 가운데 비행기 — 히어로 로고와 같은 형태를 조금 크게 */
+const ICON_PLANE_PASS = `<svg class="lp-pass-plane" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="square" stroke-linejoin="miter"><path d="M2 12L22 5L15 22L11 14L2 12Z"/><path d="M11 14L22 5"/></svg>`;
 
 const DI = {
   trip: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="5" width="18" height="16"/><path d="M3 10H21M8 3V7M16 3V7"/></svg>`,
@@ -119,11 +114,14 @@ export function renderLogin(): void {
       <section class="lp-hero" id="lp-hero">
         <div class="lp-hero-inner">
           ${ICON_PLANE}
-          <p class="lp-eyebrow">즉흥 여행자를 위한 실시간 협업 플래너</p>
-          <h1 class="lp-title">생각에서<br>여정까지.</h1>
+          <p class="lp-eyebrow">ICN · DEPARTURE LOUNGE</p>
+          <!-- 헤드라인 후보(톤이 갈리는 부분이라 남겨 둠):
+               B) 단톡방에 흩어진 여행을 / 한 장의 시각표로.  ← 문제→해결이 가장 잘 보임
+               C) 아직 아무것도 / 안 정했어도 괜찮아요.        ← 타겟 정서에 가장 가까움 -->
+          <h1 class="lp-title">여행은 정하는 게 아니라<br>좁혀가는 거니까.</h1>
           <p class="lp-subtitle">
-            파편화된 아이디어를 하나의 완성된 동선으로.<br>
-            친구들과 실시간으로 조율하는 가장 직관적인 여행 플래너.
+            가고 싶은 곳을 쌓고 → 숙소를 정하고 → 동선을 잇고 →<br>
+            여행 중엔 오늘 할 일만. 친구들과 같은 화면에서.
           </p>
           ${heroBtnHtml()}
           ${heroNoteHtml()}
@@ -135,38 +133,98 @@ export function renderLogin(): void {
 
         <section class="lp-section bg-white">
           <div class="lp-section-inner">
-            <div class="reveal" style="text-align:center;margin-bottom:56px;">
-              <p class="lp-sec-eyebrow">HOW IT WORKS</p>
-              <h2 class="lp-sec-title" style="margin-bottom:0;">아이디어가 여정이 되기까지</h2>
+            <div class="lp-split reveal">
+              <div class="lp-split-text">
+                <p class="lp-sec-eyebrow">THE PROBLEM</p>
+                <h2 class="lp-sec-title">여행 이야기는 단톡방에서 시작해서,<br>단톡방에서 사라져요.</h2>
+                <p class="lp-sec-desc">
+                  링크를 던지고, 좋다고 하고, 그러고 끝. 이틀 뒤엔 아무도 그게
+                  어디였는지 못 찾습니다. 결국 누군가 혼자 엑셀을 만들다 맙니다.
+                </p>
+              </div>
+              <div class="lp-split-demo">
+                <div class="lp-kakao">
+                  <div class="lp-kakao-head">3월 방콕 ✈︎ · 4</div>
+                  <div class="lp-kakao-msg"><span class="lp-kakao-who">민수</span><span class="lp-kakao-bubble">여기 야경 미쳤대</span></div>
+                  <div class="lp-kakao-msg"><span class="lp-kakao-who"></span><span class="lp-kakao-bubble is-link">instagram.com/reel/Cx9k2…</span></div>
+                  <div class="lp-kakao-msg"><span class="lp-kakao-who">지현</span><span class="lp-kakao-bubble">오 저장</span></div>
+                  <div class="lp-kakao-gap">메시지 214개</div>
+                  <div class="lp-kakao-msg"><span class="lp-kakao-who">태호</span><span class="lp-kakao-bubble is-lost">아까 그 야경 어디였지?</span></div>
+                  <div class="lp-kakao-msg"><span class="lp-kakao-who">민수</span><span class="lp-kakao-bubble is-lost">스크롤 내려봐…</span></div>
+                </div>
+              </div>
             </div>
-            <div class="lp-flow reveal">
-              <div class="flow-card">
-                <div class="flow-step">STEP 01</div>${ICON_GATE}
-                <div class="flow-card-title">아이디어를 던져요</div>
-                <div class="flow-card-desc">가고 싶은 곳을 자유롭게 쌓아두세요.</div>
-                <div class="flow-chips">
-                  <div class="flow-chip">방콕 로컬 맛집</div>
-                  <div class="flow-chip">아사쿠사 절 구경</div>
-                </div>
+          </div>
+        </section>
+
+        <section class="lp-section bg-light">
+          <div class="lp-section-inner">
+            <div class="reveal" style="text-align:center;margin-bottom:48px;">
+              <p class="lp-sec-eyebrow">HOW IT WORKS</p>
+              <h2 class="lp-sec-title" style="margin-bottom:14px;">네 개의 게이트를 지나면<br>여행이 완성돼요.</h2>
+              <p class="lp-sec-desc" style="margin:0 auto;">한 번에 다 정하지 않아요. 게이트마다 딱 하나씩만 정합니다.</p>
+            </div>
+            <div class="lp-gates reveal">
+              <div class="lp-gates-head">
+                <span>GATE</span><span>STAGE</span><span>여기서 정하는 것</span><span class="lp-gates-verb">ACTION</span>
               </div>
-              <div class="flow-arrow">${ARROW}</div>
-              <div class="flow-card">
-                <div class="flow-step">STEP 02</div>${ICON_GRID}
-                <div class="flow-card-title">함께 골라내요</div>
-                <div class="flow-card-desc">투표로 자연스럽게 합의해요.</div>
-                <div class="flow-chips">
-                  <div class="flow-chip">3명이 가고싶어요</div>
-                  <div class="flow-chip">여기 야경 좋대요</div>
-                </div>
+              <div class="lp-gate-row">
+                <span class="lp-gate-code">GATE 01</span>
+                <span class="lp-gate-name">IDEAS<small>Departure Hall</small></span>
+                <span class="lp-gate-desc">가고 싶은 곳을 판단 없이 모아요.</span>
+                <span class="lp-gates-verb lp-gate-verb">던지기</span>
               </div>
-              <div class="flow-arrow">${ARROW}</div>
-              <div class="flow-card">
-                <div class="flow-step">STEP 03</div>${ICON_ROUTE}
-                <div class="flow-card-title">일정으로 완성돼요</div>
-                <div class="flow-card-desc">확정한 장소가 동선이 되어 정리됩니다.</div>
-                <div class="flow-chips">
-                  <div class="flow-chip">Day 1 · 시부야</div>
-                  <div class="flow-chip">이동 12분</div>
+              <div class="lp-gate-row">
+                <span class="lp-gate-code">GATE 02</span>
+                <span class="lp-gate-name">STAY<small>Immigration Counter</small></span>
+                <span class="lp-gate-desc">생활권과 숙소 하나. 여행의 중심이 정해져요.</span>
+                <span class="lp-gates-verb lp-gate-verb">좁히기</span>
+              </div>
+              <div class="lp-gate-row">
+                <span class="lp-gate-code">GATE 03</span>
+                <span class="lp-gate-name">ROUTE<small>Boarding Pass</small></span>
+                <span class="lp-gate-desc">숙소 기준으로 갈 만한 곳만 남겨 이어요.</span>
+                <span class="lp-gates-verb lp-gate-verb">잇기</span>
+              </div>
+              <div class="lp-gate-row">
+                <span class="lp-gate-code">GATE 04</span>
+                <span class="lp-gate-name">TIMELINE<small>Flight Schedule</small></span>
+                <span class="lp-gate-desc">동선이 시각표가 돼요. 이동 시간까지.</span>
+                <span class="lp-gates-verb lp-gate-verb">떠나기</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="lp-section bg-white">
+          <div class="lp-section-inner">
+            <div class="lp-split reverse reveal">
+              <div class="lp-split-text">
+                <p class="lp-sec-eyebrow">GATE 02 · IMMIGRATION COUNTER</p>
+                <h2 class="lp-sec-title">숙소를 정하면,<br>여행의 절반이 정해져요.</h2>
+                <p class="lp-sec-desc">
+                  어디 묵느냐가 하루의 동선을 결정합니다. 그래서 몽실이는 장소부터
+                  늘어놓지 않아요. <strong>생활권 → 숙소 → 그 숙소에서 갈 만한 곳</strong>
+                  순서로 좁혀갑니다.
+                </p>
+                <p class="lp-honest">
+                  점수는 위치 · 주변 시설 · 평점을 바탕으로 <strong>AI가 분석한 값</strong>이고,
+                  예약 사이트의 이용자 평점이 아니에요. 화면에도 그렇게 적습니다.
+                </p>
+              </div>
+              <div class="lp-split-demo">
+                <div class="lp-map">${zoneMapSvg()}</div>
+                <div class="lp-zones">
+                  <div class="lp-zone is-picked">
+                    <span class="lp-zone-name">수쿰윗<em>선택됨</em></span>
+                    <span class="lp-zone-meta">BTS 아쏙 도보 4분 · 편의점 2 · 식당 40+</span>
+                    <span class="lp-zone-score">86<small>AI 분석</small></span>
+                  </div>
+                  <div class="lp-zone">
+                    <span class="lp-zone-name">시암</span>
+                    <span class="lp-zone-meta">BTS 시암 도보 6분 · 쇼핑 중심</span>
+                    <span class="lp-zone-score">81<small>AI 분석</small></span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -206,24 +264,15 @@ export function renderLogin(): void {
           <div class="lp-section-inner">
             <div class="lp-split reverse reveal">
               <div class="lp-split-text">
-                <p class="lp-sec-eyebrow">BRAINSTORM BOARD</p>
+                <p class="lp-sec-eyebrow">GATE 01 · DEPARTURE HALL</p>
                 <h2 class="lp-sec-title">친구들과<br>함께 채워가는 보드</h2>
                 <p class="lp-sec-desc">
-                  가고싶어 · 먹고싶어 · 하고싶어. 무드별로 카드를 쌓고
-                  드래그로 옮기며, 정해지지 않은 상태에서 가장 많은 도움을 얻어보세요.
+                  가고싶어 · 먹고싶어 · 하고싶어. 무드별로 카드를 쌓고 드래그로 옮겨요.
+                  아직 아무것도 안 정해진 상태가 가장 자유로운 순간이니까요.
                 </p>
               </div>
               <div class="lp-split-demo">
-                <div class="demo-board">
-                  <div class="demo-sidebar">
-                    <div class="demo-slot is-active"></div>
-                    <div class="demo-slot"></div>
-                    <div class="demo-slot"></div>
-                  </div>
-                  <div class="demo-main">
-                    ${demoCol(2, true)}${demoCol(1, false)}${demoCol(3, false)}
-                  </div>
-                </div>
+                ${boardDemoHtml()}
               </div>
             </div>
           </div>
@@ -242,6 +291,7 @@ export function renderLogin(): void {
                 </p>
               </div>
               <div class="lp-split-demo">
+                <div class="lp-map">${routeMapSvg()}</div>
                 <div class="demo-sched">
                   <div class="demo-sched-row">
                     <span class="demo-sched-time">09:00</span>
@@ -274,33 +324,79 @@ export function renderLogin(): void {
           </div>
         </section>
 
+        <section class="lp-section bg-night">
+          <div class="lp-section-inner">
+            <div class="lp-split reveal">
+              <div class="lp-split-text">
+                <p class="lp-sec-eyebrow">COMPANION · 여행 중</p>
+                <h2 class="lp-sec-title">떠난 뒤엔,<br>오늘 한 곳만.</h2>
+                <p class="lp-sec-desc">
+                  여행 중에 계획 전체는 필요 없어요. 다음 갈 곳 하나와 남은 시간이면 충분합니다.
+                  도착을 누르면 남은 일정이 알아서 밀려요. 아무도 다시 계산하지 않아도 됩니다.
+                </p>
+              </div>
+              <div class="lp-split-demo">
+                <div class="lp-phone">
+                  <div class="lp-phone-top"><span>DAY 2 · 방콕</span><span>14:20</span></div>
+                  <p class="lp-now-label">NOW — 다음 목적지</p>
+                  <p class="lp-now-place">티엔 시장</p>
+                  <p class="lp-now-meta">도보 12분 · 14:32 도착 예정</p>
+                  <div class="lp-now-actions">
+                    <span class="lp-now-btn is-primary">도착</span>
+                    <span class="lp-now-btn">출발</span>
+                    <span class="lp-now-btn">밀기</span>
+                  </div>
+                  <p class="lp-now-after">지금 속도면 마지막 일정 <strong>22:10 도착</strong> · 30분 초과</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section class="lp-section bg-white">
           <div class="lp-section-inner">
-            <div class="reveal" style="text-align:center;">
-              <p class="lp-sec-eyebrow">WHY 몽실이</p>
-              <h2 class="lp-sec-title" style="margin-bottom:0;">여행 준비, 이렇게 달라져요</h2>
-            </div>
-            <div class="lp-features reveal">
-              <div class="feature-card">${ICON_USERS}
-                <div class="feature-title">실시간 협업</div>
-                <div class="feature-desc">모두가 동시에 편집하고, 변경사항이 즉시 반영돼요.</div>
+            <div class="lp-split reverse reveal">
+              <div class="lp-split-text">
+                <p class="lp-sec-eyebrow">EXPENSE</p>
+                <h2 class="lp-sec-title">“내가 더 냈나?”로<br>끝나지 않게.</h2>
+                <p class="lp-sec-desc">
+                  예산을 잡고, 현지에서 바로 기록하고, 마지막엔 누가 누구에게 얼마를 보내면
+                  되는지 한 줄로 정리해요. 바트로 낸 돈도 그날 환율로 환산해 두고,
+                  어떤 환율을 썼는지까지 같이 적습니다.
+                </p>
               </div>
-              <div class="feature-card">${ICON_ZAP}
-                <div class="feature-title">즉흥에 최적화</div>
-                <div class="feature-desc">딱딱한 일정표 대신, 아이디어를 먼저 자유롭게 던져요.</div>
-              </div>
-              <div class="feature-card">${ICON_SPARK}
-                <div class="feature-title">AI 여행 꿀팁</div>
-                <div class="feature-desc">방문 타이밍부터 현지 꿀팁까지 장소마다 알려드려요.</div>
+              <div class="lp-split-demo">
+                <div class="lp-settle">
+                  <div class="lp-settle-head">정산 — 최소 송금</div>
+                  <div class="lp-settle-row"><span>태호</span><i>→</i><span>민수</span><b>₩41,200</b></div>
+                  <div class="lp-settle-row"><span>지현</span><i>→</i><span>민수</span><b>₩23,000</b></div>
+                  <div class="lp-settle-row"><span>현주</span><i>→</i><span>태호</span><b>₩8,500</b></div>
+                  <p class="lp-settle-foot">공동 지출 18건 · 결제 완료분만 반영 · 환율 3월 14일 기준</p>
+                </div>
               </div>
             </div>
           </div>
         </section>
 
         <section class="lp-section bg-navy lp-cta-band">
-          <h2 class="lp-cta-band-title">이제, 같이 떠날<br>차례예요.</h2>
-          <p class="lp-cta-band-desc">친구들을 초대하고 첫 여행 보드를 만들어보세요.</p>
-          ${ctaBandBtnHtml()}
+          <div class="lp-pass reveal">
+            <div class="lp-pass-top">
+              <span class="lp-port"><b>ICN</b><small>SEOUL</small></span>
+              ${ICON_PLANE_PASS}
+              <span class="lp-port is-to"><b>ANY</b><small>WHERE</small></span>
+            </div>
+            <div class="lp-pass-perf"></div>
+            <div class="lp-pass-body">
+              <div class="lp-pass-fields">
+                <span class="lp-pass-field"><small>PASSENGER</small><b>당신과 친구들</b></span>
+                <span class="lp-pass-field"><small>GATE</small><b>01 · IDEAS</b></span>
+                <span class="lp-pass-field"><small>BOARDING</small><b>지금</b></span>
+              </div>
+              <h2 class="lp-pass-title">첫 보드를 만들고<br>친구를 초대하세요.</h2>
+              ${ctaBandBtnHtml()}
+              <div class="lp-pass-barcode" aria-hidden="true"></div>
+            </div>
+          </div>
         </section>
 
         <footer class="lp-footer">
@@ -359,13 +455,115 @@ export function renderLogin(): void {
   observeReveals();
 }
 
-function demoCol(itemCount: number, accent: boolean): string {
-  const items = Array.from({ length: itemCount }, (_, i) => `
-    <div class="demo-item ${accent && i === 0 ? 'accent' : ''}">
-      <div class="demo-item-line"></div>
-      <div class="demo-item-line short"></div>
-    </div>`).join('');
-  return `<div class="demo-col"><div class="demo-col-head"></div>${items}</div>`;
+/* ── 랜딩용 지도 일러스트 ──
+ * 실제 스크린샷 대신 같은 색 체계로 직접 그린다. 색은 제품에서 쓰는 값 그대로다:
+ *   경로선·정류지 핀 = ROUTE_ACCENT (route.ts의 AERO_BLUE와 같은 값을 써야 한다)
+ *   숙소·선택 상태   = 네이비 #0B2A5C (shortlist는 권역마다 색이 달라 고정 강조색이 없고,
+ *                      숙소 마커가 네이비다 — 랜딩의 "선택됨"도 여기에 맞춘다)
+ *   무드 색 = 가고싶어 #E24B4A · 먹고싶어 #1D9E75 · 하고싶어 #7F77DD (board.ts와 동일)
+ * 랜딩이 제품과 다른 색을 쓰면 들어왔을 때 "다른 서비스 같다"는 인상을 준다.
+ */
+
+/** route.ts의 AERO_BLUE와 반드시 같은 값. 저기가 바뀌면 여기도 바꾼다. */
+const ROUTE_ACCENT = '#DC2626';
+const STAY_NAVY = '#0B2A5C';
+
+/** 지도 바닥 — 강·도로. 두 지도가 같은 도시로 보이도록 좌표를 공유한다. */
+const MAP_BASE = `
+  <rect width="440" height="300" fill="#F5FAFE"/>
+  <path d="M-10,300 C50,242 30,182 76,133 C111,96 97,40 120,-10"
+        stroke="#DCEEF8" stroke-width="30" fill="none" stroke-linecap="round"/>
+  <g stroke="#E7EEF4" stroke-width="5" stroke-linecap="round">
+    <path d="M0,96 H440"/><path d="M0,208 H440"/>
+    <path d="M264,0 V300"/><path d="M370,0 V300"/>
+  </g>`;
+
+/** 끝점이 (0,0)에 오는 물방울 핀 */
+const PIN_PATH = 'M0 0 C-5.5 -8 -11 -13 -11 -19 A11 11 0 1 1 11 -19 C11 -13 5.5 -8 0 0 Z';
+
+/** 생활권 지도 — 숙소를 정하면 여행의 중심이 정해진다는 걸 보여주는 자리 */
+function zoneMapSvg(): string {
+  return `
+  <svg class="lp-map-svg" viewBox="0 0 440 300" role="img"
+       aria-label="생활권 지도. 수쿰윗이 선택되어 있고 숙소 핀이 그 안에 있습니다.">
+    ${MAP_BASE}
+    <g>
+      <path d="M150,262 L266,176 L418,124" stroke="#B8C6D4" stroke-width="2.5" stroke-dasharray="7 6" fill="none"/>
+      <circle cx="150" cy="262" r="3.6" fill="#fff" stroke="#B8C6D4" stroke-width="2"/>
+      <circle cx="266" cy="176" r="3.6" fill="#fff" stroke="#B8C6D4" stroke-width="2"/>
+      <circle cx="418" cy="124" r="3.6" fill="#fff" stroke="#B8C6D4" stroke-width="2"/>
+    </g>
+    <ellipse cx="104" cy="182" rx="58" ry="45" fill="rgba(130,150,170,0.09)" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="5 5"/>
+    <text class="lp-map-zone" x="104" y="186" text-anchor="middle">리버사이드</text>
+    <ellipse cx="248" cy="88" rx="62" ry="45" fill="rgba(130,150,170,0.09)" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="5 5"/>
+    <text class="lp-map-zone" x="248" y="92" text-anchor="middle">시암</text>
+    <ellipse cx="346" cy="208" rx="76" ry="55" fill="rgba(11,42,92,0.08)" stroke="${STAY_NAVY}" stroke-width="2"/>
+    <text class="lp-map-zone is-picked" x="346" y="252" text-anchor="middle">수쿰윗</text>
+    <g transform="translate(346,200)">
+      <path d="${PIN_PATH}" fill="${STAY_NAVY}"/>
+      <circle cy="-19" r="4.2" fill="#fff"/>
+    </g>
+  </svg>`;
+}
+
+/** 동선 지도 — 확정한 장소가 선으로 이어지는 걸 보여주는 자리 */
+function routeMapSvg(): string {
+  const line = 'M356,208 L268,180 L178,152 L126,86 L248,56';
+  const stops: Array<[number, number, string, string]> = [
+    [268, 180, '1', '왓 아룬'],
+    [178, 152, '2', '티엔 시장'],
+    [126, 86, '3', '카오산'],
+    [248, 56, '4', '아이콘시암'],
+  ];
+  const pins = stops.map(([x, y, n, label]) => `
+      <g transform="translate(${x},${y})">
+        <circle r="13" fill="${ROUTE_ACCENT}" stroke="#fff" stroke-width="2.5"/>
+        <text class="lp-map-num" y="4.5" text-anchor="middle">${n}</text>
+        <text class="lp-map-label" y="-20" text-anchor="middle">${label}</text>
+      </g>`).join('');
+  return `
+  <svg class="lp-map-svg" viewBox="0 0 440 300" role="img"
+       aria-label="동선 지도. 숙소에서 출발해 네 곳을 차례로 잇는 경로입니다.">
+    ${MAP_BASE}
+    <path d="${line}" stroke="#fff" stroke-width="7.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="${line}" stroke="${ROUTE_ACCENT}" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    ${pins}
+    <g transform="translate(356,208)">
+      <path d="${PIN_PATH}" fill="${STAY_NAVY}"/>
+      <circle cy="-19" r="4.2" fill="#fff"/>
+      <text class="lp-map-label is-stay" y="18" text-anchor="middle">숙소</text>
+    </g>
+  </svg>`;
+}
+
+/** 브레인스토밍 보드 — 무채색 스켈레톤 대신 실제로 쌓이는 카드 모습 */
+function boardDemoHtml(): string {
+  const cols: Array<[string, string, string[]]> = [
+    ['가고싶어', '#E24B4A', ['왓 아룬', '아시아티크 야시장', '짜뚜짝 주말시장']],
+    ['먹고싶어', '#1D9E75', ['팁싸마이 팟타이', '옥타브 루프탑 바']],
+    ['하고싶어', '#7F77DD', ['타이 마사지', '수상시장 보트투어', '쿠킹 클래스']],
+  ];
+  const main = cols.map(([mood, color, items], ci) => `
+      <div class="lp-board-col">
+        <div class="lp-board-colhead">
+          <span class="lp-board-dot" style="background:${color}"></span>${mood}
+          <em>${items.length}</em>
+        </div>
+        ${items.map((t, i) => `
+        <div class="lp-board-card${ci === 0 && i === 0 ? ' is-picked' : ''}">
+          <span class="lp-board-bar" style="background:${color}"></span>
+          <span class="lp-board-name">${t}</span>
+        </div>`).join('')}
+      </div>`).join('');
+  return `
+    <div class="lp-board">
+      <div class="lp-board-side">
+        <div class="lp-board-dest is-active">방콕<span>4박</span></div>
+        <div class="lp-board-dest">치앙마이<span>2박</span></div>
+        <div class="lp-board-dest lp-board-dest-add">+ 도시 추가</div>
+      </div>
+      <div class="lp-board-main">${main}</div>
+    </div>`;
 }
 
 function setupScrollEffects(): void {
