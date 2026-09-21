@@ -457,10 +457,16 @@ export function renderLogin(): void {
 
 /* ── 랜딩용 지도 일러스트 ──
  * 실제 스크린샷 대신 같은 색 체계로 직접 그린다. 색은 제품에서 쓰는 값 그대로다:
- *   경로선·정류지 핀 = AERO_BLUE #0891B2 (route.ts와 동일)
+ *   경로선·정류지 핀 = ROUTE_ACCENT (route.ts의 AERO_BLUE와 같은 값을 써야 한다)
+ *   숙소·선택 상태   = 네이비 #0B2A5C (shortlist는 권역마다 색이 달라 고정 강조색이 없고,
+ *                      숙소 마커가 네이비다 — 랜딩의 "선택됨"도 여기에 맞춘다)
  *   무드 색 = 가고싶어 #E24B4A · 먹고싶어 #1D9E75 · 하고싶어 #7F77DD (board.ts와 동일)
  * 랜딩이 제품과 다른 색을 쓰면 들어왔을 때 "다른 서비스 같다"는 인상을 준다.
  */
+
+/** route.ts의 AERO_BLUE와 반드시 같은 값. 저기가 바뀌면 여기도 바꾼다. */
+const ROUTE_ACCENT = '#DC2626';
+const STAY_NAVY = '#0B2A5C';
 
 /** 지도 바닥 — 강·도로. 두 지도가 같은 도시로 보이도록 좌표를 공유한다. */
 const MAP_BASE = `
@@ -491,10 +497,10 @@ function zoneMapSvg(): string {
     <text class="lp-map-zone" x="104" y="186" text-anchor="middle">리버사이드</text>
     <ellipse cx="248" cy="88" rx="62" ry="45" fill="rgba(130,150,170,0.09)" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="5 5"/>
     <text class="lp-map-zone" x="248" y="92" text-anchor="middle">시암</text>
-    <ellipse cx="346" cy="208" rx="76" ry="55" fill="rgba(8,177,178,0.10)" stroke="#0891B2" stroke-width="2"/>
+    <ellipse cx="346" cy="208" rx="76" ry="55" fill="rgba(11,42,92,0.08)" stroke="${STAY_NAVY}" stroke-width="2"/>
     <text class="lp-map-zone is-picked" x="346" y="252" text-anchor="middle">수쿰윗</text>
     <g transform="translate(346,200)">
-      <path d="${PIN_PATH}" fill="#0B2A5C"/>
+      <path d="${PIN_PATH}" fill="${STAY_NAVY}"/>
       <circle cy="-19" r="4.2" fill="#fff"/>
     </g>
   </svg>`;
@@ -511,7 +517,7 @@ function routeMapSvg(): string {
   ];
   const pins = stops.map(([x, y, n, label]) => `
       <g transform="translate(${x},${y})">
-        <circle r="13" fill="#0891B2" stroke="#fff" stroke-width="2.5"/>
+        <circle r="13" fill="${ROUTE_ACCENT}" stroke="#fff" stroke-width="2.5"/>
         <text class="lp-map-num" y="4.5" text-anchor="middle">${n}</text>
         <text class="lp-map-label" y="-20" text-anchor="middle">${label}</text>
       </g>`).join('');
@@ -520,10 +526,10 @@ function routeMapSvg(): string {
        aria-label="동선 지도. 숙소에서 출발해 네 곳을 차례로 잇는 경로입니다.">
     ${MAP_BASE}
     <path d="${line}" stroke="#fff" stroke-width="7.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="${line}" stroke="#0891B2" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="${line}" stroke="${ROUTE_ACCENT}" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
     ${pins}
     <g transform="translate(356,208)">
-      <path d="${PIN_PATH}" fill="#0B2A5C"/>
+      <path d="${PIN_PATH}" fill="${STAY_NAVY}"/>
       <circle cy="-19" r="4.2" fill="#fff"/>
       <text class="lp-map-label is-stay" y="18" text-anchor="middle">숙소</text>
     </g>
