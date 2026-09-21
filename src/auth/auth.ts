@@ -402,15 +402,15 @@ export function renderLogin(): void {
         <footer class="lp-footer">
           <div class="lp-footer-inner">
             <!--
-              약관·개인정보처리방침·사업자정보는 실제 문서와 실제 값이 생긴 뒤에 넣는다.
-              빈 href="#" 링크와 자리표시용 사업자번호(000-00-00000)는 "비어 있는 것"이 아니라
-              "틀린 것"이라 신뢰를 깎는다 — 없는 것보다 나쁘다.
-              ⚠️ 제휴 링크나 유료화를 붙이려면 이용약관·개인정보처리방침이 법적으로 선행 조건이다.
-                 그때 이 자리에 실제 문서를 연결할 것.
+              사업자등록번호·주소·대표자는 실제 값이 생긴 뒤에 넣는다. 자리표시용 번호는
+              "비어 있는 것"이 아니라 "틀린 것"이라 없는 것보다 나쁘다.
+              약관·개인정보처리방침 본문의 같은 자리도 함께 채울 것(src/legal/legal.ts).
             -->
             <div class="lp-footer-top">
               <div class="lp-footer-brand">몽실이</div>
               <div class="lp-footer-links">
+                <a href="#terms">이용약관</a>
+                <a href="#privacy" class="strong">개인정보 처리방침</a>
                 <a href="mailto:help@mongsil.app">문의하기</a>
               </div>
             </div>
