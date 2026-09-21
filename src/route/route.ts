@@ -2591,11 +2591,15 @@ function renderRightPanel(container: HTMLElement): void {
 
   const rows: string[] = [];
   // 지도 핀(drawRouteOnMap)도 똑같은 stopIdentityColor를 쓰므로 색이 항상 서로 맞는다.
+  // "숙소 들르기" 재방문 스탑은 번호를 매기지 않으므로, 그 스탑은 건너뛰고 다음 정식
+  // 정류지가 번호를 이어받도록 별도 카운터(displayNum)로 매긴다(배열 인덱스 i와 분리).
+  let displayNum = 0;
   stops.forEach((p, i) => {
     const isBasecamp = isBasecampPlace(p, dayIndex);
     const isAirport = isAirportAnchorPlace(p);
     const isAnchor = isBasecamp || isAirport; // 삭제는 금지하되, 순서는 자유롭게 바꿀 수 있음
     const revisitPurpose = lodgingRevisitPurpose.get(p.id) ?? null;
+    if (!revisitPurpose) displayNum += 1;
     const memo = memoStore.get(p.id) ?? '';
     const highlighted = p.id === highlightedPlaceId;
     const cardColor = revisitPurpose ? LODGING_REVISIT_COLOR : stopIdentityColor();
@@ -2616,7 +2620,7 @@ function renderRightPanel(container: HTMLElement): void {
           '" draggable="true" data-place-id="' + p.id + '" title="드래그해서 순서 바꾸기">',
         revisitPurpose
           ? '  <span class="rt-panel-badge" style="background:' + LODGING_REVISIT_TINT + ';color:' + LODGING_REVISIT_COLOR + '">' + IC_LODGING + '</span>'
-          : '  <span class="rt-panel-badge" style="background:' + AERO_BLUE_TINT + ';color:' + cardColor + '">' + (i + 1) + '</span>',
+          : '  <span class="rt-panel-badge" style="background:' + AERO_BLUE_TINT + ';color:' + cardColor + '">' + displayNum + '</span>',
         '  <div class="rt-panel-name-col"><div class="rt-panel-name">' + escapeHtml(p.name) + '</div><div class="rt-panel-sub">' +
           escapeHtml(revisitPurpose ? '잠깐 들르기 · ' + revisitPurpose : p.category || (isBasecamp ? '숙소' : '')) + '</div></div>',
         timeOrDwellHtml,
@@ -2912,11 +2916,11 @@ function refreshAll(container: HTMLElement, opts: { refit: boolean } = { refit: 
 /**
  * 핀·배지·리스트·경로선 강조색 — 한 가지로 통일해 "이 색 = 내 동선"이라는 정체성을 하나로
  * 모은다. 이동수단 구분은 색이 아니라 캡슐 배지의 아이콘/라벨과 모드 전환 노드가 담당한다.
- * (Aero Blue → Sky Cyan으로 교체 — 색상 후보 비교 후 선택된 값. 상수 이름은 유지)
+ * (Aero Blue → Sky Cyan → Crimson으로 교체 — 색상 후보 비교 후 선택된 값. 상수 이름은 유지)
  */
-const AERO_BLUE = '#0891B2';
+const AERO_BLUE = '#DC2626';
 // 리스트 배지 등 옅은 틴트 배경이 필요한 곳에서 쓰는, AERO_BLUE를 10% 불투명도로 깐 버전.
-const AERO_BLUE_TINT = 'rgba(8,145,178,0.1)';
+const AERO_BLUE_TINT = 'rgba(220,38,38,0.1)';
 // "다음 장소"를 가리킬 때 쓰는 강조색 — 짙은 남색. 처음 시도한 값(#0B0F5C)이 남색보다
 // 검정에 가까워 보인다는 피드백으로, 이 앱 전체에서 이미 쓰는 네이비(--rt-navy)로 교체.
 const ROUTE_NEXT = '#0B2A5C';
@@ -3112,9 +3116,12 @@ function drawRouteOnMap(refit: boolean): void {
   let stopInfoShown = false;
 
   // 오늘 동선의 정류지 — 순서 번호 + 정체성 색(평소) / 진행 상태 색(포커스 중일 때만)
+  // 패널 리스트(renderRightPanel)와 동일하게, "숙소 들르기" 재방문 스탑은 건너뛰고 번호를 매긴다.
+  let mapDisplayNum = 0;
   stops.forEach((p, i) => {
     const isBasecamp = isBasecampPlace(p, dayIndex);
     const baseColor = stopIdentityColor();
+    if (!lodgingRevisitPurpose.has(p.id)) mapDisplayNum += 1;
     // 어떤 장소를 클릭/호버하면 그 장소(current)와 바로 이전 정류지(adjacent)만 강조하고,
     // 나머지는 전부 회색으로 물러난다 — "그 장소로 가는 구간 + 이전 장소만" 강조라는 원칙.
     // 아무것도 선택하지 않았으면 각자의 정체성 색 그대로.
@@ -3127,7 +3134,7 @@ function drawRouteOnMap(refit: boolean): void {
     const marker = buildMarkerV2(g, p, {
       isBasecamp,
       included: true,
-      num: i + 1,
+      num: mapDisplayNum,
       highlighted: p.id === focusId,
       phase,
       baseColor,
