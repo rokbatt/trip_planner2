@@ -16,7 +16,8 @@ import { renderWorkspace, findExistingWorkspace, switchGate } from './workspace/
 // ─── 인증이 필요 없는 라우트 ───
 // join은 초대코드를 들고 온 비로그인 사용자도 접근해야 해서 public 처리
 // (renderJoinPage 내부에서 로그인 여부를 직접 분기함)
-const PUBLIC_ROUTES = ['login', 'join'];
+// terms/privacy는 로그인 전에도 읽을 수 있어야 한다 — 가입 전에 동의 여부를 판단하는 문서다
+const PUBLIC_ROUTES = ['login', 'join', 'terms', 'privacy'];
 
 // ─── 라우트 등록 ───
 addRoute('login', () => {
@@ -50,6 +51,18 @@ addRoute('join', async (params) => {
   const app = document.getElementById('app')!;
   const el = await renderJoinPage(params.tripId);
   app.replaceChildren(el);
+});
+
+// 약관 · 개인정보처리방침
+addRoute('terms', async () => {
+  const app = document.getElementById('app')!;
+  const { renderLegal } = await import('./legal/legal');
+  app.replaceChildren(renderLegal('terms'));
+});
+addRoute('privacy', async () => {
+  const app = document.getElementById('app')!;
+  const { renderLegal } = await import('./legal/legal');
+  app.replaceChildren(renderLegal('privacy'));
 });
 
 // 하위호환: 기존 #board/:tripId → #trip/:tripId/ideas 로 리다이렉트
