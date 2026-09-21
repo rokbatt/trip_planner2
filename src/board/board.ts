@@ -846,16 +846,33 @@ function buildBoardMapMarkerIcon(
   };
 }
 
-/** 축소했을 때 겹치는 핀들을 묶어 보여주는 클러스터 버블 — 핀과 같은 흰 테두리 + 남색 계열로
- *  통일해서, 지도 위 요소가 "핀 아니면 핀 묶음" 두 가지로만 읽히게 한다. */
-function buildBoardClusterIcon(g: any, count: number): any {
+/** 클러스터에 묶인 마커들 중 가장 많은 게이트의 색을 고른다(동률이면 먼저 나온 쪽).
+ *  marker.__bdMood는 마커 생성 시 심어둔 값(renderBoardMapView 참고). */
+function dominantClusterColor(markers: any[]): string {
+  const counts = new Map<string, number>();
+  for (const m of markers) {
+    const mood = m.__bdMood ?? '';
+    counts.set(mood, (counts.get(mood) ?? 0) + 1);
+  }
+  let best = '';
+  let bestCount = -1;
+  for (const [mood, n] of counts) {
+    if (n > bestCount) { best = mood; bestCount = n; }
+  }
+  return BOARD_MOOD_COLOR[best] ?? '#6B7A93';
+}
+
+/** 축소했을 때 겹치는 핀들을 묶어 보여주는 클러스터 버블 — 고정된 남색 대신, 묶인 핀들 중
+ *  가장 많은 게이트의 색을 그대로 써서 "이 안에 뭐가 묶여 있는지"가 색만 봐도 짐작되게 한다.
+ *  (게이트가 섞여 있어도 다수색 하나로 통일 — 파이차트처럼 쪼개면 숫자가 안 보일 만큼 작아짐) */
+function buildBoardClusterIcon(g: any, count: number, color: string): any {
   const size = count < 10 ? 38 : count < 30 ? 46 : 54;
   const c = size / 2;
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">' +
-    '<circle cx="' + c + '" cy="' + c + '" r="' + (c - 1) + '" fill="rgba(11,42,92,0.16)"/>' +
+    '<circle cx="' + c + '" cy="' + c + '" r="' + (c - 1) + '" fill="' + color + '2A"/>' +
     '<circle cx="' + c + '" cy="' + c + '" r="' + (c - 3) + '" fill="#FFFFFF"/>' +
-    '<circle cx="' + c + '" cy="' + c + '" r="' + (c - 5) + '" fill="#0B2A5C"/>' +
+    '<circle cx="' + c + '" cy="' + c + '" r="' + (c - 5) + '" fill="' + color + '"/>' +
     '<text x="' + c + '" y="' + c + '" text-anchor="middle" dominant-baseline="central" ' +
     'font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" ' +
     'font-size="' + (size * 0.36) + '" font-weight="700" fill="#FFFFFF">' + count + '</text>' +
@@ -982,6 +999,8 @@ async function renderBoardMapView(mapView: HTMLElement, tripId: string): Promise
       marker.setIcon(baseIcon);
       marker.setZIndex(null);
     };
+    // 클러스터 버블 색을 정할 때 "이 마커가 어느 게이트였는지" 되짚어보는 용도
+    marker.__bdMood = p.mood ?? '';
 
     boardMapMarkers.push(marker);
     boardMapEntries.push({ marker, mood: p.mood ?? '' });
@@ -1000,10 +1019,10 @@ async function renderBoardMapView(mapView: HTMLElement, tripId: string): Promise
     map,
     markers: boardMapEntries.filter((e) => !boardMapHiddenMoods.has(e.mood)).map((e) => e.marker),
     renderer: {
-      render: ({ count, position }: any) =>
+      render: ({ count, position, markers }: any) =>
         new g.maps.Marker({
           position,
-          icon: buildBoardClusterIcon(g, count),
+          icon: buildBoardClusterIcon(g, count, dominantClusterColor(markers)),
           zIndex: 500 + count,
         }),
     },
