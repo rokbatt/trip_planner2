@@ -38,6 +38,7 @@ import {
   stopLegKey,
   toStoredStops,
   todaysHoursLine,
+  effectiveDwellMinutes,
   MODES,
 } from './dayModel';
 import type { TlStop, TlDay, DaySchedule, DayModelContext, RealLegMap } from './dayModel';
@@ -46,7 +47,6 @@ import {
   estimateLegBetween,
   legKey,
   catKeyFor,
-  dwellMinutes,
   modeLabel,
   modeColorClass,
   fmtMin,
@@ -54,6 +54,7 @@ import {
   minToHHMM,
   hhmmToMin,
   parseTimeInput,
+  parseDwellInput,
   CAT_LABEL,
 } from '../utils/travelEstimate';
 import type { Leg, RealLeg, TravelMode, CatKey } from '../utils/travelEstimate';
@@ -846,11 +847,17 @@ function stopCardHtml(stop: TlStop, i: number, s: DaySchedule, dateISO: string |
     : null;
 
   // 우측 체류 요약 박스 — 도착/출발은 항상, "예상 체류"는 실제로 머무는 시간이 있을 때만
-  // (앵커 정류지처럼 체류시간이 0인 곳에 없는 값을 지어내 보여주지 않기 위해)
+  // (앵커 정류지처럼 체류시간이 0인 곳에 없는 값을 지어내 보여주지 않기 위해).
+  // 체류시간은 카테고리 기본값(추정치)일 뿐이라 틀릴 수 있어 — .tl-time과 같은 방식으로
+  // 직접 입력해 바꿀 수 있게 한다(비우면 다시 기본값으로 돌아간다).
   const stayBox = [
     '<div class="tl-staybox">',
     dwell > 0
-      ? '  <span class="tl-staybox-label">예상 체류</span><span class="tl-staybox-value">' + fmtMin(dwell) + '</span>'
+      ? '  <span class="tl-staybox-label">예상 체류</span>' +
+        '  <input type="text" class="tl-staybox-input' + (stop.customDwellMin != null ? ' is-custom' : '') + '"' +
+        ' value="' + fmtMin(dwell) + '" data-key="' + stop.key + '" inputmode="numeric" spellcheck="false"' +
+        ' title="' + (stop.customDwellMin != null ? '직접 정한 체류시간 · 비우면 기본값(추정치)으로 돌아가요' : '카테고리 기본값(추정치) · 입력하면 직접 정한 값으로 바뀌어요') + '"' +
+        ' aria-label="' + escapeHtml(stop.name) + ' 예상 체류시간" />'
       : '',
     '  <div class="tl-staybox-times">',
     '    <span class="tl-staybox-time"><b>도착</b>' + minToHHMM(s.arriveMin[i]) + '</span>',
@@ -1339,7 +1346,7 @@ function pdHeroHtml(stop: TlStop): string {
     '  <div class="tl-pd-facts">',
     rating,
     catParts.length ? '<span class="tl-pd-fact">' + escapeHtml(catParts.join(' · ')) + '</span>' : '',
-    '    <span class="tl-pd-fact">' + IC_CLOCK + '<span>예상 체류 ' + fmtMin(dwellMinutes(stop.cat)) + '</span></span>',
+    '    <span class="tl-pd-fact">' + IC_CLOCK + '<span>예상 체류 ' + fmtMin(effectiveDwellMinutes(stop)) + '</span></span>',
     '  </div>',
     '</div>',
   ].join('\n');
@@ -1522,7 +1529,7 @@ function pdBeforeGoSectionHtml(stop: TlStop, dateISO: string | null): string {
   const rows = [
     pdCheckRow(IC_CLOCK, '운영시간', hours),
     pdCheckRow(IC_PIN_SMALL, '위치', place.address),
-    pdCheckRow(IC_PD_HOURGLASS, '예상 체류', fmtMin(dwellMinutes(stop.cat))),
+    pdCheckRow(IC_PD_HOURGLASS, '예상 체류', fmtMin(effectiveDwellMinutes(stop))),
     pdCheckRow(IC_PD_TICKET, '예약·입장', bg?.booking || null, 'ai'),
     pdCheckRow(IC_PD_SHIRT, '복장 규정', bg?.dress || null, 'ai'),
     pdCheckRow(IC_PD_CASH, '현금 필요 여부', bg?.cash || null, 'ai'),
@@ -1826,6 +1833,29 @@ function bindDaySchedule(main: HTMLElement): void {
       // 형식이 잘못됐으면 조용히 되돌린다 (재렌더가 계산값으로 복구)
       if (raw && !next) { render(); return; }
       found.stop.arriveTime = next;
+      scheduleSave(found.day.dayIndex);
+      render();
+    };
+    el.addEventListener('change', commit);
+    el.addEventListener('keydown', (e) => {
+      const ke = e as KeyboardEvent;
+      if (ke.key === 'Enter') { ke.preventDefault(); el.blur(); }
+      if (ke.key === 'Escape') { ke.preventDefault(); render(); }
+    });
+    el.addEventListener('click', (e) => e.stopPropagation());
+  });
+
+  /* 예상 체류시간 — 비우면 다시 카테고리 기본값(추정치)으로 돌아간다(.tl-time과 같은 관례) */
+  main.querySelectorAll('.tl-staybox-input').forEach((input) => {
+    const el = input as HTMLInputElement;
+    const commit = () => {
+      const found = findStop(el.dataset.key!);
+      if (!found) return;
+      const raw = el.value.trim();
+      const next = raw ? parseDwellInput(raw) : null;
+      // 형식이 잘못됐으면 조용히 되돌린다 (재렌더가 계산값으로 복구)
+      if (raw && next == null) { render(); return; }
+      found.stop.customDwellMin = next;
       scheduleSave(found.day.dayIndex);
       render();
     };

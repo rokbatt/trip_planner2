@@ -268,3 +268,33 @@ export function parseTimeInput(raw: string): string | null {
   if (h < 0 || h > 23 || m < 0 || m > 59) return null;
   return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
 }
+
+/**
+ * 체류시간 자유 입력 → 분. 화면이 보여준 형식("1시간 30분")을 그대로 다시 입력해도,
+ * "90"(분으로 해석)이나 "1:30"(시:분)으로 입력해도 받아준다.
+ * 형식이 안 맞으면 null — 호출부가 조용히 되돌린다(.tl-time과 같은 관례).
+ */
+export function parseDwellInput(raw: string): number | null {
+  const s = raw.trim();
+  if (!s) return null;
+  if (s.includes(':')) {
+    const [hs, ms] = s.split(':');
+    const h = Number(hs);
+    const m = Number(ms);
+    if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || m < 0 || m > 59) return null;
+    return Math.round(h * 60 + m);
+  }
+  const hourMatch = s.match(/(\d+)\s*시간/);
+  const minMatch = s.match(/(\d+)\s*분/);
+  if (hourMatch || minMatch) {
+    const h = hourMatch ? Number(hourMatch[1]) : 0;
+    const m = minMatch ? Number(minMatch[1]) : 0;
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+    const total = h * 60 + m;
+    return total >= 0 && total <= 1440 ? total : null;
+  }
+  // 다른 단위 표시가 전혀 없으면 순수 숫자를 "분"으로 해석 (예: "90" → 90분)
+  if (!/^\d+$/.test(s)) return null;
+  const n = Number(s);
+  return Number.isFinite(n) && n >= 0 && n <= 1440 ? n : null;
+}

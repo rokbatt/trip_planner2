@@ -312,6 +312,8 @@ export interface Database {
           custom_lng: number | null;
           /** 비어있지 않으면 "숙소 들르기"처럼 일반 방문이 아닌 특수 목적 스탑(예: 짐 두기) — supabase/route_stop_purpose.sql */
           stop_purpose: string | null;
+          /** 사용자가 직접 정한 체류시간(분). null이면 카테고리 기본값(추정치) — supabase/route_stop_custom_dwell.sql */
+          custom_dwell_min: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -328,6 +330,7 @@ export interface Database {
           custom_lat?: number | null;
           custom_lng?: number | null;
           stop_purpose?: string | null;
+          custom_dwell_min?: number | null;
           created_at?: string;
           updated_at?: string;
         };
