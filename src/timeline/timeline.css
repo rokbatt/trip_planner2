@@ -791,10 +791,16 @@
   background: var(--tl-c-staybox-bg); border: 1px solid var(--tl-c-card-border);
 }
 .tl-staybox-label { font-size: 10.5px; color: var(--tl-c-secondary); }
-.tl-staybox-value {
-  font-size: 17px; font-weight: 800; color: var(--tl-c-title);
-  font-variant-numeric: tabular-nums;
+/* 예상 체류시간 — 카테고리 기본값(추정치)일 뿐이라 .tl-time처럼 직접 입력해 바꿀 수 있다 */
+.tl-staybox-input {
+  width: 100%; border: none; background: none; text-align: center;
+  font-family: inherit; font-size: 17px; font-weight: 800; color: var(--tl-c-title);
+  font-variant-numeric: tabular-nums; padding: 1px 2px; border-radius: 6px; cursor: text;
+  transition: background var(--tl-ease), color var(--tl-ease);
 }
+.tl-staybox-input:hover, .tl-staybox-input:focus { background: #fff; outline: none; }
+/* 사용자가 직접 정한 체류시간은 색으로 구분 — 기본값(추정치)과 섞이지 않게(.tl-time.is-fixed와 같은 관례) */
+.tl-staybox-input.is-custom { color: var(--tl-blue); }
 /* 도착·출발은 레퍼런스처럼 좌우 두 칸으로 나란히 (위 체류시간과 얇은 선으로 구분).
    체류시간이 0이라 위쪽 섹션이 통째로 빠진 카드에선 구분선만 덩그러니 남으므로 지운다. */
 .tl-staybox-times {

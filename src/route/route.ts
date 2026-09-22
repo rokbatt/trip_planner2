@@ -217,6 +217,10 @@ let searchResultPlaces: Place[] = [];
 let searchBusy = false;
 let historyByDay = new Map<string, HistoryState>();
 const memoStore = new Map<string, string>();
+/** TIMELINE에서 직접 정한 체류시간(분) — ROUTE엔 이걸 보여주거나 고치는 화면이 없지만,
+ *  저장은 항상 그 DAY 전체를 다시 쓰는 방식(replace)이라 여기서 값을 안 들고 있으면
+ *  ROUTE에서 아무 것도 안 바꾸고 저장만 해도 TIMELINE에서 정한 값이 조용히 지워진다. */
+const customDwellStore = new Map<string, number>();
 const timeOverride = new Map<string, string>();
 const legModeOverride = new Map<string, Leg['mode']>();
 /** "숙소 들르기"로 하루 중간에 되돌아온 지점(예: 짐 두기) — 실제 candidatePlaces에는 없는
@@ -325,6 +329,7 @@ export function teardownRoute(): void {
   activeCatFilters = new Set();
   historyByDay = new Map();
   memoStore.clear();
+  customDwellStore.clear();
   timeOverride.clear();
   legModeOverride.clear();
   lodgingRevisitPurpose.clear();
@@ -454,6 +459,7 @@ async function persistActiveDay(): Promise<void> {
       memo: memoStore.get(id) || null,
       travelMode: prev ? legModeOverride.get(legKey(prev.id, id)) ?? null : null,
       purpose: lodgingRevisitPurpose.get(id) ?? null,
+      customDwellMin: customDwellStore.get(id) ?? null,
     };
   });
 
@@ -538,6 +544,7 @@ function applyStoredPlan(stored: Awaited<ReturnType<typeof loadRoutePlan>>): boo
       ids.push(id);
       if (s.arriveTime) timeOverride.set(timeKey(day.id, id), s.arriveTime);
       if (s.memo) memoStore.set(id, s.memo);
+      if (s.customDwellMin != null) customDwellStore.set(id, s.customDwellMin);
       if (s.travelMode && prevId) legModeOverride.set(legKey(prevId, id), s.travelMode as Leg['mode']);
       prevId = id;
     });
@@ -1565,6 +1572,7 @@ function bindOptionsMenu(container: HTMLElement): void {
       days.forEach((d) => pushHistory(d.id));
       days.forEach((d) => { d.stopIds = []; });
       memoStore.clear();
+      customDwellStore.clear();
       timeOverride.clear();
       legModeOverride.clear();
       menu.remove();
@@ -2542,6 +2550,7 @@ function clearAirportAnchor(id: string, container: HTMLElement): void {
     timeOverride.delete(timeKey(d.id, id));
   });
   memoStore.delete(id);
+  customDwellStore.delete(id);
   placeById.delete(id);
 
   if (isArrival) {

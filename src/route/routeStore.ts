@@ -33,6 +33,8 @@ export interface StoredStop {
   travelMode: string | null;
   /** 비어있으면 일반 정류지, 있으면 "숙소 들르기" 같은 특수 목적 스탑의 목적 텍스트 */
   purpose: string | null;
+  /** 사용자가 직접 정한 체류시간(분). 없으면 화면이 카테고리 기본값(추정치)을 쓴다 */
+  customDwellMin: number | null;
 }
 
 export interface StoredDay {
@@ -52,12 +54,13 @@ function isMissingTable(error: { code?: string; message?: string } | null): bool
   return error.code === '42P01' || /relation .* does not exist/i.test(error.message ?? '');
 }
 
-/** PostgREST "스키마 캐시에 그 컬럼이 없음" — route_stop_purpose.sql 마이그레이션 전임을 뜻함
- *  (supabase/destination_arrival.sql 때 겪었던 것과 같은 에러 모양). 이 컬럼 하나가 없다고
- *  저장 전체를 실패시키지 않고, 그 필드만 빼고 재시도한다. */
-function isMissingColumn(error: { code?: string; message?: string } | null): boolean {
-  if (!error) return false;
-  return /Could not find the '.*' column/i.test(error.message ?? '');
+/** PostgREST "스키마 캐시에 그 컬럼이 없음" — 아직 안 돌린 마이그레이션 하나가 있다는 뜻
+ *  (route_stop_purpose.sql, route_stop_custom_dwell.sql처럼 나중에 컬럼만 추가하는 경우).
+ *  이 컬럼 하나가 없다고 저장 전체를 실패시키지 않고, 어떤 컬럼이 없는지 이름을 뽑아
+ *  그 필드만 빼고 재시도한다(여러 마이그레이션이 밀려 있어도 하나씩 벗겨내며 재시도). */
+function missingColumnName(error: { code?: string; message?: string } | null): string | null {
+  const m = /Could not find the '(.+?)' column/i.exec(error?.message ?? '');
+  return m ? m[1] : null;
 }
 
 /* ══════════════ 불러오기 ══════════════ */
@@ -109,6 +112,7 @@ export async function loadRoutePlan(destinationId: string): Promise<StoredDay[] 
       memo: s.memo,
       travelMode: s.travel_mode,
       purpose: s.stop_purpose ?? null,
+      customDwellMin: s.custom_dwell_min ?? null,
     });
     byDay.set(s.route_day_id, list);
   });
@@ -203,27 +207,32 @@ export async function saveRouteDay(
     custom_lat: s.placeId ? null : s.customLat,
     custom_lng: s.placeId ? null : s.customLng,
     stop_purpose: s.purpose,
+    custom_dwell_min: s.customDwellMin,
   }));
 
-  const { error: insErr } = await supabase.from('route_stops').insert(rows);
-  if (insErr) {
-    // stop_purpose 컬럼 마이그레이션 전이면 그 필드만 빼고 재시도 — "숙소 들르기" 목적 텍스트만
-    // 빠질 뿐 나머지 동선 저장은 그대로 되게(원칙: 마이그레이션 전에도 앱은 동작해야 함).
-    if (isMissingColumn(insErr)) {
-      const fallbackRows = rows.map(({ stop_purpose: _stop_purpose, ...rest }) => rest);
-      const { error: retryErr } = await supabase.from('route_stops').insert(fallbackRows);
-      if (retryErr) {
-        console.error('[Route] route_stops 저장 실패(재시도):', retryErr.message);
-        return false;
-      }
+  // 아직 안 돌린 마이그레이션(stop_purpose, custom_dwell_min 등)이 여러 개 밀려 있어도
+  // 하나씩 빼며 재시도 — 그 필드만 빠질 뿐 나머지 동선 저장은 그대로 되게(마이그레이션 전에도
+  // 앱은 동작해야 한다는 원칙). 컬럼이 실제로 몇 개 없든 끝나야 하므로 rows의 필드 수만큼만 돈다.
+  let attemptRows: Record<string, unknown>[] = rows;
+  for (let attempt = 0; attempt <= Object.keys(rows[0] ?? {}).length; attempt++) {
+    // 컬럼을 동적으로 빼고 넣는 재시도라 정확한 Insert 모양과 맞는지는 타입으로 보장할 수 없다
+    // (뺄 컬럼 이름을 실행 중에야 알게 되므로) — 이 호출 하나만 any로 좁혀서 나머지는 그대로 둔다.
+    const { error: insErr } = await supabase.from('route_stops').insert(attemptRows as any);
+    if (!insErr) {
       markSelfWrite();
       return true;
     }
-    console.error('[Route] route_stops 저장 실패:', insErr.message);
-    return false;
+    const missing = missingColumnName(insErr);
+    if (!missing) {
+      console.error('[Route] route_stops 저장 실패:', insErr.message);
+      return false;
+    }
+    attemptRows = attemptRows.map((row) => {
+      const { [missing]: _drop, ...rest } = row;
+      return rest;
+    });
   }
-  markSelfWrite();
-  return true;
+  return false;
 }
 
 /** 이 여행지의 모든 DAY 삭제 (동선 전체 초기화) */
