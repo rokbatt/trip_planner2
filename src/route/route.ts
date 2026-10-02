@@ -3589,21 +3589,24 @@ const CANDIDATE_TONE = '#6B7A93';
 // 항상 같은 비율로 보이게 한다 — 번들 분리 때문에 모듈은 복제하되, 숫자는 네 곳 모두 동일하게.
 const PIN_TAIL_RATIO = 2.2;
 
-/** 반지름 r인 원(중심 cx,cy)에 외부 접선 두 개를 그어 tip에서 만나는 "물방울(핀)" 윤곽 경로.
- *  원 위쪽은 완전한 원으로, 아래쪽만 매끄럽게(꺾임 없이) 한 점으로 좁아진다. */
+/** 원(머리, 중심 cx,cy) + 베지어 곡선 목으로 끝(tip)까지 매끄럽게 좁아지는 "벌룬(물방울)" 핀
+ *  윤곽 경로 — 구글맵 기본 마커와 같은 구조. 끝에 가까운 제어점(k1x·k1y)의 가로폭을 머리
+ *  쪽 제어점(k2)보다 훨씬 좁게 잡아 "손으로 눌러 가늘게 만든" 듯 끝만 핀치되도록 한다.
+ *  k1x/k1y/k2는 머리 반지름(r)·꼬리 길이(d)에 대한 비율이라 PIN_TAIL_RATIO가 달라져도(꼬리
+ *  길이가 늘거나 줄어도) 핀치 각도(끝이 가늘어지는 정도)는 항상 동일하게 유지된다. */
 function pinTearPath(cx: number, cy: number, r: number, tipY: number): string {
-  const d = tipY - cy; // 중심→끝 거리
-  const phi = Math.acos(r / d); // 접선이 원과 만나는 각(라디안) — "아래로 곧장"에서 좌우로 벌어진 정도
-  const a1 = Math.PI / 2 - phi;
-  const a2 = Math.PI / 2 + phi;
-  const t1x = cx + r * Math.cos(a1);
-  const t1y = cy + r * Math.sin(a1);
-  const t2x = cx + r * Math.cos(a2);
-  const t2y = cy + r * Math.sin(a2);
+  const d = tipY - cy; // 머리 중심→끝 거리
+  const k1x = 0.087; // 끝에 가까운 제어점의 가로폭 비율(작을수록 끝이 더 가늘게 눌림)
+  const k1y = 0.55;
+  const k2 = 0.545; // 머리 쪽 제어점 — 원과 이어지는 부분이 매끄럽도록
+  const p1x = k1x * d;
+  const p1y = tipY - k1y * d;
+  const p2y = cy + k2 * r;
   return (
-    'M' + t1x + ' ' + t1y +
-    ' A' + r + ' ' + r + ' 0 1 0 ' + t2x + ' ' + t2y +
-    ' L' + cx + ' ' + tipY +
+    'M' + cx + ' ' + tipY +
+    ' C' + (cx - p1x) + ' ' + p1y + ' ' + (cx - r) + ' ' + p2y + ' ' + (cx - r) + ' ' + cy +
+    ' A' + r + ' ' + r + ' 0 1 1 ' + (cx + r) + ' ' + cy +
+    ' C' + (cx + r) + ' ' + p2y + ' ' + (cx + p1x) + ' ' + p1y + ' ' + cx + ' ' + tipY +
     ' Z'
   );
 }
