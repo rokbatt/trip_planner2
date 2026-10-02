@@ -2611,7 +2611,8 @@ function renderRightPanel(container: HTMLElement): void {
     if (!revisitPurpose) displayNum += 1;
     const memo = memoStore.get(p.id) ?? '';
     const highlighted = p.id === highlightedPlaceId;
-    const cardColor = revisitPurpose ? LODGING_REVISIT_COLOR : stopIdentityColor();
+    const cardColor = revisitPurpose ? LODGING_REVISIT_COLOR : stopIdentityColor(isAnchor);
+    const cardTint = revisitPurpose ? LODGING_REVISIT_TINT : isAnchor ? ANCHOR_BLUE_TINT : AERO_BLUE_TINT;
 
     const manualTime = timeOverride.has(timeKey(day.id, p.id));
     // 예상 체류시간(참고용 추정치) 대신, 그 시각에 실제로 도착하는 시각(HH:MM)을 보여준다 —
@@ -2629,7 +2630,7 @@ function renderRightPanel(container: HTMLElement): void {
           '" draggable="true" data-place-id="' + p.id + '" title="드래그해서 순서 바꾸기">',
         revisitPurpose
           ? '  <span class="rt-panel-badge" style="background:' + LODGING_REVISIT_TINT + ';color:' + LODGING_REVISIT_COLOR + '">' + IC_LODGING + '</span>'
-          : '  <span class="rt-panel-badge" style="background:' + AERO_BLUE_TINT + ';color:' + cardColor + '">' + displayNum + '</span>',
+          : '  <span class="rt-panel-badge" style="background:' + cardTint + ';color:' + cardColor + '">' + displayNum + '</span>',
         '  <div class="rt-panel-name-col"><div class="rt-panel-name">' + escapeHtml(p.name) + '</div><div class="rt-panel-sub">' +
           escapeHtml(revisitPurpose ? '잠깐 들르기 · ' + revisitPurpose : p.category || (isBasecamp ? '숙소' : '')) + '</div></div>',
         timeOrDwellHtml,
@@ -2923,16 +2924,24 @@ function refreshAll(container: HTMLElement, opts: { refit: boolean } = { refit: 
 /* ══════════════════ 지도 ══════════════════ */
 
 /**
- * 핀·배지·리스트·경로선 강조색 — 한 가지로 통일해 "이 색 = 내 동선"이라는 정체성을 하나로
- * 모은다. 이동수단 구분은 색이 아니라 캡슐 배지의 아이콘/라벨과 모드 전환 노드가 담당한다.
- * (Aero Blue → Sky Cyan → Crimson으로 교체 — 색상 후보 비교 후 선택된 값. 상수 이름은 유지)
+ * 핀·배지·리스트·경로선 강조색 — 단일 통일색(Aero Blue → Sky Cyan → Crimson 순서로 시도)
+ * 대신, "고급형" 2단계 구조로 교체: 앵커(숙소/공항)는 짙은 네이비로 시각적 우선순위를
+ * 높이고, 그 외 일반 방문지·경로선은 라이트 블루로 통일한다. 둘 다 새 색을 따로 만들지
+ * 않고 이 앱 디자인 시스템의 기존 토큰(route.css의 --rt-navy / --rt-blue)과 값을 맞췄다.
+ * 이동수단 구분은 색이 아니라 캡슐 배지의 아이콘/라벨과 모드 전환 노드가 담당한다.
+ * (상수 이름 AERO_BLUE는 그대로 유지 — 지금은 "일반 방문지 · 경로선" 쪽 색을 가리킨다)
  */
-const AERO_BLUE = '#DC2626';
+const AERO_BLUE = '#0B7CC4'; // 일반 방문지 · 경로선 — route.css --rt-blue와 동일
 // 리스트 배지 등 옅은 틴트 배경이 필요한 곳에서 쓰는, AERO_BLUE를 10% 불투명도로 깐 버전.
-const AERO_BLUE_TINT = 'rgba(220,38,38,0.1)';
+const AERO_BLUE_TINT = 'rgba(11,124,196,0.1)';
 // "다음 장소"를 가리킬 때 쓰는 강조색 — 짙은 남색. 처음 시도한 값(#0B0F5C)이 남색보다
 // 검정에 가까워 보인다는 피드백으로, 이 앱 전체에서 이미 쓰는 네이비(--rt-navy)로 교체.
 const ROUTE_NEXT = '#0B2A5C';
+// 앵커(숙소/공항) 전용 — "고급형" 구조의 딥네이비. ROUTE_NEXT와 같은 네이비 값을 공유한다
+// (route.css --rt-navy). "다음 장소" 강조는 일시적 상태 색, 앵커 색은 영구적 정체성 색으로
+// 쓰임 범위가 달라 겹쳐도 혼동이 적다.
+const ANCHOR_BLUE = ROUTE_NEXT;
+const ANCHOR_BLUE_TINT = 'rgba(11,42,92,0.1)';
 const ROUTE_GRAY = '#9AA7B8';
 // 동선(경로선) 색 — 핀과 같은 색으로 통일해 "이 색 = 내 동선"이라는 정체성을 하나로
 // 모았다. 예전엔 지도의 파란 물과 안 섞이게 선만 Tangerine(주황)으로 분리했었는데, 이젠
@@ -2947,11 +2956,12 @@ const LODGING_REVISIT_TINT = 'rgba(124,92,252,0.12)';
 
 /**
  * 지도 핀과 우측 패널 배지가 항상 같은 색을 쓰도록 하는 단일 기준 — "이 핀 = 이 카드"가
- * 색으로도 바로 연결되게 한다. 앵커(숙소/공항)든 일반 방문지든 평소(phase='plain') 상태는
- * 전부 AERO_BLUE 하나로 통일 — 진행 상태 강조(다음/지나옴)만 phaseColor가 다른 색을 얹는다.
+ * 색으로도 바로 연결되게 한다. 앵커(숙소/공항)는 짙은 네이비, 일반 방문지는 라이트 블루로
+ * 평소(phase='plain') 상태의 위계를 나누고 — 진행 상태 강조(다음/지나옴)만 phaseColor가
+ * 다른 색을 얹는다.
  */
-function stopIdentityColor(): string {
-  return AERO_BLUE;
+function stopIdentityColor(isAnchor: boolean): string {
+  return isAnchor ? ANCHOR_BLUE : AERO_BLUE;
 }
 // 방향 화살표 대신 점선 자체로 "동선"임을 표현 — 모든 이동수단을 점선으로 통일했다.
 // 두께는 항상 고정(줌 배율과 무관) — 이동수단 구분은 색이 아니라 캡슐 배지의
@@ -3129,7 +3139,8 @@ function drawRouteOnMap(refit: boolean): void {
   let mapDisplayNum = 0;
   stops.forEach((p, i) => {
     const isBasecamp = isBasecampPlace(p, dayIndex);
-    const baseColor = stopIdentityColor();
+    const isAirport = isAirportAnchorPlace(p);
+    const baseColor = stopIdentityColor(isBasecamp || isAirport);
     if (!lodgingRevisitPurpose.has(p.id)) mapDisplayNum += 1;
     // 어떤 장소를 클릭/호버하면 그 장소(current)와 바로 이전 정류지(adjacent)만 강조하고,
     // 나머지는 전부 회색으로 물러난다 — "그 장소로 가는 구간 + 이전 장소만" 강조라는 원칙.
