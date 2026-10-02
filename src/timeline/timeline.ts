@@ -1140,7 +1140,8 @@ function clearMapOverlays(): void {
   mapLines = [];
 }
 
-const PIN_TAIL_RATIO = 1.5;
+// ROUTE(route.ts)의 PIN_TAIL_RATIO와 항상 같은 값을 쓴다 — 두 화면의 핀이 같은 비율로 보이도록.
+const PIN_TAIL_RATIO = 2.2;
 
 /** 반지름 r인 원(중심 cx,cy)에 외부 접선 두 개를 그어 tip에서 만나는 "물방울(핀)" 윤곽 경로.
  *  ROUTE의 지도 핀(buildMarkerV2)과 같은 모양 — 두 화면의 핀이 한 눈에 같은 것으로 읽히도록. */

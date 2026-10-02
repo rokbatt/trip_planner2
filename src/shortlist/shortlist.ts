@@ -2652,7 +2652,8 @@ function pinTearPath(cx: number, cy: number, r: number, tipY: number): string {
 }
 
 const STEP1_PIN_HEAD_R = 12;
-const STEP1_PIN_TAIL_RATIO = 1.5;
+// ROUTE(route.ts)의 PIN_TAIL_RATIO와 항상 같은 값을 쓴다 — 모든 화면의 핀이 같은 비율로 보이도록.
+const STEP1_PIN_TAIL_RATIO = 2.2;
 /** 회색이 아니라 mood(4개 게이트)별 색으로 채운 물방울 모양 핀 — ROUTE의 "아직 담지 않은 후보"
  *  핀과 같은 실루엣·아이콘 스타일(선 아이콘 + 그림자)을 쓰되, 색은 회청색이 아니라 이 화면이
  *  원래 쓰던 mood색을, 크기도 이 화면 크기(STEP1_PIN_HEAD_R) 그대로 유지한다.
