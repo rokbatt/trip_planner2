@@ -174,7 +174,8 @@ function pinTearPath(cx: number, cy: number, r: number, tipY: number): string {
 }
 
 const BOARD_PIN_HEAD_R = 15.6; // 13 * 1.2 — 핀 전체 크기를 20% 키워달라는 요청
-const BOARD_PIN_TAIL_RATIO = 1.45;
+// ROUTE(route.ts)의 PIN_TAIL_RATIO와 항상 같은 값을 쓴다 — 모든 화면의 핀이 같은 비율로 보이도록.
+const BOARD_PIN_TAIL_RATIO = 2.2;
 /** 핀 바깥 흰 테두리 두께 — 지도 배경색과 상관없이 핀이 또렷하게 떠 보이는 핵심.
  *  머리 반지름과 같은 비율로 키워서 두께감이 이전과 동일하게 유지되도록 함. */
 const BOARD_PIN_RING = 2.16; // 1.8 * 1.2
