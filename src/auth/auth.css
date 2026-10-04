@@ -453,7 +453,9 @@
   letter-spacing: -0.01em;
 }
 .lp-map-zone.is-picked { fill: #0B2A5C; }
-.lp-map-num { font-family: var(--font-sans); font-size: 12px; font-weight: 700; fill: #FFFFFF; }
+/* 번호 색은 SVG fill 속성으로 넘긴다(핀 색과 같은 값). 여기서 fill을 박으면 CSS가 속성을 덮어쓴다.
+   제품 핀도 흰 머리 위에 핀 색 번호(route.ts buildMarkerV2) — font-weight 800까지 맞춘다. */
+.lp-map-num { font-family: var(--font-sans); font-size: 12px; font-weight: 800; }
 .lp-map-label {
   font-family: var(--font-sans);
   font-size: 11.5px;
