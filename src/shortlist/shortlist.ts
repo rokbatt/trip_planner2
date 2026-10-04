@@ -2632,29 +2632,27 @@ function buildCategoryIcon(g: any, mood: string | null, category?: string | null
   };
 }
 
-/** 원(머리) + 베지어 곡선 목으로 끝(tip)까지 매끄럽게 좁아지는 "벌룬(물방울)" 핀 윤곽 경로 —
- *  ROUTE의 pinTearPath(route.ts)와 동일한 수식. 화면(Step1)이 서로 달라 모듈을 공유하지 않고 복제.
- *  k1x/k1y/k2 비율에 대한 설명은 route.ts의 동명 함수 주석 참고. */
+/** 반지름 r인 원(중심 cx,cy)에 외부 접선 두 개를 그어 tip에서 만나는 "물방울(핀)" 윤곽 경로 —
+ *  ROUTE의 pinTearPath(route.ts)와 동일한 수식. 화면(Step1)이 서로 달라 모듈을 공유하지 않고 복제. */
 function pinTearPath(cx: number, cy: number, r: number, tipY: number): string {
   const d = tipY - cy;
-  const k1x = 0.087;
-  const k1y = 0.55;
-  const k2 = 0.545;
-  const p1x = k1x * d;
-  const p1y = tipY - k1y * d;
-  const p2y = cy + k2 * r;
+  const phi = Math.acos(r / d);
+  const a1 = Math.PI / 2 - phi;
+  const a2 = Math.PI / 2 + phi;
+  const t1x = cx + r * Math.cos(a1);
+  const t1y = cy + r * Math.sin(a1);
+  const t2x = cx + r * Math.cos(a2);
+  const t2y = cy + r * Math.sin(a2);
   return (
-    'M' + cx + ' ' + tipY +
-    ' C' + (cx - p1x) + ' ' + p1y + ' ' + (cx - r) + ' ' + p2y + ' ' + (cx - r) + ' ' + cy +
-    ' A' + r + ' ' + r + ' 0 1 1 ' + (cx + r) + ' ' + cy +
-    ' C' + (cx + r) + ' ' + p2y + ' ' + (cx + p1x) + ' ' + p1y + ' ' + cx + ' ' + tipY +
+    'M' + t1x + ' ' + t1y +
+    ' A' + r + ' ' + r + ' 0 1 0 ' + t2x + ' ' + t2y +
+    ' L' + cx + ' ' + tipY +
     ' Z'
   );
 }
 
 const STEP1_PIN_HEAD_R = 12;
-// ROUTE(route.ts)의 PIN_TAIL_RATIO와 항상 같은 값을 쓴다 — 모든 화면의 핀이 같은 비율로 보이도록.
-const STEP1_PIN_TAIL_RATIO = 2.2;
+const STEP1_PIN_TAIL_RATIO = 1.5;
 /** 회색이 아니라 mood(4개 게이트)별 색으로 채운 물방울 모양 핀 — ROUTE의 "아직 담지 않은 후보"
  *  핀과 같은 실루엣·아이콘 스타일(선 아이콘 + 그림자)을 쓰되, 색은 회청색이 아니라 이 화면이
  *  원래 쓰던 mood색을, 크기도 이 화면 크기(STEP1_PIN_HEAD_R) 그대로 유지한다.

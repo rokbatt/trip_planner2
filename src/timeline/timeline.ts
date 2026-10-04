@@ -1140,27 +1140,20 @@ function clearMapOverlays(): void {
   mapLines = [];
 }
 
-// ROUTE(route.ts)의 PIN_TAIL_RATIO와 항상 같은 값을 쓴다 — 두 화면의 핀이 같은 비율로 보이도록.
-const PIN_TAIL_RATIO = 2.2;
+const PIN_TAIL_RATIO = 1.5;
 
-/** 원(머리) + 베지어 곡선 목으로 끝(tip)까지 매끄럽게 좁아지는 "벌룬(물방울)" 핀 윤곽 경로.
- *  ROUTE의 지도 핀(buildMarkerV2)과 같은 수식 — 두 화면의 핀이 한 눈에 같은 것으로 읽히도록.
- *  k1x/k1y/k2 비율에 대한 설명은 route.ts의 동명 함수 주석 참고. */
+/** 반지름 r인 원(중심 cx,cy)에 외부 접선 두 개를 그어 tip에서 만나는 "물방울(핀)" 윤곽 경로.
+ *  ROUTE의 지도 핀(buildMarkerV2)과 같은 모양 — 두 화면의 핀이 한 눈에 같은 것으로 읽히도록. */
 function pinTearPath(cx: number, cy: number, r: number, tipY: number): string {
   const d = tipY - cy;
-  const k1x = 0.087;
-  const k1y = 0.55;
-  const k2 = 0.545;
-  const p1x = k1x * d;
-  const p1y = tipY - k1y * d;
-  const p2y = cy + k2 * r;
-  return (
-    'M' + cx + ' ' + tipY +
-    ' C' + (cx - p1x) + ' ' + p1y + ' ' + (cx - r) + ' ' + p2y + ' ' + (cx - r) + ' ' + cy +
-    ' A' + r + ' ' + r + ' 0 1 1 ' + (cx + r) + ' ' + cy +
-    ' C' + (cx + r) + ' ' + p2y + ' ' + (cx + p1x) + ' ' + p1y + ' ' + cx + ' ' + tipY +
-    ' Z'
-  );
+  const phi = Math.acos(r / d);
+  const a1 = Math.PI / 2 - phi;
+  const a2 = Math.PI / 2 + phi;
+  const t1x = cx + r * Math.cos(a1);
+  const t1y = cy + r * Math.sin(a1);
+  const t2x = cx + r * Math.cos(a2);
+  const t2y = cy + r * Math.sin(a2);
+  return 'M' + t1x + ' ' + t1y + ' A' + r + ' ' + r + ' 0 1 0 ' + t2x + ' ' + t2y + ' L' + cx + ' ' + tipY + ' Z';
 }
 
 /** 번호가 박힌 물방울 핀 — ROUTE 지도 핀과 같은 모양: 색 채운 물방울 위에 살짝 작은 흰 원을 얹어
