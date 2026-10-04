@@ -153,30 +153,28 @@ function pinIconInner(svg: string): string {
   return svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
 }
 
-/** 원(머리) + 베지어 곡선 목으로 끝(tip)까지 매끄럽게 좁아지는 "벌룬(물방울)" 핀 윤곽 경로 —
+/** 반지름 r인 원(중심 cx,cy)에 외부 접선 두 개를 그어 tip에서 만나는 "물방울(핀)" 윤곽 경로 —
  *  STAY 지도(shortlist.ts)의 pinTearPath와 같은 수식. 화면이 서로 달라 모듈을 공유하지
- *  않고 복제했다(board.ts가 shortlist.ts 전체를 끌고 들어오면 번들이 얽힘).
- *  k1x/k1y/k2 비율에 대한 설명은 route.ts의 동명 함수 주석 참고. */
+ *  않고 복제했다(board.ts가 shortlist.ts 전체를 끌고 들어오면 번들이 얽힘). */
 function pinTearPath(cx: number, cy: number, r: number, tipY: number): string {
   const d = tipY - cy;
-  const k1x = 0.087;
-  const k1y = 0.55;
-  const k2 = 0.545;
-  const p1x = k1x * d;
-  const p1y = tipY - k1y * d;
-  const p2y = cy + k2 * r;
+  const phi = Math.acos(r / d);
+  const a1 = Math.PI / 2 - phi;
+  const a2 = Math.PI / 2 + phi;
+  const t1x = cx + r * Math.cos(a1);
+  const t1y = cy + r * Math.sin(a1);
+  const t2x = cx + r * Math.cos(a2);
+  const t2y = cy + r * Math.sin(a2);
   return (
-    'M' + cx + ' ' + tipY +
-    ' C' + (cx - p1x) + ' ' + p1y + ' ' + (cx - r) + ' ' + p2y + ' ' + (cx - r) + ' ' + cy +
-    ' A' + r + ' ' + r + ' 0 1 1 ' + (cx + r) + ' ' + cy +
-    ' C' + (cx + r) + ' ' + p2y + ' ' + (cx + p1x) + ' ' + p1y + ' ' + cx + ' ' + tipY +
+    'M' + t1x + ' ' + t1y +
+    ' A' + r + ' ' + r + ' 0 1 0 ' + t2x + ' ' + t2y +
+    ' L' + cx + ' ' + tipY +
     ' Z'
   );
 }
 
 const BOARD_PIN_HEAD_R = 15.6; // 13 * 1.2 — 핀 전체 크기를 20% 키워달라는 요청
-// ROUTE(route.ts)의 PIN_TAIL_RATIO와 항상 같은 값을 쓴다 — 모든 화면의 핀이 같은 비율로 보이도록.
-const BOARD_PIN_TAIL_RATIO = 2.2;
+const BOARD_PIN_TAIL_RATIO = 1.45;
 /** 핀 바깥 흰 테두리 두께 — 지도 배경색과 상관없이 핀이 또렷하게 떠 보이는 핵심.
  *  머리 반지름과 같은 비율로 키워서 두께감이 이전과 동일하게 유지되도록 함. */
 const BOARD_PIN_RING = 2.16; // 1.8 * 1.2

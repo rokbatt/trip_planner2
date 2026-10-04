@@ -692,7 +692,7 @@ a.rt-stopinfo-leg:hover .rt-stopinfo-leg-gmaps { color: var(--rt-blue); }
    Aero Blue 굵은 숫자. 여기 값은 그게 아직 안 붙었을 때의 안전한 기본값일 뿐.
    트리플류 여행 앱에서 자주 보이는 소프트필 "칩" — 원형 대신 둥근 사각형. */
 .rt-panel-badge {
-  grid-column: 1; width: 24px; height: 24px; border-radius: 8px;
+  grid-column: 1; width: 24px; height: 24px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   font-size: 11px; font-weight: 800; flex-shrink: 0;
   background: rgba(47,134,214,0.1);
