@@ -144,7 +144,7 @@ export function renderLogin(): void {
               </div>
               <div class="lp-split-demo">
                 <div class="lp-kakao">
-                  <div class="lp-kakao-head">3월 방콕 ✈︎ · 4</div>
+                  <div class="lp-kakao-head">3월 뉴욕 ✈︎ · 4</div>
                   <div class="lp-kakao-msg"><span class="lp-kakao-who">민수</span><span class="lp-kakao-bubble">여기 야경 미쳤대</span></div>
                   <div class="lp-kakao-msg"><span class="lp-kakao-who"></span><span class="lp-kakao-bubble is-link">instagram.com/reel/Cx9k2…</span></div>
                   <div class="lp-kakao-msg"><span class="lp-kakao-who">지현</span><span class="lp-kakao-bubble">오 저장</span></div>
@@ -216,13 +216,13 @@ export function renderLogin(): void {
                 <div class="lp-map">${zoneMapSvg()}</div>
                 <div class="lp-zones">
                   <div class="lp-zone is-picked">
-                    <span class="lp-zone-name">수쿰윗<em>선택됨</em></span>
-                    <span class="lp-zone-meta">BTS 아쏙 도보 4분 · 편의점 2 · 식당 40+</span>
+                    <span class="lp-zone-name">미드타운<em>선택됨</em></span>
+                    <span class="lp-zone-meta">지하철 타임스스퀘어역 도보 4분 · 식당 200+</span>
                     <span class="lp-zone-score">86<small>AI 분석</small></span>
                   </div>
                   <div class="lp-zone">
-                    <span class="lp-zone-name">시암</span>
-                    <span class="lp-zone-meta">BTS 시암 도보 6분 · 쇼핑 중심</span>
+                    <span class="lp-zone-name">소호</span>
+                    <span class="lp-zone-meta">지하철 프린스 스트리트역 도보 3분 · 쇼핑 중심</span>
                     <span class="lp-zone-score">81<small>AI 분석</small></span>
                   </div>
                 </div>
@@ -249,8 +249,8 @@ export function renderLogin(): void {
                   <div class="demo-linkcard">
                     <div class="demo-linkcard-thumb"></div>
                     <div class="demo-linkcard-body">
-                      <span class="demo-linkcard-chip">FOOD</span>
-                      <div class="demo-linkcard-title">옥타브 루프탑 바</div>
+                      <span class="demo-linkcard-chip">PLACE</span>
+                      <div class="demo-linkcard-title">탑 오브 더 락</div>
                       <div class="demo-linkcard-host">instagram.com</div>
                     </div>
                   </div>
@@ -300,12 +300,12 @@ export function renderLogin(): void {
                   </div>
                   <div class="demo-sched-row is-leg">
                     <span class="demo-sched-time">+18분</span>
-                    <span class="demo-sched-name">BTS 아쏙 → 사판탁신</span>
+                    <span class="demo-sched-name">지하철 타임스스퀘어 → 센트럴파크</span>
                     <span class="demo-sched-badge real">실측</span>
                   </div>
                   <div class="demo-sched-row">
                     <span class="demo-sched-time">09:18</span>
-                    <span class="demo-sched-name">왓 아룬</span>
+                    <span class="demo-sched-name">센트럴파크</span>
                     <span></span>
                   </div>
                   <div class="demo-sched-row is-leg">
@@ -315,7 +315,7 @@ export function renderLogin(): void {
                   </div>
                   <div class="demo-sched-row">
                     <span class="demo-sched-time">10:30</span>
-                    <span class="demo-sched-name">티엔 시장 점심</span>
+                    <span class="demo-sched-name">록펠러 센터</span>
                     <span></span>
                   </div>
                 </div>
@@ -337,9 +337,9 @@ export function renderLogin(): void {
               </div>
               <div class="lp-split-demo">
                 <div class="lp-phone">
-                  <div class="lp-phone-top"><span>DAY 2 · 방콕</span><span>14:20</span></div>
+                  <div class="lp-phone-top"><span>DAY 2 · 뉴욕</span><span>14:20</span></div>
                   <p class="lp-now-label">NOW — 다음 목적지</p>
-                  <p class="lp-now-place">티엔 시장</p>
+                  <p class="lp-now-place">첼시 마켓</p>
                   <p class="lp-now-meta">도보 12분 · 14:32 도착 예정</p>
                   <div class="lp-now-actions">
                     <span class="lp-now-btn is-primary">도착</span>
@@ -361,7 +361,7 @@ export function renderLogin(): void {
                 <h2 class="lp-sec-title">“내가 더 냈나?”로<br>끝나지 않게.</h2>
                 <p class="lp-sec-desc">
                   예산을 잡고, 현지에서 바로 기록하고, 마지막엔 누가 누구에게 얼마를 보내면
-                  되는지 한 줄로 정리해요. 바트로 낸 돈도 그날 환율로 환산해 두고,
+                  되는지 한 줄로 정리해요. 달러로 낸 돈도 그날 환율로 환산해 두고,
                   어떤 환율을 썼는지까지 같이 적습니다.
                 </p>
               </div>
@@ -461,12 +461,49 @@ export function renderLogin(): void {
  *   숙소·선택 상태   = 네이비 #0B2A5C (shortlist는 권역마다 색이 달라 고정 강조색이 없고,
  *                      숙소 마커가 네이비다 — 랜딩의 "선택됨"도 여기에 맞춘다)
  *   무드 색 = 가고싶어 #E24B4A · 먹고싶어 #1D9E75 · 하고싶어 #7F77DD (board.ts와 동일)
- * 랜딩이 제품과 다른 색을 쓰면 들어왔을 때 "다른 서비스 같다"는 인상을 준다.
+ * 핀 모양도 제품과 같다: 색 풍선 + 흰 머리 + 머리 안의 번호(route.ts buildMarkerV2).
+ * 랜딩이 제품과 다른 색·모양을 쓰면 들어왔을 때 "다른 서비스 같다"는 인상을 준다.
+ *
+ * 예시 도시는 뉴욕이다 — 처음 보는 사람도 지명만 읽고 바로 그림이 그려지는 곳으로 골랐다.
+ * 장소·역 이름은 전부 실제로 있는 곳이지만, 도보 분·점수·개수는 화면 예시를 위한 값이다.
  */
 
 /** route.ts의 AERO_BLUE와 반드시 같은 값. 저기가 바뀌면 여기도 바꾼다. */
-const ROUTE_ACCENT = '#DC2626';
+const ROUTE_ACCENT = '#0B7CC4';
 const STAY_NAVY = '#0B2A5C';
+
+/** 머리 중심→끝 거리 / 머리 반지름. route.ts의 PIN_TAIL_RATIO와 같은 값. */
+const PIN_TAIL_RATIO = 2.2;
+
+/** 소수점이 길게 늘어지지 않게 */
+const q = (v: number): number => Math.round(v * 100) / 100;
+
+/** route.ts pinTearPath와 같은 식 — 원(머리) + 베지어 목으로 끝만 가늘어지는 핀치드 벌룬.
+ *  (cx, cy)는 머리 중심, tipY는 뾰족한 끝의 y. */
+function pinPath(cx: number, cy: number, r: number, tipY: number): string {
+  const d = tipY - cy;
+  const p1x = 0.087 * d;
+  const p1y = tipY - 0.55 * d;
+  const p2y = cy + 0.545 * r;
+  return (
+    `M${q(cx)} ${q(tipY)}` +
+    ` C${q(cx - p1x)} ${q(p1y)} ${q(cx - r)} ${q(p2y)} ${q(cx - r)} ${q(cy)}` +
+    ` A${r} ${r} 0 1 1 ${q(cx + r)} ${q(cy)}` +
+    ` C${q(cx + r)} ${q(p2y)} ${q(cx + p1x)} ${q(p1y)} ${q(cx)} ${q(tipY)} Z`
+  );
+}
+
+/** 제품 핀 구조 그대로: 색 풍선 + 그보다 살짝 작은 흰 머리(차이가 링 두께) + 머리 안의 내용.
+ *  (x, y)는 지도 위의 실제 지점, 즉 핀의 뾰족한 끝이다. */
+function pinSvg(x: number, y: number, r: number, color: string, inner: (cx: number, cy: number) => string): string {
+  const headCy = y - r * PIN_TAIL_RATIO;
+  const whiteR = r - r * 0.24;
+  return `
+    <ellipse cx="${x}" cy="${q(y + r * 0.1)}" rx="${q(r * 0.42)}" ry="${q(r * 0.15)}" fill="rgba(11,42,92,0.18)"/>
+    <path d="${pinPath(x, headCy, r, y)}" fill="${color}"/>
+    <circle cx="${x}" cy="${q(headCy)}" r="${q(whiteR)}" fill="#fff"/>
+    ${inner(x, headCy)}`;
+}
 
 /** 지도 바닥 — 강·도로. 두 지도가 같은 도시로 보이도록 좌표를 공유한다. */
 const MAP_BASE = `
@@ -478,14 +515,12 @@ const MAP_BASE = `
     <path d="M264,0 V300"/><path d="M370,0 V300"/>
   </g>`;
 
-/** 끝점이 (0,0)에 오는 물방울 핀 */
-const PIN_PATH = 'M0 0 C-5.5 -8 -11 -13 -11 -19 A11 11 0 1 1 11 -19 C11 -13 5.5 -8 0 0 Z';
-
 /** 생활권 지도 — 숙소를 정하면 여행의 중심이 정해진다는 걸 보여주는 자리 */
 function zoneMapSvg(): string {
+  const stayPin = pinSvg(346, 204, 11, STAY_NAVY, (cx, cy) => `<circle cx="${cx}" cy="${q(cy)}" r="3.4" fill="${STAY_NAVY}"/>`);
   return `
   <svg class="lp-map-svg" viewBox="0 0 440 300" role="img"
-       aria-label="생활권 지도. 수쿰윗이 선택되어 있고 숙소 핀이 그 안에 있습니다.">
+       aria-label="생활권 지도. 미드타운이 선택되어 있고 숙소 핀이 그 안에 있습니다.">
     ${MAP_BASE}
     <g>
       <path d="M150,262 L266,176 L418,124" stroke="#B8C6D4" stroke-width="2.5" stroke-dasharray="7 6" fill="none"/>
@@ -494,33 +529,37 @@ function zoneMapSvg(): string {
       <circle cx="418" cy="124" r="3.6" fill="#fff" stroke="#B8C6D4" stroke-width="2"/>
     </g>
     <ellipse cx="104" cy="182" rx="58" ry="45" fill="rgba(130,150,170,0.09)" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="5 5"/>
-    <text class="lp-map-zone" x="104" y="186" text-anchor="middle">리버사이드</text>
+    <text class="lp-map-zone" x="104" y="186" text-anchor="middle">브루클린</text>
     <ellipse cx="248" cy="88" rx="62" ry="45" fill="rgba(130,150,170,0.09)" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="5 5"/>
-    <text class="lp-map-zone" x="248" y="92" text-anchor="middle">시암</text>
+    <text class="lp-map-zone" x="248" y="92" text-anchor="middle">소호</text>
     <ellipse cx="346" cy="208" rx="76" ry="55" fill="rgba(11,42,92,0.08)" stroke="${STAY_NAVY}" stroke-width="2"/>
-    <text class="lp-map-zone is-picked" x="346" y="252" text-anchor="middle">수쿰윗</text>
-    <g transform="translate(346,200)">
-      <path d="${PIN_PATH}" fill="${STAY_NAVY}"/>
-      <circle cy="-19" r="4.2" fill="#fff"/>
-    </g>
+    <text class="lp-map-zone is-picked" x="346" y="252" text-anchor="middle">미드타운</text>
+    ${stayPin}
   </svg>`;
 }
 
 /** 동선 지도 — 확정한 장소가 선으로 이어지는 걸 보여주는 자리 */
 function routeMapSvg(): string {
-  const line = 'M356,208 L268,180 L178,152 L126,86 L248,56';
+  const hotel = { x: 356, y: 214 };
+  // [x, y(끝점), 번호, 이름] — 시각표 데모의 1·2번과 같은 장소다
   const stops: Array<[number, number, string, string]> = [
-    [268, 180, '1', '왓 아룬'],
-    [178, 152, '2', '티엔 시장'],
-    [126, 86, '3', '카오산'],
-    [248, 56, '4', '아이콘시암'],
+    [270, 198, '1', '센트럴파크'],
+    [182, 172, '2', '록펠러 센터'],
+    [118, 114, '3', '뉴욕 공립도서관'],
+    [236, 86, '4', '타임스스퀘어'],
   ];
-  const pins = stops.map(([x, y, n, label]) => `
-      <g transform="translate(${x},${y})">
-        <circle r="13" fill="${ROUTE_ACCENT}" stroke="#fff" stroke-width="2.5"/>
-        <text class="lp-map-num" y="4.5" text-anchor="middle">${n}</text>
-        <text class="lp-map-label" y="-20" text-anchor="middle">${label}</text>
-      </g>`).join('');
+  const line = ['M' + hotel.x + ',' + hotel.y, ...stops.map(([x, y]) => 'L' + x + ',' + y)].join(' ');
+  const R = 13;
+  const pins = stops.map(([x, y, n, label]) => {
+    const headCy = y - R * PIN_TAIL_RATIO;
+    return `
+      <g>
+        ${pinSvg(x, y, R, ROUTE_ACCENT, (cx, cy) =>
+          `<text class="lp-map-num" x="${cx}" y="${q(cy + 4.2)}" text-anchor="middle" fill="${ROUTE_ACCENT}">${n}</text>`)}
+        <text class="lp-map-label" x="${x}" y="${q(headCy - R - 6)}" text-anchor="middle">${label}</text>
+      </g>`;
+  }).join('');
+  const stay = pinSvg(hotel.x, hotel.y, 12, STAY_NAVY, (cx, cy) => `<circle cx="${cx}" cy="${q(cy)}" r="3.6" fill="${STAY_NAVY}"/>`);
   return `
   <svg class="lp-map-svg" viewBox="0 0 440 300" role="img"
        aria-label="동선 지도. 숙소에서 출발해 네 곳을 차례로 잇는 경로입니다.">
@@ -528,20 +567,17 @@ function routeMapSvg(): string {
     <path d="${line}" stroke="#fff" stroke-width="7.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
     <path d="${line}" stroke="${ROUTE_ACCENT}" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
     ${pins}
-    <g transform="translate(356,208)">
-      <path d="${PIN_PATH}" fill="${STAY_NAVY}"/>
-      <circle cy="-19" r="4.2" fill="#fff"/>
-      <text class="lp-map-label is-stay" y="18" text-anchor="middle">숙소</text>
-    </g>
+    ${stay}
+    <text class="lp-map-label is-stay" x="${hotel.x}" y="${hotel.y + 18}" text-anchor="middle">숙소</text>
   </svg>`;
 }
 
 /** 브레인스토밍 보드 — 무채색 스켈레톤 대신 실제로 쌓이는 카드 모습 */
 function boardDemoHtml(): string {
   const cols: Array<[string, string, string[]]> = [
-    ['가고싶어', '#E24B4A', ['왓 아룬', '아시아티크 야시장', '짜뚜짝 주말시장']],
-    ['먹고싶어', '#1D9E75', ['팁싸마이 팟타이', '옥타브 루프탑 바']],
-    ['하고싶어', '#7F77DD', ['타이 마사지', '수상시장 보트투어', '쿠킹 클래스']],
+    ['가고싶어', '#E24B4A', ['센트럴파크', '브루클린 브리지', '하이라인']],
+    ['먹고싶어', '#1D9E75', ['조스 피자', '카츠 델리카트슨']],
+    ['하고싶어', '#7F77DD', ['브로드웨이 뮤지컬', '허드슨강 크루즈', '재즈 클럽']],
   ];
   const main = cols.map(([mood, color, items], ci) => `
       <div class="lp-board-col">
@@ -558,8 +594,8 @@ function boardDemoHtml(): string {
   return `
     <div class="lp-board">
       <div class="lp-board-side">
-        <div class="lp-board-dest is-active">방콕<span>4박</span></div>
-        <div class="lp-board-dest">치앙마이<span>2박</span></div>
+        <div class="lp-board-dest is-active">뉴욕<span>5박</span></div>
+        <div class="lp-board-dest">보스턴<span>2박</span></div>
         <div class="lp-board-dest lp-board-dest-add">+ 도시 추가</div>
       </div>
       <div class="lp-board-main">${main}</div>
