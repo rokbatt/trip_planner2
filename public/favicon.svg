@@ -1,7 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="몽실이">
-  <rect width="64" height="64" rx="14" fill="#0B2A5C"/>
-  <g transform="translate(13.6 13.6) scale(1.53)">
-    <path d="M2 12L22 5L15 22L11 14L2 12Z" fill="#FFFFFF"/>
-    <path d="M11 14L22 5" stroke="#0B2A5C" stroke-width="1.1" stroke-linecap="round"/>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#14408A"/><stop offset="1" stop-color="#071B3F"/></linearGradient>
+    <linearGradient id="cl" gradientUnits="userSpaceOnUse" x1="0" y1="22" x2="0" y2="49"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#DCEBFF"/></linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <g>
+    <g fill="url(#cl)"><circle cx="20" cy="40" r="8"/><circle cx="31" cy="33" r="11.5"/><circle cx="43" cy="39" r="8.5"/><rect x="12" y="38" width="39" height="10.5" rx="5.2"/></g>
+    <g transform="translate(37.5 8) rotate(8) scale(0.95)"><path d="M2 12L22 5L15 22L11 14L2 12Z" fill="#7CC4FF"/><path d="M11 14L22 5" stroke="#0B2A5C" stroke-width="1.1" stroke-linecap="round"/></g>
   </g>
 </svg>
