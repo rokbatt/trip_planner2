@@ -389,6 +389,11 @@ export interface Database {
           sort_order: number;
           created_by: string | null;
           created_at: string;
+          /** 특정 장소에 딸린 항목이면 그 장소 식별자 — supabase/trip_checklist_place.sql.
+           *  마이그레이션 전 DB에선 응답에 아예 없으므로(undefined) 읽을 땐 `?? null`로 받는다 */
+          place_key: string | null;
+          /** 표시용 장소 이름 스냅샷(장소가 지워져도 "어디 준비물이었는지"가 남게) */
+          place_name: string | null;
         };
         Insert: {
           id?: string;
@@ -400,6 +405,8 @@ export interface Database {
           sort_order?: number;
           created_by?: string | null;
           created_at?: string;
+          place_key?: string | null;
+          place_name?: string | null;
         };
         Update: Partial<Database['public']['Tables']['trip_checklist']['Insert']>;
         Relationships: [];

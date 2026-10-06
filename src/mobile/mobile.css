@@ -1445,6 +1445,8 @@
 /* 끝난 항목은 지우지 않고 흐리게만 — "이미 했다"는 정보 자체가 목록의 절반이다 */
 .mb-ck-row.is-done .mb-ck-title { color: var(--mb-muted); text-decoration: line-through; }
 .mb-ck-by { font-size: 11px; color: var(--mb-muted); }
+/* 장소에 딸린 항목 — 제목 위계를 해치지 않게 작게, 어느 장소 것인지만 알려준다 */
+.mb-ck-place { font-size: 11px; font-weight: 600; color: var(--mb-sky); }
 .mb-ck-del {
   display: grid;
   place-items: center;

@@ -459,6 +459,60 @@
   width: 3px; height: 3px; border-radius: 50%; background: var(--pd-muted);
 }
 
+/* 이 장소 준비 체크리스트 — 보조 정보라 카드 위계(흰 카드)에 맞추되, 체크박스만은 손에 잡히게 */
+.tl-pd-prep {
+  margin-top: 12px; padding: 12px 14px; border-radius: 14px;
+  background: #fff; border: 1px solid var(--pd-line);
+}
+.tl-pd-prep-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.tl-pd-prep-label { font-size: 12.5px; font-weight: 800; color: var(--pd-navy); }
+.tl-pd-prep-note { font-size: 10.5px; color: var(--pd-muted); }
+.tl-pd-prep-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; }
+.tl-pd-prep-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 0; border-bottom: 1px solid var(--pd-line);
+}
+.tl-pd-prep-item:last-child { border-bottom: none; }
+.tl-pd-prep-box {
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0; border-radius: 5px;
+  display: grid; place-items: center; cursor: pointer;
+  border: 1.5px solid #C5D0DC; background: #fff; color: #fff;
+  transition: background var(--tl-ease), border-color var(--tl-ease);
+}
+.tl-pd-prep-box:hover { border-color: var(--pd-blue); }
+.tl-pd-prep-box svg { width: 11px; height: 11px; }
+.tl-pd-prep-item.is-done .tl-pd-prep-box { background: var(--pd-blue); border-color: var(--pd-blue); }
+.tl-pd-prep-title { flex: 1; min-width: 0; font-size: 12.5px; color: var(--pd-body); line-height: 1.45; }
+/* 끝난 항목은 지우지 않고 흐리게만 — "이미 했다"도 정보다(Companion 체크리스트와 같은 규칙) */
+.tl-pd-prep-item.is-done .tl-pd-prep-title { color: var(--pd-muted); text-decoration: line-through; }
+.tl-pd-prep-by { flex-shrink: 0; font-size: 10.5px; color: var(--pd-muted); }
+.tl-pd-prep-del {
+  flex-shrink: 0; width: 22px; height: 22px; padding: 0; border-radius: 6px;
+  display: grid; place-items: center; cursor: pointer;
+  border: none; background: none; color: #B6C0CC; opacity: 0;
+  transition: opacity var(--tl-ease), color var(--tl-ease);
+}
+.tl-pd-prep-item:hover .tl-pd-prep-del, .tl-pd-prep-del:focus-visible { opacity: 1; }
+.tl-pd-prep-del:hover { color: var(--tl-warn); }
+.tl-pd-prep-del svg { width: 11px; height: 11px; }
+.tl-pd-prep-suggest { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.tl-pd-prep-sugglabel { font-size: 10.5px; color: var(--pd-muted); margin-right: 2px; }
+.tl-pd-prep-chip {
+  max-width: 100%; padding: 5px 10px; border-radius: 999px;
+  border: 1px dashed rgba(11,124,196,0.35); background: #fff; color: var(--pd-navy);
+  font-family: inherit; font-size: 11px; font-weight: 600; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: all var(--tl-ease);
+}
+.tl-pd-prep-chip:hover { border-style: solid; border-color: var(--pd-blue); color: var(--pd-blue); }
+.tl-pd-prep-input {
+  width: 100%; box-sizing: border-box; margin-top: 10px;
+  padding: 8px 11px; border-radius: 10px; border: 1px solid var(--pd-line); background: var(--pd-bg);
+  font-family: inherit; font-size: 12px; color: var(--pd-body);
+}
+.tl-pd-prep-input::placeholder { color: #B6C0CC; }
+.tl-pd-prep-input:focus { outline: none; border-color: var(--pd-blue); background: #fff; }
+
 /* 생성 버튼 / 로딩 / 실패가 같이 서는 줄 */
 .tl-pd-genwrap { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 .tl-pd-spinner {
@@ -621,6 +675,20 @@
 .tl-hstat-link:hover .tl-hstat-k { color: var(--tl-ink-2); }
 
 .tl-dayhead-note { margin-top: 7px; font-size: 10px; color: var(--tl-ink-4); }
+/* 하루 동선 한 줄 — 넘치면 말줄임(전체는 title로). 화살표는 글자보다 한 단계 옅게 */
+.tl-dayhead-route {
+  margin-top: 8px; font-size: 12px; font-weight: 600; color: var(--tl-ink-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tl-dayhead-route i { font-style: normal; margin: 0 6px; color: var(--tl-ink-4); }
+/* 동선이 긴 하루 — 경고(빨강)가 아니라 "한 번 확인해 보라"는 팁이라 앱 강조색으로 */
+.tl-dayhead-tip {
+  display: flex; align-items: flex-start; gap: 7px;
+  margin-top: 10px; padding: 8px 11px; border-radius: 10px;
+  background: var(--tl-ice); color: var(--tl-navy);
+  font-size: 11.5px; font-weight: 600; line-height: 1.5;
+}
+.tl-dayhead-tip svg { flex-shrink: 0; width: 14px; height: 14px; margin-top: 1px; color: var(--tl-blue); }
 .tl-est-loading { color: var(--tl-ink-3); }
 
 .tl-list { list-style: none; margin: 0; padding: 2px 0 10px; }
@@ -765,6 +833,11 @@
   padding: 3px 9px; border-radius: 999px; background: var(--tl-mist);
   color: var(--tl-c-body); font-size: 11px; font-weight: 600; white-space: nowrap;
 }
+/* 이 장소 준비 체크리스트 진행 — 다 끝나면 강조색으로 바뀌어 "이 장소는 준비 끝"이 바로 보인다 */
+.tl-prep-chip { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+.tl-prep-chip svg { width: 11px; height: 11px; color: var(--tl-c-secondary); }
+.tl-prep-chip.is-done { background: var(--tl-ice); color: var(--tl-blue); }
+.tl-prep-chip.is-done svg { color: var(--tl-blue); }
 
 /* 메모 — 실제 입력칸처럼 항상 또렷하게. 비어 있어도 흐리게 숨기지 않는다 */
 .tl-memo-row {
@@ -801,19 +874,6 @@
 .tl-staybox-input:hover, .tl-staybox-input:focus { background: #fff; outline: none; }
 /* 사용자가 직접 정한 체류시간은 색으로 구분 — 기본값(추정치)과 섞이지 않게(.tl-time.is-fixed와 같은 관례) */
 .tl-staybox-input.is-custom { color: var(--tl-blue); }
-/* 도착·출발은 레퍼런스처럼 좌우 두 칸으로 나란히 (위 체류시간과 얇은 선으로 구분).
-   체류시간이 0이라 위쪽 섹션이 통째로 빠진 카드에선 구분선만 덩그러니 남으므로 지운다. */
-.tl-staybox-times {
-  display: flex; width: 100%; margin-top: 6px; padding-top: 7px;
-  border-top: 1px solid var(--tl-c-card-border);
-}
-.tl-staybox-times:first-child { margin-top: 0; padding-top: 0; border-top: none; }
-.tl-staybox-time {
-  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 1px;
-  font-size: 11.5px; font-weight: 700; color: var(--tl-c-title);
-  font-variant-numeric: tabular-nums;
-}
-.tl-staybox-time b { font-weight: 500; font-size: 10px; color: var(--tl-c-secondary); }
 
 /* 카드 도구 — 평소엔 숨어 있다가 카드에 올리면 나타난다 */
 .tl-card-tools {
@@ -898,14 +958,19 @@
   display: flex; flex-direction: column; align-items: flex-end; gap: 1px;
 }
 .tl-legcard-stats {
-  display: inline-flex; align-items: center; gap: 18px;
+  display: inline-flex; align-items: center; gap: 10px;
   font-size: 13px; color: var(--tl-c-body);
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .tl-legcard-stats b { font-weight: 700; }
-.tl-legcard-cost {
-  font-size: 11.5px; color: var(--tl-c-secondary); font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+/* 요금은 시간 옆에 한 줄로 — "택시 50분 약 320 THB"처럼 바 하나로 읽히게 */
+.tl-legcard-fare {
+  font-size: 12px; font-weight: 600; color: var(--tl-c-secondary); font-variant-numeric: tabular-nums;
+}
+/* 펼쳤을 때만 보이는 거리·실측 여부 — 이동수단 버튼 위 한 줄을 통째로 쓴다 */
+.tl-legdetail {
+  flex-basis: 100%; padding: 2px 2px 4px;
+  font-size: 11px; color: var(--tl-c-secondary); font-variant-numeric: tabular-nums;
 }
 
 /* 원칙 3-1 — 추정치는 반드시 눈에 보이게 구분.
@@ -1088,7 +1153,7 @@
   .tl-legcard-icon svg { width: 14px; height: 14px; }
   /* 수단 이름(아이콘이 이미 알려줌)·요금·"도착 예정" 글자는 접고, 구간별 "추정" 배지도
      숨긴다 — DAY 헤더의 "* 이동 정보는 … 추정치예요" 안내가 같은 사실을 이미 알려준다 */
-  .tl-legcard-mode, .tl-legcard-cost, .tl-eta-label { display: none; }
+  .tl-legcard-mode, .tl-legcard-fare, .tl-eta-label { display: none; }
   .tl-legcard .tl-est { display: none; }
   .tl-legcard-info { align-items: flex-start; }
   .tl-legcard-stats { gap: 10px; font-size: 12px; min-width: 0; max-width: 100%; overflow: hidden; }
