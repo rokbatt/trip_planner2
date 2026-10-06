@@ -239,6 +239,20 @@ export function settlementSummaryText(ctx: ExpenseCtx): string {
 }
 
 /**
+ * 한 사람의 "실제 부담액" — 그 사람의 결제 완료된 개인 지출 전액 + 결제 완료된 공동 지출의
+ * n분의 1(computeSettlement의 shareSum과 동일 기준)을 더한 값. 예산 요약 탭의
+ * "{닉네임}의 예상 부담액" 카드가 쓴다. 평균(전체/인원수)이 아니라 그 사람 한 명의 실제
+ * 몫이라는 점이 computeSettlement의 SettleRow.shareSum(공동 지출분만)과 다르다.
+ */
+export function memberBurdenTotal(ctx: ExpenseCtx, userId: string): number {
+  const personal = ctx.expenses
+    .filter((e) => e.is_paid && modeOf(e) === 'PERSONAL' && e.paid_by === userId)
+    .reduce((acc, e) => acc + (krwOf(e) ?? 0), 0);
+  const shared = computeSettlement(ctx).rows.find((r) => r.userId === userId)?.shareSum ?? 0;
+  return personal + shared;
+}
+
+/**
  * 멤버별 "실제 부담액" 텍스트 — 결제 완료된 개인 지출 + 결제 완료된 공동 지출의 n분의 1을
  * 합산해 사람별로 정리한다. 지출명·메모까지 포함해 AI에 붙여넣어 예산 효율을 분석하기
  * 좋게 만든 것 — "현재 사용" 카드의 복사 버튼이 쓴다.
