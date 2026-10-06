@@ -48,6 +48,7 @@ import {
   sumPaidByMode as sumPaidByModeOf,
   unconvertedCount as unconvertedCountOf,
   computeSettlement as computeSettlementOf,
+  memberBurdenTotal as memberBurdenTotalOf,
   settlementSummaryText as settlementSummaryTextOf,
   buildPersonalBreakdownText as buildPersonalBreakdownTextOf,
   buildExpensePayload as buildExpensePayloadOf,
@@ -157,6 +158,7 @@ function computeSettlement(): { rows: SettleRow[]; transfers: Array<{ from: stri
   return computeSettlementOf(ctx());
 }
 function settlementSummaryText(): string { return settlementSummaryTextOf(ctx()); }
+function memberBurdenTotal(userId: string): number { return memberBurdenTotalOf(ctx(), userId); }
 function buildPersonalBreakdownText(selectedUserIds?: string[]): string {
   return buildPersonalBreakdownTextOf(ctx(), selectedUserIds, tripPeriodLabel());
 }
@@ -389,12 +391,16 @@ function statsHtml(): string {
   const remaining = totalBudget != null ? totalBudget - usage : null;
   const pct = totalBudget != null && totalBudget > 0 ? Math.round((usage / totalBudget) * 100) : null;
   const over = remaining != null && remaining < 0;
-  const people = Math.max(1, headcount);
   const sharedUsage = sumPaidByMode('SHARED');
   const personalUsage = sumPaidByMode('PERSONAL');
-  // 개인 지출은 그 사람 혼자 부담하는 돈이라 나눠 가질 대상이 아님 — 1인당 부담액은
-  // "다 같이 나눠 낼 돈"인 공동 지출만 인원수로 나눈다(전체 사용액을 그냥 나누면 안 됨)
-  const perPerson = sharedUsage / people;
+  // "1인당 예상 부담액"은 평균이 아니라 지금 보고 있는 사람 본인의 실제 부담액(개인 지출
+  // 전액 + 결제 완료된 공동 지출의 n분의 1)으로 보여준다. 현재 사용자가 이 트립 멤버로
+  // 확인되지 않는 드문 경우에만 예전 방식(공동 지출 총액 ÷ 인원수)으로 폴백한다.
+  const me = store.get('user');
+  const meMember = me ? members.find((m) => m.user_id === me.id) : null;
+  const burdenLabel = meMember ? (meMember.display_name || '나') + '의 예상 부담액' : '1인당 예상 부담액';
+  const burdenValue = meMember ? memberBurdenTotal(meMember.user_id) : sharedUsage / Math.max(1, headcount);
+  const burdenFoot = meMember ? '개인 지출 + 공동 지출 분담액' : Math.max(1, headcount) + '명 평균 · 공동 지출 기준';
   const sharedPct = usage > 0 ? Math.round((sharedUsage / usage) * 100) : 0;
   const personalPct = usage > 0 ? 100 - sharedPct : 0;
 
@@ -434,9 +440,9 @@ function statsHtml(): string {
     unconvertedNote,
     '  </div>',
     '  <div class="ex-stat-card al-glass">',
-    '    <div class="ex-stat-card-top"><span class="ex-stat-label">1인당 예상 부담액</span>' + IC_WALLET + '</div>',
-    '    <div class="ex-stat-value">' + fmtKRW(perPerson) + '</div>',
-    '    <div class="ex-stat-foot">' + people + '명 평균 · 공동 지출 기준</div>',
+    '    <div class="ex-stat-card-top"><span class="ex-stat-label">' + escapeHtml(burdenLabel) + '</span>' + IC_WALLET + '</div>',
+    '    <div class="ex-stat-value">' + fmtKRW(burdenValue) + '</div>',
+    '    <div class="ex-stat-foot">' + burdenFoot + '</div>',
     '    <button type="button" class="ex-more-link" id="ex-perperson-detail">상세 보기</button>',
     '  </div>',
     '</div>',
