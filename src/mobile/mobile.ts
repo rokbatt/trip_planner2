@@ -1738,6 +1738,8 @@ function checklistSecHtml(): string {
         '  </button>',
         '  <div class="mb-ck-main">',
         '    <div class="mb-ck-title">' + escapeHtml(c.title) + '</div>',
+        // TIMELINE에서 "이 장소 준비물"로 넣은 항목 — 제목만으론 어느 장소 것인지 모르므로 붙여 준다
+        c.place_name ? '    <div class="mb-ck-place">' + escapeHtml(c.place_name) + '</div>' : '',
         // 누가 했는지는 저장된 이름이 있을 때만 (원칙 3-1)
         checked && c.checked_by_name
           ? '    <div class="mb-ck-by">' + escapeHtml(c.checked_by_name) + ' 완료</div>'
