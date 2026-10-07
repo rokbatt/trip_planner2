@@ -43,6 +43,7 @@ import {
   resetRouteStorageProbe,
 } from './routeStore';
 import type { StoredStop } from './routeStore';
+import { planDaySync, sameStops, dedupeStops } from './routeMerge';
 import { requestRoutePlan, requestDayDetail } from './aiPlan';
 import type { AiPlanPlace, AiRoutePlanResult, AiDayDetailResult, AiStaySegment } from './aiPlan';
 // 화면에 뜨는 숫자(이동시간·거리·요금·체류시간)는 TIMELINE과 반드시 같아야 하므로
@@ -258,7 +259,14 @@ let aiPlanUndo: {
 let realLegs = new Map<string, Record<string, RealLeg>>();
 let realLegPending = false;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
-let lastSavedSig = '';
+/** DAY별로 "내가 마지막으로 DB와 맞춰 본 상태" — 저장/새로고침 때 DB·내 화면과 3자 병합하는 기준 */
+let syncedByDay = new Map<number, StoredStop[]>();
+/** 저장이 지우기까지만 되고 실패한 DAY — 기준을 믿을 수 없으니 다음 동기화에선 내 화면을 정본으로 */
+let baseUnknownDays = new Set<number>();
+let syncRunning = false;
+let syncAgain = false;
+let syncRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let remoteReloadTimer: ReturnType<typeof setTimeout> | null = null;
 
 let mapInstance: any = null;
 let mapMarkers: any[] = [];
@@ -280,8 +288,10 @@ export function teardownRoute(): void {
   if (saveTimer) {
     clearTimeout(saveTimer);
     saveTimer = null;
-    void persistActiveDay();
+    void syncPlan();
   }
+  if (remoteReloadTimer) { clearTimeout(remoteReloadTimer); remoteReloadTimer = null; }
+  if (syncRetryTimer) { clearTimeout(syncRetryTimer); syncRetryTimer = null; }
   unsubscribeRoutePlan();
   resetRouteStorageProbe();
   document.querySelector('.rt-ai-modal-backdrop')?.remove();
@@ -296,7 +306,8 @@ export function teardownRoute(): void {
   dayDetailBusy = false;
   realLegs = new Map();
   realLegPending = false;
-  lastSavedSig = '';
+  syncedByDay = new Map();
+  baseUnknownDays = new Set();
   currentTrip = null;
   basecamp = null;
   staySegments = [];
@@ -397,54 +408,13 @@ function dayLegs(day: RouteDay): Leg[] {
 
 /* ══════════════ 영속화 (supabase/route_plan.sql) ══════════════ */
 
-/** 현재 DAY 상태의 지문 — 실제로 바뀌었을 때만 저장하려고 비교용으로 쓴다 */
-function daySignature(day: RouteDay): string {
-  const stops = day.stopIds.map((id) => {
-    const p = placeById.get(id);
-    return [
-      id,
-      timeOverride.get(timeKey(day.id, id)) ?? '',
-      memoStore.get(id) ?? '',
-      p ? legModeOverrideForArrival(day, id) : '',
-    ].join('~');
-  });
-  return day.id + '|' + stops.join('|');
-}
-
-/** 이 정류지로 **오는** 구간의 수동 이동수단 (저장 스키마가 도착지 기준이라 맞춰줌) */
-function legModeOverrideForArrival(day: RouteDay, placeId: string): string {
-  const seq = orderedStops(day);
-  const idx = seq.findIndex((p) => p.id === placeId);
-  if (idx <= 0) return '';
-  return legModeOverride.get(legKey(seq[idx - 1].id, placeId)) ?? '';
-}
-
-/** 변경이 있으면 잠시 뒤 저장 (연속 조작을 한 번으로 묶음) */
-function scheduleSave(): void {
-  if (!isRouteStorageReady() || !activeDestId || !currentTripId) return;
-  const day = activeDay();
-  if (!day) return;
-  const sig = daySignature(day);
-  if (sig === lastSavedSig) return;
-
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    void persistActiveDay();
-  }, 600);
-}
-
-async function persistActiveDay(): Promise<void> {
-  if (!isRouteStorageReady() || !activeDestId || !currentTripId) return;
-  const day = activeDay();
-  if (!day) return;
-  const dayIndex = days.findIndex((d) => d.id === day.id);
-  if (dayIndex < 0) return;
-
-  const seq = orderedStops(day);
+/** 한 DAY의 현재 화면 상태를 저장 형식으로 바꾼다 — 화면 상태를 건드리지 않는 변환이다
+ *  (시작/끝 앵커 채우기는 동기화 직전에 호출부가 한다). */
+function buildStoredStops(day: RouteDay): StoredStop[] {
+  const seq = day.stopIds.map((id) => placeById.get(id)).filter((p): p is Place => !!p);
   const arrivalId = arrivalAirportId();
   const departureId = departureAirportId();
-  const stops: StoredStop[] = day.stopIds.map((id) => {
+  return day.stopIds.map((id) => {
     const p = placeById.get(id);
     const idx = seq.findIndex((s) => s.id === id);
     const prev = idx > 0 ? seq[idx - 1] : null;
@@ -463,30 +433,235 @@ async function persistActiveDay(): Promise<void> {
       customDwellMin: customDwellStore.get(id) ?? null,
     };
   });
+}
 
-  const sig = daySignature(day);
-  const ok = await saveRouteDay(currentTripId, activeDestId, dayIndex, stops);
-  if (ok) lastSavedSig = sig;
+/** 내 화면이 DB와 맞춰 본 마지막 상태와 달라졌는지 — 달라졌을 때만 저장한다 */
+function isPlanDirty(): boolean {
+  return days.some((d, i) => !sameStops(buildStoredStops(d), syncedByDay.get(i) ?? []));
+}
+
+/** 변경이 있으면 잠시 뒤 저장 (연속 조작을 한 번으로 묶음) */
+function scheduleSave(): void {
+  if (!isRouteStorageReady() || !activeDestId || !currentTripId) return;
+  if (!isPlanDirty()) return;
+
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    void syncPlan();
+  }, 600);
 }
 
 /**
- * 모든 DAY를 저장한다. 평소엔 활성 DAY만 저장하면 충분하지만(사용자는 한 번에 한 DAY만
- * 편집하므로), AI 일정 추천처럼 여러 DAY를 한 번에 바꾸는 경우엔 전부 저장해야 한다.
+ * DB 동선과 내 화면을 맞춘다 — **저장도, 친구 변경 반영도 이 한 함수가 한다.**
+ *
+ * 예전엔 저장이 "내 화면의 DAY를 통째로 덮어쓰기"였고, 친구 변경이 오면 내 화면을 통째로 DB
+ * 내용으로 바꿨다(저장 대기 중이던 내 변경은 버리고). 그래서 같이 쓰면 늦게 저장한 쪽이 상대가 담은
+ * 장소를 지우거나, 내가 방금 담은 장소가 친구 변경을 받는 순간 사라졌다. 이제는 매번 DB를 먼저
+ * 읽어 (마지막으로 맞춘 상태 / 내 화면 / DB) 3자를 DAY별로 병합하고(routeMerge.ts), 그 결과를
+ * 저장·화면에 반영한다. 동시에 한 번에 하나만 돌고, 도는 중에 요청이 오면 끝난 뒤 한 번 더 돈다.
  */
-async function persistAllDays(): Promise<void> {
-  if (!isRouteStorageReady() || !activeDestId || !currentTripId) return;
-  const keepActive = activeDayId;
-  try {
-    for (const d of days) {
-      // persistActiveDay는 activeDay()를 기준으로 동작하므로 잠깐 활성 DAY를 옮겨가며 저장한다.
-      // (화면은 이 사이에 다시 그리지 않으므로 사용자에게는 보이지 않음)
-      activeDayId = d.id;
-      await persistActiveDay();
-    }
-  } finally {
-    activeDayId = keepActive;
-    lastSavedSig = daySignature(activeDay());
+let syncPromise: Promise<void> | null = null;
+function syncPlan(): Promise<void> {
+  if (!isRouteStorageReady() || !activeDestId || !currentTripId) return Promise.resolve();
+  if (syncPromise) {
+    syncAgain = true;
+    return syncPromise;
   }
+  syncPromise = (async () => {
+    try {
+      do {
+        syncAgain = false;
+        await syncOnce();
+      } while (syncAgain);
+    } finally {
+      syncPromise = null;
+    }
+  })();
+  return syncPromise;
+}
+
+/** 서로 다른 두 화면이 같은 DAY를 계속 고쳐 쓰는 핑퐁이 생기면 DB를 두드리는 걸 멈추는 안전장치 —
+ *  정상 사용(수십 초에 몇 번 저장)에선 걸리지 않는다. */
+const recentSaveTimes: number[] = [];
+function saveRateExceeded(): boolean {
+  const now = Date.now();
+  while (recentSaveTimes.length && now - recentSaveTimes[0] > 20000) recentSaveTimes.shift();
+  if (recentSaveTimes.length >= 12) {
+    console.error('[Route] 20초 안에 저장이 너무 많이 반복돼 잠시 저장을 멈춥니다.');
+    return true;
+  }
+  recentSaveTimes.push(now);
+  return false;
+}
+
+/** 읽기/저장이 실패했을 때 잠시 뒤 다시 시도 (네트워크 순단 대비, 계속 실패하면 포기) */
+let syncRetryCount = 0;
+function retrySyncSoon(): void {
+  if (syncRetryTimer || syncRetryCount >= 5) return;
+  syncRetryCount += 1;
+  syncRetryTimer = setTimeout(() => {
+    syncRetryTimer = null;
+    void syncPlan();
+  }, 3000);
+}
+
+async function syncOnce(): Promise<void> {
+  const destId = activeDestId;
+  const tripId = currentTripId;
+  if (!destId || !tripId || !isRouteStorageReady() || days.length === 0) return;
+
+  // 열어 본 DAY(와 AI가 채운 DAY)는 시작/끝 앵커가 들어간 상태가 "내 화면" — 예전 저장과 같은 기준.
+  // 한 번도 안 연 빈 DAY는 건드리지 않는다(앵커만 든 DAY가 괜히 생겨 저장되지 않게).
+  const active = activeDay();
+  days.forEach((d) => { if (d === active || d.stopIds.length > 0) ensureDayAnchors(d); });
+  const localByDay = days.map((d) => buildStoredStops(d));
+
+  const stored = await loadRoutePlan(destId);
+  if (!stored) { retrySyncSoon(); return; }
+  // 친구가 방금 새로 담은 장소는 내 화면엔 아직 없다 — 이걸 못 불러오면 "없는 장소"로 보고 내 저장이
+  // 지워 버리므로, 불러오지 못했으면 아무것도 쓰지 않고 중단한다.
+  const referenced = stored.flatMap((sd) => sd.stops.map((s) => s.placeId).filter((id): id is string => !!id));
+  if (!(await ensurePlacesLoaded(referenced))) { retrySyncSoon(); return; }
+
+  const stillHere = () => destId === activeDestId;
+  const remoteByDay = new Map(stored.map((sd) => [sd.dayIndex, sd.stops] as const));
+  const applies: Array<{ index: number; merged: StoredStop[]; local: StoredStop[] }> = [];
+  let failed = false;
+
+  for (let i = 0; i < localByDay.length; i++) {
+    const local = localByDay[i];
+    const plan = planDaySync(syncedByDay.get(i) ?? [], local, remoteByDay.get(i) ?? [], baseUnknownDays.has(i));
+
+    if (plan.saveNeeded) {
+      if (saveRateExceeded()) { failed = true; continue; }
+      const result = await saveRouteDay(tripId, destId, i, plan.merged);
+      if (result !== 'ok') {
+        failed = true;
+        // 지우기까지만 되고 넣기가 실패했다면 DB의 이 DAY가 비어 있을 수 있다 — 다음엔 내 화면을 정본으로
+        if (result === 'partial' && stillHere()) baseUnknownDays.add(i);
+        continue;
+      }
+    }
+    if (!stillHere()) continue; // 저장하는 사이 다른 여행지로 넘어갔으면 새 화면 상태를 건드리지 않는다
+    syncedByDay.set(i, plan.merged);
+    baseUnknownDays.delete(i);
+    if (plan.applyNeeded) applies.push({ index: i, merged: plan.merged, local });
+  }
+
+  if (!failed) syncRetryCount = 0;
+  if (stillHere() && rtContainer) {
+    let changed = false;
+    for (const a of applies) {
+      const day = days[a.index];
+      if (!day) continue;
+      // 읽고 저장하는 사이 내가 또 고쳤으면 덮어쓰지 않는다 — 한 번 더 돌면서 내 최신 상태를 얹어 저장한다
+      if (!sameStops(buildStoredStops(day), a.local)) { syncAgain = true; continue; }
+      applyStoredDay(day, a.index, a.merged);
+      changed = true;
+    }
+    if (changed) refreshAll(rtContainer, { refit: false });
+  }
+  if (failed) retrySyncSoon();
+}
+
+/** DB 동선에 있지만 내 화면엔 없는 장소(친구가 방금 담은 곳)를 불러온다. 못 불러오면 false. */
+async function ensurePlacesLoaded(placeIds: string[]): Promise<boolean> {
+  const missing = [...new Set(placeIds)].filter((id) => !placeById.has(id));
+  if (missing.length === 0) return true;
+  const { data, error } = await supabase.from('places').select('*').in('id', missing);
+  if (error) {
+    console.error('[Route] 새로 담긴 장소 로드 실패:', error.message);
+    return false;
+  }
+  const dest = activeDestId ? allDestinations.find((d) => d.id === activeDestId) : null;
+  (data ?? []).forEach((pl) => {
+    placeById.set(pl.id, pl);
+    if (pl.lat == null || pl.lng == null || pl.id === basecamp?.id) return;
+    if (dest && !placeBelongsToDestination(pl, dest)) return;
+    if (!candidatePlaces.some((c) => c.id === pl.id)) candidatePlaces.push(pl);
+  });
+  return true;
+}
+
+/**
+ * 저장된 정류지 하나를 화면의 장소 id로 되돌린다. 지도에 직접 찍은 지점·숙소 재방문은 places 행이
+ * 없어 불러올 때마다 새 id가 필요한데, 이미 같은 이름·좌표의 것이 있으면 새로 만들지 않고 그걸
+ * 다시 쓴다 — 안 그러면 동기화할 때마다 좌측 후보 목록에 같은 지점이 계속 쌓여 "중복으로 담기는" 것처럼 보인다.
+ */
+function resolveStoredStopId(s: StoredStop, dayIndex: number, used: string[]): string | null {
+  if (s.placeId) return placeById.has(s.placeId) ? s.placeId : null;
+  if (s.customLat == null || s.customLng == null) return null;
+
+  // 도착 공항(DAY 0의 첫 정류지) / 출발 공항(마지막 DAY의 끝 정류지)인지 이름+좌표로 확인 — 맞으면
+  // 고정 id의 앵커 Place로 복원(일반 adhoc 핀처럼 취급하면 안 됨: 좌측 후보 목록에 뜨거나, 다음
+  // 렌더에서 ensureDayAnchors가 중복으로 또 만들어 버림).
+  const isArrivalMatch =
+    dayIndex === 0 &&
+    s.customName === activeDestArrivalAirport &&
+    s.customLat === activeDestArrivalLat &&
+    s.customLng === activeDestArrivalLng;
+  const isDepartureMatch =
+    dayIndex === days.length - 1 &&
+    s.customName === activeDestDepartureAirport &&
+    s.customLat === activeDestDepartureLat &&
+    s.customLng === activeDestDepartureLng;
+  if (isArrivalMatch && arrivalAirportPlace()) return arrivalAirportId();
+  if (isDepartureMatch && departureAirportPlace()) return departureAirportId();
+
+  const name = s.customName || (s.purpose ? '숙소' : '직접 추가한 장소');
+  const sameSpot = (pl: Place) =>
+    pl.name === name &&
+    pl.lat != null && pl.lng != null &&
+    pl.lat.toFixed(6) === s.customLat!.toFixed(6) &&
+    pl.lng.toFixed(6) === s.customLng!.toFixed(6);
+  const reuse = (match: (id: string) => boolean): string | null => {
+    for (const [id, pl] of placeById) if (!used.includes(id) && match(id) && sameSpot(pl)) return id;
+    return null;
+  };
+
+  if (s.purpose) {
+    // "숙소 들르기"로 저장된 재방문 지점 — purpose가 있는 건 이 종류뿐이라(일반 adhoc 핀/공항은
+    // 항상 null) 좌표 매칭 없이 purpose 유무만으로 확실히 구분된다.
+    const found = reuse((id) => isRevisitId(id) && lodgingRevisitPurpose.get(id) === s.purpose);
+    if (found) return found;
+    const p = makeRevisitPlace(makeAdhocPlace(name, s.customLat, s.customLng), s.purpose);
+    placeById.set(p.id, p);
+    return p.id;
+  }
+
+  // 지도에 직접 찍었던 일반 지점 복원
+  const found = reuse((id) => id.startsWith('adhoc-'));
+  if (found) return found;
+  const p = makeAdhocPlace(name, s.customLat, s.customLng);
+  placeById.set(p.id, p);
+  candidatePlaces.push(p);
+  return p.id;
+}
+
+/** 저장 형식의 한 DAY를 화면 상태(순서·시각·메모·이동수단·체류시간)로 복원 */
+function applyStoredDay(day: RouteDay, dayIndex: number, stops: StoredStop[]): void {
+  const ids: string[] = [];
+  let prevId: string | null = null;
+
+  stops.forEach((s) => {
+    const id = resolveStoredStopId(s, dayIndex, ids);
+    if (!id) return; // 원본 장소가 지워졌으면 조용히 건너뜀
+    ids.push(id);
+
+    // 값이 없으면 지운다 — 친구가 시각/메모를 지웠을 때 내 화면에 예전 값이 남지 않게
+    const tk = timeKey(day.id, id);
+    if (s.arriveTime) timeOverride.set(tk, s.arriveTime); else timeOverride.delete(tk);
+    if (s.memo) memoStore.set(id, s.memo); else memoStore.delete(id);
+    if (s.customDwellMin != null) customDwellStore.set(id, s.customDwellMin); else customDwellStore.delete(id);
+    if (prevId) {
+      const lk = legKey(prevId, id);
+      if (s.travelMode) legModeOverride.set(lk, s.travelMode as Leg['mode']); else legModeOverride.delete(lk);
+    }
+    prevId = id;
+  });
+
+  day.stopIds = ids;
 }
 
 /** 저장된 동선을 모듈 상태로 복원. 저장된 DAY가 하나도 없으면 false */
@@ -497,60 +672,9 @@ function applyStoredPlan(stored: Awaited<ReturnType<typeof loadRoutePlan>>): boo
   stored.forEach((sd) => {
     const day = days[sd.dayIndex];
     if (!day) return; // 저장된 DAY 수가 더 많으면(기간이 줄어든 경우) 남는 건 무시
-    const ids: string[] = [];
-    // 앵커(숙소/공항)도 이제 sd.stops 안에 실제 위치 그대로 저장돼 있으므로, 예전처럼
-    // basecamp로 prevId를 미리 부트스트랩할 필요 없이 저장된 순서를 그대로 따라가면 된다.
-    let prevId: string | null = null;
-
-    sd.stops.forEach((s) => {
-      let id: string | null = null;
-      if (s.placeId) {
-        if (placeById.has(s.placeId)) id = s.placeId;
-      } else if (s.customLat != null && s.customLng != null) {
-        // 도착 공항(DAY 0의 첫 정류지) / 출발 공항(마지막 DAY의 끝 정류지)인지 이름+좌표로
-        // 확인 — 맞으면 고정 id의 앵커 Place로 복원(일반 adhoc 핀처럼 취급하면 안 됨: 좌측
-        // 후보 목록에 뜨거나, 다음 렌더에서 ensureDayAnchors가 중복으로 또 만들어 버림).
-        const isArrivalMatch =
-          sd.dayIndex === 0 &&
-          s.customName === activeDestArrivalAirport &&
-          s.customLat === activeDestArrivalLat &&
-          s.customLng === activeDestArrivalLng;
-        const isDepartureMatch =
-          sd.dayIndex === days.length - 1 &&
-          s.customName === activeDestDepartureAirport &&
-          s.customLat === activeDestDepartureLat &&
-          s.customLng === activeDestDepartureLng;
-
-        if (isArrivalMatch && arrivalAirportPlace()) {
-          id = arrivalAirportId();
-        } else if (isDepartureMatch && departureAirportPlace()) {
-          id = departureAirportId();
-        } else if (s.purpose) {
-          // "숙소 들르기"로 저장된 재방문 지점 — purpose가 있는 건 이 종류뿐이라(일반 adhoc
-          // 핀/공항은 항상 null) 좌표 매칭 없이 purpose 유무만으로 확실히 구분된다.
-          const base = makeAdhocPlace(s.customName || '숙소', s.customLat, s.customLng);
-          const p = makeRevisitPlace(base, s.purpose);
-          placeById.set(p.id, p);
-          id = p.id;
-        } else {
-          // 지도에 직접 찍었던 일반 지점 복원
-          const p = makeAdhocPlace(s.customName || '직접 추가한 장소', s.customLat, s.customLng);
-          placeById.set(p.id, p);
-          candidatePlaces.push(p);
-          id = p.id;
-        }
-      }
-      if (!id) return; // 원본 장소가 지워졌으면 조용히 건너뜀
-
-      ids.push(id);
-      if (s.arriveTime) timeOverride.set(timeKey(day.id, id), s.arriveTime);
-      if (s.memo) memoStore.set(id, s.memo);
-      if (s.customDwellMin != null) customDwellStore.set(id, s.customDwellMin);
-      if (s.travelMode && prevId) legModeOverride.set(legKey(prevId, id), s.travelMode as Leg['mode']);
-      prevId = id;
-    });
-
-    day.stopIds = ids;
+    // 예전에 동시 저장이 겹쳐 DB에 같은 장소가 두 번 들어가 있어도 한 번만 복원한다 — 화면이
+    // DB와 달라지므로 첫 동기화에서 DB의 중복도 정리된다.
+    applyStoredDay(day, sd.dayIndex, dedupeStops(sd.stops));
     applied = true;
   });
 
@@ -569,6 +693,9 @@ function removeStop(placeId: string): void {
  * 들어가고, 수동으로 옮길 때만 옮겨지게"). 끝 앵커가 아직 stopIds에 없으면(처음 추가하는
  * 경우 등) 그냥 끝에 붙인다. */
 function appendStopBeforeEndAnchor(day: RouteDay, placeId: string): void {
+  // 이미 이 DAY에 있는 장소는 또 넣지 않는다 — 친구가 먼저 담았는데 내 화면은 아직 모르는 경우,
+  // 검색/지도/카드 어디서 담든 같은 장소가 두 번 들어가던 중복의 공통 입구.
+  if (day.stopIds.includes(placeId)) return;
   const dayIndex = days.findIndex((d) => d.id === day.id);
   const { startId, endId } = dayAnchorIds(dayIndex);
   // 시작=끝이 같은 앵커(전환 없는 보통 날)면 그 하나뿐인 앵커 자체가 "끝" 자리를 겸하므로,
@@ -811,9 +938,12 @@ async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
   let restored = false;
   if (activeDestId) {
     const stored = await loadRoutePlan(activeDestId);
+    // 친구가 ROUTE에서 새로 담은 장소 등 내 첫 로딩 목록(mood 있는 것만)에 없는 장소도 불러온 뒤에
+    // 복원한다 — 안 그러면 "없는 장소"로 보고 건너뛰고, 그 상태로 저장하면서 DB에서 지워 버린다.
+    if (stored) await ensurePlacesLoaded(stored.flatMap((sd) => sd.stops.map((s) => s.placeId).filter((id): id is string => !!id)));
     restored = applyStoredPlan(stored);
+    syncedByDay = new Map((stored ?? []).map((sd) => [sd.dayIndex, sd.stops] as const));
   }
-  lastSavedSig = restored ? daySignature(activeDay()) : '';
 }
 
 /* ══════════════ 실제 길찾기 (Routes API + DB 캐시) ══════════════ */
@@ -1136,28 +1266,26 @@ export async function renderRouteContent(container: HTMLElement, tripId: string)
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = null;
-      void persistActiveDay();
+      void syncPlan();
     }
   };
   window.addEventListener('beforeunload', beforeUnloadHandler);
 
   // 같은 트립을 보고 있는 다른 멤버의 변경을 실시간으로 반영
-  subscribeRoutePlan(tripId, () => { void reloadFromRemote(); });
+  subscribeRoutePlan(tripId, scheduleRemoteSync);
   // 실제 경로(Route Matrix API)는 더 이상 자동으로 부르지 않는다 — API 비용을 줄이려고
   // "실제 경로 보기"를 눌렀을 때만 호출한다(estimateNoteHtml의 버튼 참고).
 }
 
-/** 다른 멤버가 동선을 바꿨을 때 — 내 편집 중인 상태를 버리지 않도록 저장 예약을 먼저 비운다 */
-async function reloadFromRemote(): Promise<void> {
-  if (!activeDestId || !rtContainer) return;
-  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
-
-  const stored = await loadRoutePlan(activeDestId);
-  if (!stored) return;
-  days.forEach((d) => { d.stopIds = []; });
-  applyStoredPlan(stored);
-  lastSavedSig = daySignature(activeDay());
-  refreshAll(rtContainer, { refit: false });
+/** 친구가 동선을 바꾸면 DB와 다시 맞춘다. 한 번 저장이 지우기+여러 번 넣기라 이벤트가 연달아 오므로
+ *  잠깐 모아서 한 번만 돈다(중간의 반쯤 저장된 상태를 읽어 화면이 깜빡이거나 잘못 반영되지 않게).
+ *  내 변경은 버리지 않고 같이 병합된다(syncPlan). */
+function scheduleRemoteSync(): void {
+  if (remoteReloadTimer) clearTimeout(remoteReloadTimer);
+  remoteReloadTimer = setTimeout(() => {
+    remoteReloadTimer = null;
+    void syncPlan();
+  }, 500);
 }
 
 function bindHeaderNav(container: HTMLElement): void {
@@ -1440,7 +1568,7 @@ async function addSearchResultToDay(p: Place, container: HTMLElement, cacheSourc
   // 페이지를 새로고침하는 순간 진행 중이던 네트워크 요청 자체가 취소돼 소용없었다 — 이 함수는
   // "검색해서 찾은 곳을 담는다"는 명확한 단발성 액션이라, 여기서만큼은 디바운스를 건너뛰고
   // 바로 기다려서 반환 전에 DB 반영을 확정한다.
-  await persistActiveDay();
+  await syncPlan();
 }
 
 function filteredCandidates(): Place[] {
@@ -1576,7 +1704,7 @@ function bindOptionsMenu(container: HTMLElement): void {
       menu.remove();
       openRouteDestSwitcher(container, btn);
     });
-    menu.querySelector('#rt-opt-reset')?.addEventListener('click', () => {
+    menu.querySelector('#rt-opt-reset')?.addEventListener('click', async () => {
       if (!confirm('이 여행지의 모든 DAY 동선을 초기화할까요?')) { menu.remove(); return; }
       days.forEach((d) => pushHistory(d.id));
       days.forEach((d) => { d.stopIds = []; });
@@ -1585,8 +1713,11 @@ function bindOptionsMenu(container: HTMLElement): void {
       timeOverride.clear();
       legModeOverride.clear();
       menu.remove();
-      if (activeDestId) void clearRoutePlan(activeDestId);
-      lastSavedSig = '';
+      // DB를 먼저 비우고 "맞춘 상태"도 빈 걸로 맞춘 뒤에 다시 그린다 — 안 그러면 비우기와 저장이 엇갈려
+      // 방금 지운 동선이 되살아나거나 저장이 실패한다.
+      if (activeDestId) await clearRoutePlan(activeDestId);
+      syncedByDay = new Map();
+      baseUnknownDays = new Set();
       refreshAll(container, { refit: true });
     });
     const dismiss = (ev: MouseEvent) => {
@@ -2053,8 +2184,7 @@ async function undoAiRoutePlan(container: HTMLElement): Promise<void> {
 
   aiPlanUndo = null;
   aiPlanNotice = null;
-  lastSavedSig = '';
-  await persistAllDays();
+  await syncPlan();
   refreshAll(container, { refit: true });
 }
 
@@ -2184,8 +2314,7 @@ async function runAiRoutePlan(container: HTMLElement): Promise<void> {
       skippedCount: Math.max(0, candidatePlaces.length - usedCount),
       cached: result.cached,
     };
-    lastSavedSig = '';
-    await persistAllDays();
+    await syncPlan();
   } catch (e) {
     window.alert((e as Error).message);
   } finally {
@@ -2364,7 +2493,7 @@ function openLodgingRevisitModal(container: HTMLElement): void {
     pushHistory();
     appendStopBeforeEndAnchor(activeDay(), p.id);
     refreshAll(container, { refit: false });
-    void persistActiveDay();
+    void syncPlan();
   });
 
   document.body.appendChild(backdrop);
@@ -2940,6 +3069,9 @@ function refreshAll(container: HTMLElement, opts: { refit: boolean } = { refit: 
  * (상수 이름 AERO_BLUE는 유지 — 지금은 "중간 경유지" 색을 가리킨다)
  */
 const AERO_BLUE = '#79BEFC';
+// 동선에 담은 중간 경유지(원) 색 — 경로선(#4E9ADC)과 거의 같은 톤이라 줌아웃하면 선과 원이
+// 한 덩어리로 뭉쳐 보인다는 피드백으로, 선보다 한 단계만 진하게 해서 구분한다.
+const STOP_BLUE = '#2F86D6';
 const ENDPOINT_NAVY = '#0B2E6B';
 const CANDIDATE_BLUE = '#B1D8FD';
 const CANDIDATE_ICON = '#2C64AE';
@@ -2959,7 +3091,7 @@ const LODGING_REVISIT_COLOR = '#7C5CFC';
  * 진행 상태 강조(다음/지나옴)만 phaseColor가 다른 색을 얹는다.
  */
 function stopIdentityColor(isEndpoint: boolean): string {
-  return isEndpoint ? ENDPOINT_NAVY : AERO_BLUE;
+  return isEndpoint ? ENDPOINT_NAVY : STOP_BLUE;
 }
 // 두께는 항상 고정(줌 배율과 무관) — 이동수단 구분은 색이 아니라 캡슐 배지의
 // 아이콘/라벨과 모드 전환 노드가 담당한다. 시안의 선 굵기에 맞춰 2.5로.
@@ -3027,7 +3159,7 @@ async function initMap(container: HTMLElement): Promise<void> {
     appendStopBeforeEndAnchor(activeDay(), p.id);
     refreshAll(rtContainer, { refit: true });
     // scheduleSave의 600ms 디바운스를 기다리다 새로고침하면 유실될 수 있어 바로 저장을 확정한다.
-    void persistActiveDay();
+    void syncPlan();
   });
 
   // 축소할수록 번호 핀이 상대적으로 너무 커 보이는 문제 — 줌 레벨에 따라 핀 크기를 다시 계산.
@@ -3423,7 +3555,7 @@ function openPlaceCard(g: any, p: Place): void {
       closePlaceCard();
       refreshAll(rtContainer!, { refit: false });
       // scheduleSave의 600ms 디바운스를 기다리다 새로고침하면 유실될 수 있어 바로 저장을 확정한다.
-      void persistActiveDay();
+      void syncPlan();
     });
   });
 }
@@ -3669,7 +3801,7 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
       '" stroke-width="' + dotRing + '"/>';
     zIndex = 300;
   } else if (opts.included) {
-    const fill = isRevisit ? LODGING_REVISIT_COLOR : phaseColor(phase, opts.baseColor ?? AERO_BLUE);
+    const fill = isRevisit ? LODGING_REVISIT_COLOR : phaseColor(phase, opts.baseColor ?? STOP_BLUE);
     const rc = 15 * scale * 0.68;
     const ring = Math.max(1, rc * 0.1);
     const outerR = rc + ring;
