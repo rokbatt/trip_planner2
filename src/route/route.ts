@@ -75,6 +75,7 @@ const IC_WALK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const IC_TRANSIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="14" rx="2"/><path d="M4 11h16M8 21l2-4h4l2 4M8 7h.01M16 7h.01"/></svg>';
 const IC_TAXI = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M5 17a2 2 0 1 0 4 0M15 17a2 2 0 1 0 4 0M5 17l1.5-5h11L19 17M8 12V8h8v4"/></svg>';
 const IC_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
+const IC_MINUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>';
 const IC_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
 const IC_CHEVRON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
 const IC_CHEVRON_UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>';
@@ -1500,20 +1501,28 @@ function renderLeftPanel(container: HTMLElement): void {
         '  <div class="rt-float-thumb"' + (p.photo_url ? ' style="background-image:url(\'' + p.photo_url + '\')"' : '') + '>' +
           (p.photo_url ? '' : '<span style="color:' + meta.color + '">' + meta.icon + '</span>') + '</div>',
         '  <div class="rt-float-text"><div class="rt-float-name">' + escapeHtml(p.name) + '</div><div class="rt-float-cat">' + escapeHtml(p.category || '') + '</div></div>',
-        '  <button type="button" class="rt-float-add' + (added ? ' added' : '') + '" data-place-id="' + p.id + '">' + (added ? IC_CHECK : IC_PLUS) + '</button>',
+        '  <button type="button" class="rt-float-add' + (added ? ' added' : '') + '" data-place-id="' + p.id + '"' +
+          ' title="' + (added ? '동선에서 빼기' : '동선에 담기') + '" aria-label="' + escapeHtml(p.name) + (added ? ' 동선에서 빼기' : ' 동선에 담기') + '">' +
+          (added ? '<span class="rt-add-on">' + IC_CHECK + '</span><span class="rt-add-off">' + IC_MINUS + '</span>' : IC_PLUS) + '</button>',
         '</div>',
       ].join('');
     })
     .join('');
 
+  // 담기/빼기 토글 — 이미 담은 장소를 한 번 더 누르면 동선에서 뺀다(우측 패널의 ✕와 같은 동작)
   listEl.querySelectorAll('.rt-float-add').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = (btn as HTMLElement).dataset.placeId!;
       const d = activeDay();
-      if (d.stopIds.includes(id)) return;
       pushHistory();
-      appendStopBeforeEndAnchor(d, id);
-      refreshAll(container, { refit: true });
+      if (d.stopIds.includes(id)) {
+        removeStop(id);
+        if (highlightedPlaceId === id) highlightedPlaceId = null;
+        refreshAll(container, { refit: false });
+      } else {
+        appendStopBeforeEndAnchor(d, id);
+        refreshAll(container, { refit: true });
+      }
     });
   });
 }
