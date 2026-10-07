@@ -1009,6 +1009,76 @@
 .tl-modebtn.active { border-color: var(--tl-c-primary); background: var(--tl-c-primary); color: #fff; }
 .tl-modeauto { color: var(--tl-c-secondary); }
 
+/* ══════════════ 담아둔 장소 추가 (Brainstorm에 담은 장소에서 고르기) ══════════════ */
+
+.tl-addrow { padding-top: 2px; }
+.tl-addrow-empty { width: 100%; max-width: 420px; margin-top: 6px; text-align: left; }
+.tl-add-open {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 11px 14px; border-radius: 14px;
+  border: 1px dashed var(--tl-line-strong); background: transparent;
+  color: var(--tl-ink-2); font-family: inherit; font-size: 12.5px; font-weight: 700;
+  cursor: pointer; transition: all var(--tl-ease);
+}
+.tl-add-open:hover { border-color: var(--tl-blue); color: var(--tl-blue); background: var(--tl-ice); }
+.tl-add-open svg { width: 14px; height: 14px; }
+
+.tl-addpick {
+  border: 1px solid var(--tl-c-card-border); border-radius: 16px; background: #fff;
+  box-shadow: var(--tl-card-shadow); padding: 12px; display: flex; flex-direction: column; gap: 10px;
+}
+.tl-addpick-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tl-addpick-title { font-size: 13px; font-weight: 800; color: var(--tl-ink); }
+.tl-addpick-close {
+  width: 26px; height: 26px; display: grid; place-items: center; flex-shrink: 0;
+  border: none; border-radius: 8px; background: transparent; color: var(--tl-ink-3); cursor: pointer;
+}
+.tl-addpick-close:hover { background: var(--tl-mist); color: var(--tl-ink); }
+.tl-addpick-close svg { width: 14px; height: 14px; }
+.tl-addpick-search {
+  width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: 10px;
+  border: 1px solid var(--tl-line-strong); background: var(--tl-mist);
+  font-family: inherit; font-size: 12.5px; color: var(--tl-ink); outline: none;
+}
+.tl-addpick-search:focus { border-color: var(--tl-blue); background: #fff; }
+.tl-addpick-search::placeholder { color: var(--tl-ink-4); }
+.tl-addpick-list { display: flex; flex-direction: column; gap: 2px; max-height: 300px; overflow-y: auto; }
+.tl-addpick-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 7px 8px; border: none; border-radius: 10px; background: transparent;
+  font-family: inherit; text-align: left; cursor: pointer; transition: background var(--tl-ease);
+}
+.tl-addpick-item:hover { background: var(--tl-mist); }
+.tl-addpick-thumb {
+  width: 38px; height: 38px; flex-shrink: 0; border-radius: 9px;
+  background: var(--tl-mist) center / cover no-repeat;
+}
+.tl-addpick-thumb.is-empty { display: grid; place-items: center; color: var(--tl-ink-4); }
+.tl-addpick-thumb.is-empty svg { width: 16px; height: 16px; }
+.tl-addpick-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tl-addpick-text b {
+  font-size: 13px; font-weight: 700; color: var(--tl-c-title);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tl-addpick-meta { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.tl-addpick-metatext {
+  min-width: 0; font-size: 11px; color: var(--tl-c-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tl-addpick-metatext svg { width: 10px; height: 10px; margin-right: 2px; vertical-align: -1px; color: var(--tl-c-rating); }
+.tl-addpick-tag {
+  flex-shrink: 0; padding: 1px 7px; border-radius: 999px;
+  background: var(--tl-mist); color: var(--tl-ink-2); font-size: 10px; font-weight: 700; white-space: nowrap;
+}
+.tl-addpick-plus {
+  width: 26px; height: 26px; flex-shrink: 0; display: grid; place-items: center;
+  border-radius: 8px; border: 1px solid var(--tl-line-strong); color: var(--tl-ink-3);
+  transition: all var(--tl-ease);
+}
+.tl-addpick-plus svg { width: 13px; height: 13px; }
+.tl-addpick-item:hover .tl-addpick-plus { border-color: var(--tl-blue); background: var(--tl-blue); color: #fff; }
+.tl-addpick-empty { padding: 16px 8px; text-align: center; font-size: 12px; color: var(--tl-ink-3); }
+
 /* ══════════════ "지금" 선 (여행 중) ══════════════ */
 
 .tl-nowline { margin: 4px 0; }

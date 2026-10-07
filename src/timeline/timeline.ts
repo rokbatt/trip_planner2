@@ -22,7 +22,7 @@
 
 import { supabase } from '../supabase';
 import { store } from '../store';
-import { setActiveDestinationId, isSyntheticDestination } from '../trips/destinations';
+import { setActiveDestinationId, isSyntheticDestination, placeBelongsToDestination } from '../trips/destinations';
 import {
   saveRouteDay,
   subscribeRoutePlan,
@@ -37,6 +37,7 @@ import {
   scheduleFor,
   stopLegKey,
   toStoredStops,
+  toStop,
   todaysHoursLine,
   effectiveDwellMinutes,
   MODES,
@@ -103,6 +104,7 @@ const IC_PD_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 const IC_PD_MAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3 3 5v16l6-2 6 2 6-2V3l-6 2-6-2Z"/><path d="M9 3v16M15 5v16"/></svg>';
 const IC_PD_WEB = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a13 13 0 0 1 0 18M12 3a13 13 0 0 0 0 18"/></svg>';
 const IC_PD_BOOK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0 0 4h13"/></svg>';
+const IC_PLUS_SM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
 const IC_PD_REFRESH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>';
 // 섹션 제목·체크리스트용 얇은 선 아이콘 — 이모지는 OS/브라우저마다 모양과 색이 달라
 // 컨셉(Airport Lounge, 얇은 선 아이콘)에서 튀고 "AI가 붙인 스티커"처럼 보인다.
@@ -182,6 +184,9 @@ let placeBriefErrors = new Map<string, string>();
 /** 트립 공유 체크리스트(Companion과 같은 목록). null이면 저장소를 못 쓰는 상태(마이그레이션 전)라
  *  장소별 준비 체크리스트 UI를 통째로 숨긴다. */
 let checklistItems: TripChecklistItem[] | null = null;
+/** "담아둔 장소에서 추가" 피커 — 하루 보기 목록 맨 아래에 펼쳐진다. 검색어는 다시 그려도 유지 */
+let addPickerOpen = false;
+let addPickerQuery = '';
 let checklistUnsub: (() => void) | null = null;
 
 /** legKey → 모드별 실측. 없으면 직선거리 추정치 (ROUTE와 같은 캐시 전략) */
@@ -237,6 +242,8 @@ export function teardownTimeline(): void {
   openLegIndex = null;
   detailKey = null;
   detailTab = 'overview';
+  addPickerOpen = false;
+  addPickerQuery = '';
   placeBriefs = new Map();
   placeBriefLoading = new Set();
   placeBriefErrors = new Map();
@@ -700,6 +707,7 @@ function renderDayStrip(): void {
       selectedKey = null;
       openLegIndex = null;
       detailKey = null; // 다른 DAY의 정류지를 보여주던 상세 패널은 의미가 없어 닫는다
+      addPickerOpen = false;
       mapFitKey = ''; // DAY가 바뀌면 지도를 그 하루에 맞춰 다시 잡는다
       viewMode = 'day';
       render();
@@ -718,8 +726,9 @@ function dayScheduleHtml(): string {
       '<div class="tl-dayempty">',
       '  <span class="tl-dayempty-icon">' + IC_ROUTEPATH + '</span>',
       '  <div class="tl-dayempty-title">' + escapeHtml(day.label) + '은(는) 아직 비어 있어요</div>',
-      '  <div class="tl-dayempty-hint">일부러 비워둔 날일 수도 있어요. 일정을 넣으려면 ROUTE에서 이 DAY에 장소를 담아주세요.</div>',
+      '  <div class="tl-dayempty-hint">일부러 비워둔 날일 수도 있어요. 담아둔 장소를 여기서 바로 넣거나, ROUTE에서 동선을 짜 보세요.</div>',
       '  <button type="button" class="tl-empty-btn" id="tl-day-go-route">' + IC_ARROW_BACK + ' ROUTE에서 채우기</button>',
+      '  <div class="tl-addrow-empty">' + addBlockHtml(day) + '</div>',
       '</div>',
     ].join('');
   }
@@ -731,11 +740,190 @@ function dayScheduleHtml(): string {
     if (i < day.stops.length - 1) rows.push(legRowHtml(s.legs[i], day.stops[i + 1], i, s.arriveMin[i + 1]));
   });
 
-  return ['<div class="tl-day">', dayHeadHtml(day, s), '  <ol class="tl-list" id="tl-list">' + rows.join('') + '</ol>', '</div>'].join('');
+  return [
+    '<div class="tl-day">',
+    dayHeadHtml(day, s),
+    '  <ol class="tl-list" id="tl-list">' + rows.join('') + '</ol>',
+    // 카드 칸에 맞춰 정렬되도록 같은 3열 격자에 얹는다(시각·스파인 칸은 비움)
+    '  <div class="tl-row tl-addrow"><div class="tl-col-time"></div><div class="tl-col-spine"></div>' +
+      '<div class="tl-col-card">' + addBlockHtml(day) + '</div></div>',
+    '</div>',
+  ].join('');
 }
 
-/** DOCUMENTS 게이트에 저장된 "관련 DAY" 정보를 읽어와 하루 요약 줄에 반영한다.
- *  문서함을 아직 안 쓰는 여행이면 빈 Map이 와서 화면이 그대로 유지된다. */
+/* ══════════════ 담아둔 장소에서 추가 ══════════════ */
+
+/**
+ * 이 여행지에서 Brainstorm으로 분류해 둔 장소들 — ROUTE 좌측 패널의 후보와 같은 기준
+ * (숙소 제외, 좌표 있음, 이 여행지 소속). 새 장소를 찾는 검색이 아니라 "이미 담아둔 것 중에서
+ * 고르기"라 API 호출이 없다(원칙 3-2). 장소 목록은 loadDayModel이 이미 불러와 둔 것을 쓴다.
+ */
+function savedPlaces(): Place[] {
+  const dest = activeDestId ? allDestinations.find((d) => d.id === activeDestId) ?? null : null;
+  return [...placeById.values()].filter(
+    (p) => !basecampIds.has(p.id) && p.lat != null && p.lng != null && (!dest || placeBelongsToDestination(p, dest))
+  );
+}
+
+/** 장소 → 그 장소가 이미 들어 있는 **다른** DAY 라벨. 같은 장소를 여러 DAY에 담는 건 막지 않는다
+ *  (ROUTE도 지금 DAY에 있는지만 본다) — 대신 어디 있는지 알려줘서 실수로 겹치지 않게 한다. */
+function scheduledElsewhere(activeIndex: number): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  days.forEach((d, i) => {
+    if (i === activeIndex) return;
+    d.stops.forEach((st) => {
+      if (!st.placeId) return;
+      const list = map.get(st.placeId) ?? [];
+      if (!list.includes(d.label)) list.push(d.label);
+      map.set(st.placeId, list);
+    });
+  });
+  return map;
+}
+
+/**
+ * 새 장소가 들어갈 자리 — ROUTE의 appendStopBeforeEndAnchor와 같은 규칙. 보통 날은 맨 끝이지만,
+ * 마지막 정류지가 숙소·공항(끝 앵커: DAY1의 공항→숙소, 숙소를 옮기는 날, 출국일)이면 그 앞이다.
+ * 안 그러면 "숙소에 돌아온 뒤 관광"처럼 하루 순서가 뒤집힌다.
+ */
+function addInsertIndex(day: TlDay): number {
+  const n = day.stops.length;
+  const last = day.stops[n - 1];
+  return n > 1 && (last.cat === 'STAY' || last.cat === 'AIRPORT') ? n - 1 : n;
+}
+
+function addPlaceToActiveDay(placeId: string): void {
+  const day = activeDay();
+  if (!day || !placeById.has(placeId)) return;
+  const stored: StoredStop = {
+    placeId,
+    customName: null,
+    customLat: null,
+    customLng: null,
+    arriveTime: null,
+    memo: null,
+    travelMode: null,
+    purpose: null,
+    customDwellMin: null,
+  };
+  // 키는 이 DAY 안에서만 유일하면 된다 — 순번 자리에 시각을 넣어 기존 정류지 키와 겹치지 않게
+  const stop = toStop(dayCtx, stored, day.dayIndex, Date.now());
+  day.stops.splice(addInsertIndex(day), 0, stop);
+  selectedKey = stop.key; // 어디에 들어갔는지 바로 보이게 카드를 선택 상태로
+  openLegIndex = null;
+  mapFitKey = '';
+  scheduleSave(day.dayIndex);
+  render();
+  void loadRealLegsForActiveDay();
+}
+
+function addPickerListHtml(day: TlDay): string {
+  const all = savedPlaces();
+  if (!all.length) {
+    return '<div class="tl-addpick-empty">Brainstorm에 담아둔 장소가 아직 없어요.</div>';
+  }
+  const inDay = new Set(day.stops.map((st) => st.placeId).filter((id): id is string => !!id));
+  const elsewhere = scheduledElsewhere(days.indexOf(day));
+  const q = addPickerQuery.trim().toLowerCase();
+  const items = all
+    .filter((p) => !inDay.has(p.id))
+    .filter((p) => {
+      if (!q) return true;
+      const cat = CAT_LABEL[catKeyFor(p.mood ?? null, p.category ?? null)];
+      return [p.name, p.category ?? '', cat].some((t) => t.toLowerCase().includes(q));
+    })
+    // 아직 어느 DAY에도 없는 장소를 먼저 — 보통 "빠뜨린 곳"을 찾으러 여는 목록이라
+    .sort((a, b) => Number(elsewhere.has(a.id)) - Number(elsewhere.has(b.id)));
+
+  if (!items.length) {
+    return '<div class="tl-addpick-empty">' + (q ? '찾는 장소가 없어요.' : '담아둔 장소가 모두 이 DAY에 들어 있어요.') + '</div>';
+  }
+
+  return items
+    .map((p) => {
+      const cat = CAT_LABEL[catKeyFor(p.mood ?? null, p.category ?? null)];
+      const meta = [cat, p.category ?? ''].filter(Boolean).join(' · ');
+      const other = elsewhere.get(p.id);
+      return [
+        '<button type="button" class="tl-addpick-item" data-add-place="' + p.id + '">',
+        p.photo_url
+          ? '  <span class="tl-addpick-thumb" data-photo="' + escapeHtml(p.photo_url) + '"></span>'
+          : '  <span class="tl-addpick-thumb is-empty">' + IC_PIN_SMALL + '</span>',
+        '  <span class="tl-addpick-text">',
+        '    <b>' + escapeHtml(p.name) + '</b>',
+        // 이름이 가장 중요하니 "DAY n에 있음"은 이름 줄이 아니라 보조 정보 줄에 붙인다(좁은 폭에서 이름이 잘리지 않게)
+        '    <span class="tl-addpick-meta"><span class="tl-addpick-metatext">' + escapeHtml(meta) +
+          (typeof p.google_rating === 'number' ? ' · ' + IC_STAR + p.google_rating.toFixed(1) : '') + '</span>' +
+          (other ? '<span class="tl-addpick-tag">' + escapeHtml(other.join(', ')) + '에 있음</span>' : '') + '</span>',
+        '  </span>',
+        '  <span class="tl-addpick-plus">' + IC_PLUS_SM + '</span>',
+        '</button>',
+      ].join('');
+    })
+    .join('');
+}
+
+/** 목록 맨 아래의 "담아둔 장소 추가" — 닫혀 있으면 버튼, 열리면 고르는 카드 */
+function addBlockHtml(day: TlDay): string {
+  if (!addPickerOpen) {
+    return '<button type="button" class="tl-add-open" id="tl-add-open">' + IC_PLUS_SM + '<span>담아둔 장소 추가</span></button>';
+  }
+  return [
+    '<div class="tl-addpick" id="tl-addpick">',
+    '  <div class="tl-addpick-head">',
+    '    <span class="tl-addpick-title">담아둔 장소에서 추가</span>',
+    '    <button type="button" class="tl-addpick-close" id="tl-add-close" aria-label="장소 추가 닫기">' + IC_PD_CLOSE + '</button>',
+    '  </div>',
+    '  <input type="text" class="tl-addpick-search" id="tl-add-search" placeholder="이름·분류로 찾기" value="' +
+      escapeHtml(addPickerQuery) + '" aria-label="담아둔 장소 찾기" />',
+    '  <div class="tl-addpick-list" id="tl-add-list">' + addPickerListHtml(day) + '</div>',
+    '</div>',
+  ].join('');
+}
+
+function bindAddPickerList(list: HTMLElement): void {
+  list.querySelectorAll('.tl-addpick-thumb[data-photo]').forEach((el) => {
+    const url = (el as HTMLElement).dataset.photo;
+    if (url) (el as HTMLElement).style.backgroundImage = 'url("' + url.replace(/"/g, '%22') + '")';
+  });
+  list.querySelectorAll('[data-add-place]').forEach((btn) => {
+    // 고른 뒤에도 피커는 열어 둔다 — 여러 곳을 연달아 넣는 경우가 많고, 넣은 곳은 목록에서 빠진다
+    btn.addEventListener('click', () => addPlaceToActiveDay((btn as HTMLElement).dataset.addPlace!));
+  });
+}
+
+function bindAddPicker(main: HTMLElement): void {
+  main.querySelector('#tl-add-open')?.addEventListener('click', () => {
+    addPickerOpen = true;
+    addPickerQuery = '';
+    render();
+    container?.querySelector('#tl-addpick')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    (container?.querySelector('#tl-add-search') as HTMLInputElement | null)?.focus({ preventScroll: true });
+  });
+  // 명시적으로 닫는 수단 두 가지(원칙 3-3) — ✕와 Esc
+  main.querySelector('#tl-add-close')?.addEventListener('click', () => {
+    addPickerOpen = false;
+    render();
+  });
+  const search = main.querySelector('#tl-add-search') as HTMLInputElement | null;
+  const list = main.querySelector('#tl-add-list') as HTMLElement | null;
+  // 검색어를 칠 때마다 목록만 갈아끼운다 — 전체를 다시 그리면 입력칸 포커스가 날아간다
+  search?.addEventListener('input', () => {
+    addPickerQuery = search.value;
+    const day = activeDay();
+    if (!day || !list) return;
+    list.innerHTML = addPickerListHtml(day);
+    bindAddPickerList(list);
+  });
+  search?.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      addPickerOpen = false;
+      render();
+    }
+  });
+  if (list) bindAddPickerList(list);
+}
+
 /* ══════════════ 장소별 준비 체크리스트 (Companion과 같은 트립 공유 목록) ══════════════ */
 
 /** 이 정류지의 장소를 체크리스트에서 가리키는 키 — 정류지가 아니라 장소 단위라,
@@ -778,6 +966,8 @@ async function addPrepItem(stop: TlStop, text: string): Promise<void> {
   if (created) await reloadTimelineChecklist();
 }
 
+/** DOCUMENTS 게이트에 저장된 "관련 DAY" 정보를 읽어와 하루 요약 줄에 반영한다.
+ *  문서함을 아직 안 쓰는 여행이면 빈 Map이 와서 화면이 그대로 유지된다. */
 async function loadDayAttachments(tripId: string): Promise<void> {
   try {
     const mod = await import('../docs/docsStore');
@@ -1943,6 +2133,7 @@ function bindShell(): void {
     viewMode = 'day';
     selectedKey = null;
     detailKey = null;
+    addPickerOpen = false;
     mapFitKey = '';
     render();
     void loadRealLegsForActiveDay();
@@ -1959,6 +2150,7 @@ function bindAllDays(main: HTMLElement): void {
       viewMode = 'day';
       selectedKey = null;
       detailKey = null;
+      addPickerOpen = false;
       mapFitKey = '';
       render();
       void loadRealLegsForActiveDay();
@@ -1976,6 +2168,7 @@ function findStop(key: string): { day: TlDay; stop: TlStop; index: number } | nu
 
 function bindDaySchedule(main: HTMLElement): void {
   main.querySelector('#tl-day-go-route')?.addEventListener('click', () => gotoGate('route'));
+  bindAddPicker(main);
   bindAttachmentChip();
 
   main.querySelectorAll('.tl-photo').forEach((el) => {
