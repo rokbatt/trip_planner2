@@ -11,8 +11,10 @@
  *                 저장하지 않고 화면에서 항상 맨 앞에 붙인다.
  *
  * 동시 편집: 저장은 "그 DAY의 정류지 전체를 지우고 다시 넣기"(replace) 방식이라 단순하지만,
- * 다른 멤버의 변경을 덮어쓸 수 있다. 그래서 저장 직후 스스로 유발한 realtime 이벤트를
- * 무시(echo suppression)하고, 남의 변경이 오면 화면을 다시 불러온다.
+ * 그대로 두면 늦게 저장한 쪽이 다른 멤버의 변경을 덮어쓴다. 그래서 호출부(route.ts)는 저장 전에
+ * 항상 DB의 현재 상태를 불러와 routeMerge.ts로 3자 병합한 결과를 저장한다. 여기서는 (1) 내
+ * 저장끼리 겹쳐 중복 행이 생기지 않게 한 번에 하나씩만 실행하고, (2) 지우기만 되고 넣기가
+ * 실패한 경우를 호출부가 알 수 있게 구분해 돌려준다.
  */
 
 import { supabase } from '../supabase';
@@ -67,7 +69,8 @@ function missingColumnName(error: { code?: string; message?: string } | null): s
 
 /**
  * 이 여행지의 저장된 동선을 전부 불러온다.
- * 반환이 null이면 "저장소를 못 씀"(마이그레이션 전) — 호출부는 기존 초기값 로직을 쓴다.
+ * 반환이 null이면 "읽지 못함"(마이그레이션 전이거나 일시적 오류) — 호출부는 아무것도 지우지 않고
+ * 기존 초기값 로직을 쓰거나 나중에 다시 시도한다.
  */
 export async function loadRoutePlan(destinationId: string): Promise<StoredDay[] | null> {
   const { data: dayRows, error: dayErr } = await supabase
@@ -96,8 +99,10 @@ export async function loadRoutePlan(destinationId: string): Promise<StoredDay[] 
     .order('sort_order', { ascending: true });
 
   if (stopErr) {
+    // 정류지 조회만 실패한 걸 "모든 DAY가 비었다"로 돌려주면, 호출부가 친구가 동선을 싹 비운 것으로
+    // 오해해 내 화면을 비우거나 빈 상태로 덮어쓴다. 읽지 못했다고(null) 알려서 아무것도 쓰지 않게 한다.
     console.error('[Route] route_stops 로드 실패:', stopErr.message);
-    return days.map((d) => ({ dayIndex: d.day_index, stops: [] }));
+    return null;
   }
 
   const byDay = new Map<string, StoredStop[]>();
@@ -121,15 +126,6 @@ export async function loadRoutePlan(destinationId: string): Promise<StoredDay[] 
 }
 
 /* ══════════════ 저장 ══════════════ */
-
-/** 저장이 유발한 realtime 이벤트를 내 화면에서 무시하기 위한 표식 */
-let selfWriteUntil = 0;
-function markSelfWrite(): void {
-  selfWriteUntil = Date.now() + 1500;
-}
-function isSelfEcho(): boolean {
-  return Date.now() < selfWriteUntil;
-}
 
 /** 해당 DAY 행을 확보(없으면 생성)하고 id를 반환 */
 async function ensureDayRow(tripId: string, destinationId: string, dayIndex: number): Promise<string | null> {
@@ -169,31 +165,49 @@ async function ensureDayRow(tripId: string, destinationId: string, dayIndex: num
   return created?.id ?? null;
 }
 
-/** 한 DAY의 정류지를 통째로 교체 저장 */
-export async function saveRouteDay(
+/**
+ * 저장 결과.
+ *  - 'ok'      : DB가 넘긴 stops와 같아졌다
+ *  - 'failed'  : 아무것도 바뀌지 않았다(지우기 전에 실패)
+ *  - 'partial' : 지우기까지만 되고 넣기가 실패했다 → DB의 그 DAY가 비어 있을 수 있다
+ */
+export type SaveResult = 'ok' | 'failed' | 'partial';
+
+/** 저장은 한 번에 하나씩만 — 두 저장이 겹치면 "지우기, 지우기, 넣기, 넣기"로 엇갈려 같은 장소가
+ *  두 번 들어간다(중복으로 담기는 버그). 앞 저장이 실패해도 다음 저장은 계속 진행한다. */
+let saveQueue: Promise<unknown> = Promise.resolve();
+
+/** 한 DAY의 정류지를 통째로 교체 저장 (호출부가 미리 DB 상태와 병합해 넘긴다) */
+export function saveRouteDay(
   tripId: string,
   destinationId: string,
   dayIndex: number,
   stops: StoredStop[]
-): Promise<boolean> {
-  if (storageAvailable === false) return false;
+): Promise<SaveResult> {
+  const run = saveQueue.then(() => replaceRouteDay(tripId, destinationId, dayIndex, stops));
+  saveQueue = run.catch(() => undefined);
+  return run;
+}
+
+async function replaceRouteDay(
+  tripId: string,
+  destinationId: string,
+  dayIndex: number,
+  stops: StoredStop[]
+): Promise<SaveResult> {
+  if (storageAvailable === false) return 'failed';
 
   const dayId = await ensureDayRow(tripId, destinationId, dayIndex);
-  if (!dayId) return false;
-
-  markSelfWrite();
+  if (!dayId) return 'failed';
 
   const { error: delErr } = await supabase.from('route_stops').delete().eq('route_day_id', dayId);
   if (delErr) {
-    if (isMissingTable(delErr)) { storageAvailable = false; return false; }
+    if (isMissingTable(delErr)) { storageAvailable = false; return 'failed'; }
     console.error('[Route] route_stops 삭제 실패:', delErr.message);
-    return false;
+    return 'failed';
   }
 
-  if (stops.length === 0) {
-    markSelfWrite();
-    return true;
-  }
+  if (stops.length === 0) return 'ok';
 
   const rows = stops.map((s, i) => ({
     route_day_id: dayId,
@@ -213,35 +227,37 @@ export async function saveRouteDay(
   // 아직 안 돌린 마이그레이션(stop_purpose, custom_dwell_min 등)이 여러 개 밀려 있어도
   // 하나씩 빼며 재시도 — 그 필드만 빠질 뿐 나머지 동선 저장은 그대로 되게(마이그레이션 전에도
   // 앱은 동작해야 한다는 원칙). 컬럼이 실제로 몇 개 없든 끝나야 하므로 rows의 필드 수만큼만 돈다.
+  // 이 시점엔 이미 지운 뒤라, 여기서 실패하면 DB의 그 DAY가 비어버린다 — 일시적인 네트워크 오류면
+  // 잠깐 뒤 다시 넣어 보고, 그래도 안 되면 'partial'로 알려 호출부가 내 화면을 정본으로 복구하게 한다.
   let attemptRows: Record<string, unknown>[] = rows;
-  for (let attempt = 0; attempt <= Object.keys(rows[0] ?? {}).length; attempt++) {
+  let transientRetries = 2;
+  for (let attempt = 0; attempt <= Object.keys(rows[0] ?? {}).length + transientRetries; attempt++) {
     // 컬럼을 동적으로 빼고 넣는 재시도라 정확한 Insert 모양과 맞는지는 타입으로 보장할 수 없다
     // (뺄 컬럼 이름을 실행 중에야 알게 되므로) — 이 호출 하나만 any로 좁혀서 나머지는 그대로 둔다.
     const { error: insErr } = await supabase.from('route_stops').insert(attemptRows as any);
-    if (!insErr) {
-      markSelfWrite();
-      return true;
-    }
+    if (!insErr) return 'ok';
     const missing = missingColumnName(insErr);
     if (!missing) {
       console.error('[Route] route_stops 저장 실패:', insErr.message);
-      return false;
+      if (transientRetries-- > 0) {
+        await new Promise((r) => setTimeout(r, 400));
+        continue;
+      }
+      return 'partial';
     }
     attemptRows = attemptRows.map((row) => {
       const { [missing]: _drop, ...rest } = row;
       return rest;
     });
   }
-  return false;
+  return 'partial';
 }
 
 /** 이 여행지의 모든 DAY 삭제 (동선 전체 초기화) */
 export async function clearRoutePlan(destinationId: string): Promise<void> {
   if (storageAvailable === false) return;
-  markSelfWrite();
   const { error } = await supabase.from('route_days').delete().eq('destination_id', destinationId);
   if (error && !isMissingTable(error)) console.error('[Route] 동선 초기화 실패:', error.message);
-  markSelfWrite();
 }
 
 /* ══════════════ 실시간 동기화 ══════════════ */
@@ -249,8 +265,11 @@ export async function clearRoutePlan(destinationId: string): Promise<void> {
 let channel: RealtimeChannel | null = null;
 
 /**
- * 같은 트립의 다른 멤버가 동선을 바꾸면 onRemoteChange를 호출한다.
- * 내가 방금 저장해서 생긴 이벤트(echo)는 걸러낸다.
+ * 같은 트립의 동선 행이 바뀔 때마다 onRemoteChange를 호출한다 — 내가 방금 저장해서 생긴 이벤트도
+ * 포함한다. 예전엔 "내 저장 후 1.5초 안의 이벤트"를 통째로 무시했는데, 그 사이에 온 친구의 변경까지
+ * 같이 버려져 내 화면이 오래된 채로 남고, 그 상태로 저장하면 친구가 담은 장소를 지웠다. 이제는
+ * 시간으로 거르지 않고, 호출부가 불러온 결과가 이미 내 상태와 같으면(= 내 저장의 echo) 아무것도
+ * 하지 않는 방식으로 걸러낸다.
  */
 export function subscribeRoutePlan(tripId: string, onRemoteChange: () => void): void {
   unsubscribeRoutePlan();
@@ -261,12 +280,12 @@ export function subscribeRoutePlan(tripId: string, onRemoteChange: () => void): 
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'route_stops', filter: 'trip_id=eq.' + tripId },
-      () => { if (!isSelfEcho()) onRemoteChange(); }
+      () => onRemoteChange()
     )
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'route_days', filter: 'trip_id=eq.' + tripId },
-      () => { if (!isSelfEcho()) onRemoteChange(); }
+      () => onRemoteChange()
     )
     .subscribe();
 }
