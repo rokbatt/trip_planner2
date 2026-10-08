@@ -24,6 +24,9 @@ import {
   getTotalBudget,
   getCategoryBudgetSum,
   settlementSummaryText,
+  memberBurdenTotal,
+  isSettled,
+  isSettleable,
   fmtKRW,
   fmtAmount,
   BUDGET_TOTAL_KEY,
@@ -52,6 +55,7 @@ function expense(over: Partial<TripExpense> = {}): TripExpense {
     expense_date: '2026-03-01',
     is_paid: true,
     split_mode: 'SHARED',
+    settled_at: null,
     paid_by: null,
     paid_by_name: null,
     paid_by_avatar: null,
@@ -118,6 +122,31 @@ describe('computeSettlement', () => {
     // 예정 항목이 반영됐다면 B가 받는 쪽이 됐을 것
     expect(rows.find((r) => r.userId === B)!.paidSum).toBe(0);
     expect(transfers.every((t) => t.to === A)).toBe(true);
+  });
+
+  it('정산 완료(settled_at) 처리된 항목은 정산에 넣지 않는다', () => {
+    // A가 낸 3만원은 이미 주고받았고, 새로 B가 낸 6만원만 남아 있다
+    const ctx = ctxOf(THREE, [
+      expense({ amount: 30000, paid_by: A, settled_at: '2026-03-02T00:00:00Z' }),
+      expense({ amount: 60000, paid_by: B }),
+    ]);
+    const { rows, transfers, skipped } = computeSettlement(ctx);
+    expect(rows.find((r) => r.userId === A)!.paidSum).toBe(0);
+    expect(rows.find((r) => r.userId === B)!.balance).toBe(40000);
+    expect(transfers.every((t) => t.to === B && t.amount === 20000)).toBe(true);
+    // 정산 완료는 "빠진 항목"이 아니라 이미 끝난 항목이다 — skipped로 세지 않는다
+    expect(skipped).toBe(0);
+  });
+
+  it('모든 공동 지출이 정산 완료면 보낼 돈이 없다', () => {
+    const settled = '2026-03-02T00:00:00Z';
+    const ctx = ctxOf(THREE, [
+      expense({ amount: 30000, paid_by: A, settled_at: settled }),
+      expense({ amount: 90000, paid_by: C, settled_at: settled }),
+    ]);
+    const { rows, transfers } = computeSettlement(ctx);
+    expect(transfers).toEqual([]);
+    expect(rows.every((r) => r.balance === 0)).toBe(true);
   });
 
   it('개인 지출(PERSONAL)은 정산에 넣지 않는다', () => {
@@ -367,5 +396,44 @@ describe('표기', () => {
 
   it('목록에 없는 통화는 코드를 그대로 붙인다', () => {
     expect(fmtAmount(100, 'AUD')).toBe('AUD 100');
+  });
+});
+
+/* ══════════════ 정산 완료 · 실제 부담액 ══════════════ */
+
+describe('isSettled / isSettleable', () => {
+  it('결제 완료된 공동 지출 중 정산 전인 것만 정산 완료로 표시할 수 있다', () => {
+    expect(isSettleable(expense())).toBe(true);
+    expect(isSettleable(expense({ is_paid: false }))).toBe(false);
+    expect(isSettleable(expense({ split_mode: 'PERSONAL' }))).toBe(false);
+    expect(isSettleable(expense({ settled_at: '2026-03-02T00:00:00Z' }))).toBe(false);
+    expect(isSettled(expense({ settled_at: '2026-03-02T00:00:00Z' }))).toBe(true);
+    expect(isSettled(expense())).toBe(false);
+  });
+});
+
+describe('memberBurdenTotal', () => {
+  it('개인 지출 전액 + 공동 지출의 n분의 1', () => {
+    const ctx = ctxOf(THREE, [
+      expense({ amount: 30000, paid_by: A }),
+      expense({ amount: 50000, paid_by: B, split_mode: 'PERSONAL' }),
+      expense({ amount: 20000, paid_by: C, split_user_ids: [B, C] }),
+    ]);
+    expect(memberBurdenTotal(ctx, A)).toBe(10000);
+    expect(memberBurdenTotal(ctx, B)).toBe(50000 + 10000 + 10000);
+    expect(memberBurdenTotal(ctx, C)).toBe(10000 + 10000);
+  });
+
+  it('정산 완료된 공동 지출도 그 사람이 쓴 돈이므로 부담액에 포함한다', () => {
+    const ctx = ctxOf(THREE, [expense({ amount: 30000, paid_by: A, settled_at: '2026-03-02T00:00:00Z' })]);
+    expect(memberBurdenTotal(ctx, B)).toBe(10000);
+  });
+
+  it('예정 항목과 환산 불가 항목은 부담액에 넣지 않는다', () => {
+    const ctx = ctxOf(THREE, [
+      expense({ amount: 30000, paid_by: A, is_paid: false }),
+      expense({ amount: 100, currency: 'USD', amount_krw: null, paid_by: A }),
+    ]);
+    expect(memberBurdenTotal(ctx, A)).toBe(0);
   });
 });

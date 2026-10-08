@@ -646,6 +646,44 @@
   background: rgba(10,125,67,0.06);
   transform: rotate(-2deg);
 }
+/* 정산 완료 — PAID(초록 테두리)와 한눈에 구분되도록 브랜드 딥네이비로 채운 도장 */
+.ex-stamp.is-settled {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: #0B2A5C;
+  border-color: #0B2A5C;
+  transform: rotate(-2deg);
+}
+.ex-stamp.is-settled svg { width: 9px; height: 9px; }
+
+/* 정산 끝난 행은 금액을 한 톤 낮춰 "남은 정산"과 구분 */
+.ex-item.is-settled .ex-item-amount { color: var(--al-text-tertiary); }
+
+/* 행 오른쪽 "정산 완료" / "되돌리기" 버튼 */
+.ex-settle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  border: 1px solid var(--al-divider);
+  background: #fff;
+  color: var(--al-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: var(--font-sans);
+  transition: all var(--al-duration) var(--al-ease);
+}
+.ex-settle-btn svg { width: 12px; height: 12px; }
+.ex-settle-btn:hover { border-color: #0B2A5C; color: #0B2A5C; background: rgba(11,42,92,0.05); }
+.ex-settle-btn.is-undo { color: var(--al-text-tertiary); }
+.ex-settle-btn.is-undo:hover { border-color: var(--al-text-secondary); color: var(--al-text); background: rgba(130,150,170,0.08); }
 .ex-mode-badge {
   font-size: 9px;
   font-weight: 600;
@@ -769,6 +807,68 @@
 .ex-settle-done { margin-top: var(--s3); font-size: 13px; color: #0a7d43; font-weight: 600; }
 .ex-settle-empty { font-size: 13px; color: var(--al-text-secondary); line-height: 1.6; padding: var(--s3) 0; text-align: center; }
 .ex-settle-note { margin-top: var(--s2); font-size: 11px; color: #b0713a; }
+.ex-settle-note-muted { margin-top: var(--s2); font-size: 11px; color: var(--al-text-tertiary); line-height: 1.5; }
+
+/* 정산 탭 — 요약 카드 + 정산 대기 목록 + 정산 완료 목록 */
+.ex-settle-tab { display: flex; flex-direction: column; gap: var(--s5); }
+.ex-settle-actions { display: flex; gap: var(--s2); margin-top: var(--s4); }
+.ex-settle-actions .ex-settle-cta { margin-top: 0; flex: 1; }
+.ex-settle-secondary {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--al-divider);
+  background: #fff;
+  color: var(--al-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 14px;
+  border-radius: var(--al-radius-sm);
+  cursor: pointer;
+  font-family: var(--font-sans);
+}
+.ex-settle-secondary:hover { border-color: var(--al-primary); color: var(--al-text); }
+.ex-settle-secondary svg { width: 14px; height: 14px; }
+.ex-settle-all { background: #0B2A5C; }
+.ex-settle-all:hover { background: #12397a; }
+
+.ex-settle-section-meta { font-size: 12px; font-weight: 600; color: var(--al-text-tertiary); font-variant-numeric: tabular-nums; }
+.ex-settle-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  text-align: left;
+}
+.ex-settle-section-toggle .ex-card-title { flex: 1; }
+.ex-settle-section-chev { color: var(--al-text-tertiary); display: flex; }
+.ex-settle-section-chev svg { width: 16px; height: 16px; }
+.ex-settle-section-toggle + .ex-list { margin-top: var(--s3); }
+
+/* 사이드바 정산 위젯의 "정산 대기 n건 · 정산 완료 n건" */
+.ex-settlewidget-meta { margin-top: var(--s2); font-size: 11px; color: var(--al-text-tertiary); }
+
+/* 수정 모달 상단 — 이미 정산 완료된 지출 안내 + 되돌리기 */
+.ex-sheet-settled {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--al-radius-sm);
+  background: rgba(11,42,92,0.06);
+  color: #0B2A5C;
+  font-size: 12px;
+  font-weight: 600;
+}
+.ex-sheet-settled > svg { width: 14px; height: 14px; flex-shrink: 0; }
+.ex-sheet-settled span { flex: 1; }
 
 /* ── 동행 탭 ── */
 .ex-comp-grid {
@@ -1024,6 +1124,9 @@
 
 @media (max-width: 768px) {
   .ex-wrap { padding: var(--s4) var(--s4) 140px; gap: var(--s4); }
+
+  .ex-settle-btn { padding: 4px 8px; font-size: 10px; }
+  .ex-settle-actions { flex-direction: column; }
 
   .ex-tabs { gap: var(--s4); overflow-x: auto; }
   .ex-tab { white-space: nowrap; font-size: 13px; }

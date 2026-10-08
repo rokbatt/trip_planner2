@@ -129,6 +129,16 @@ export function modeOf(e: TripExpense): SplitMode {
   return e.split_mode === 'PERSONAL' ? 'PERSONAL' : 'SHARED';
 }
 
+/** 정산 완료 처리된 지출인지 — 이미 돈을 주고받아 정산 계산에서 빠지는 항목 */
+export function isSettled(e: TripExpense): boolean {
+  return !!e.settled_at;
+}
+
+/** 정산 완료로 표시할 수 있는(= 지금 정산 계산에 들어가 있는) 지출 — 결제 완료된 공동 지출 중 아직 정산 전 */
+export function isSettleable(e: TripExpense): boolean {
+  return e.is_paid && modeOf(e) === 'SHARED' && !isSettled(e);
+}
+
 export function categoryOf(e: TripExpense): ExpenseCategory {
   return (EXPENSE_CATEGORIES as readonly string[]).includes(e.category) ? (e.category as ExpenseCategory) : 'ETC';
 }
@@ -186,8 +196,10 @@ export function memberName(ctx: ExpenseCtx, userId: string | null): string {
 /* ══════════════ 정산 ══════════════ */
 
 /**
- * 결제 완료 + 공동 지출 항목만 정산에 넣고, 최소 송금 조합을 그리디로 매칭한다.
- * 개인 지출(PERSONAL)과 예정 항목은 정산 대상이 아니다.
+ * 결제 완료 + 공동 지출 + 아직 정산 완료 처리 전인 항목만 정산에 넣고, 최소 송금 조합을
+ * 그리디로 매칭한다. 개인 지출(PERSONAL)·예정 항목·정산 완료된 항목은 정산 대상이 아니다
+ * — 이미 주고받은 돈까지 다시 계산에 넣으면 남은 차액이 부풀어 보여 헷갈리기 때문.
+ * 실제로 쓴 돈(현재 사용·부담액·개인별 내역)은 정산 여부와 무관하므로 여기서만 뺀다.
  */
 export function computeSettlement(ctx: ExpenseCtx): Settlement {
   const byUser = new Map<string, SettleRow>();
@@ -201,7 +213,7 @@ export function computeSettlement(ctx: ExpenseCtx): Settlement {
   let skipped = 0;
   const allIds = ctx.members.map((m) => m.user_id);
   for (const e of ctx.expenses) {
-    if (!e.is_paid || modeOf(e) !== 'SHARED') continue;
+    if (!isSettleable(e)) continue;
     const krw = krwOf(e);
     if (krw == null || !e.paid_by) { skipped++; continue; }
     const splitIds = e.split_user_ids && e.split_user_ids.length > 0 ? e.split_user_ids : allIds;
@@ -240,16 +252,25 @@ export function settlementSummaryText(ctx: ExpenseCtx): string {
 
 /**
  * 한 사람의 "실제 부담액" — 그 사람의 결제 완료된 개인 지출 전액 + 결제 완료된 공동 지출의
- * n분의 1(computeSettlement의 shareSum과 동일 기준)을 더한 값. 예산 요약 탭의
- * "{닉네임}의 예상 부담액" 카드가 쓴다. 평균(전체/인원수)이 아니라 그 사람 한 명의 실제
- * 몫이라는 점이 computeSettlement의 SettleRow.shareSum(공동 지출분만)과 다르다.
+ * n분의 1을 더한 값. 예산 요약 탭의 "{닉네임}의 예상 부담액" 카드가 쓴다.
+ * 정산 완료 처리된 공동 지출도 포함한다 — 정산은 "누가 누구에게 얼마 보낼지"의 문제일 뿐,
+ * 그 사람이 쓴 돈 자체는 그대로이기 때문(그래서 computeSettlement를 재사용하지 않는다).
  */
 export function memberBurdenTotal(ctx: ExpenseCtx, userId: string): number {
-  const personal = ctx.expenses
-    .filter((e) => e.is_paid && modeOf(e) === 'PERSONAL' && e.paid_by === userId)
-    .reduce((acc, e) => acc + (krwOf(e) ?? 0), 0);
-  const shared = computeSettlement(ctx).rows.find((r) => r.userId === userId)?.shareSum ?? 0;
-  return personal + shared;
+  const allIds = ctx.members.map((m) => m.user_id);
+  let total = 0;
+  for (const e of ctx.expenses) {
+    if (!e.is_paid) continue;
+    const krw = krwOf(e);
+    if (krw == null) continue;
+    if (modeOf(e) === 'PERSONAL') {
+      if (e.paid_by === userId) total += krw;
+      continue;
+    }
+    const splitIds = e.split_user_ids && e.split_user_ids.length > 0 ? e.split_user_ids : allIds;
+    if (splitIds.includes(userId)) total += krw / splitIds.length;
+  }
+  return total;
 }
 
 /**
@@ -298,7 +319,8 @@ export function buildPersonalBreakdownText(ctx: ExpenseCtx, selectedUserIds?: st
       const splitIds = e.split_user_ids && e.split_user_ids.length > 0 ? e.split_user_ids : allIds;
       if (splitIds.length === 0) continue;
       const share = krw != null ? krw / splitIds.length : 0;
-      const line = '- ' + detail + localNote + ' (공동 ' + splitIds.length + '인분의 1) : ' + (krw != null ? fmtKRW(share) : '환산 불가');
+      const settledNote = isSettled(e) ? ', 정산 완료' : '';
+      const line = '- ' + detail + localNote + ' (공동 ' + splitIds.length + '인분의 1' + settledNote + ') : ' + (krw != null ? fmtKRW(share) : '환산 불가');
       splitIds.forEach((uid) => {
         const b = ensure(uid);
         b.lines.push(line);
