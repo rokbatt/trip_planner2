@@ -1825,6 +1825,17 @@ function handlePinClick(g: any, p: Place): void {
   scrollTimelineTo(p.id);
 }
 
+/** 우측 패널에서 장소를 고르면 지도가 그 핀으로 이동·확대된다. 이미 이 정도 이상 확대돼 있으면
+ *  줌은 그대로 두고 위치만 옮긴다(보던 확대 수준을 일부러 되돌리지 않는다). */
+const PANEL_FOCUS_ZOOM = 16;
+function focusPlaceOnMap(placeId: string): void {
+  const p = placeById.get(placeId);
+  if (!mapInstance || !p || p.lat == null || p.lng == null) return;
+  const zoom = mapInstance.getZoom();
+  if (typeof zoom !== 'number' || zoom < PANEL_FOCUS_ZOOM) mapInstance.setZoom(PANEL_FOCUS_ZOOM);
+  mapInstance.panTo({ lat: p.lat, lng: p.lng });
+}
+
 /** 지도에서 핀을 클릭하면 우측 타임라인도 그 장소가 보이도록 스크롤 */
 function scrollTimelineTo(placeId: string): void {
   const row = rtContainer?.querySelector('.rt-panel-stop[data-place-id="' + placeId + '"]') as HTMLElement | null;
@@ -2938,6 +2949,8 @@ function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
       if ((e.target as HTMLElement).closest('input, button')) return;
       const id = (card as HTMLElement).dataset.placeId!;
       highlightedPlaceId = highlightedPlaceId === id ? null : id;
+      // 선택할 때만 그 핀으로 지도를 옮긴다(선택 해제 땐 보던 화면 그대로)
+      if (highlightedPlaceId) focusPlaceOnMap(id);
       drawRouteOnMap(false);
       renderRightPanel(container);
     });
