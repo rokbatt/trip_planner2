@@ -382,6 +382,64 @@
   transition: background var(--rt-ease);
 }
 .rt-float-adhoc:hover { background: var(--rt-ice); }
+
+/* ── 검색 결과 목록(구글맵 스타일) — 지도/근처 검색 결과가 있는 동안 좌측 패널이 이 목록으로 바뀐다 ── */
+.rt-float-results { display: none; }
+.rt-float-search.has-results { width: 300px; }
+.rt-float-search.has-results > .rt-float-search-input,
+.rt-float-search.has-results > .rt-float-filters,
+.rt-float-search.has-results > .rt-float-list,
+.rt-float-search.has-results > .rt-float-adhoc { display: none; }
+.rt-float-search.has-results .rt-float-results { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+/* 결과가 있는 채로 접혀 있으면 돋보기만 남겨 다시 펼 수 있게 */
+.rt-float-search.collapsed.has-results { width: auto; }
+.rt-float-search.collapsed.has-results > .rt-float-search-input { display: flex; }
+.rt-float-search.collapsed .rt-float-results { display: none; }
+
+.rt-sr-head {
+  display: flex; align-items: center; gap: 9px;
+  padding: 10px 12px; border-bottom: var(--rt-dash); flex-shrink: 0;
+}
+.rt-sr-back {
+  width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0; cursor: pointer;
+  border: 1px solid var(--rt-line); background: #fff; color: var(--rt-ink-2);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 2px rgba(11,42,92,0.06);
+  transition: background var(--rt-ease), color var(--rt-ease), border-color var(--rt-ease);
+}
+.rt-sr-back:hover { background: var(--rt-ice); color: var(--rt-blue); border-color: var(--rt-sky); }
+.rt-sr-back svg { width: 13px; height: 13px; }
+.rt-sr-head-text { min-width: 0; }
+.rt-sr-title {
+  font-size: 12.5px; font-weight: 800; color: var(--rt-ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rt-sr-sub { font-size: 10.5px; color: var(--rt-ink-3); margin-top: 1px; }
+.rt-sr-sub span { border-bottom: 1px dotted currentColor; cursor: help; }
+
+.rt-sr-list { overflow-y: auto; padding: 6px; min-height: 0; scrollbar-width: thin; }
+.rt-sr-list::-webkit-scrollbar { width: 6px; }
+.rt-sr-list::-webkit-scrollbar-thumb { background: rgba(130,150,170,0.3); border-radius: 3px; }
+.rt-sr-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-radius: 11px;
+  cursor: pointer; transition: background var(--rt-ease);
+}
+.rt-sr-item + .rt-sr-item { border-top: var(--rt-dash); }
+.rt-sr-item:hover { background: rgba(255,255,255,0.75); }
+.rt-sr-item.is-selected { background: var(--rt-ice); }
+.rt-sr-item:focus-visible { outline: 2px solid var(--rt-blue); outline-offset: -2px; }
+/* 사진 없는 곳은 지도의 검색 결과 핀과 같은 틸 아이콘 — 목록 줄과 핀이 같은 종류로 읽히게 */
+.rt-sr-item .rt-float-thumb { width: 46px; height: 46px; border-radius: 10px; color: #14B8A6; }
+.rt-sr-item .rt-float-thumb svg { width: 18px; height: 18px; }
+.rt-sr-meta {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 3px;
+  font-size: 10.5px; color: var(--rt-ink-3); margin-top: 3px;
+}
+.rt-sr-rate { display: inline-flex; align-items: center; gap: 2px; color: var(--rt-ink); font-weight: 700; }
+.rt-sr-rate svg { width: 10px; height: 10px; color: #F5A623; }
+.rt-sr-count { color: var(--rt-ink-3); font-variant-numeric: tabular-nums; }
+.rt-sr-norate { color: var(--rt-ink-4); }
+.rt-sr-dot { color: var(--rt-ink-4); margin: 0 1px; }
 .rt-float-adhoc svg { width: 13px; height: 13px; flex-shrink: 0; }
 .rt-float-adhoc.active { background: var(--rt-ice); color: var(--rt-ink); }
 .rt-float-adhoc.active::after {
