@@ -85,6 +85,8 @@ export interface GooglePlaceResult {
   lat: number | null;
   lng: number | null;
   rating: number | null;
+  /** 리뷰(평점) 개수 — 검색 결과를 "추천순"으로 줄 세울 때 평점의 신뢰도로 쓴다. 검색 API에서만 채워진다. */
+  userRatingCount?: number | null;
   category: string | null;
   photoUrl: string | null;
   openingHours: string[] | null;
@@ -139,6 +141,7 @@ export function extractPlaceResult(place: any): GooglePlaceResult | null {
     lat: place.location ? place.location.lat() : null,
     lng: place.location ? place.location.lng() : null,
     rating: typeof place.rating === 'number' ? place.rating : null,
+    userRatingCount: typeof place.userRatingCount === 'number' ? place.userRatingCount : null,
     category: matchedType ? CATEGORY_MAP[matchedType] : null,
     photoUrl,
     openingHours,
@@ -265,7 +268,8 @@ export function getCategoryLabel(types: string[]): string | null {
    - 결과에 사진/평점/타입이 이미 딸려오므로 개별 Details 재조회가 필요 없다.
    ============================================================ */
 
-const SEARCH_FIELDS = ['id', 'displayName', 'formattedAddress', 'location', 'rating', 'types', 'photos', 'regularOpeningHours'];
+// userRatingCount는 rating과 같은 요금 등급의 필드라 추가 비용 없이 함께 받는다(추천순 정렬용)
+const SEARCH_FIELDS = ['id', 'displayName', 'formattedAddress', 'location', 'rating', 'userRatingCount', 'types', 'photos', 'regularOpeningHours'];
 
 function mapSearchResults(places: any[] | undefined): GooglePlaceResult[] {
   return (places ?? [])
