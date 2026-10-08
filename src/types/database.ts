@@ -575,6 +575,8 @@ export interface Database {
           is_paid: boolean;
           /** 'SHARED'(공동, 정산 대상) | 'PERSONAL'(개인, 정산 제외) */
           split_mode: string;
+          /** 정산 완료 처리한 시각 — null이면 아직 정산 전(정산 계산에 포함) */
+          settled_at: string | null;
           paid_by: string | null;
           paid_by_name: string | null;
           paid_by_avatar: string | null;
@@ -598,6 +600,7 @@ export interface Database {
           expense_date?: string | null;
           is_paid?: boolean;
           split_mode?: string;
+          settled_at?: string | null;
           paid_by?: string | null;
           paid_by_name?: string | null;
           paid_by_avatar?: string | null;
