@@ -930,12 +930,15 @@ src/
   mobile/geo.ts                      ← GPS 현재 정류지 판정 (순수 함수 + watch, 5-4 참고)
 
 supabase/
-  MOBILE_SETUP.sql                   ← 모바일에 필요한 마이그레이션 4개 합본 (대시보드 붙여넣기용)
-                                        ⚠️ 여기엔 do $$ 블록을 쓰지 말 것 — Supabase 대시보드
-                                        SQL Editor가 블록 안쪽 세미콜론에서 구문을 잘라
-                                        "unterminated dollar-quoted string"을 낸다(실제로 겪음).
-                                        제약조건은 drop+add 평문으로, 실시간은 2부로 분리했다.
-                                        원본(.sql 4개)은 psql용이라 do 블록을 그대로 둔다.
+  MOBILE_SETUP.sql                   ← 모바일 마이그레이션 4개 합본 (대시보드 붙여넣기 전용)
+                                        ⚠️ **구문 하나를 한 줄에** 둔다. 보기엔 이상하지만 의도다 —
+                                        Supabase 대시보드 SQL Editor가 여러 줄 구문을 중간에서
+                                        잘라 버리는 일이 있어(do 블록 안쪽, 여러 줄 create policy
+                                        둘 다 실제로 겪음), 줄바꿈으로 쪼개든 세미콜론으로 쪼개든
+                                        각 조각이 완결된 구문이 되게 만든 것이다.
+                                        고칠 때: 여러 줄로 풀지 말 것 / do 블록 쓰지 말 것 /
+                                        주석에 세미콜론 넣지 말 것.
+                                        읽기 좋은 원본은 supabase/의 개별 .sql에 그대로 있다(psql용).
   expense/expense.ts, expense.css    ← Expense 게이트 (예산·지출·도넛 차트·정산, 5-2 참고)
   expense/expenseModel.ts            ← 집계·정산·환율의 단일 기준 (Expense/Mobile 공용, 5-2 참고)
   docs/docs.ts, docs.css             ← DOCUMENTS & NOTES 게이트 (문서함·상세 패널·PIN, 5-5 참고)
