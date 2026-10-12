@@ -3,12 +3,12 @@
  *
  * ══ 컬러: Light가 기본, Dark는 기기 설정을 따라간다 ══
  *
- * **Light (기본) — "Ivory Companion"**
- * 아이보리 바탕(`#F7F5F1`) 위에 흰 카드가 떠 있는 구성. 글자는 네이비(`#14264A`),
+ * **Light (기본)**
+ * 브랜드 배경(`#F8FBFE`, Claude.md 2장) 위에 흰 카드가 떠 있는 구성. 글자는 네이비(`#14264A`),
  * 주요 액션은 **몽실이 대표 블루 `#2F86D6`**로 통일한다(길찾기·선택된 탭·선택된 날짜).
  * 레퍼런스 디자인의 코발트 대신 브랜드 블루를 쓰므로 PC 게이트들과 같은 앱으로 읽힌다.
  *
- * 바탕을 흰색이 아니라 아이보리로 두는 이유: 카드가 흰색일 때 **카드와 바탕이 구분되어야**
+ * 바탕을 순백으로 두지 않는 이유: 카드가 흰색일 때 **카드와 바탕이 구분되어야**
  * 떠 있는 느낌이 나온다. 바탕까지 흰색이면 테두리에만 의존하게 되고 화면이 납작해진다.
  *
  * **Dark — "Night Lounge"** (`prefers-color-scheme: dark`)
@@ -16,7 +16,7 @@
  *
  * 두 테마 모두에서 지키는 원칙:
  *
- *   1. **그라데이션·그림자를 과하게 쓰지 않는다.** 바탕은 단색 아이보리, 그림자는 아주 옅은
+ *   1. **그라데이션·그림자를 과하게 쓰지 않는다.** 바탕은 단색, 그림자는 아주 옅은
  *      확산형 하나뿐이다. 깊이는 그림자가 아니라 **바탕/카드 대비**로 만든다.
  *   2. **사진 위 스크림은 중성 먹색**(`--mb-scrim`)이다. 남색 스크림을 씌우면 사원의 금빛도
  *      바다의 청록도 같은 파랑으로 죽어 화면이 단색이 된다. 사진이 자기 색을 유지해야
@@ -33,10 +33,12 @@
 .mb-app {
   /* ══ Light (기본) — Ivory Companion ══ */
 
-  /* 바탕 — 단색 아이보리. 흰 카드가 떠 보이게 하는 게 바탕의 유일한 일이다. */
-  --mb-bg-hi: #FAF8F5;
-  --mb-bg: #F7F5F1;
-  --mb-bg-lo: #F2EFEA;
+  /* 바탕 — 프로젝트 기존 배경(#F8FBFE, Claude.md 2장). 레퍼런스는 아이보리였지만
+     브랜드 배경을 쓴다. 흰 카드가 떠 보이게 하는 게 바탕의 유일한 일이라, 카드(#FFFFFF)와
+     한 단계 차이만 나면 충분하다. */
+  --mb-bg-hi: #FFFFFF;
+  --mb-bg: #F8FBFE;
+  --mb-bg-lo: #EDF3FA;
   --mb-app-bg: var(--mb-bg);
   --mb-detail-bg: var(--mb-bg);
 
@@ -129,7 +131,7 @@
   --mb-hero-b: 0.08;
   --mb-hero-c: 0.12;
   --mb-nophoto-bg: linear-gradient(158deg, rgba(11, 42, 92, 0.9) 0%, rgba(20, 38, 74, 0.95) 72%);
-  --mb-hero-fade: rgba(247, 245, 241, 0.94);
+  --mb-hero-fade: rgba(248, 251, 254, 0.94);
 
   --mb-radius: 18px;
   --mb-radius-sm: 12px;
@@ -363,22 +365,8 @@
   padding-bottom: 4px;
 }
 .mb-card-nav,
-.mb-card-bm {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: rgba(13, 12, 11, 0.62);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(6px);
-  color: rgba(255, 255, 255, 0.82);
-  text-decoration: none;
-}
 .mb-card-nav svg,
-.mb-card-bm svg { width: 14px; height: 14px; }
 .mb-card-nav:hover,
-.mb-card-bm:hover { color: #fff; }
 /* 길찾기는 이 화면의 핵심 동작이라 저장 버튼과 다르게 hover 시 살짝 튀는 색을 준다.
    --mb-live는 테마마다 값이 다르므로 하드코딩하지 않고 그대로 섞어 쓴다. */
 .mb-card-nav:hover {
@@ -386,7 +374,7 @@
   border-color: color-mix(in srgb, var(--mb-live) 55%, transparent);
 }
 
-/* ── 도착/출발/건너뛰기 — 사진 위에서도 읽히도록 카드 노트(.mb-card-note)와 같은 유리질감 ── */
+/* ── 도착/출발/건너뛰기 ── */
 .mb-track {
   display: flex;
   align-items: center;
@@ -716,6 +704,37 @@
 }
 .mb-date-cal svg { width: 19px; height: 19px; }
 
+/* ── GPS 자동 체크인 ──
+   꺼져 있을 땐 조용한 회색, 켜지면 파랑, 오류면 붉은 쪽. 상태가 색으로 바로 읽혀야
+   "켰는데 안 되는 중"인지 "꺼둔 것"인지 헷갈리지 않는다. */
+.mb-geo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 14px;
+  padding: 11px 13px;
+  min-height: 44px;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line);
+  text-align: left;
+  transition: border-color var(--mb-ease) 160ms, background var(--mb-ease) 160ms;
+}
+.mb-geo-ic { display: grid; place-items: center; color: var(--mb-muted); flex: none; }
+.mb-geo-ic svg { width: 16px; height: 16px; }
+.mb-geo-text { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--mb-ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mb-geo-sw { flex: none; font-size: 11.5px; font-weight: 700; color: var(--mb-muted); }
+
+.mb-geo.is-on { background: var(--mb-sky-wash); border-color: transparent; }
+.mb-geo.is-on .mb-geo-ic,
+.mb-geo.is-on .mb-geo-text,
+.mb-geo.is-on .mb-geo-sw { color: var(--mb-sky); }
+
+.mb-geo.is-err { background: var(--mb-danger-wash); border-color: transparent; }
+.mb-geo.is-err .mb-geo-ic,
+.mb-geo.is-err .mb-geo-text { color: var(--mb-danger); }
+
 /* ── 섹션 머리 ── */
 .mb-sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .mb-sec-title { font-size: 17px; font-weight: 700; color: var(--mb-ink); }
@@ -896,6 +915,249 @@
 }
 .mb-nextup-chev { display: grid; place-items: center; color: var(--mb-sky); flex: none; }
 .mb-nextup-chev svg { width: 14px; height: 14px; }
+
+/* ══════════════ 장소 상세 (레퍼런스 화면 B) ══════════════
+ *
+ * 상단 네비와 하단 CTA는 고정, 가운데만 스크롤한다 — 길찾기가 이 화면의 목적이라
+ * 스크롤 위치와 무관하게 항상 손 닿는 곳에 있어야 한다.
+ */
+
+.mb-pdnav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 10px 8px;
+  background: var(--mb-bg);
+  border-bottom: 1px solid var(--mb-line-soft);
+}
+.mb-pdnav-btn {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  flex: none;
+  color: var(--mb-ink);
+}
+.mb-pdnav-btn svg { width: 19px; height: 19px; }
+.mb-pdnav-btn:hover { background: var(--mb-fill-subtle); }
+.mb-pdnav-title {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--mb-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mb-pdscroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.mb-pdscroll::-webkit-scrollbar { display: none; }
+
+/* ── 대표 사진 ── */
+.mb-pdhero {
+  position: relative;
+  height: 264px;
+  background-size: cover;
+  background-position: center;
+  background-color: var(--mb-surface-3);
+}
+.mb-pdhero.no-photo { background: var(--mb-nophoto-bg); display: grid; place-items: center; }
+.mb-pdhero-blank { color: rgba(255, 255, 255, 0.5); }
+.mb-pdhero-blank svg { width: 40px; height: 40px; }
+.mb-pdhero-foot {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  /* 아래 .mb-pd 패널이 -18px로 사진을 덮으므로 그 높이 + 모서리 반경만큼 띄운다 —
+     12px로 두면 배지가 패널에 잘린다(실제로 났던 버그) */
+  bottom: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+/* 사진 위 배지는 두 테마 모두 고정색 (mobile.css 상단 원칙 2) */
+.mb-pdhero-time,
+.mb-pdhero-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #FFFFFF;
+  background: rgba(13, 12, 11, 0.55);
+  backdrop-filter: blur(8px);
+  font-variant-numeric: tabular-nums;
+}
+.mb-pdhero-tag { background: rgba(21, 150, 109, 0.9); }
+.mb-pdhero-time svg,
+.mb-pdhero-tag svg { width: 13px; height: 13px; }
+
+/* ── 본문 ── */
+.mb-pd {
+  position: relative;
+  margin-top: -18px;
+  padding: 18px 16px 24px;
+  border-radius: 20px 20px 0 0;
+  background: var(--mb-bg);
+}
+.mb-pd-head { display: flex; align-items: flex-start; gap: 10px; }
+.mb-pd-name { flex: 1; min-width: 0; font-size: 25px; font-weight: 700; letter-spacing: -0.02em; color: var(--mb-ink); line-height: 1.25; }
+.mb-pd-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  margin-top: 4px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--mb-brass-lit);
+  background: var(--mb-brass-wash);
+}
+.mb-pd-rating svg { width: 12px; height: 12px; }
+.mb-pd-addr {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 7px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--mb-muted);
+}
+.mb-pd-addr svg { width: 14px; height: 14px; flex: none; margin-top: 1px; }
+.mb-pd-warn {
+  margin-top: 10px;
+  padding: 9px 12px;
+  border-radius: var(--mb-radius-xs);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--mb-danger);
+  background: var(--mb-danger-wash);
+}
+
+/* ── 액션 3개 — 길찾기만 채운다 ── */
+.mb-pd-acts { display: flex; gap: 8px; margin-top: 16px; }
+.mb-pd-act {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 6px;
+  min-height: 68px;
+  justify-content: center;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-sky-wash);
+  color: var(--mb-sky);
+  font-size: 12.5px;
+  font-weight: 650;
+  text-decoration: none;
+  transition: filter var(--mb-ease) 160ms;
+}
+.mb-pd-act-ic { display: grid; place-items: center; }
+.mb-pd-act svg { width: 19px; height: 19px; }
+.mb-pd-act.is-primary { background: var(--mb-sky); color: #FFFFFF; box-shadow: var(--mb-btn-shadow); }
+.mb-pd-act:hover { filter: brightness(0.97); }
+
+/* ── 정보 행 ── */
+/* 예상 체류 — 추정치라는 걸 칩 모양으로도 구분한다(원칙 3-1의 색·형태 규칙) */
+.mb-pd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--mb-fill-subtle);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--mb-ink-2);
+}
+.mb-pd-chip svg { width: 14px; height: 14px; opacity: 0.75; }
+
+.mb-pd-rows {
+  display: flex;
+  flex-direction: column;
+  margin-top: 18px;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line);
+  overflow: hidden;
+}
+.mb-pd-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 13px;
+  border-bottom: 1px solid var(--mb-line-soft);
+}
+.mb-pd-row:last-child { border-bottom: 0; }
+.mb-pd-row-ic { display: grid; place-items: center; color: var(--mb-muted); flex: none; }
+.mb-pd-row-ic svg { width: 16px; height: 16px; }
+.mb-pd-row-label { flex: none; font-size: 12.5px; color: var(--mb-muted); }
+.mb-pd-row-val {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mb-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mb-pd-row.is-warn .mb-pd-row-val { color: var(--mb-danger); }
+.mb-pd-row-copy {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  flex: none;
+  color: var(--mb-sky);
+}
+.mb-pd-row-copy svg { width: 14px; height: 14px; }
+
+/* ── 하단 고정 CTA ── */
+.mb-pd-cta {
+  flex: none;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  background: var(--mb-tabbar-bg);
+  backdrop-filter: blur(18px);
+  border-top: 1px solid var(--mb-line-soft);
+}
+.mb-pd-cta-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 15px;
+  min-height: 52px;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-sky);
+  color: #FFFFFF;
+  box-shadow: var(--mb-btn-shadow);
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.mb-pd-cta-btn svg { width: 18px; height: 18px; }
 
 /* ══════════════ 지도 탭 ══════════════ */
 
@@ -1960,63 +2222,17 @@
   display: flex;
   flex-direction: column;
   background: var(--mb-detail-bg);
-  overflow-y: auto;
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
+  /* 상단 네비·하단 CTA는 고정이고 가운데(.mb-pdscroll)만 흐른다 — 여기서 또 스크롤하면
+     둘이 겹쳐서 CTA가 밀려 올라간다 */
+  overflow: hidden;
   animation: mb-slide-up 260ms var(--mb-ease);
 }
 .mb-detail::-webkit-scrollbar { display: none; }
 
 @keyframes mb-slide-up { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
-.mb-hero {
-  position: relative;
-  flex: none;
-  height: 320px;
-  background-size: cover;
-  background-position: center;
-  background-color: var(--mb-surface-3);
-}
-.mb-hero.no-photo { background-image: var(--mb-nophoto-bg); }
-/* 위쪽은 버튼이 읽히도록 살짝 어둡게, 아래쪽은 상세 패널 색으로 자연스럽게 넘어가게 */
-.mb-hero-scrim {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    to bottom,
-    rgba(var(--mb-scrim), var(--mb-hero-a)) 0%,
-    rgba(var(--mb-scrim), var(--mb-hero-b)) 30%,
-    rgba(var(--mb-scrim), var(--mb-hero-c)) 58%,
-    var(--mb-hero-fade) 100%
-  );
-}
-.mb-hero-btn {
-  position: absolute;
-  top: calc(14px + env(safe-area-inset-top));
-  left: 14px;
-  z-index: 2;
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  background: rgba(13, 12, 11, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(8px);
-  color: #fff;
-}
-.mb-hero-btn svg { width: 18px; height: 18px; }
-.mb-hero-right {
-  position: absolute;
-  top: calc(14px + env(safe-area-inset-top));
-  right: 14px;
-  z-index: 2;
-  display: flex;
-  gap: 8px;
-}
-.mb-hero-right .mb-hero-btn { position: static; }
 
+/* 위쪽은 버튼이 읽히도록 살짝 어둡게, 아래쪽은 상세 패널 색으로 자연스럽게 넘어가게 */
 .mb-pd {
   position: relative;
   z-index: 2;
@@ -2029,65 +2245,6 @@
   flex: 1;
   min-height: 0;
 }
-
-.mb-pd-head { display: flex; align-items: center; gap: 10px; }
-.mb-pd-num {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  flex: none;
-  background: var(--mb-sky-wash);
-  border: 1px solid var(--mb-line);
-  font-size: 13px;
-  font-weight: 800;
-  color: var(--mb-sky);
-}
-.mb-pd-name {
-  flex: 1;
-  min-width: 0;
-  font-size: 23px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 1.25;
-}
-.mb-pd-rating {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: none;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--mb-brass-lit);
-  font-variant-numeric: tabular-nums;
-}
-.mb-pd-rating svg { width: 14px; height: 14px; }
-
-.mb-pd-sub {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 6px;
-  font-size: 12.5px;
-  color: var(--mb-muted);
-}
-.mb-pd-sub-right { font-variant-numeric: tabular-nums; }
-
-.mb-pd-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 14px;
-  padding: 7px 13px;
-  border-radius: 999px;
-  background: var(--mb-surface-2);
-  border: 1px solid var(--mb-line-soft);
-  font-size: 12.5px;
-  color: var(--mb-ink-2);
-}
-.mb-pd-chip svg { width: 14px; height: 14px; opacity: 0.75; }
 
 .mb-pd-tabs {
   display: flex;
