@@ -928,6 +928,10 @@ src/
   mobile/checklist.ts                ← 여행 준비 체크리스트 I/O + 실시간 (Mobile 전용, 5-4 참고)
   mobile/weather.ts                  ← 날씨 (Open-Meteo, 키 없음 — 5-4 참고)
   mobile/geo.ts                      ← GPS 현재 정류지 판정 (순수 함수 + watch, 5-4 참고)
+
+supabase/
+  MOBILE_SETUP.sql                   ← 모바일에 필요한 마이그레이션 4개 합본 (한 번에 실행용)
+                                        원본(.sql 4개)을 고치면 이 파일도 같이 고칠 것
   expense/expense.ts, expense.css    ← Expense 게이트 (예산·지출·도넛 차트·정산, 5-2 참고)
   expense/expenseModel.ts            ← 집계·정산·환율의 단일 기준 (Expense/Mobile 공용, 5-2 참고)
   docs/docs.ts, docs.css             ← DOCUMENTS & NOTES 게이트 (문서함·상세 패널·PIN, 5-5 참고)
