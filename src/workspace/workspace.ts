@@ -4,28 +4,16 @@ import { navigate } from '../router';
 import { initChat, teardownChat, setBadgeListener, countUnreadSince, markAsRead, renderChatPanelUI } from '../chat/chat';
 import { initComments, teardownComments, renderCommentsUI } from '../comments/comments';
 import { initHotelVoteChannel, teardownHotelVoteChannel } from '../collab/hotelVote';
-import { loadDestinations, resolveActiveDestination, ACTIVE_DESTINATION_CHANGED_EVENT } from '../trips/destinations';
+import { loadDestinations, resolveActiveDestination, loadStaySegments, resolveActiveSegment, saveStaySegment, ACTIVE_DESTINATION_CHANGED_EVENT } from '../trips/destinations';
+import type { SegmentState } from '../trips/destinations';
+import { toAirportCode } from '../trips/airports';
 import type { Database, TripDestination } from '../types/database';
 import type { ChatMessage } from '../types/database';
 import './workspace.css';
 
 type Trip = Database['public']['Tables']['trips']['Row'];
 
-/* ── 도시 → IATA 공항코드 ── */
-const AIRPORT_CODE: Record<string, string> = {
-  '서울': 'ICN', '인천': 'ICN', '뉴욕': 'JFK', '방콕': 'BKK', '도쿄': 'NRT',
-  '오사카': 'KIX', '파리': 'CDG', '런던': 'LHR', '로마': 'FCO', '바르셀로나': 'BCN',
-  '싱가포르': 'SIN', '홍콩': 'HKG', '타이베이': 'TPE', '하노이': 'HAN',
-  '다낭': 'DAD', '나트랑': 'CXR', '발리': 'DPS', '푸켓': 'HKT', '오키나와': 'OKA',
-  '시드니': 'SYD', '두바이': 'DXB', '로스앤젤레스': 'LAX', '샌프란시스코': 'SFO',
-  '미국': 'JFK', '베트남': 'HAN', '태국': 'BKK', '일본': 'NRT', '유럽': 'CDG',
-};
-
-function toAirportCode(city: string): string {
-  const cleaned = city.trim();
-  if (AIRPORT_CODE[cleaned]) return AIRPORT_CODE[cleaned];
-  return cleaned.slice(0, 3).toUpperCase();
-}
+/* 도시 → IATA 공항코드 매핑은 trips/airports.ts 한 곳에서 관리한다(trip-list.ts와 공유) */
 
 /* ── SVG 아이콘 ── */
 const IC = {
@@ -41,6 +29,8 @@ const IC = {
   expense: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
   link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
   invite: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>',
+  documents: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>',
+  notes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4a2 2 0 0 1 2-2h7l5 5v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/><path d="M14 2v5h5M9 12h6M9 16h4"/></svg>',
   mobile: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg>',
   placeholder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></svg>',
   routeArrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
@@ -49,6 +39,8 @@ const IC = {
   panelClose: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
   mapPin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21C12 21 19 14.5 19 9.5C19 5.9 15.9 3 12 3C8.1 3 5 5.9 5 9.5C5 14.5 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.2"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
+  play: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="4"/><path d="M10 9l5 3-5 3V9z" fill="currentColor" stroke="none"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
 };
 
 interface NavItem {
@@ -68,6 +60,8 @@ const MAIN_NAV: NavItem[] = [
 const SUB_NAV: NavItem[] = [
   { key: 'go',        label: 'Companion', icon: IC.mobile },
   { key: 'checklist', label: 'Checklist', icon: IC.checklist },
+  { key: 'docs',      label: 'Documents', icon: IC.documents },
+  { key: 'notes',     label: 'Notes',     icon: IC.notes },
   { key: 'expense',   label: 'Expense',   icon: IC.expense },
   { key: 'links',     label: 'Links',     icon: IC.link },
 ];
@@ -81,6 +75,8 @@ const GATE_TITLES: Record<string, string> = {
   checklist: 'CHECKLIST',
   expense: 'EXPENSE',
   links: 'LINKS',
+  docs: 'DOCUMENTS',
+  notes: 'NOTES',
 };
 
 type PanelTab = 'chat' | 'ai' | 'detail';
@@ -446,6 +442,7 @@ let timelineModuleRef: { teardownTimeline: () => void } | null = null;
 let linksModuleRef: { teardownLinks: () => void } | null = null;
 let expenseModuleRef: { teardownExpense: () => void } | null = null;
 let mobileModuleRef: { teardownMobile: () => void } | null = null;
+let docsModuleRef: { teardownDocs: () => void } | null = null;
 let navigateGateHandlerRef: EventListener | null = null;
 let openVoteTargetHandlerRef: EventListener | null = null;
 let activeDestChangeHandler: ((e: Event) => void) | null = null;
@@ -478,6 +475,11 @@ async function renderGate(body: HTMLElement, tripId: string, gate: string): Prom
   if (gate !== 'go' && mobileModuleRef) {
     mobileModuleRef.teardownMobile();
     mobileModuleRef = null;
+  }
+  // DOCUMENTS와 NOTES는 같은 모듈의 두 탭이라, 둘 사이 이동은 정리 대상이 아니다
+  if (gate !== 'docs' && gate !== 'notes' && docsModuleRef) {
+    docsModuleRef.teardownDocs();
+    docsModuleRef = null;
   }
 
   // MOBILE(Companion)은 자체 셸이 화면을 꽉 채우고 스스로 스크롤한다 — 바깥 컨테이너까지
@@ -512,6 +514,10 @@ async function renderGate(body: HTMLElement, tripId: string, gate: string): Prom
     const mod = await import('../mobile/mobile');
     mobileModuleRef = mod;
     await mod.renderMobileContent(body, tripId);
+  } else if (gate === 'docs' || gate === 'notes') {
+    const mod = await import('../docs/docs');
+    docsModuleRef = mod;
+    await mod.renderDocsContent(body, tripId, gate === 'notes' ? 'notes' : 'documents');
   } else {
     const title = GATE_TITLES[gate] || gate;
     body.innerHTML = [
@@ -561,6 +567,8 @@ function bindEvents(page: HTMLElement, tripId: string): void {
     linksModuleRef = null;
     expenseModuleRef?.teardownExpense();
     expenseModuleRef = null;
+    docsModuleRef?.teardownDocs();
+    docsModuleRef = null;
     navigate('trips');
   });
 
@@ -744,6 +752,10 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
     bindDetailNotes(place);
     bindDetailNameSave(place.id);
     bindDetailGatePicker(place, tripId, (updatedPlace) => openDetailPanel(updatedPlace));
+    if (place.mood === '숙소') {
+      bindStayLinkSection(place, tripId, (updatedPlace) => openDetailPanel(updatedPlace));
+      void renderStayConfirmSection(place, tripId, (updatedPlace) => openDetailPanel(updatedPlace));
+    }
 
     const commentsBody = panelEl.querySelector('#detail-comments-body') as HTMLElement | null;
     if (commentsBody) {
@@ -789,6 +801,166 @@ const DETAIL_GATES: Array<{ key: string; label: string }> = [
   { key: '숙소', label: 'STAY' },
 ];
 
+/**
+ * 숙소(mood==='숙소') 카드 상세에 붙는 "예약 링크" 섹션. 사이트를 추측해 검색 URL을
+ * 만들어주는 대신, 이미 채팅/LINKS 탭에서 저장해둔 실제 숙소 링크(trip_links, category
+ * 'STAY') 중 사용자가 직접 하나를 골라 카드에 연동해두는 방식 — 연동해두면 이후에는 그
+ * 링크를 바로 클릭해서 이동할 수 있다. 고른 링크는 place.linked_url/linked_url_title에
+ * 저장된다(places 테이블 컬럼, supabase/place_linked_url.sql).
+ */
+function buildStayLinkSectionHtml(place: any): string {
+  const body = place.linked_url
+    ? [
+        '<div class="ws-linked-url-row">',
+        '  <a class="ws-linked-url-link" href="' + escapeHtml(place.linked_url) + '" target="_blank" rel="noopener noreferrer">',
+             IC.link,
+        '    <span>' + escapeHtml(place.linked_url_title || place.linked_url) + '</span>',
+        '  </a>',
+        '  <button type="button" class="ws-link-action-btn" id="ws-link-relink-btn">변경</button>',
+        '  <button type="button" class="ws-link-action-btn" id="ws-link-unlink-btn">연동 해제</button>',
+        '</div>',
+      ].join('')
+    : [
+        '<button type="button" class="ws-link-connect-btn" id="ws-link-connect-btn">',
+             IC.link,
+        '  <span>링크 연동하기</span>',
+        '</button>',
+      ].join('');
+
+  return [
+    '<div class="ws-detail-section" id="ws-stay-link-section">',
+    '  <span class="ws-detail-label">예약 링크</span>',
+         body,
+    '  <div class="ws-link-picker" id="ws-link-picker" hidden></div>',
+    '</div>',
+  ].join('');
+}
+
+/** LINKS 탭에 저장된 숙소(STAY) 링크 중 하나를 골라 place.linked_url로 연동 — 고르면
+ * Drawer 전체를 다시 그려 다른 바인딩(메모/댓글 등)도 최신 place로 이어지게 한다. */
+function bindStayLinkSection(place: any, tripId: string, onLinked: (updatedPlace: any) => void): void {
+  const connectBtn = document.getElementById('ws-link-connect-btn');
+  const relinkBtn = document.getElementById('ws-link-relink-btn');
+  const unlinkBtn = document.getElementById('ws-link-unlink-btn');
+  const pickerEl = document.getElementById('ws-link-picker') as HTMLElement | null;
+  if (!pickerEl) return;
+  const picker: HTMLElement = pickerEl;
+
+  async function saveLink(url: string | null, title: string | null): Promise<void> {
+    const { error } = await supabase.from('places').update({ linked_url: url, linked_url_title: title }).eq('id', place.id);
+    if (error) {
+      console.error('숙소 링크 연동 저장 실패:', error.message);
+      return;
+    }
+    onLinked({ ...place, linked_url: url, linked_url_title: title });
+  }
+
+  async function openPicker(): Promise<void> {
+    picker.hidden = false;
+    picker.innerHTML = '<div class="ws-link-picker-loading">불러오는 중...</div>';
+
+    const { data, error } = await supabase
+      .from('trip_links')
+      .select('id,url,title,site_name')
+      .eq('trip_id', tripId)
+      .eq('category', 'STAY')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      picker.innerHTML = '<div class="ws-link-picker-empty">링크를 불러오지 못했어요</div>';
+      return;
+    }
+    if (!data || data.length === 0) {
+      picker.innerHTML = '<div class="ws-link-picker-empty">아직 저장된 숙소 링크가 없어요. 채팅에 숙소 링크를 붙여넣으면 여기서 고를 수 있어요.</div>';
+      return;
+    }
+
+    picker.innerHTML = data.map((link) => [
+      '<button type="button" class="ws-link-picker-item" data-link-url="' + escapeHtml(link.url) + '" data-link-title="' + escapeHtml(link.title || link.site_name || link.url) + '">',
+      '  <span class="ws-link-picker-item-title">' + escapeHtml(link.title || link.site_name || link.url) + '</span>',
+      '  <span class="ws-link-picker-item-url">' + escapeHtml(link.url) + '</span>',
+      '</button>',
+    ].join('')).join('');
+
+    picker.querySelectorAll('.ws-link-picker-item').forEach((item) => {
+      item.addEventListener('click', () => {
+        const el = item as HTMLElement;
+        void saveLink(el.dataset.linkUrl || null, el.dataset.linkTitle || null);
+      });
+    });
+  }
+
+  connectBtn?.addEventListener('click', () => void openPicker());
+  relinkBtn?.addEventListener('click', () => void openPicker());
+  unlinkBtn?.addEventListener('click', () => void saveLink(null, null));
+}
+
+/** 숙소(mood==='숙소') 카드 상세의 "숙소 확정" 섹션 — 확정 여부에 따라 버튼/배지가 다르다. */
+function buildStayConfirmSectionHtml(isConfirmed: boolean): string {
+  const body = isConfirmed
+    ? [
+        '<div class="ws-stay-confirm-row">',
+        '  <span class="ws-stay-confirm-badge">' + IC.check + ' 확정된 숙소</span>',
+        '  <button type="button" class="ws-link-action-btn" id="ws-stay-unconfirm-btn">확정 해제</button>',
+        '</div>',
+      ].join('')
+    : '<button type="button" class="ws-stay-confirm-btn" id="ws-stay-confirm-btn">이 숙소로 확정하기</button>';
+
+  return [
+    '<div class="ws-detail-section" id="ws-stay-confirm-section">',
+    '  <span class="ws-detail-label">숙소 확정</span>',
+         body,
+    '</div>',
+  ].join('');
+}
+
+/**
+ * 이 숙소가 속한 여행지의 활성 숙소 구간(stay_segments)을 조회해 지금 확정된 숙소인지
+ * 확인하고, 버튼을 누르면 그 구간의 basecamp_place_id/basecamp_confirmed_at을 갱신한다.
+ * STAY 화면의 Step3 "확정하기"와 같은 저장 대상 — 아이디어보드에서도 같은 자리에 저장되므로
+ * 두 화면이 항상 같은 확정 상태를 본다. place 자체엔 확정 여부를 저장하지 않는다(구간
+ * 단위 개념이라 place에 두면 숙소를 나눈 여러 구간을 구분할 수 없음).
+ */
+async function renderStayConfirmSection(place: any, tripId: string, onConfirmed: (updatedPlace: any) => void): Promise<void> {
+  const trip = await getTrip(tripId);
+  if (!trip) return;
+
+  const destinations = await loadDestinations(trip);
+  const destination = (place.destination_id ? destinations.find((d) => d.id === place.destination_id) : null) ?? destinations[0];
+  if (!destination) return;
+
+  const segments = await loadStaySegments(trip, destination);
+  const activeSegment = resolveActiveSegment(destination.id, segments);
+
+  // 이 사이 Drawer가 닫혔거나 다른 장소로 바뀌었으면 조용히 중단(엉뚱한 장소에 그려지지 않게)
+  const sectionEl = document.getElementById('ws-stay-confirm-section');
+  if (!sectionEl || !activeSegment) return;
+
+  const isConfirmed = activeSegment.basecamp_place_id === place.id && !!activeSegment.basecamp_confirmed_at;
+  sectionEl.outerHTML = buildStayConfirmSectionHtml(isConfirmed);
+
+  async function saveConfirm(confirm: boolean): Promise<void> {
+    const state: SegmentState = {
+      zone_name: activeSegment!.zone_name,
+      zone_place_ids: activeSegment!.zone_place_ids,
+      basecamp_place_id: confirm ? place.id : null,
+      confirmed_place_ids: activeSegment!.confirmed_place_ids,
+      total_budget_krw: activeSegment!.total_budget_krw,
+      basecamp_confirmed_at: confirm ? new Date().toISOString() : null,
+    };
+    await saveStaySegment(trip!, destination!, activeSegment!, state);
+    onConfirmed(place);
+  }
+
+  document.getElementById('ws-stay-confirm-btn')?.addEventListener('click', (e) => {
+    const btn = e.currentTarget as HTMLButtonElement;
+    btn.disabled = true;
+    btn.textContent = '확정하는 중...';
+    void saveConfirm(true);
+  });
+  document.getElementById('ws-stay-unconfirm-btn')?.addEventListener('click', () => void saveConfirm(false));
+}
+
 /** 카드 상세 Drawer 콘텐츠 */
 function buildDetailPanelShell(place: any): string {
   const photo = place.photo_url
@@ -822,6 +994,22 @@ function buildDetailPanelShell(place: any): string {
     '</a>',
   ].join('');
 
+  const youtubeUrl = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(place.name);
+  const youtubeLink = [
+    '<a class="ws-maps-link ws-youtube-link" href="' + youtubeUrl + '" target="_blank" rel="noopener noreferrer">',
+    IC.play,
+    '<span>YouTube에서 검색</span>',
+    '</a>',
+  ].join('');
+
+  const stayLinkSection = place.mood === '숙소' ? buildStayLinkSectionHtml(place) : '';
+  // 확정 여부는 이 숙소가 속한 숙소 구간(stay_segments)을 따로 조회해야 알 수 있어서
+  // (place 자체엔 저장 안 됨) 여기선 자리만 잡아두고, renderStayConfirmSection이 비동기로
+  // 채운다 — 댓글 섹션과 같은 패턴(동기 셸 먼저 그리고, 비동기 데이터로 나중에 채움).
+  const stayConfirmSection = place.mood === '숙소'
+    ? '<div class="ws-detail-section" id="ws-stay-confirm-section"><div class="ws-stay-confirm-loading">확정 여부 확인 중...</div></div>'
+    : '';
+
   const address = place.address
     ? '<div class="ws-detail-section"><span class="ws-detail-label">주소</span><div class="ws-detail-text">' + escapeHtml(place.address) + '</div></div>'
     : '';
@@ -852,7 +1040,9 @@ function buildDetailPanelShell(place: any): string {
            rating,
     '    </div>',
     '    <span class="ws-detail-save-hint" id="detail-name-hint"></span>',
-    '    <div class="ws-detail-links">' + mapsLink + searchLink + '</div>',
+    '    <div class="ws-detail-links">' + mapsLink + searchLink + youtubeLink + '</div>',
+         stayConfirmSection,
+         stayLinkSection,
          category,
          address,
          hours,

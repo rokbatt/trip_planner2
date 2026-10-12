@@ -14,8 +14,9 @@
 --                            split_mode로 "공동 지출"(정산 대상)과 "개인 지출"(정산 제외,
 --                            본인만 쓰는 비용 기록용)을 구분한다.
 --
--- 정산(누가 얼마 냈고 누구에게 보내야 하는지)은 결제 완료 + 공동 지출 항목의
--- paid_by / split_user_ids 를 기반으로 클라이언트에서 계산한다(별도 테이블 불필요).
+-- 정산(누가 얼마 냈고 누구에게 보내야 하는지)은 결제 완료 + 공동 지출 + 아직 정산 완료
+-- 처리(settled_at) 전인 항목의 paid_by / split_user_ids 를 기반으로 클라이언트에서
+-- 계산한다(별도 테이블 불필요).
 -- ============================================================
 
 create table if not exists trip_expense_budgets (
@@ -42,6 +43,7 @@ create table if not exists trip_expenses (
   expense_date   date,               -- null이면 "날짜 미정" (계획 단계)
   is_paid        boolean not null default false, -- false=예정, true=결제 완료(정산 대상)
   split_mode     text not null default 'SHARED', -- 'SHARED'(공동, 정산 대상) | 'PERSONAL'(개인, 정산 제외)
+  settled_at     timestamptz,        -- 정산 완료 처리한 시각. null이면 아직 정산 전(정산 계산에 포함)
   paid_by        uuid references auth.users(id) on delete set null,
   paid_by_name   text,               -- 표시용 스냅샷(멤버 탈퇴 후에도 기록 유지)
   paid_by_avatar text,
@@ -54,6 +56,8 @@ create index if not exists trip_expenses_trip_id_idx on trip_expenses(trip_id);
 
 -- 이미 이전 버전(split_mode 없이)으로 실행해둔 트립도 안전하게 따라오도록 보강
 alter table if exists trip_expenses add column if not exists split_mode text not null default 'SHARED';
+-- 정산 완료 처리 — 이미 돈을 주고받은 공동 지출은 정산 계산(차액·송금 제안)에서 뺀다
+alter table if exists trip_expenses add column if not exists settled_at timestamptz;
 
 do $$
 begin

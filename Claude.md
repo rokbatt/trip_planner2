@@ -179,7 +179,10 @@ Light" 컨셉 유지, 배치·형태만 차용): **예산 요약 / 지출 내역
   카테고리 배분과 별개인 "총 예산" lump sum을 저장하는 sentinel(실제 카테고리 목록에 없는 값이라
   `trip_expenses.category` 체크 제약과 충돌하지 않음 — 새 컬럼/테이블 없이 기존 upsert 패턴 재사용)
 - `trip_expenses` — 지출 항목. `is_paid`로 "예정 ↔ 결제 완료", `split_mode`(`SHARED`/`PERSONAL`)로
-  "공동 지출 ↔ 개인 지출"을 구분 — **정산은 결제 완료 + 공동 지출 항목만** 반영
+  "공동 지출 ↔ 개인 지출"을 구분 — **정산은 결제 완료 + 공동 지출 + 정산 완료(`settled_at`) 전 항목만** 반영.
+  `settled_at`은 이미 돈을 주고받은 공동 지출을 정산 계산(차액·송금 제안)에서만 빼는 표시이고,
+  실제 쓴 돈(현재 사용·"{닉네임}의 예상 부담액"·개인별 내역 복사)에는 그대로 포함된다
+  (`expenseModel.isSettleable`/`isSettled`가 단일 기준 — 모바일 지갑도 같은 computeSettlement를 쓴다)
   현지 통화 입력 시 저장 시점에 `/api/exchange-rate`로 환산해 `amount_krw`+`fx_rate`+`fx_source`를
   함께 저장(3-1 — fallback 환율이면 화면에 `*`와 "참고용" 표시, 환산 실패 항목은 합계에서 빠졌다고 명시)
 - 두 테이블 모두 realtime publication에 추가 — 다른 멤버 화면에 즉시 반영 (links와 같은 패턴)
@@ -216,7 +219,9 @@ Light" 컨셉 유지, 배치·형태만 차용): **예산 요약 / 지출 내역
   "예산 기준 ↔ 사용 기준" 토글로 진행바 분모가 바뀜(예산 대비 vs 전체 지출 중 비중)
 - **지출 내역**: 필터바(상태/구분/카테고리/정렬 select + 검색) + 날짜별 그룹 목록 + 더보기(페이지네이션)
 - **정산**: 멤버별 낸 돈·부담액·차액 + 최소 송금 제안(그리디 매칭) + "정산 내역 공유하기"(클립보드 복사,
-  기존 초대 링크 공유와 같은 패턴)
+  기존 초대 링크 공유와 같은 패턴) + "모두 정산 완료로 표시" + 정산 대기 목록 + 정산 완료 목록(접힘, 되돌리기)
+- **정산 완료 처리 진입점**: 결제 완료된 공동 지출 행마다 "정산 완료" 버튼(최근 지출·지출 내역·정산 탭 공통),
+  정산된 행은 PAID 대신 남색 "정산완료" 도장. 되돌리기는 정산 탭 완료 목록 또는 수정 모달 상단 안내에서(3-3)
 - **동행**: 멤버별 카드(낸 돈/부담액/차액/결제 건수) — 카드 클릭 시 그 사람 결제 건으로 지출내역 필터 이동
 - **설정**: 총 예산 편집 + 카테고리별 예산 편집(설정 탭 전용 폼, 예산요약 탭 카드의 인라인 편집과 별개 진입점)
 - 빠른 지출 추가는 "직접 입력/영수증/문자·이미지" 3-way 탭 구조만 갖추고, 영수증·문자·이미지는
@@ -273,7 +278,11 @@ ROUTE의 `makeAnchorPlace`처럼 Timeline도 `buildAirportPlaceMap`으로 이름
   **사진이 카드 왼쪽 끝에서 위아래로 꽉 차고**(`.tl-card`는 `padding:0` + `overflow:hidden`이라
   왼쪽 모서리만 카드 radius대로 깎인다), 그 오른쪽 본문이
   `번호(Navy 원형 30px) + 이름` 한 줄 → 카테고리 한 줄 → `별점 + 영업시간 배지` 한 줄 →
-  `메모` 한 줄로 쌓이고, 맨 오른쪽에 체류 요약 박스(예상 체류/도착/출발, 폭 130px `border-box`).
+  `메모` 한 줄로 쌓이고, 맨 오른쪽에 체류 박스(**예상 체류만**, 직접 입력 가능, 폭 130px `border-box`).
+  박스에 도착/출발도 있었는데 왼쪽 시각 칸(도착 입력 + "HH:MM 출발")과 같은 값의 반복이라 뺐다.
+  체류시간이 0인 곳(숙소 등 앵커)은 박스째 생략한다.
+  영업시간 배지는 **숙소·공항에선 띄우지 않는다** — 거의 언제나 "24시간 영업"이라 정보가 아니라
+  소음이다. 관광지·식당은 마감 시각이 일정을 좌우하므로 그대로 둔다(상세 패널엔 모두 그대로 있음).
   카드 최소 높이 152px — 번호를 사진 왼쪽에 두던 이전 버전보다 1.3배 키운 값이다.
   **구글 평점·카테고리·영업시간은 실제 저장된 값이 있을 때만** 보여준다 — 입장료·체크인 시각·
   WiFi처럼 우리 DB에 없는 값은 지어내지 않는다(원칙 3-1). 영업시간은 `place.opening_hours`
@@ -290,9 +299,11 @@ ROUTE의 `makeAnchorPlace`처럼 Timeline도 `buildAirportPlaceMap`으로 이름
   배경**이라 흰 장소 카드와 한눈에 구분된다(택시 `#FDF6E7` / 도보 `#EDF7F2` / 대중교통 `#EDF4FB`).
   아이콘 원은 배경보다 한 단계 진한 같은 계열, 아이콘 글리프는 거기서 더 진한 색이라
   "배경 → 원 → 아이콘" 세 단계가 같은 색 안에서 또렷하게 겹친다.
-  배치는 `아이콘 · 수단 이름` (왼쪽) → `소요시간 거리 / 예상 요금` (오른쪽 정렬) →
-  `N시 도착 예정 ▼`. 이 화살표를 눌러야만 이동수단 선택 버튼이 펼쳐진다(카드 전체가 아니라
-  이 버튼만 상호작용 지점). 직접 지정한 이동수단은 아이콘 원 둘레의 얇은 링으로 표시한다 —
+  배치는 `아이콘 · 수단 이름` (왼쪽) → `소요시간 · 약 N THB · 추정` 한 줄 (오른쪽 정렬) →
+  `N시 도착 예정 ▼`. **거리(km)는 바에 두지 않고 ▼로 펼쳤을 때만** "거리 15.4km · 실제 경로 기준/
+  직선거리 기반 추정" 한 줄로 보인다 — 바는 "얼마나 걸리고 얼마 드는지"만 3초 안에 읽히게.
+  단 "추정" 표시는 접지 않는다(원칙 3-1, 바만 봐도 추정치인지 알아야 함).
+  이 화살표를 눌러야만 이동수단 선택 버튼이 펼쳐진다(카드 전체가 아니라 이 버튼만 상호작용 지점). 직접 지정한 이동수단은 아이콘 원 둘레의 얇은 링으로 표시한다 —
   이름 옆에 점을 붙이면 "도보 •"처럼 오타로 읽힌다.
 - **지도**(우, sticky): 그날의 핀과 경로. 카드를 누르면 그 핀으로 이동하고, 핀을 누르면 카드로
   스크롤한다. 핀의 번호·색이 카드의 순번 배지와 같아서 둘이 바로 이어진다. 핀 모양은 ROUTE의
@@ -400,6 +411,47 @@ Hero 사진(260px)  ← 가장 먼저 눈에 들어오는 것은 글이 아니�
 > 이전엔 우측에 "하루 리듬 / 24시간 분포" 레일이 있었지만, 화면의 40%를 쓰면서 정작 자주 보는
 > 정보는 아니라 걷어내고 그 자리를 지도에 줬다. 요약을 다시 키우고 싶어지면 패널을 되살리기보다
 > 이 한 줄에 항목을 더하는 쪽을 먼저 검토할 것.
+>
+> 그 원칙대로 DAY 헤더에 두 줄을 더했다:
+> - **동선 한 줄**(`dayRouteLineHtml`) — `수완나품 공항 → 왕궁 → 왓포 → …`. 스크롤 없이 "어디서
+>   어디까지"가 보이게. 넘치면 말줄임(전체는 title). **동네 이름("올드시티")으로 묶지 않는다** —
+>   정류지별 권역 데이터가 없어 지어내야 한다(원칙 3-1). 실제 장소 이름만 쓴다.
+> - **동선 팁**(`dayMoveTipHtml`) — 하루 이동 합계가 `LONG_MOVE_DAY_MIN`(120분) 이상이면 가장 긴
+>   구간을 짚어 알려준다. 새 값을 만드는 게 아니라 헤더에 이미 있는 이동시간 합계를 기준선과
+>   비교할 뿐이라 API 호출도 없다. 경고(빨강)가 아니라 "한 번 확인해 보라"는 팁이라 앱 강조색.
+
+### 장소별 준비 체크리스트 — 새 목록이 아니라 Companion 체크리스트에 "장소 표시"만
+상세 패널 Before You Go 아래에 "준비 체크리스트"를 두고, 카드엔 항목이 있을 때만 `준비 1/3` 칩을
+띄운다(다 끝나면 강조색). **별도 목록을 만들지 않았다** — MOBILE(Companion)의 트립 공유
+체크리스트(`trip_checklist`)에 `place_key`/`place_name`만 붙여 저장한다(supabase/trip_checklist_place.sql).
+장소별로 목록을 쪼개면 "어디에 적었더라"가 생겨 오히려 빠뜨리기 쉬워지기 때문(trip_checklist.sql의
+"트립 공유" 이유와 같음). 그래서 TIMELINE에서 넣은 항목은 Companion에서도 장소 이름과 함께 보인다.
+- 키는 **장소 단위**(`placeId`, 없으면 `name:이름`) — 같은 장소를 여러 DAY에 담아도 목록은 하나
+- AI Before You Go 항목(예약·복장·현금·팁)은 칩으로 한 번 눌러 넣을 수 있다. 칩엔 `AI` 표시 유지(원칙 3-1)
+- **마이그레이션 전에도 동작한다** — 장소 컬럼이 없으면 제목 앞에 장소 이름을 붙여("왕궁 · 물")
+  저장하고, 패널은 그 접두어로 장소 항목을 알아본 뒤 접두어를 떼고 보여준다
+  (`isChecklistItemForPlace` / `checklistTitleForPlace`, src/mobile/checklist.ts)
+- 입력칸 Enter는 **한글 조합 중(`isComposing`)이면 무시**한다 — 안 그러면 조합 중인 글자가 반쪽으로 저장된다
+- 실시간 구독은 `subscribeChecklistScoped`로 **TIMELINE 전용 채널**을 따로 연다. 기존
+  `subscribeChecklist`는 모듈에 채널 하나만 들고 있어서, 두 게이트가 같이 쓰면 오가는 순서에 따라
+  한쪽 teardown이 다른 쪽 구독을 끊어버린다
+
+### 담아둔 장소 추가 — 새 장소 검색이 아니라 "이미 담아둔 것 중에서 고르기"
+하루 보기 목록 맨 아래(빈 DAY면 빈 화면 안)에 `담아둔 장소 추가` 버튼 → 펼치면 피커 카드
+(`addBlockHtml` / `bindAddPicker`). **구글 검색으로 새 장소를 찾는 기능이 아니다** — 후보는
+`loadDayModel`이 이미 불러 둔 Brainstorm 분류 장소(`placeById`)라 API 호출이 없다(원칙 3-2).
+새 장소 발굴은 Brainstorm/ROUTE의 몫으로 남긴다.
+- 후보 기준은 ROUTE 좌측 패널(`candidatePlaces`)과 같다: 숙소 제외 · 좌표 있음 · 이 여행지 소속
+  (`placeBelongsToDestination`). 이미 이 DAY에 있는 장소는 목록에서 뺀다
+- **다른 DAY에 이미 있는 장소는 막지 않고 `DAY 2에 있음` 태그만** 단다 — ROUTE도 지금 DAY만
+  중복 검사한다. 아직 어느 DAY에도 없는 장소를 위로 정렬(보통 "빠뜨린 곳"을 찾으러 여는 목록)
+- 들어갈 자리는 ROUTE `appendStopBeforeEndAnchor`와 같은 규칙(`addInsertIndex`): 마지막 정류지가
+  숙소·공항(끝 앵커 — DAY1 공항→숙소, 숙소 옮기는 날, 출국일)이면 **그 앞**, 아니면 맨 끝
+- 넣은 뒤 피커는 열어 둔다(연달아 넣는 경우가 많고, 넣은 곳은 목록에서 빠진다). 새 카드는 선택
+  상태로 강조. 닫기는 ✕와 Esc(원칙 3-3). 검색어 입력 땐 목록만 다시 그린다(입력 포커스 유지)
+- 저장은 다른 편집과 같은 `scheduleSave` 경로 — 정류지 필드는 placeId 외 전부 null로 시작
+- 여행 전체가 비어 있으면(모든 DAY에 정류지 0) 여전히 "ROUTE에서 동선 짜기" 빈 화면이다 —
+  첫 동선은 지도를 보며 짜는 게 맞아서 그대로 뒀다
 
 ### 시각 계산 규칙
 09:00에서 출발해 `체류 + 이동`을 누적하고, 사용자가 고정한 도착 시각을 만나면 시계를 그 시각으로
@@ -410,7 +462,19 @@ Hero 사진(260px)  ← 가장 먼저 눈에 들어오는 것은 글이 아니�
 ### 원칙 3-1·3-2 적용
 - 이동시간/거리는 활성 DAY만 `/api/route-matrix`로 실측 조회(ROUTE와 같은 "활성 DAY만, 이미 받은
   구간은 다시 묻지 않음" 전략). 못 받으면 직선거리 추정치를 쓰고 구간마다 "추정" 배지를 붙인다
-- 체류시간은 방문 유형별 기본값(추정) — 사용자가 도착 시각을 직접 입력하면 그게 우선
+- 체류시간은 방문 유형별 기본값(추정, `dwellMinutes`)이 기본이지만 **직접 정할 수도 있다**
+  (`TlStop.customDwellMin`, `route_stops.custom_dwell_min` — supabase/route_stop_custom_dwell.sql).
+  카테고리 6종(관광/맛집/액티비티/쇼핑/숙소/공항) 고정값 하나로는 장소 규모·실제 계획과 무관하게
+  다 같은 숫자가 나와 "이상하다"는 피드백을 받았던 지점 — 카드의 예상 체류 칸을 `.tl-time`과
+  같은 방식으로 직접 입력하게 했다(비우면 다시 기본값으로 돌아감). 우선순위는
+  **실제 기록(진행 중 여행) > 사용자가 정한 체류시간 > 카테고리 기본값(추정치)** 순으로,
+  도착 시각 우선순위(실제 기록 > 사용자 고정 > 자동 계산)와 같은 규칙이다.
+  `effectiveDwellMinutes(stop)`가 "실제 기록은 모르는 컨텍스트"(장소 상세 패널 등)에서 쓰는
+  버전 — `customDwellMin ?? dwellMinutes(cat)`만 본다.
+  ROUTE는 이 값을 보여주거나 고치는 화면이 없지만, 저장이 그 DAY 전체를 통째로 다시 쓰는
+  방식(replace)이라 `customDwellStore` 맵으로 불러올 때 값을 들고 있다가 저장할 때 그대로
+  돌려준다 — 안 그러면 ROUTE에서 아무 것도 안 바꾸고 저장만 해도 TIMELINE에서 정한 값이
+  조용히 지워진다(`memoStore`/`legModeOverride`와 같은 라운드트립 패턴).
 - 날씨·혼잡도·예약 상태·버전 히스토리처럼 **근거 데이터가 없는 정보는 아예 만들지 않았다**
 
 ### 알아둘 구현 세부
@@ -646,11 +710,13 @@ TODAY·TIMELINE·WALLET은 전부 "지금 이 하루"를 다루고, MORE는 하�
   있어서 지도를 한 번도 안 쓰는 화면(딥링크만 쓰는 Companion 포함)에서도 매번 받아왔다.
   로딩은 `loadGoogleMapsScript()`가 맡는다 — 필요한 게이트에서만 async로 받고, 이미 떠 있으면
   바로 resolve. 모든 소비자(board·shortlist·route·timeline·airportPicker)가 이 함수를 거친다.
-- **PWA로 설치된다**(`public/manifest.webmanifest` + `icon-*.png`). 홈 화면 아이콘 한 번이면
-  Companion이고, 브라우저 UI가 사라져 네이티브처럼 보인다.
+  지금 `index.html`에 남은 건 `preconnect`뿐이다(연결만 미리 터 두고 받지는 않는다).
+- **PWA로 설치된다**(`public/manifest.webmanifest` + 아이콘 + `public/sw.js`). 홈 화면 아이콘
+  한 번이면 Companion이고, 브라우저 UI가 사라져 네이티브처럼 보인다.
   - `viewport-fit=cover`가 **있어야** `env(safe-area-inset-*)`가 0이 아닌 값으로 계산된다.
     모바일 하단 탭바가 이 값을 쓰므로, 빼면 아이폰 홈 인디케이터에 탭이 깔린다.
-  - iOS는 manifest를 아직 다 못 읽어서 `apple-touch-icon`·`apple-mobile-web-app-*`이 따로 필요하다.
+  - **`sw.js`는 일부러 아무것도 캐싱하지 않는다** — 크롬이 설치를 제안하려면 fetch 핸들러를 가진
+    서비스워커가 있어야 해서 둔 최소 구현이다. 즉 **오프라인은 아직 안 된다**(아래 참고).
 
 #### 영업시간 대조 (`timeline/openingHours.ts`)
 영업시간은 전부터 저장돼 있었지만(`opening_hours`) **보여주기만 하고 도착 시각과 맞춰보진
@@ -684,16 +750,69 @@ TODAY·TIMELINE·WALLET은 전부 "지금 이 하루"를 다루고, MORE는 하�
   하려면 저장 시점에 현지어 주소를 같이 받아 두는 것(스키마 + PC 저장 경로)이 먼저다.
 
 ### 아직 안 한 것
-화면 4개와 진입·설치(PWA)는 다 됐다. **남은 가장 큰 구멍은 오프라인이다** — `src/` 어디에도
-Service Worker도 `navigator.onLine`도 없어서, 데이터가 끊기면(지하철·데이터 한도·기내) 흰
-화면이 된다. 다음 순서는 ① 앱 셸 캐싱(SW) ② 오늘·내일 DAY를 localStorage 스냅샷으로 두고
-"오프라인 · HH:MM 기준" 배지와 함께 띄우기(원칙 3-1: 언제 받은 값인지 밝힌다) ③ 오프라인
-도착 기록을 큐에 쌓았다 복구 시 전송. 사진은 캐싱하지 않는다 — 용량만 먹고, 현지에서 필요한
-건 시각·이름·주소뿐이다.
+화면 4개와 진입·설치(PWA)는 다 됐다. **남은 가장 큰 구멍은 오프라인이다** — `sw.js`는 설치
+조건을 맞추려는 최소 구현이라 캐싱을 하지 않고, `src/` 어디에도 `navigator.onLine` 분기가
+없다. 데이터가 끊기면(지하철·데이터 한도·기내) 흰 화면이 된다. 다음 순서는 ① 앱 셸 캐싱
+② 오늘·내일 DAY를 localStorage 스냅샷으로 두고 "오프라인 · HH:MM 기준" 배지와 함께
+띄우기(원칙 3-1: 언제 받은 값인지 밝힌다) ③ 오프라인 도착 기록을 큐에 쌓았다 복구 시 전송.
+사진은 캐싱하지 않는다 — 용량만 먹고, 현지에서 필요한 건 시각·이름·주소뿐이다.
+**캐시를 먼저 깔지 말 것**: "화면은 뜨는데 내용이 옛날 것"은 아무것도 안 뜨는 것보다 나쁘다
+(`sw.js` 상단 주석과 같은 이유).
 
 푸시·날씨처럼 서버가 필요한 기능은 `api/*.ts`가 이미 12개 상한이라 Edge Function으로 뺀다(3-7).
 편집(순서 변경·이동수단 선택)은 **일부러 안 만든다**(PC의 몫). 모바일 채팅도 없다 — MORE에서
 PC의 LINKS로 넘긴다.
+
+---
+
+## 5-5. DOCUMENTS & NOTES 아키텍처 (신규)
+
+여행 중 필요한 원본 자료와, 준비하면서 적어둔 정보를 한곳에 모으는 게이트. 사이드바의
+**Documents / Notes** 두 항목이 같은 모듈의 두 탭을 가리킨다(`#trip/:id/docs`, `#trip/:id/notes`).
+
+### 역할 구분 (섞지 말 것)
+- **DOCUMENTS** = 원본 자료(항공권·예약증·보험증서). 파일이 본체다.
+- **NOTES** = 기억해둘 정보(수하물 규정·체크인 시간·준비물). 텍스트가 본체다.
+- **CHECKLIST**(`trip_checklist`, 모바일 MORE)와도 다르다 — 체크리스트는 *여행 중 해야 하는 행동*,
+  노트의 체크는 *그 정보를 확인했다*는 표시다. 화면 문구도 "확인 완료"로만 쓴다.
+
+### 데이터 (`supabase/trip_documents.sql`)
+- `trip_documents` — visibility(`SHARED`/`PERSONAL`) · category · day_start/day_end · file_path 등.
+  PERSONAL은 반드시 `owner_id`(= `trip_doc_users.id`)를 갖고 SHARED는 갖지 않는다(체크 제약).
+- `trip_notes` — category · title · body · `checked_at`(확인) · `pinned_at`(고정) · day 범위.
+- `trip_doc_users` — 개인 문서용 멤버 프로필. PIN은 평문 저장하지 않고 **사용자별 랜덤 salt +
+  SHA-256 해시**만 저장한다(WebCrypto).
+- 파일은 **비공개 버킷 `trip-docs`** (`{trip_id}/{shared|personal}/{uuid}.{ext}`). 열 때마다
+  10분짜리 signed URL을 발급해서 미리보기/다운로드한다 — 공개 버킷인 place-photos/link-previews와
+  다르다(항공권·여권 사본이 URL만으로 열리면 안 되므로).
+- 마이그레이션 전에도 앱은 그대로 동작한다 — 게이트에 "준비 중" 안내만 뜬다(3-2 graceful degradation).
+
+### 개인 문서 잠금에 대한 정직한 선 (중요)
+4자리 PIN은 **멤버끼리 개인 문서를 섞이지 않게 하는 잠금**이지 인증 시스템이 아니다. RLS는 이
+앱의 다른 테이블과 같은 "그 트립의 멤버인가"까지만 본다. 대신 화면은
+(1) 잠금 전에는 PERSONAL을 아예 조회하지 않고 (2) 잠금 후에도 `owner_id`가 본인인 행만 조회하며
+(3) 잠금 상태는 sessionStorage에만 둔다(탭을 닫으면 잠김). 나중에 Supabase Auth 기준 소유권으로
+올릴 수 있도록 `trip_doc_users.user_id`와 정책 초안을 SQL 주석에 남겨 뒀다. **UI에서 이걸 실제
+보안인 것처럼 표현하지 말 것** — 등록 화면에 그 한계를 그대로 적어 두었다.
+
+### 파일 구성
+- `src/docs/docs.ts` — 게이트 셸(탭·검색·추가 버튼), DOCUMENTS 목록·상세 패널·추가 시트, PIN 화면
+- `src/docs/notes.ts` — NOTES 탭(카드 목록·고정·확인·편집 시트). 게이트가 뜰 때 한 번 로드하고
+  realtime을 구독한다 — DOCUMENTS 탭에서도 "메모에서도 N건" 교차 검색 안내를 즉시 띄우기 위해서
+- `src/docs/docsStore.ts` — Supabase I/O 단일 창구(문서·메모·사용자·PIN 해시·Storage·DAY 집계)
+- `src/docs/docsIcons.ts` — 두 화면이 공유하는 선 아이콘·포맷 유틸
+
+### Timeline 연결
+문서/메모의 `day_start~day_end`는 Timeline의 DAY 번호(여행 전체 기준)와 같은 값이다.
+`loadDayAttachmentCounts(tripId)`가 DAY별 개수를 돌려주고, Timeline은 하루 요약 줄에
+"관련 자료 문서 2 · 메모 1" **한 칸만** 덧붙인다(없으면 아무것도 그리지 않음). 타임라인 화면
+구조는 건드리지 않는다.
+
+### UX 원칙
+폴더를 만들지 않는다. 분류는 카테고리 칩과 개인/공용 두 갈래뿐이고, 원하는 자료까지 항상
+1~2번 클릭이면 닿는다. 문서를 눌러도 페이지를 옮기지 않고 오른쪽 상세 패널이 열린다
+(좁은 화면에선 전체 화면). 마지막으로 보던 탭(DOCUMENTS/NOTES)과 범위(PERSONAL/SHARED)는
+트립별로 기억한다.
 
 ---
 
@@ -714,6 +833,10 @@ src/
   mobile/checklist.ts                ← 여행 준비 체크리스트 I/O + 실시간 (Mobile 전용, 5-4 참고)
   expense/expense.ts, expense.css    ← Expense 게이트 (예산·지출·도넛 차트·정산, 5-2 참고)
   expense/expenseModel.ts            ← 집계·정산·환율의 단일 기준 (Expense/Mobile 공용, 5-2 참고)
+  docs/docs.ts, docs.css             ← DOCUMENTS & NOTES 게이트 (문서함·상세 패널·PIN, 5-5 참고)
+  docs/notes.ts                      ← NOTES 탭 (메모 CRUD·고정·확인, 5-5 참고)
+  docs/docsStore.ts                  ← 문서·메모·PIN·Storage I/O의 단일 창구 (5-5 참고)
+  docs/docsIcons.ts                  ← DOCUMENTS/NOTES 공용 아이콘·포맷 유틸
   workspace/workspace.ts             ← 게이트 라우팅, 사이드바
   utils/googleMaps.ts                ← Google Maps 로더, GooglePlaceResult 추출/카테고리 매핑 (공유 유틸)
   utils/travelEstimate.ts            ← 이동시간·거리·요금·체류시간 계산의 단일 기준 (Route/Timeline 공용, 5-3 참고)
@@ -756,11 +879,15 @@ api/                                  ← Vercel 서버리스 함수 (각각 완
    12개 상한이라 **Supabase Edge Functions로 뺀다**(3-7). `trip_stop_progress.sql`과
    `trip_checklist.sql` 마이그레이션을 Supabase에서 실행해야 각 기능이 저장된다(안 해도 앱은
    정상 동작 — 해당 기능만 조용히 접힌다). 로드맵은 `docs/MOBILE_STRATEGY.md`
-4. **PC Checklist 게이트** — 아직 빈 플레이스홀더. 데이터 모델(`trip_checklist`)은 모바일 MORE가
+4. **DOCUMENTS & NOTES 게이트** — 구현됨(5-5). `supabase/trip_documents.sql`을 Supabase에서
+   실행해야 저장된다(안 해도 앱은 정상 동작 — 해당 게이트만 "준비 중" 안내로 접힌다). 다음 단계
+   후보: 개인 문서를 Supabase Auth 기준 소유권으로 올리기(SQL 주석의 정책 초안), 문서 만료일
+   알림, 모바일 Companion에서 오늘의 문서 바로 열기
+5. **PC Checklist 게이트** — 아직 빈 플레이스홀더. 데이터 모델(`trip_checklist`)은 모바일 MORE가
    이미 만들어 뒀으므로, PC 화면을 붙일 땐 그 테이블을 그대로 쓰면 된다(5-4 참고).
    **Links 탭**은 채팅 링크를 자동 수집 + og:title/og:image 미리보기 + STAY/PLACE/FOOD/ACTIVITY/VIDEO/ARTICLE/OTHER 자동분류(애매하면 OTHER, 드래그로 수동 재분류 가능)까지 구현됨(`src/links/links.ts`, `src/trips/addLink.ts`, `api/cache-photo.ts`의 `kind:'link-preview'`, `supabase/trip_links.sql`) — 직접 추가 UI는 없음(채팅이 유일한 입력 경로). **Expense 탭**은 구현됨(아래 5-2 참고) — `supabase/trip_expenses.sql` 마이그레이션을 Supabase에서 실행해야 동작
-5. **`google.maps.Marker` → `AdvancedMarkerElement` 마이그레이션** — 지금은 폐기 예정 경고만 뜨는 상태, 급하진 않음 (최소 12개월 유예)
-6. **방콕 외 도시의 `stay_zones` 큐레이션** — 현재 방콕만 실제 조사된 데이터, 나머지 도시는 AI 폴백 상태
+6. **`google.maps.Marker` → `AdvancedMarkerElement` 마이그레이션** — 지금은 폐기 예정 경고만 뜨는 상태, 급하진 않음 (최소 12개월 유예)
+7. **방콕 외 도시의 `stay_zones` 큐레이션** — 현재 방콕만 실제 조사된 데이터, 나머지 도시는 AI 폴백 상태
 
 ---
 
@@ -776,7 +903,10 @@ api/                                  ← Vercel 서버리스 함수 (각각 완
 - [ ] hover를 쓴다면 클릭으로 만든 선택 상태를 덮어쓰지 않는 "일시적 미리보기"로만 쓰고 있는가, 명시적 해제 수단이 있는가 (3-3)
 - [ ] 공항 메타포·디자인 시스템 톤을 깨지 않는가
 - [ ] 새 Vercel 서버리스 함수(`api/*.ts`)를 추가한다면 전체 개수가 Hobby 플랜 한도(12개)를 넘지 않는가 — 넘으면 배포 자체가 실패함 (3-7)
-- [ ] 수정 후 `npx tsc --noEmit && npx vite build`로 검증했는가
+- [ ] 수정 후 `npx tsc --noEmit && npx vite build && npm test`로 검증했는가
+      (PR을 올리면 `.github/workflows/ci.yml`이 같은 걸 다시 돌린다 — 로컬에서 먼저 보는 게 빠를 뿐)
+- [ ] `expenseModel.ts`(돈)나 `travelEstimate.ts`(시간)의 계산을 건드렸다면, 옆의 `*.test.ts`가
+      여전히 통과하는가 — 통과하지 못한다면 **테스트를 고치기 전에 계산이 맞는지 먼저 의심할 것**
 
 ---
 

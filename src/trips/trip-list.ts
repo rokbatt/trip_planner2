@@ -4,6 +4,7 @@ import { navigate } from '../router';
 import { signOut } from '../auth/auth';
 import { openCreateTripModal } from './trip-create';
 import { openEditTripModal } from './trip-edit';
+import { toAirportCode, toAirportCityEn, airportCityEnByCode } from './airports';
 import type { Database } from '../types/database';
 import './trip-list.css';
 
@@ -11,8 +12,67 @@ type Trip = Database['public']['Tables']['trips']['Row'];
 
 /* ── SVG ── */
 const ICON_SUITCASE = `<svg class="trip-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="7" width="18" height="14"/><path d="M8 7V4H16V7"/></svg>`;
-const ICON_ROUTE_ARROW = `<svg class="route-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12H19M13 6L19 12L13 18"/></svg>`;
 const ICON_EDIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>`;
+const ICON_PLANE = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 16.5v-2l-8.5-5V3.5c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v6l-8.5 5v2l8.5-2.5V19l-2.5 2v1.5l4-1 4 1V21l-2.5-2v-5.5l8.5 2.5z"/></svg>`;
+
+/**
+ * 바코드/QR은 실제 정보를 담지 않는 장식이라 무작위 패턴으로 그린다. 다만 Math.random을
+ * 그대로 쓰면 카드가 다시 그려질 때마다 모양이 바뀌어 깜빡이므로, 트립 id를 시드로 쓰는
+ * xorshift32로 "트립마다 다르지만 항상 같은" 무작위 패턴을 만든다.
+ */
+function seededRandom(seed: string): () => number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < seed.length; i++) {
+    h = (h ^ seed.charCodeAt(i)) >>> 0;
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return () => {
+    h = (h ^ (h << 13)) >>> 0;
+    h = (h ^ (h >>> 17)) >>> 0;
+    h = (h ^ (h << 5)) >>> 0;
+    return h / 4294967296;
+  };
+}
+
+/** 실제 항공권 하단의 굵기가 제각각인 세로 막대 바코드 */
+function barcodeSvg(seed: string): string {
+  const rand = seededRandom(seed);
+  const bars: string[] = [];
+  let x = 0;
+  while (x < 168) {
+    const w = 1 + Math.floor(rand() * 3);
+    bars.push(`<rect x="${x}" y="0" width="${w}" height="30"/>`);
+    x += w + 1 + Math.floor(rand() * 2);
+  }
+  return `<svg viewBox="0 0 ${x} 30" preserveAspectRatio="none" fill="#1E3A6B">${bars.join('')}</svg>`;
+}
+
+/** 모바일 탑승권의 QR — 모서리 3곳의 인식 패턴(finder)만 실제 QR처럼 두고 나머지는 무작위 */
+function qrSvg(seed: string): string {
+  const rand = seededRandom(seed + ':qr');
+  const N = 21; // 실제 QR 최소 버전과 같은 21×21 격자
+  const inFinder = (r: number, c: number) =>
+    (r < 8 && c < 8) || (r < 8 && c >= N - 8) || (r >= N - 8 && c < 8);
+  const cells: string[] = [];
+  for (let r = 0; r < N; r++) {
+    for (let c = 0; c < N; c++) {
+      if (inFinder(r, c) || rand() > 0.45) continue;
+      cells.push(`<rect x="${c}" y="${r}" width="1" height="1"/>`);
+    }
+  }
+  const finder = (x: number, y: number) =>
+    `<rect x="${x}" y="${y}" width="7" height="7"/>` +
+    `<rect x="${x + 1}" y="${y + 1}" width="5" height="5" fill="#FFFFFF"/>` +
+    `<rect x="${x + 2}" y="${y + 2}" width="3" height="3"/>`;
+  return (
+    `<svg viewBox="0 0 ${N} ${N}" fill="#1E3A6B">` +
+    cells.join('') +
+    finder(0, 0) +
+    finder(N - 7, 0) +
+    finder(0, N - 7) +
+    '</svg>'
+  );
+}
 const DI = {
   trip: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="5" width="18" height="16"/><path d="M3 10H21M8 3V7M16 3V7"/></svg>`,
   setting: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="4" y="4" width="16" height="16"/><path d="M9 4V20M4 9H20"/></svg>`,
@@ -20,21 +80,7 @@ const DI = {
   logout: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="4" width="10" height="16"/><path d="M21 12H9M17 8L21 12L17 16"/></svg>`,
 };
 
-/* ── 도시 → IATA 공항코드 매핑 ── */
-const AIRPORT_CODE: Record<string, string> = {
-  '서울': 'ICN', '인천': 'ICN', '뉴욕': 'JFK', '방콕': 'BKK', '도쿄': 'NRT',
-  '오사카': 'KIX', '파리': 'CDG', '런던': 'LHR', '로마': 'FCO', '바르셀로나': 'BCN',
-  '싱가포르': 'SIN', '홍콩': 'HKG', '타이베이': 'TPE', '하노이': 'HAN',
-  '다낭': 'DAD', '나트랑': 'CXR', '발리': 'DPS', '푸켓': 'HKT', '오키나와': 'OKA',
-  '시드니': 'SYD', '두바이': 'DXB', '로스앤젤레스': 'LAX', '샌프란시스코': 'SFO',
-  '미국': 'JFK', '베트남': 'HAN', '태국': 'BKK', '일본': 'NRT', '유럽': 'CDG',
-};
-
-function toAirportCode(city: string): string {
-  const cleaned = city.trim();
-  if (AIRPORT_CODE[cleaned]) return AIRPORT_CODE[cleaned];
-  return cleaned.slice(0, 3).toUpperCase();
-}
+/* 도시 → IATA 공항코드 매핑은 airports.ts 한 곳에서 관리한다(workspace.ts와 공유) */
 
 /* ── 유저 정보 ── */
 function getUserInfo() {
@@ -84,6 +130,25 @@ function formatDDay(start: string | null): string | null {
   return `D+${Math.abs(diffDays)}`;
 }
 
+/** 스텁의 TRIP ID — 예약번호를 지어내는 대신 이 트립의 실제 정보(출발지·도착지·출발일)를
+ * 조합해 만든다. 예: MGS-ICNBKK-1026 */
+function tripIdCode(destCode: string, start: string | null): string {
+  const mmdd = start ? formatMMDD(start).replace('.', '') : '0000';
+  return `MGS-ICN${destCode}-${mmdd}`;
+}
+
+/** 스텁의 DATE — "10.26 → 10.30, 2026" */
+function formatStubRange(start: string | null, end: string | null): string {
+  if (!start || !end) return '-';
+  return `${formatMMDD(start)} → ${formatMMDD(end)}, ${new Date(start).getFullYear()}`;
+}
+
+/** 스텁의 PAX — 항공권처럼 두 자리로 0을 채운다(2명 → 02). 인원수 미입력이면 '--' */
+function formatPax(headcount: number | null): string {
+  if (headcount == null || !Number.isFinite(headcount)) return '--';
+  return String(headcount).padStart(2, '0');
+}
+
 /* ── 내 여행 목록 로드 ── */
 async function loadTrips(): Promise<Trip[]> {
   const user = store.get('user');
@@ -117,39 +182,93 @@ function createTripCard(trip: Trip, index: number, onChanged: () => void): HTMLE
 
   const destCity = trip.destinations?.[0] ?? trip.name;
   const destCode = toAirportCode(destCity);
+  const destCityEn = toAirportCityEn(destCity);
   const dday = formatDDay(trip.start_date);
+
+  const tripNo = tripIdCode(destCode, trip.start_date);
+  const originEn = airportCityEnByCode('ICN') ?? '';
 
   card.innerHTML = `
     <button class="trip-card-edit" id="edit-${trip.id}" title="편집">${ICON_EDIT}</button>
     <div class="trip-card-clip">
-      <div class="trip-card-info">
-        <span class="trip-pass-label">TRAVEL PASS</span>
-        <div class="trip-card-route">
-          <span>ICN</span>${ICON_ROUTE_ARROW}<span>${escapeHtml(destCode)}</span>
-        </div>
-        <div class="trip-card-name">${escapeHtml(trip.name)}</div>
-        <div class="trip-info-divider"></div>
 
-        <div class="trip-card-flightinfo">
-          <div class="fi-col">
-            <span class="fi-label">DEPART</span>
-            <span class="fi-value">${formatMMDD(trip.start_date)}</span>
+      <!-- ── 왼쪽: 본권(여행의 얼굴) ── -->
+      <div class="tp-main">
+        <div class="tp-brand">
+          <span class="tp-brand-mark">${ICON_PLANE}</span>
+          <span class="tp-brand-name">MONGSIL</span>
+          <span class="tp-brand-sub">TRAVEL PASS</span>
+        </div>
+
+        <div class="tp-route">
+          <div class="tp-port">
+            <span class="tp-port-code">ICN</span>
+            <span class="tp-port-city">${escapeHtml(originEn)}</span>
           </div>
-          <div class="fi-col">
-            <span class="fi-label">ARRIVE</span>
-            <span class="fi-value">${formatMMDD(trip.end_date)}</span>
-          </div>
-          <div class="fi-col">
-            <span class="fi-label">DAYS</span>
-            <span class="fi-value">${formatDays(trip.start_date, trip.end_date)}</span>
+          <div class="tp-route-line"><span class="tp-route-plane">${ICON_PLANE}</span></div>
+          <div class="tp-port tp-port-to">
+            <span class="tp-port-code">${escapeHtml(destCode)}</span>
+            <span class="tp-port-city">${escapeHtml(destCityEn ?? destCity)}</span>
           </div>
         </div>
 
-        ${dday ? `<span class="fi-dday">${dday}</span>` : ''}
+        <div class="tp-theme">${escapeHtml(trip.name)}</div>
+
+        <div class="tp-meta">
+          <div class="tp-meta-item">
+            <span class="tp-label">DEPART</span>
+            <span class="tp-value">${formatMMDD(trip.start_date)}</span>
+          </div>
+          <div class="tp-meta-item">
+            <span class="tp-label">RETURN</span>
+            <span class="tp-value">${formatMMDD(trip.end_date)}</span>
+          </div>
+          <div class="tp-meta-item">
+            <span class="tp-label">DAYS</span>
+            <span class="tp-value">${formatDays(trip.start_date, trip.end_date)}</span>
+          </div>
+          ${dday ? `<span class="tp-dday">${dday}</span>` : ''}
+        </div>
       </div>
-      <div class="trip-card-img-wrap">
-        <div class="trip-card-img" id="trip-img-${trip.id}"></div>
-        <div class="trip-card-barcode"></div>
+
+      <!-- ── 오른쪽: 절취 스텁 ── -->
+      <div class="tp-stub">
+        <div class="tp-stub-field">
+          <span class="tp-label">TRIP NO.</span>
+          <span class="tp-stub-no">${escapeHtml(tripNo)}</span>
+        </div>
+
+        <div class="tp-stub-grid">
+          <div class="tp-stub-field tp-stub-field-wide">
+            <span class="tp-label">DATE</span>
+            <span class="tp-stub-value">${formatStubRange(trip.start_date, trip.end_date)}</span>
+          </div>
+          <div class="tp-stub-field">
+            <span class="tp-label">FROM</span>
+            <span class="tp-stub-value">ICN<i>${escapeHtml(originEn)}</i></span>
+          </div>
+          <div class="tp-stub-field">
+            <span class="tp-label">TO</span>
+            <span class="tp-stub-value">${escapeHtml(destCode)}<i>${escapeHtml(destCityEn ?? '')}</i></span>
+          </div>
+          <div class="tp-stub-field">
+            <span class="tp-label">PAX</span>
+            <span class="tp-stub-value">${formatPax(trip.headcount)}</span>
+          </div>
+          <div class="tp-stub-field">
+            <span class="tp-label">DAYS</span>
+            <span class="tp-stub-value">${formatDays(trip.start_date, trip.end_date)}</span>
+          </div>
+        </div>
+
+        <div class="tp-scan">
+          <div class="tp-qr">${qrSvg(trip.id)}</div>
+          <div class="tp-scan-code">
+            <div class="tp-barcode">${barcodeSvg(trip.id)}</div>
+            <span class="tp-scan-no">${escapeHtml(tripNo)}</span>
+          </div>
+        </div>
+        <span class="tp-stub-brand">MONGSIL TRAVEL WORKSPACE</span>
       </div>
     </div>
   `;
@@ -168,35 +287,7 @@ function createTripCard(trip: Trip, index: number, onChanged: () => void): HTMLE
     openEditTripModal(trip, onChanged);
   });
 
-  if (trip.destinations?.[0]) {
-    loadCityImage(trip.destinations[0]).then((url) => {
-      if (url) {
-        const imgEl = card.querySelector(`#trip-img-${trip.id}`) as HTMLElement | null;
-        if (imgEl) imgEl.style.backgroundImage = `url('${url}')`;
-      }
-    });
-  }
-
   return card;
-}
-
-async function loadCityImage(cityKo: string): Promise<string | null> {
-  const cacheKey = `city_img_${cityKo}`;
-  const cached = localStorage.getItem(cacheKey);
-  if (cached) {
-    const parsed: { url: string; ts: number } = JSON.parse(cached);
-    if (Date.now() - parsed.ts < 24 * 60 * 60 * 1000) return parsed.url;
-  }
-
-  const { data } = await supabase
-    .from('city_images')
-    .select('image_url')
-    .eq('city_ko', cityKo)
-    .single<{ image_url: string }>();
-
-  const url = data?.image_url ?? null;
-  if (url) localStorage.setItem(cacheKey, JSON.stringify({ url, ts: Date.now() }));
-  return url;
 }
 
 /* ── 네비 렌더 ── */

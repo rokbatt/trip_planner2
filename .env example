@@ -1,6 +1,12 @@
 # .env.local 로 복사한 뒤 실제 값을 채워주세요
 # (Vite는 VITE_ 접두사가 붙은 변수만 클라이언트 번들에 노출합니다)
 
+# ── 배포 주소 (공유 미리보기용) ──
+# og:image·canonical은 절대 URL이어야 카카오톡·페이스북이 읽는다.
+# Vercel에 올리면 VERCEL_PROJECT_PRODUCTION_URL로 자동 해석되므로 보통은 비워둬도 된다.
+# 커스텀 도메인을 붙였다면 그 주소를 여기에 적는다(프로토콜 포함, 끝 슬래시 없이).
+VITE_SITE_URL=
+
 # ── Supabase (클라이언트에서 사용, anon key라 노출되어도 안전) ──
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJ...

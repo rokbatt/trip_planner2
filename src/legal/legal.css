@@ -1,0 +1,242 @@
+/* ============================================================
+   이용약관 · 개인정보처리방침 — Airport Lounge Premium Light
+   읽으라고 만든 문서 페이지다. 랜딩처럼 꾸미지 않고,
+   글줄 길이와 위계만 정확히 잡는다.
+   ============================================================ */
+
+.lg-page {
+  background: var(--al-bg);
+  color: var(--al-text);
+  font-family: var(--font-sans);
+  min-height: 100dvh;
+}
+
+/* ── 상단 바 ── */
+.lg-nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: 64px;
+  padding: 0 max(20px, calc((100% - 860px) / 2));
+  background: rgba(248, 251, 254, 0.92);
+  backdrop-filter: saturate(160%) blur(12px);
+  -webkit-backdrop-filter: saturate(160%) blur(12px);
+  border-bottom: 1px solid var(--al-divider);
+}
+.lg-home {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #0B2A5C;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+.lg-nav-links { display: flex; gap: 6px; }
+.lg-navlink {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #64748B;
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: background 180ms var(--al-ease), color 180ms var(--al-ease);
+}
+.lg-navlink:hover { background: #EAF6FD; color: #0B2A5C; }
+.lg-navlink:focus-visible { outline: 2px solid var(--al-action); outline-offset: 2px; }
+
+/* ── 본문 ── */
+.lg-main {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 56px 20px 96px;
+}
+
+.lg-head { margin-bottom: 28px; }
+.lg-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #0B7CC4;
+  margin-bottom: 12px;
+}
+.lg-title {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  color: #0B2A5C;
+  line-height: 1.2;
+}
+.lg-updated { margin-top: 10px; font-size: 13px; color: #94A3B8; }
+
+/* 초안 고지 — 이 문서가 아직 법률 검토 전이라는 사실을 숨기지 않는다 */
+.lg-draft {
+  background: #FBF4E6;
+  border: 1px solid #EBD9B4;
+  border-radius: 14px;
+  padding: 15px 18px;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: #6B5420;
+  margin-bottom: 44px;
+}
+.lg-draft strong { display: block; color: #4A3810; margin-bottom: 3px; }
+
+/* ── 조문 ── */
+.lg-sec { margin-bottom: 38px; }
+.lg-sec h2 {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: #0B2A5C;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--al-divider);
+  margin-bottom: 16px;
+}
+.lg-sec h3 {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0B2A5C;
+  margin: 22px 0 8px;
+}
+.lg-sec p { font-size: 14.5px; line-height: 1.85; color: #3A4756; margin-bottom: 12px; }
+.lg-sec p:last-child { margin-bottom: 0; }
+.lg-sec strong { color: #0B2A5C; font-weight: 700; }
+.lg-sec em { font-style: normal; text-decoration: underline; text-underline-offset: 3px; }
+.lg-sec a { color: #0B7CC4; }
+
+.lg-lede { font-size: 15.5px !important; }
+
+.lg-ol, .lg-ul {
+  font-size: 14.5px;
+  line-height: 1.85;
+  color: #3A4756;
+  padding-left: 22px;
+  margin-bottom: 12px;
+}
+.lg-ol { list-style: decimal; }
+.lg-ul { list-style: disc; }
+.lg-ol > li, .lg-ul > li { margin-bottom: 7px; }
+.lg-ol > li::marker, .lg-ul > li::marker { color: #94A3B8; }
+
+.lg-note {
+  font-size: 13px !important;
+  color: #64748B !important;
+  background: #F2F7FB;
+  border-radius: 10px;
+  padding: 11px 14px;
+}
+
+/* 특별히 눈에 걸려야 하는 안내 */
+.lg-callout {
+  background: #FFFFFF;
+  border: 1px solid #CDEBFB;
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-top: 18px;
+}
+.lg-callout > strong {
+  display: block;
+  font-size: 14px;
+  color: #0B2A5C;
+  margin-bottom: 8px;
+}
+.lg-callout .lg-ul { margin-bottom: 0; }
+
+.lg-warn {
+  background: #FDF1EE;
+  border: 1px solid #F3D3C9;
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-top: 18px;
+  font-size: 13.5px;
+  line-height: 1.8;
+  color: #6B3A28;
+}
+.lg-warn > strong { display: block; color: #8A3D22; margin-bottom: 5px; }
+.lg-warn a { color: #8A3D22; }
+
+/* ── 표 ── */
+.lg-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  margin-bottom: 14px;
+  background: #FFFFFF;
+  border: 1px solid #CDEBFB;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.lg-table th, .lg-table td {
+  text-align: left;
+  padding: 11px 14px;
+  border-bottom: 1px dashed var(--al-divider);
+  vertical-align: top;
+  line-height: 1.6;
+  word-break: keep-all;
+}
+.lg-table thead th {
+  background: #F2F7FB;
+  font-weight: 700;
+  color: #0B2A5C;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.lg-table tbody tr:last-child td { border-bottom: 0; }
+.lg-table td:first-child { font-weight: 500; color: #0B2A5C; white-space: nowrap; }
+
+/* ── 채워야 하는 빈칸 ──
+   실제 값이 정해지지 않은 자리. 눈에 띄게 남겨 두어 공개 전에 반드시 발견되게 한다. */
+.lg-blank {
+  display: inline-block;
+  background: #FFF4CC;
+  border: 1px dashed #D9A93B;
+  border-radius: 6px;
+  padding: 0 6px;
+  font-size: 0.92em;
+  color: #7A5A10;
+  font-weight: 500;
+}
+
+.lg-contact p { font-size: 13.5px; line-height: 1.9; }
+
+.lg-foot {
+  margin-top: 56px;
+  padding-top: 26px;
+  border-top: 1px solid var(--al-divider);
+}
+.lg-backhome {
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #0B7CC4;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.lg-backhome:hover { text-decoration: underline; }
+
+/* 한글은 어절 단위로 끊는다 (랜딩과 같은 이유) */
+.lg-title, .lg-sec p, .lg-ol, .lg-ul, .lg-draft, .lg-warn, .lg-callout {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+@media (max-width: 620px) {
+  .lg-main { padding: 36px 16px 72px; }
+  .lg-title { font-size: 26px; }
+  .lg-nav { padding: 0 16px; height: 58px; }
+  .lg-navlink { font-size: 12px; padding: 6px 9px; }
+  .lg-table { display: block; overflow-x: auto; }
+}

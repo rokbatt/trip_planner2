@@ -129,6 +129,16 @@ export function modeOf(e: TripExpense): SplitMode {
   return e.split_mode === 'PERSONAL' ? 'PERSONAL' : 'SHARED';
 }
 
+/** 정산 완료 처리된 지출인지 — 이미 돈을 주고받아 정산 계산에서 빠지는 항목 */
+export function isSettled(e: TripExpense): boolean {
+  return !!e.settled_at;
+}
+
+/** 정산 완료로 표시할 수 있는(= 지금 정산 계산에 들어가 있는) 지출 — 결제 완료된 공동 지출 중 아직 정산 전 */
+export function isSettleable(e: TripExpense): boolean {
+  return e.is_paid && modeOf(e) === 'SHARED' && !isSettled(e);
+}
+
 export function categoryOf(e: TripExpense): ExpenseCategory {
   return (EXPENSE_CATEGORIES as readonly string[]).includes(e.category) ? (e.category as ExpenseCategory) : 'ETC';
 }
@@ -186,8 +196,10 @@ export function memberName(ctx: ExpenseCtx, userId: string | null): string {
 /* ══════════════ 정산 ══════════════ */
 
 /**
- * 결제 완료 + 공동 지출 항목만 정산에 넣고, 최소 송금 조합을 그리디로 매칭한다.
- * 개인 지출(PERSONAL)과 예정 항목은 정산 대상이 아니다.
+ * 결제 완료 + 공동 지출 + 아직 정산 완료 처리 전인 항목만 정산에 넣고, 최소 송금 조합을
+ * 그리디로 매칭한다. 개인 지출(PERSONAL)·예정 항목·정산 완료된 항목은 정산 대상이 아니다
+ * — 이미 주고받은 돈까지 다시 계산에 넣으면 남은 차액이 부풀어 보여 헷갈리기 때문.
+ * 실제로 쓴 돈(현재 사용·부담액·개인별 내역)은 정산 여부와 무관하므로 여기서만 뺀다.
  */
 export function computeSettlement(ctx: ExpenseCtx): Settlement {
   const byUser = new Map<string, SettleRow>();
@@ -201,7 +213,7 @@ export function computeSettlement(ctx: ExpenseCtx): Settlement {
   let skipped = 0;
   const allIds = ctx.members.map((m) => m.user_id);
   for (const e of ctx.expenses) {
-    if (!e.is_paid || modeOf(e) !== 'SHARED') continue;
+    if (!isSettleable(e)) continue;
     const krw = krwOf(e);
     if (krw == null || !e.paid_by) { skipped++; continue; }
     const splitIds = e.split_user_ids && e.split_user_ids.length > 0 ? e.split_user_ids : allIds;
@@ -236,6 +248,118 @@ export function settlementSummaryText(ctx: ExpenseCtx): string {
   const { transfers } = computeSettlement(ctx);
   if (transfers.length === 0) return '모두 정산이 맞아요. 보낼 돈이 없어요!';
   return '[정산 안내]\n' + transfers.map((t) => memberName(ctx, t.from) + ' → ' + memberName(ctx, t.to) + ' : ' + fmtKRW(t.amount)).join('\n');
+}
+
+/**
+ * 한 사람의 "실제 부담액" — 그 사람의 결제 완료된 개인 지출 전액 + 결제 완료된 공동 지출의
+ * n분의 1을 더한 값. 예산 요약 탭의 "{닉네임}의 예상 부담액" 카드가 쓴다.
+ * 정산 완료 처리된 공동 지출도 포함한다 — 정산은 "누가 누구에게 얼마 보낼지"의 문제일 뿐,
+ * 그 사람이 쓴 돈 자체는 그대로이기 때문(그래서 computeSettlement를 재사용하지 않는다).
+ */
+export function memberBurdenTotal(ctx: ExpenseCtx, userId: string): number {
+  const allIds = ctx.members.map((m) => m.user_id);
+  let total = 0;
+  for (const e of ctx.expenses) {
+    if (!e.is_paid) continue;
+    const krw = krwOf(e);
+    if (krw == null) continue;
+    if (modeOf(e) === 'PERSONAL') {
+      if (e.paid_by === userId) total += krw;
+      continue;
+    }
+    const splitIds = e.split_user_ids && e.split_user_ids.length > 0 ? e.split_user_ids : allIds;
+    if (splitIds.includes(userId)) total += krw / splitIds.length;
+  }
+  return total;
+}
+
+/**
+ * 멤버별 "실제 부담액" 텍스트 — 결제 완료된 개인 지출 + 결제 완료된 공동 지출의 n분의 1을
+ * 합산해 사람별로 정리한다. 지출명·메모까지 포함해 AI에 붙여넣어 예산 효율을 분석하기
+ * 좋게 만든 것 — "현재 사용" 카드의 복사 버튼이 쓴다.
+ *
+ * `selectedUserIds`를 주면 그 사람들 섹션만 텍스트에 포함한다(다중 선택 복사).
+ * 단, n분의 1 계산 자체는 선택 여부와 무관하게 전체 멤버 기준으로 그대로 하고, 필터는
+ * 마지막에 "어느 섹션을 보여줄지"에만 적용한다 — 선택되지 않은 사람이 있어도 선택된
+ * 사람의 공동 지출 분담액은 원래 몫(전체 인원 n분의 1) 그대로여야 하기 때문이다.
+ * 생략하거나 빈 배열을 주면 전체 멤버(+ 결제자 미지정) 섹션을 모두 포함한다.
+ *
+ * 예정(is_paid=false) 항목은 정산과 마찬가지로 포함하지 않는다 — "현재 사용" 카드가 보여주는
+ * 실제 지출 총액과 (필터 없을 때의) [합계]가 항상 일치해야 신뢰할 수 있는 자료가 된다.
+ * 환산 불가 항목(krwOf가 null)도 조용히 빼지 않고 "환산 불가"로 표시하되 합계엔 0으로
+ * 반영한다(원칙 3-1 — sumPaid/computeSettlement와 같은 처리).
+ *
+ * `tripPeriod`(예: "12.18 – 12.20")를 주면 제목 바로 아래 한 줄로 붙는다 — 나중에 이
+ * 텍스트만 따로 떼어놓고 봐도 어느 여행 건인지 알 수 있게 하기 위함.
+ */
+export function buildPersonalBreakdownText(ctx: ExpenseCtx, selectedUserIds?: string[], tripPeriod?: string | null): string {
+  interface Bucket { lines: string[]; total: number; }
+  const UNASSIGNED = '__unassigned__';
+  const perMember = new Map<string, Bucket>();
+  const ensure = (uid: string): Bucket => {
+    if (!perMember.has(uid)) perMember.set(uid, { lines: [], total: 0 });
+    return perMember.get(uid)!;
+  };
+  ctx.members.forEach((m) => ensure(m.user_id));
+  const allIds = ctx.members.map((m) => m.user_id);
+
+  for (const e of ctx.expenses) {
+    if (!e.is_paid) continue;
+    const krw = krwOf(e);
+    const detail = e.memo ? e.title + ' · ' + e.memo : e.title;
+    const localNote = e.currency !== 'KRW' ? ' (' + fmtAmount(e.amount, e.currency) + ')' : '';
+
+    if (modeOf(e) === 'PERSONAL') {
+      const amt = krw ?? 0;
+      const line = '- ' + detail + localNote + ' : ' + (krw != null ? fmtKRW(amt) : '환산 불가');
+      const b = ensure(e.paid_by ?? UNASSIGNED);
+      b.lines.push(line);
+      b.total += amt;
+    } else {
+      const splitIds = e.split_user_ids && e.split_user_ids.length > 0 ? e.split_user_ids : allIds;
+      if (splitIds.length === 0) continue;
+      const share = krw != null ? krw / splitIds.length : 0;
+      const settledNote = isSettled(e) ? ', 정산 완료' : '';
+      const line = '- ' + detail + localNote + ' (공동 ' + splitIds.length + '인분의 1' + settledNote + ') : ' + (krw != null ? fmtKRW(share) : '환산 불가');
+      splitIds.forEach((uid) => {
+        const b = ensure(uid);
+        b.lines.push(line);
+        b.total += share;
+      });
+    }
+  }
+
+  const filterSet = selectedUserIds && selectedUserIds.length > 0 ? new Set(selectedUserIds) : null;
+  const membersToShow = filterSet ? ctx.members.filter((m) => filterSet.has(m.user_id)) : ctx.members;
+
+  const sections = membersToShow.map((m) => {
+    const b = perMember.get(m.user_id)!;
+    const body = b.lines.length > 0 ? b.lines.join('\n') : '- (내역 없음)';
+    return '■ ' + (m.display_name || '멤버') + '\n' + body + '\n합계: ' + fmtKRW(b.total);
+  });
+
+  // 결제자 미지정 몫은 특정 사람을 고른 게 아니므로, 필터 없이 전체를 볼 때만 덧붙인다
+  const unassigned = perMember.get(UNASSIGNED);
+  if (!filterSet && unassigned) {
+    sections.push('■ 결제자 미지정\n' + unassigned.lines.join('\n') + '\n합계: ' + fmtKRW(unassigned.total));
+  }
+
+  const grandTotal = membersToShow.reduce((acc, m) => acc + (perMember.get(m.user_id)?.total ?? 0), 0)
+    + (!filterSet && unassigned ? unassigned.total : 0);
+
+  const title = filterSet
+    ? '[개인별 지출 내역 — 선택: ' + membersToShow.map((m) => m.display_name || '멤버').join(', ') + ']'
+    : '[개인별 지출 내역]';
+
+  const headerLines = tripPeriod ? [title, tripPeriod] : [title];
+
+  return [
+    ...headerLines,
+    '',
+    sections.join('\n\n'),
+    '',
+    '[합계] ' + fmtKRW(grandTotal),
+  ].join('\n');
 }
 
 /* ══════════════ 환율 · 저장 payload ══════════════ */

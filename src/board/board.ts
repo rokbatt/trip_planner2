@@ -14,6 +14,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { loadGoogleMapsScript, extractPlaceResult, suggestGateFromCategory, getPlacePredictions, getPlaceDetails, getCategoryLabel, resetGoogleServices } from '../utils/googleMaps';
 import type { GooglePlaceResult, PlacePrediction } from '../utils/googleMaps';
 import { insertGooglePlace, rehostPhoto } from '../trips/addGooglePlace';
+import { MarkerClusterer } from '@googlemaps/markerclusterer';
 import './board.css';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -60,6 +61,11 @@ const ICON_SWAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const ICON_EXPAND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
 const ICON_COLLAPSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v3a2 2 0 0 1-2 2H4M15 3v3a2 2 0 0 0 2 2h3M4 15h3a2 2 0 0 1 2 2v3M21 15h-3a2 2 0 0 0-2 2v3"/></svg>';
 const ICON_GROUP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.8"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.8"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.8"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.8"/></svg>';
+const ICON_MAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4L3 6.5v13L9 17l6 2.5 6-2.5v-13L15 6.5 9 4z"/><path d="M9 4v13M15 6.5v13"/></svg>';
+
+/** 게이트 하나에 그룹이 2개 이상일 때 서로 구분되도록 순환시키는 팔레트.
+ * 첫 색은 기존 "활주로 조명" 주황을 그대로 유지(그룹이 1개뿐인 기존 화면은 안 바뀜). */
+const GROUP_COLOR_PALETTE = ['#F5A623', '#2A78D6', '#1BAF7A', '#E87BA4', '#4A3AA7'];
 
 const GATES: GateConfig[] = [
   { key: '가고싶어', step: 'GATE 01', label: 'VISIT',    icon: ICON_PIN },
@@ -67,6 +73,113 @@ const GATES: GateConfig[] = [
   { key: '하고싶어', step: 'GATE 03', label: 'ACTIVITY', icon: ICON_TICKET },
   { key: '숙소',     step: 'GATE 04', label: 'STAY',     icon: ICON_BED },
 ];
+
+/** "지도로 보기"에서 핀 색을 게이트별로 구분 — STAY 화면 지도 범례와 같은 색을 그대로 써서
+ *  앱 전체에서 같은 의미(VISIT/FOOD/ACTIVITY/STAY)가 같은 색으로 일관되게 보이도록 함 */
+const BOARD_MOOD_COLOR: Record<string, string> = {
+  '가고싶어': '#E24B4A',
+  '먹고싶어': '#1D9E75',
+  '하고싶어': '#7F77DD',
+  '숙소': '#185FA5',
+};
+/* 핀 전용 선 아이콘 — 위쪽 UI용 ICON_* 는 작은 버튼에 맞춰 획이 얇아서, 지도 위에서 축소돼도
+ * 형태가 읽히도록 획이 굵고 실루엣이 단순한 별도 세트를 쓴다(STAY 지도의 PIN_IC_* 와 같은 그림).
+ * shortlist.ts와 모듈을 공유하지 않는 것은 pinTearPath와 같은 이유(번들 분리). */
+const BD_PIN_IC_LANDMARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M4 21V10M20 21V10M2 10l10-6 10 6M6 10v7M10 10v7M14 10v7M18 10v7"/></svg>';
+const BD_PIN_IC_FORK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v7a2 2 0 0 0 2 2v11M7 2v7M9 2v7M11 2v7M16 2c-1.5 0-3 1.5-3 4s1.5 4 3 4v10"/></svg>';
+const BD_PIN_IC_TARGET = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/></svg>';
+const BD_PIN_IC_BED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6M3 18v2M21 18v2M3 12V8a2 2 0 0 1 2-2h4v6"/></svg>';
+const BD_PIN_IC_BAG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l1 12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L6 8Z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>';
+const BD_PIN_IC_PLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 19.5l19-7.5-19-7.5 4 7.5-4 7.5z"/></svg>';
+const BD_PIN_IC_COFFEE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13v6a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V8Z"/><path d="M17 9h1.5a2.5 2.5 0 0 1 0 5H17"/><path d="M8 2v2M11 2v2M14 2v2"/></svg>';
+const BD_PIN_IC_BREAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c-4 0-9 3-9 8 0 6 5 10 9 10s9-4 9-10c0-5-5-8-9-8Z"/><path d="M7 14c1-2 2-3 5-3s4 1 5 3"/></svg>';
+const BD_PIN_IC_GLASS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14l-7 9-7-9Z"/><path d="M12 12v9M8 21h8"/></svg>';
+const BD_PIN_IC_TREE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 7 9h3l-4 6h4l-3 5h10l-3-5h4l-4-6h3L12 2Z"/><path d="M12 22v-4"/></svg>';
+const BD_PIN_IC_TEMPLE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v3M12 5l8 6H4l8-6Z"/><path d="M5 11v9h14v-9"/><path d="M10 20v-5h4v5"/></svg>';
+const BD_PIN_IC_FERRIS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16M6.3 6.3l11.4 11.4M17.7 6.3 6.3 17.7"/></svg>';
+
+/** place.category → 핀 아이콘. 게이트 색(4종)만으로는 같은 색 안에서 카페/식당/박물관이 구분되지
+ *  않아서, 색은 게이트로 두고 "무엇인지"는 아이콘으로 한 겹 더 나눈다. STAY 지도의
+ *  PIN_CATEGORY_ICON과 같은 매핑이라 두 화면의 같은 장소가 같은 그림으로 보인다. */
+const BOARD_CATEGORY_PIN_ICON: Record<string, string> = {
+  '카페': BD_PIN_IC_COFFEE,
+  '음식점': BD_PIN_IC_FORK,
+  '베이커리': BD_PIN_IC_BREAD,
+  '바': BD_PIN_IC_GLASS,
+  '나이트라이프': BD_PIN_IC_GLASS,
+  '관광명소': BD_PIN_IC_LANDMARK,
+  '박물관': BD_PIN_IC_LANDMARK,
+  '미술관': BD_PIN_IC_LANDMARK,
+  '공원': BD_PIN_IC_TREE,
+  '종교시설': BD_PIN_IC_TEMPLE,
+  '명소': BD_PIN_IC_LANDMARK,
+  '테마파크': BD_PIN_IC_FERRIS,
+  '쇼핑': BD_PIN_IC_BAG,
+  '숙소': BD_PIN_IC_BED,
+  '공항': BD_PIN_IC_PLANE,
+};
+/** category가 비어 있을 때의 게이트별 폴백 아이콘 */
+const BOARD_MOOD_PIN_FALLBACK: Record<string, string> = {
+  '가고싶어': BD_PIN_IC_LANDMARK,
+  '먹고싶어': BD_PIN_IC_FORK,
+  '하고싶어': BD_PIN_IC_TARGET,
+  '숙소': BD_PIN_IC_BED,
+};
+
+/** 지도 범례 칩에 쓰는 게이트 라벨 — 게이트 이름(VISIT 등)만으로는 뜻이 안 와닿아 한글을 같이 씀 */
+const BOARD_GATE_LEGEND_LABEL: Record<string, string> = {
+  '가고싶어': '관광(VISIT)',
+  '먹고싶어': '맛집(FOOD)',
+  '하고싶어': '액티비티(ACTIVITY)',
+  '숙소': '숙소(STAY)',
+};
+
+/** 보드 지도 스타일 — 구글 기본 업체 POI 아이콘(작은 색색 마커들)을 지우고 나머지 POI도
+ *  채도를 낮춰서, 지도 위에서 "색이 있는 건 내가 담은 장소뿐"이 되도록 한다.
+ *  ROUTE/타임라인/STAY 지도가 이미 같은 이유로 각자 스타일을 쓰고 있었는데 이 화면만
+ *  구글 기본 스타일이라 우리 핀이 구글 POI에 묻혀 있었다(= 핀이 구분 안 되던 주된 원인).
+ *  도로·건물·지명은 그대로 둬서 "어디쯤인지" 맥락은 잃지 않는다. */
+const MAP_STYLE_BOARD = [
+  { featureType: 'poi.business', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.business', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi', elementType: 'labels.icon', stylers: [{ saturation: -55 }, { lightness: 35 }] },
+  { featureType: 'poi', elementType: 'labels.text', stylers: [{ visibility: 'simplified' }] },
+  { featureType: 'transit', elementType: 'labels.icon', stylers: [{ saturation: -50 }, { lightness: 30 }] },
+];
+
+/** 아이콘 svg 문자열에서 <svg> 껍데기만 벗겨 내부 마크업만 남긴다 — 핀 색상과 통일하기 위해
+ *  감싸는 <g>에서 색/굵기를 한 번에 지정(STAY 지도의 pinIconInner와 동일한 방식). */
+function pinIconInner(svg: string): string {
+  return svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
+}
+
+/** 반지름 r인 원(중심 cx,cy)에 외부 접선 두 개를 그어 tip에서 만나는 "물방울(핀)" 윤곽 경로 —
+ *  STAY 지도(shortlist.ts)의 pinTearPath와 같은 수식. 화면이 서로 달라 모듈을 공유하지
+ *  않고 복제했다(board.ts가 shortlist.ts 전체를 끌고 들어오면 번들이 얽힘). */
+function pinTearPath(cx: number, cy: number, r: number, tipY: number): string {
+  const d = tipY - cy;
+  const phi = Math.acos(r / d);
+  const a1 = Math.PI / 2 - phi;
+  const a2 = Math.PI / 2 + phi;
+  const t1x = cx + r * Math.cos(a1);
+  const t1y = cy + r * Math.sin(a1);
+  const t2x = cx + r * Math.cos(a2);
+  const t2y = cy + r * Math.sin(a2);
+  return (
+    'M' + t1x + ' ' + t1y +
+    ' A' + r + ' ' + r + ' 0 1 0 ' + t2x + ' ' + t2y +
+    ' L' + cx + ' ' + tipY +
+    ' Z'
+  );
+}
+
+const BOARD_PIN_HEAD_R = 15.6; // 13 * 1.2 — 핀 전체 크기를 20% 키워달라는 요청
+const BOARD_PIN_TAIL_RATIO = 1.45;
+/** 핀 바깥 흰 테두리 두께 — 지도 배경색과 상관없이 핀이 또렷하게 떠 보이는 핵심.
+ *  머리 반지름과 같은 비율로 키워서 두께감이 이전과 동일하게 유지되도록 함. */
+const BOARD_PIN_RING = 2.16; // 1.8 * 1.2
+/** 마우스오버/선택 시 핀 확대 배율 */
+const BOARD_PIN_HOVER_SCALE = 1.22;
 
 /* ── 규칙 기반 분류 (진짜 AI 아님) ──
  * 키워드 매칭 점수로 게이트를 추천. 향후 Gemini 연동 시 이 함수만 교체하면 됨. */
@@ -217,6 +330,19 @@ let boardContainer: HTMLElement | null = null; // 여행지 전환 시 재렌더
 let boardDestinations: TripDestination[] = [];
 let boardActiveDest: TripDestination | null = null;
 
+/* ── 지도로 보기 (보드 전체가 지도 화면으로 전환) ──
+ * 이미 메모리에 있는 placesCache를 그대로 쓰고(추가 API 호출 없음), Google Maps 스크립트도
+ * 버튼을 눌렀을 때만 불러온다 — STAY 등 다른 화면에서 이미 불러온 적 있으면 캐시돼 있어
+ * 거의 즉시 뜬다(3-2 원칙: 불필요한 API 재호출 방지). */
+let boardMapViewActive = false;
+let boardMapInstance: any = null;
+let boardMapMarkers: any[] = [];
+/** 마커를 게이트(mood)와 짝지어 들고 있는 목록 — 범례 필터가 게이트별로 켜고 끄는 데 씀 */
+let boardMapEntries: Array<{ marker: any; mood: string }> = [];
+let boardMapClusterer: any = null;
+/** 범례에서 꺼둔 게이트들. 지도를 다시 열어도 유지되도록 모듈 수준에 둔다 */
+const boardMapHiddenMoods = new Set<string>();
+
 /* ── 게이트 하나만 크게 보기(포커스 모드) ──
  * 저장된 장소 데이터는 전혀 건드리지 않는다 — 이미 그려진 DOM에 클래스만 토글해서
  * 인박스/시큐리티/다른 게이트를 잠깐 숨기고 이 게이트의 카드 목록만 가로로 넓게 펼친다.
@@ -285,6 +411,13 @@ export function teardownBoard(): void {
   closeDestSwitcher();
   cleanupAutocomplete();
   exitGroupSelectMode();
+  closeAiExportModal();
+  boardMapViewActive = false;
+  boardMapInstance = null;
+  boardMapClusterer?.clearMarkers();
+  boardMapClusterer = null;
+  boardMapMarkers = [];
+  boardMapEntries = [];
 }
 
 /** 자동완성 드롭다운/디바운스 타이머 정리 */
@@ -449,6 +582,7 @@ export async function renderBoardContent(container: HTMLElement, tripId: string)
     '<div class="bd-layout" id="bd-layout">',
     '  <div class="bd-loading">보드를 불러오는 중...</div>',
     '</div>',
+    '<div class="bd-map-view" id="bd-map-view" hidden></div>',
     '<div class="bd-toast-container" id="bd-toast-container"></div>',
   ].join('');
 
@@ -531,30 +665,32 @@ function destMeta(d: TripDestination): string {
 }
 
 /**
- * 상단 여행지 바. 마이그레이션 전(합성 여행지)에는 렌더하지 않아 기존 화면과 동일.
- * 실제 여행지가 여러 곳이면 "여행지 변경" 드롭다운만 보여준다 — 여행지 목록을 카드/탭으로
- * 늘어놓지 않는다(워크스페이스 헤더의 여행지·날짜 표시가 활성 여행지를 실시간으로 따라가므로
- * 여기서 또 보여주면 중복). 여행지 추가·이름/기간 편집·삭제는 이제 이 보드가 아니라
+ * 상단 여행지 바. "지도로 보기" 토글은 여행지 마이그레이션 여부와 무관하게 항상 보여주고,
+ * "여행지 변경" 드롭다운은 실제 여행지가 여러 곳일 때만 같은 줄에 덧붙인다 — 여행지 목록을
+ * 카드/탭으로 늘어놓지 않는다(워크스페이스 헤더의 여행지·날짜 표시가 활성 여행지를 실시간으로
+ * 따라가므로 여기서 또 보여주면 중복). 여행지 추가·이름/기간 편집·삭제는 이제 이 보드가 아니라
  * "내 여행" 카드의 편집 모달에서 이뤄진다 — 보드는 "전환"만 담당.
  */
 function renderDestBar(container: HTMLElement, tripId: string): void {
   const wrap = container.querySelector('#bd-dest-bar-wrap') as HTMLElement | null;
   if (!wrap) return;
 
-  // 마이그레이션 전(합성 단일 여행지) → 바 없음(기존과 동일)
-  if (!boardActiveDest || isSyntheticDestination(boardActiveDest.id)) {
-    wrap.innerHTML = '';
-    return;
-  }
+  const destSwitchBtn = (!boardActiveDest || isSyntheticDestination(boardActiveDest.id))
+    ? ''
+    : '<button type="button" class="bd-dest-switch" id="bd-dest-switch">' + ICON_SWAP + ' 여행지 변경</button>';
 
   wrap.innerHTML = [
     '<div class="bd-dest-bar" id="bd-dest-bar">',
-    '  <button type="button" class="bd-dest-switch" id="bd-dest-switch">' + ICON_SWAP + ' 여행지 변경</button>',
+    '  <button type="button" class="bd-map-view-btn" id="bd-map-view-btn">' + ICON_MAP + ' 지도로 보기</button>',
+    destSwitchBtn,
     '</div>',
   ].join('');
 
   wrap.querySelector('#bd-dest-switch')?.addEventListener('click', (e) => {
     openDestSwitcher(container, tripId, e.currentTarget as HTMLElement);
+  });
+  wrap.querySelector('#bd-map-view-btn')?.addEventListener('click', () => {
+    void toggleBoardMapView(container, tripId);
   });
 }
 
@@ -616,6 +752,317 @@ function openDestSwitcher(container: HTMLElement, tripId: string, anchor: HTMLEl
     }
   };
   setTimeout(() => document.addEventListener('mousedown', destSwitcherDismiss!), 0);
+}
+
+/* ══════════════════ 지도로 보기 ══════════════════
+ * 보드 레이아웃(인박스+게이트)을 통째로 지도 화면으로 바꿔치기한다. 새로 서버에 물어보지
+ * 않고 이미 메모리에 있는 placesCache를 그대로 지도에 뿌리고, Google Maps 스크립트도
+ * 버튼을 누른 시점에만 불러온다(다른 화면에서 이미 불러온 적 있으면 캐시돼 있어 즉시 뜬다). */
+
+/** 지도 전환/복귀에 맞춰 토글 버튼 라벨도 같이 바꿔준다 */
+function updateMapViewButtonLabel(container: HTMLElement): void {
+  const btn = container.querySelector('#bd-map-view-btn') as HTMLElement | null;
+  if (!btn) return;
+  btn.innerHTML = boardMapViewActive
+    ? ICON_BACK_ARROW + ' 보드로 돌아가기'
+    : ICON_MAP + ' 지도로 보기';
+}
+
+async function toggleBoardMapView(container: HTMLElement, tripId: string): Promise<void> {
+  boardMapViewActive = !boardMapViewActive;
+  updateMapViewButtonLabel(container);
+
+  const layout = container.querySelector('#bd-layout') as HTMLElement | null;
+  const mapView = container.querySelector('#bd-map-view') as HTMLElement | null;
+  if (!layout || !mapView) return;
+
+  if (!boardMapViewActive) {
+    layout.hidden = false;
+    mapView.hidden = true;
+    return;
+  }
+
+  layout.hidden = true;
+  mapView.hidden = false;
+  await renderBoardMapView(mapView, tripId);
+}
+
+/** STAY 지도(shortlist.ts)와 같은 물방울 모양 핀 — 게이트 색으로 채운 몸통 + 흰 테두리 +
+ *  흰 원 + 카테고리 선 아이콘. 앱 전체에서 핀 생김새가 하나로 통일되도록 STAY와 같은 수식을 씀.
+ *  흰 테두리(ring)는 지도 배경이 어떤 색이든 핀 실루엣이 끊겨 보이지 않게 하는 장치라
+ *  구분이 잘 되게 하는 데 색 자체보다 효과가 크다.
+ *  scale로 확대 핀(마우스오버/선택 상태)을 같은 수식에서 만든다. */
+function buildBoardMapMarkerIcon(
+  g: any,
+  mood: string | null,
+  category?: string | null,
+  opts?: { scale?: number },
+): any {
+  const color = BOARD_MOOD_COLOR[mood ?? ''] ?? '#6B7A93';
+  const iconSvg =
+    BOARD_CATEGORY_PIN_ICON[category ?? ''] ||
+    BOARD_MOOD_PIN_FALLBACK[mood ?? ''] ||
+    BD_PIN_IC_LANDMARK;
+  const scale = opts?.scale ?? 1;
+  const r = BOARD_PIN_HEAD_R * scale;
+  const tail = r * BOARD_PIN_TAIL_RATIO;
+  const ring = BOARD_PIN_RING * scale;
+  const pad = 6 * scale;
+  // 원래 도형(그림자 포함)을 ring만큼 사방으로 띄운 캔버스 — 테두리가 잘리지 않게
+  const w = Math.ceil(r * 2 + pad + ring * 2);
+  const h = Math.ceil(r + tail + pad + ring * 2);
+  const cx = w / 2;
+  const tipY = h - ring - pad / 2;
+  const headCy = tipY - tail;
+  const whiteR = r - r * 0.26;
+  // 아이콘이 흰 원을 꽉 채우면 관람차·과녁처럼 선이 많은 그림이 뭉개져서 살짝 여백을 둔다
+  const iconSize = whiteR * 1.42;
+  const iconScale = iconSize / 24;
+  // 화면상 실제 획 두께를 고정(1.65px)하기 위해 아이콘 축소배율만큼 되곱해준다
+  const iconStroke = 1.65 / iconScale;
+
+  const tear = pinTearPath(cx, headCy, r, tipY);
+  const shadow =
+    '<ellipse cx="' + cx + '" cy="' + (tipY + r * 0.1) + '" rx="' + r * 0.42 + '" ry="' + r * 0.15 + '" fill="rgba(11,42,92,0.18)"/>';
+  const inner =
+    '<g transform="translate(' + (cx - iconSize / 2) + ',' + (headCy - iconSize / 2) + ') scale(' + iconScale +
+    ')" fill="none" stroke="' + color + '" stroke-width="' + iconStroke +
+    '" stroke-linecap="round" stroke-linejoin="round">' + pinIconInner(iconSvg) + '</g>';
+
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+    shadow +
+    // 같은 경로를 흰 굵은 선으로 한 번 먼저 그려 바깥 테두리를 만들고, 그 위에 색을 채운다
+    '<path d="' + tear + '" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="' + ring * 2 + '" stroke-linejoin="round"/>' +
+    '<path d="' + tear + '" fill="' + color + '"/>' +
+    '<circle cx="' + cx + '" cy="' + headCy + '" r="' + whiteR + '" fill="#FFFFFF"/>' +
+    inner +
+    '</svg>';
+
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new g.maps.Size(w, h),
+    anchor: new g.maps.Point(cx, tipY),
+  };
+}
+
+/** 클러스터에 묶인 마커들 중 가장 많은 게이트의 색을 고른다(동률이면 먼저 나온 쪽).
+ *  marker.__bdMood는 마커 생성 시 심어둔 값(renderBoardMapView 참고). */
+function dominantClusterColor(markers: any[]): string {
+  const counts = new Map<string, number>();
+  for (const m of markers) {
+    const mood = m.__bdMood ?? '';
+    counts.set(mood, (counts.get(mood) ?? 0) + 1);
+  }
+  let best = '';
+  let bestCount = -1;
+  for (const [mood, n] of counts) {
+    if (n > bestCount) { best = mood; bestCount = n; }
+  }
+  return BOARD_MOOD_COLOR[best] ?? '#6B7A93';
+}
+
+/** 축소했을 때 겹치는 핀들을 묶어 보여주는 클러스터 버블 — 고정된 남색 대신, 묶인 핀들 중
+ *  가장 많은 게이트의 색을 그대로 써서 "이 안에 뭐가 묶여 있는지"가 색만 봐도 짐작되게 한다.
+ *  (게이트가 섞여 있어도 다수색 하나로 통일 — 파이차트처럼 쪼개면 숫자가 안 보일 만큼 작아짐) */
+function buildBoardClusterIcon(g: any, count: number, color: string): any {
+  const size = count < 10 ? 38 : count < 30 ? 46 : 54;
+  const c = size / 2;
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">' +
+    '<circle cx="' + c + '" cy="' + c + '" r="' + (c - 1) + '" fill="' + color + '2A"/>' +
+    '<circle cx="' + c + '" cy="' + c + '" r="' + (c - 3) + '" fill="#FFFFFF"/>' +
+    '<circle cx="' + c + '" cy="' + c + '" r="' + (c - 5) + '" fill="' + color + '"/>' +
+    '<text x="' + c + '" y="' + c + '" text-anchor="middle" dominant-baseline="central" ' +
+    'font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" ' +
+    'font-size="' + (size * 0.36) + '" font-weight="700" fill="#FFFFFF">' + count + '</text>' +
+    '</svg>';
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new g.maps.Size(size, size),
+    anchor: new g.maps.Point(c, c),
+  };
+}
+
+async function renderBoardMapView(mapView: HTMLElement, tripId: string): Promise<void> {
+  mapView.innerHTML = [
+    '<div class="bd-map-view-canvas" id="bd-map-view-canvas">',
+    '  <div class="bd-map-view-loading">지도를 불러오는 중...</div>',
+    '</div>',
+    '<div class="bd-map-view-legend">',
+    ...GATES.map((gt) =>
+      '  <button type="button" class="bd-map-legend-chip" data-legend-mood="' + gt.key + '" aria-pressed="true">' +
+      '<span class="bd-map-legend-dot" style="--dot:' + BOARD_MOOD_COLOR[gt.key] + '"></span>' +
+      escapeHtml(BOARD_GATE_LEGEND_LABEL[gt.key] ?? gt.label) +
+      '</button>'),
+    '  <span class="bd-map-legend-hint">칩을 눌러 켜고 끌 수 있어요</span>',
+    '</div>',
+  ].join('');
+
+  const mapEl = mapView.querySelector('#bd-map-view-canvas') as HTMLElement;
+
+  try {
+    await loadGoogleMapsScript();
+  } catch (e) {
+    mapEl.innerHTML = '<div class="bd-map-view-empty">지도를 불러오지 못했어요.</div>';
+    return;
+  }
+  // 로딩되는 동안 사용자가 다시 보드로 돌아갔으면 여기서 멈춘다(뒤늦게 지도가 튀어나오지 않게)
+  if (!boardMapViewActive) return;
+
+  const g = (window as any).google;
+  if (!g?.maps) return;
+
+  const places = (boardActiveDest
+    ? Array.from(placesCache.values()).filter((p) => placeBelongsToDestination(p, boardActiveDest!))
+    : Array.from(placesCache.values())
+  ).filter((p) => p.lat != null && p.lng != null);
+
+  if (places.length === 0) {
+    mapEl.innerHTML = '<div class="bd-map-view-empty">지도에 표시할 장소가 아직 없어요.<br/>구글 검색으로 담은 장소(좌표가 있는 장소)부터 지도에 표시돼요.</div>';
+    return;
+  }
+
+  mapEl.innerHTML = '';
+  const avgLat = places.reduce((s, p) => s + p.lat!, 0) / places.length;
+  const avgLng = places.reduce((s, p) => s + p.lng!, 0) / places.length;
+
+  // 구글 기본 POI 아이콘을 눌러 우리 핀이 묻히지 않게 함(MAP_STYLE_BOARD 주석 참고).
+  // clickableIcons:false — 구글 POI를 눌러도 구글 정보창이 뜨지 않게(우리 정보창만 뜨도록)
+  const map = new g.maps.Map(mapEl, {
+    center: { lat: avgLat, lng: avgLng },
+    zoom: 13,
+    gestureHandling: 'greedy',
+    styles: MAP_STYLE_BOARD,
+    clickableIcons: false,
+  });
+  boardMapInstance = map;
+
+  boardMapClusterer?.clearMarkers();
+  boardMapClusterer = null;
+  boardMapMarkers.forEach((m) => m.setMap(null));
+  boardMapMarkers = [];
+  boardMapEntries = [];
+
+  const bounds = new g.maps.LatLngBounds();
+  const infoWindow = new g.maps.InfoWindow();
+  // 마우스오버/선택으로 확대된 핀을 원래 크기로 되돌리기 위해 기본 아이콘을 들고 있는다
+  let selectedMarker: any = null;
+
+  places.forEach((p) => {
+    const baseIcon = buildBoardMapMarkerIcon(g, p.mood, p.category);
+    const bigIcon = buildBoardMapMarkerIcon(g, p.mood, p.category, { scale: BOARD_PIN_HOVER_SCALE });
+    const marker = new g.maps.Marker({
+      position: { lat: p.lat, lng: p.lng },
+      title: p.name,
+      icon: baseIcon,
+    });
+
+    marker.addListener('mouseover', () => {
+      if (marker === selectedMarker) return;
+      marker.setIcon(bigIcon);
+      marker.setZIndex(900);
+    });
+    marker.addListener('mouseout', () => {
+      if (marker === selectedMarker) return;
+      marker.setIcon(baseIcon);
+      marker.setZIndex(null);
+    });
+
+    marker.addListener('click', () => {
+      // 직전에 선택돼 있던 핀은 기본 크기로 되돌린다
+      if (selectedMarker && selectedMarker !== marker) selectedMarker.__bdReset?.();
+      selectedMarker = marker;
+      marker.setIcon(bigIcon);
+      marker.setZIndex(1000);
+      const gate = GATES.find((gt) => gt.key === p.mood);
+      infoWindow.setContent([
+        '<div class="bd-map-infowin">',
+        p.photo_url ? '<div class="bd-map-infowin-photo" style="background-image:url(\'' + p.photo_url + '\')"></div>' : '',
+        '<div class="bd-map-infowin-name">' + escapeHtml(p.name) + '</div>',
+        gate ? '<div class="bd-map-infowin-gate">' + gate.label + '</div>' : '',
+        typeof p.google_rating === 'number' ? '<div class="bd-map-infowin-rating">★ ' + p.google_rating.toFixed(1) + '</div>' : '',
+        '<button type="button" class="bd-map-infowin-detail" id="bd-map-infowin-detail">상세보기</button>',
+        '</div>',
+      ].join(''));
+      infoWindow.open({ map, anchor: marker });
+      g.maps.event.addListenerOnce(infoWindow, 'domready', () => {
+        document.getElementById('bd-map-infowin-detail')?.addEventListener('click', () => {
+          mapEl.dispatchEvent(new CustomEvent('mongsil:openPlaceDetail', { detail: { place: p }, bubbles: true }));
+        });
+      });
+    });
+
+    // 선택 해제 시 되돌리는 방법을 마커 자신이 들고 있게 해서, 위 click 핸들러가
+    // 다른 마커의 baseIcon을 몰라도 되도록 한다
+    marker.__bdReset = () => {
+      marker.setIcon(baseIcon);
+      marker.setZIndex(null);
+    };
+    // 클러스터 버블 색을 정할 때 "이 마커가 어느 게이트였는지" 되짚어보는 용도
+    marker.__bdMood = p.mood ?? '';
+
+    boardMapMarkers.push(marker);
+    boardMapEntries.push({ marker, mood: p.mood ?? '' });
+    bounds.extend({ lat: p.lat, lng: p.lng });
+  });
+
+  // 정보창을 닫으면 선택 상태도 푼다
+  infoWindow.addListener('closeclick', () => {
+    selectedMarker?.__bdReset?.();
+    selectedMarker = null;
+  });
+
+  // 축소하면 겹치는 핀들을 개수 버블로 묶는다 — 핀이 빽빽할 때 서로 가려지는 문제 해결.
+  // 지도를 닫았다 다시 열어도 범례에서 꺼둔 게이트는 계속 꺼져 있어야 하므로 처음부터 걸러서 넣는다
+  boardMapClusterer = new MarkerClusterer({
+    map,
+    markers: boardMapEntries.filter((e) => !boardMapHiddenMoods.has(e.mood)).map((e) => e.marker),
+    renderer: {
+      render: ({ count, position, markers }: any) =>
+        new g.maps.Marker({
+          position,
+          icon: buildBoardClusterIcon(g, count, dominantClusterColor(markers)),
+          zIndex: 500 + count,
+        }),
+    },
+  });
+
+  bindBoardMapLegendFilter(mapView);
+
+  if (!bounds.isEmpty()) map.fitBounds(bounds, 48);
+}
+
+/** 범례 칩 = 게이트별 표시/숨김 토글. 담은 장소가 많아지면 네 게이트가 한 지도에 다 겹쳐서
+ *  보기 어려워지므로, 지금 보고 싶은 게이트만 남길 수 있게 한다. */
+function bindBoardMapLegendFilter(mapView: HTMLElement): void {
+  mapView.querySelectorAll('[data-legend-mood]').forEach((el) => {
+    const chip = el as HTMLButtonElement;
+    const mood = chip.dataset.legendMood!;
+    chip.setAttribute('aria-pressed', String(!boardMapHiddenMoods.has(mood)));
+    chip.classList.toggle('off', boardMapHiddenMoods.has(mood));
+
+    chip.addEventListener('click', () => {
+      if (boardMapHiddenMoods.has(mood)) boardMapHiddenMoods.delete(mood);
+      else boardMapHiddenMoods.add(mood);
+      chip.setAttribute('aria-pressed', String(!boardMapHiddenMoods.has(mood)));
+      chip.classList.toggle('off', boardMapHiddenMoods.has(mood));
+      applyBoardMapMoodFilter();
+    });
+  });
+}
+
+/** 숨긴 게이트의 마커를 지도와 클러스터러 양쪽에서 빼고, 남은 것만 다시 묶는다.
+ *  (클러스터러가 마커의 지도 표시를 직접 관리하므로 setMap만 만져서는 안 되고
+ *   clearMarkers → addMarkers로 대상 집합 자체를 갈아끼워야 한다) */
+function applyBoardMapMoodFilter(): void {
+  if (!boardMapClusterer) return;
+  const visible = boardMapEntries.filter((e) => !boardMapHiddenMoods.has(e.mood)).map((e) => e.marker);
+  boardMapClusterer.clearMarkers();
+  boardMapEntries.forEach((e) => {
+    if (boardMapHiddenMoods.has(e.mood)) e.marker.setMap(null);
+  });
+  boardMapClusterer.addMarkers(visible);
 }
 
 /* ── 실시간 동기화 ── */
@@ -750,7 +1197,10 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
 
   inbox.innerHTML = [
     '<div class="bd-inbox-header">',
-    '  <div class="bd-inbox-eyebrow">CHECK-IN COUNTER</div>',
+    '  <div class="bd-inbox-header-top">',
+    '    <div class="bd-inbox-eyebrow">CHECK-IN COUNTER</div>',
+    '    <button type="button" class="bd-export-btn" id="bd-export-btn" title="지금까지 모은 장소를 텍스트로 내보내기">' + ICON_EXTERNAL + '<span>AI로 내보내기</span></button>',
+    '  </div>',
     '  <div class="bd-inbox-title">아이디어 체크인</div>',
     '</div>',
     '<form class="bd-inbox-form" id="bd-inbox-form">',
@@ -819,6 +1269,8 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
 
   bindAiPicksToggle(inbox, tripId);
   bindPopularSites(inbox);
+
+  inbox.querySelector('#bd-export-btn')?.addEventListener('click', () => openAiExportModal());
 
   return inbox;
 }
@@ -1077,6 +1529,148 @@ function buildInboxEmpty(): string {
     '  <div class="bd-empty-hint">🎤 통화 중 나온 아이디어를 기록하세요</div>',
     '</div>',
   ].join('');
+}
+
+/* ══════════════════ AI로 내보내기 — 담아둔 장소를 텍스트로 정리 ══════════════════
+ * 다른 AI(ChatGPT/Gemini 등)에 붙여넣고 이어서 요청사항을 적으면, 그 AI가 이 장소들
+ * 기준으로 일정을 짜거나 그룹핑을 해주는 식으로 쓰라는 용도. 그래서 순수 데이터만 담고
+ * (지어내지 않고 실제 저장된 값만), AI에게 보내는 지시문은 넣지 않는다 — 지시는 사용자가
+ * 붙여넣은 뒤 직접 이어서 적는 몫. */
+function formatExportPlaceLine(p: Place): string {
+  const bits: string[] = [];
+  if (p.category) bits.push(p.category);
+  if (typeof p.google_rating === 'number') bits.push('★' + p.google_rating.toFixed(1));
+  const meta = bits.length ? ' (' + bits.join(', ') + ')' : '';
+  const addr = p.address ? ' — ' + p.address : '';
+  return '- ' + p.name + meta + addr;
+}
+
+function buildAiExportText(): string {
+  const trip = store.get('currentTrip');
+  const destName = boardActiveDest && !isSyntheticDestination(boardActiveDest.id)
+    ? boardActiveDest.name
+    : (trip?.name ?? '이번 여행');
+
+  const places = boardActiveDest
+    ? Array.from(placesCache.values()).filter((p) => placeBelongsToDestination(p, boardActiveDest!))
+    : Array.from(placesCache.values());
+
+  const lines: string[] = ['[' + destName + ' 여행 · 브레인스토밍 보드에 모은 장소]', ''];
+  let hasAny = false;
+
+  GATES.forEach((gate) => {
+    const gatePlaces = places.filter((p) => p.mood === gate.key).sort(gateSortCompare);
+    if (gatePlaces.length === 0) return;
+    hasAny = true;
+
+    lines.push('■ ' + gate.key + ' (' + gate.label + ')');
+    let i = 0;
+    while (i < gatePlaces.length) {
+      const p = gatePlaces[i];
+      if (p.group_id) {
+        const groupId = p.group_id;
+        lines.push('[그룹: ' + (p.group_name || '그룹') + ']');
+        while (i < gatePlaces.length && gatePlaces[i].group_id === groupId) {
+          lines.push(formatExportPlaceLine(gatePlaces[i]));
+          i++;
+        }
+      } else {
+        lines.push(formatExportPlaceLine(p));
+        i++;
+      }
+    }
+    lines.push('');
+  });
+
+  const inboxPlaces = places.filter((p) => p.mood === null).sort((a, b) => a.sort_order - b.sort_order);
+  if (inboxPlaces.length > 0) {
+    hasAny = true;
+    lines.push('■ 체크인 대기 (아직 게이트로 분류 안 함)');
+    inboxPlaces.forEach((p) => lines.push(formatExportPlaceLine(p)));
+    lines.push('');
+  }
+
+  if (!hasAny) return '아직 담아둔 장소가 없어요. 먼저 브레인스토밍 보드에 장소를 몇 개 담아보세요.';
+
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  return lines.join('\n');
+}
+
+let aiExportOverlayEl: HTMLElement | null = null;
+let aiExportEscHandler: ((e: KeyboardEvent) => void) | null = null;
+
+function closeAiExportModal(): void {
+  aiExportOverlayEl?.remove();
+  aiExportOverlayEl = null;
+  if (aiExportEscHandler) {
+    document.removeEventListener('keydown', aiExportEscHandler);
+    aiExportEscHandler = null;
+  }
+}
+
+function openAiExportModal(): void {
+  closeAiExportModal();
+
+  const text = buildAiExportText();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'bd-export-overlay';
+  overlay.innerHTML = [
+    '<div class="bd-export-modal">',
+    '  <div class="bd-export-header">',
+    '    <div>',
+    '      <div class="bd-export-eyebrow">AI로 내보내기</div>',
+    '      <div class="bd-export-title">모은 장소를 텍스트로 복사하세요</div>',
+    '    </div>',
+    '    <button type="button" class="bd-export-close" id="bd-export-close">' + ICON_CLEAR + '</button>',
+    '  </div>',
+    '  <div class="bd-export-hint">아래 내용을 복사해서 ChatGPT·Gemini 같은 AI에 붙여넣고, 이어서 "이 장소들로 3박4일 일정 짜줘"처럼 요청사항을 적어보세요.</div>',
+    '  <textarea class="bd-export-textarea" id="bd-export-textarea" readonly></textarea>',
+    '  <div class="bd-export-actions">',
+    '    <button type="button" class="bd-export-copy" id="bd-export-copy">복사하기</button>',
+    '  </div>',
+    '</div>',
+  ].join('');
+
+  document.body.appendChild(overlay);
+  aiExportOverlayEl = overlay;
+
+  const textarea = overlay.querySelector('#bd-export-textarea') as HTMLTextAreaElement;
+  textarea.value = text;
+  requestAnimationFrame(() => {
+    textarea.focus();
+    textarea.select();
+  });
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeAiExportModal();
+  });
+  overlay.querySelector('#bd-export-close')?.addEventListener('click', () => closeAiExportModal());
+
+  const copyBtn = overlay.querySelector('#bd-export-copy') as HTMLButtonElement;
+  copyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(text).then(
+      () => {
+        const original = copyBtn.textContent;
+        copyBtn.textContent = '복사됨!';
+        copyBtn.classList.add('copied');
+        setTimeout(() => {
+          copyBtn.textContent = original;
+          copyBtn.classList.remove('copied');
+        }, 1600);
+      },
+      () => {
+        textarea.focus();
+        textarea.select();
+        alert('자동 복사에 실패했어요. 텍스트가 선택되어 있으니 Ctrl+C(⌘+C)로 복사해주세요.');
+      }
+    );
+  });
+
+  aiExportEscHandler = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') closeAiExportModal();
+  };
+  document.addEventListener('keydown', aiExportEscHandler);
 }
 
 /* ── AI Monthly Picks ── */
@@ -1536,6 +2130,7 @@ function renderGateListContent(listEl: HTMLElement, gateKey: string): void {
   }
 
   let i = 0;
+  let clusterIndex = 0; // 이 게이트 안에서 몇 번째로 만나는 그룹인지 — 그룹별로 다른 색을 쓰기 위함
   while (i < items.length) {
     const place = items[i];
     if (place.group_id) {
@@ -1545,7 +2140,8 @@ function renderGateListContent(listEl: HTMLElement, gateKey: string): void {
         members.push(items[i]);
         i++;
       }
-      listEl.appendChild(buildGroupCluster(groupId, members, gateKey));
+      listEl.appendChild(buildGroupCluster(groupId, members, gateKey, clusterIndex));
+      clusterIndex++;
     } else {
       listEl.appendChild(createBoardingCard(place));
       i++;
@@ -1559,13 +2155,15 @@ function renderGateListContent(listEl: HTMLElement, gateKey: string): void {
 }
 
 /** 그룹 멤버 카드들을 테두리 있는 박스 하나로 묶어서 보여준다 */
-function buildGroupCluster(groupId: string, members: Place[], gateKey: string): HTMLElement {
+function buildGroupCluster(groupId: string, members: Place[], gateKey: string, clusterIndex: number): HTMLElement {
   const cluster = document.createElement('div');
   cluster.className = 'bd-group-cluster';
   cluster.dataset.groupId = groupId;
   // 포커스 모드(게이트 하나만 크게 보기)에서 카드가 가로 그리드로 늘어설 때, 클러스터도
   // 멤버 수만큼 열을 차지해서 안의 카드들이 세로로 쌓이지 않고 가로로 나란히 보이게 함
   cluster.style.setProperty('--group-span', String(Math.max(1, Math.min(members.length, 4))));
+  // 게이트 안에 그룹이 2개 이상이면 서로 다른 색으로 구분
+  cluster.style.setProperty('--group-color', GROUP_COLOR_PALETTE[clusterIndex % GROUP_COLOR_PALETTE.length]);
 
   const name = members[0]?.group_name;
   cluster.innerHTML = [

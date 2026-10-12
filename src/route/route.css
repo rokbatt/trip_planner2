@@ -362,8 +362,11 @@
 }
 .rt-float-add:hover { background: var(--rt-ice); border-color: var(--rt-blue); transform: scale(1.08); }
 .rt-float-add svg { width: 12px; height: 12px; }
-.rt-float-add.added { color: #1D9E75; border-color: rgba(29,158,117,0.35); background: rgba(29,158,117,0.07); cursor: default; }
-.rt-float-add.added:hover { transform: none; background: rgba(29,158,117,0.07); }
+.rt-float-add.added { color: #1D9E75; border-color: rgba(29,158,117,0.35); background: rgba(29,158,117,0.07); }
+.rt-float-add .rt-add-off { display: none; }
+.rt-float-add.added:hover .rt-add-on { display: none; }
+.rt-float-add.added:hover .rt-add-off { display: flex; }
+.rt-float-add.added:hover { transform: none; color: #D64545; border-color: rgba(214,69,69,0.4); background: rgba(214,69,69,0.07); }
 
 .rt-float-empty {
   padding: 26px 14px; text-align: center; font-size: 11.5px; color: var(--rt-ink-4);
@@ -379,6 +382,64 @@
   transition: background var(--rt-ease);
 }
 .rt-float-adhoc:hover { background: var(--rt-ice); }
+
+/* ── 검색 결과 목록(구글맵 스타일) — 지도/근처 검색 결과가 있는 동안 좌측 패널이 이 목록으로 바뀐다 ── */
+.rt-float-results { display: none; }
+.rt-float-search.has-results { width: 300px; }
+.rt-float-search.has-results > .rt-float-search-input,
+.rt-float-search.has-results > .rt-float-filters,
+.rt-float-search.has-results > .rt-float-list,
+.rt-float-search.has-results > .rt-float-adhoc { display: none; }
+.rt-float-search.has-results .rt-float-results { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+/* 결과가 있는 채로 접혀 있으면 돋보기만 남겨 다시 펼 수 있게 */
+.rt-float-search.collapsed.has-results { width: auto; }
+.rt-float-search.collapsed.has-results > .rt-float-search-input { display: flex; }
+.rt-float-search.collapsed .rt-float-results { display: none; }
+
+.rt-sr-head {
+  display: flex; align-items: center; gap: 9px;
+  padding: 10px 12px; border-bottom: var(--rt-dash); flex-shrink: 0;
+}
+.rt-sr-back {
+  width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0; cursor: pointer;
+  border: 1px solid var(--rt-line); background: #fff; color: var(--rt-ink-2);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 2px rgba(11,42,92,0.06);
+  transition: background var(--rt-ease), color var(--rt-ease), border-color var(--rt-ease);
+}
+.rt-sr-back:hover { background: var(--rt-ice); color: var(--rt-blue); border-color: var(--rt-sky); }
+.rt-sr-back svg { width: 13px; height: 13px; }
+.rt-sr-head-text { min-width: 0; }
+.rt-sr-title {
+  font-size: 12.5px; font-weight: 800; color: var(--rt-ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rt-sr-sub { font-size: 10.5px; color: var(--rt-ink-3); margin-top: 1px; }
+.rt-sr-sub span { border-bottom: 1px dotted currentColor; cursor: help; }
+
+.rt-sr-list { overflow-y: auto; padding: 6px; min-height: 0; scrollbar-width: thin; }
+.rt-sr-list::-webkit-scrollbar { width: 6px; }
+.rt-sr-list::-webkit-scrollbar-thumb { background: rgba(130,150,170,0.3); border-radius: 3px; }
+.rt-sr-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-radius: 11px;
+  cursor: pointer; transition: background var(--rt-ease);
+}
+.rt-sr-item + .rt-sr-item { border-top: var(--rt-dash); }
+.rt-sr-item:hover { background: rgba(255,255,255,0.75); }
+.rt-sr-item.is-selected { background: var(--rt-ice); }
+.rt-sr-item:focus-visible { outline: 2px solid var(--rt-blue); outline-offset: -2px; }
+/* 사진 없는 곳은 지도의 검색 결과 핀과 같은 틸 아이콘 — 목록 줄과 핀이 같은 종류로 읽히게 */
+.rt-sr-item .rt-float-thumb { width: 46px; height: 46px; border-radius: 10px; color: #14B8A6; }
+.rt-sr-item .rt-float-thumb svg { width: 18px; height: 18px; }
+.rt-sr-meta {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 3px;
+  font-size: 10.5px; color: var(--rt-ink-3); margin-top: 3px;
+}
+.rt-sr-rate { display: inline-flex; align-items: center; gap: 2px; color: var(--rt-ink); font-weight: 700; }
+.rt-sr-rate svg { width: 10px; height: 10px; color: #F5A623; }
+.rt-sr-count { color: var(--rt-ink-3); font-variant-numeric: tabular-nums; }
+.rt-sr-norate { color: var(--rt-ink-4); }
+.rt-sr-dot { color: var(--rt-ink-4); margin: 0 1px; }
 .rt-float-adhoc svg { width: 13px; height: 13px; flex-shrink: 0; }
 .rt-float-adhoc.active { background: var(--rt-ice); color: var(--rt-ink); }
 .rt-float-adhoc.active::after {
@@ -497,9 +558,16 @@
 .rt-stopinfo-leg {
   display: flex; align-items: center; gap: 6px; padding: 8px 10px;
   font-size: 11px; font-weight: 700; color: var(--rt-ink); white-space: nowrap;
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: tabular-nums; text-decoration: none;
+  transition: background var(--rt-ease);
 }
+/* href가 있을 때만(=좌표가 있어 구글맵 링크를 만들 수 있을 때만) <a>로 렌더되어 눌러진다 */
+a.rt-stopinfo-leg { cursor: pointer; }
+a.rt-stopinfo-leg:hover { background: var(--rt-mist); }
 .rt-stopinfo-leg + .rt-stopinfo-leg { border-top: var(--rt-dash); }
+.rt-stopinfo-leg-gmaps { display: flex; color: var(--rt-ink-4); flex-shrink: 0; }
+.rt-stopinfo-leg-gmaps svg { width: 11px; height: 11px; }
+a.rt-stopinfo-leg:hover .rt-stopinfo-leg-gmaps { color: var(--rt-blue); }
 .rt-stopinfo-leg-arrow { color: var(--rt-ink-4); font-weight: 800; flex-shrink: 0; }
 .rt-stopinfo-leg-name {
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--rt-ink-2); font-weight: 600;
@@ -685,7 +753,7 @@
    Aero Blue 굵은 숫자. 여기 값은 그게 아직 안 붙었을 때의 안전한 기본값일 뿐.
    트리플류 여행 앱에서 자주 보이는 소프트필 "칩" — 원형 대신 둥근 사각형. */
 .rt-panel-badge {
-  grid-column: 1; width: 24px; height: 24px; border-radius: 8px;
+  grid-column: 1; width: 24px; height: 24px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   font-size: 11px; font-weight: 800; flex-shrink: 0;
   background: rgba(47,134,214,0.1);
@@ -798,6 +866,14 @@
   font-size: 9px; color: var(--rt-ink-4); text-align: center;
   padding: 0 12px 8px; flex-shrink: 0;
 }
+/* "실제 경로 보기" — 누르기 전까진 Route Matrix API를 안 부른다(비용 절감) */
+.rt-legs-real-btn {
+  border: none; background: none; padding: 0; margin-left: 2px;
+  color: var(--rt-blue); font-size: 9px; font-weight: 700; font-family: inherit;
+  text-decoration: underline; cursor: pointer;
+}
+.rt-legs-real-btn:hover { color: var(--rt-navy); }
+.rt-legs-real-btn:disabled { color: var(--rt-ink-4); cursor: default; text-decoration: none; }
 
 .rt-panel-actions { display: flex; gap: 8px; padding: 0 12px 14px; flex-shrink: 0; }
 .rt-panel-action {
@@ -1032,41 +1108,51 @@
 .rt-revisit-confirm:hover { filter: brightness(1.1); }
 
 /* ── 이동수단 변경 팝오버 ── */
+/* .rt-mode-popover는 document.body에 직접 붙는 팝오버라(.rt-shell 밖) --rt-* 토큰이
+   상속되지 않는다(#134에서 겪은 것과 같은 문제) — 모든 var()에 리터럴 폴백을 같이 적는다. */
 .rt-mode-popover {
   position: fixed; z-index: 70; min-width: 158px;
-  background: #fff; border: 1px solid var(--rt-line); border-radius: 12px;
-  box-shadow: var(--rt-shadow-lg); padding: 6px;
+  background: #fff; border: 1px solid var(--rt-line, rgba(130,150,170,0.18)); border-radius: 12px;
+  box-shadow: var(--rt-shadow-lg, 0 10px 28px rgba(11,42,92,0.14)); padding: 6px;
   display: flex; flex-direction: column; gap: 2px;
   animation: rt-pop-in 140ms ease-out;
 }
 .rt-mode-popover-title {
-  font-size: 9.5px; font-weight: 700; color: var(--rt-ink-3);
+  font-size: 9.5px; font-weight: 700; color: var(--rt-ink-3, #94A3B8);
   letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 10px 5px;
 }
 .rt-mode-popover button {
   display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
   padding: 8px 10px; border-radius: 8px; border: none; background: none;
-  font-size: 12px; font-weight: 700; color: var(--rt-ink); cursor: pointer; font-family: inherit;
+  font-size: 12px; font-weight: 700; color: var(--rt-ink, #0B2A5C); cursor: pointer; font-family: inherit;
 }
-.rt-mode-popover button:hover { background: var(--rt-mist); }
-.rt-mode-popover button.selected { background: var(--rt-ice); color: var(--rt-blue); }
-.rt-mode-popover button svg { width: 13px; height: 13px; color: var(--rt-ink-2); flex-shrink: 0; }
-.rt-mode-popover button.selected svg { color: var(--rt-blue); }
-.rt-mode-popover button .rt-mode-check { margin-left: auto; width: 12px; height: 12px; color: var(--rt-blue); }
+.rt-mode-popover button:hover { background: var(--rt-mist, #F1F6FB); }
+.rt-mode-popover button.selected { background: var(--rt-ice, #EAF6FD); color: var(--rt-blue, #0B7CC4); }
+.rt-mode-popover button svg { width: 13px; height: 13px; color: var(--rt-ink-2, #64748B); flex-shrink: 0; }
+.rt-mode-popover button.selected svg { color: var(--rt-blue, #0B7CC4); }
+.rt-mode-popover button .rt-mode-check { margin-left: auto; width: 12px; height: 12px; color: var(--rt-blue, #0B7CC4); }
 .rt-mode-popover .rt-mode-name { flex-shrink: 0; }
 /* 모드별 실제 소요시간·요금 — 나란히 비교할 수 있게 우측 정렬 */
 .rt-mode-popover .rt-mode-meta {
-  margin-left: auto; font-size: 10.5px; font-weight: 700; color: var(--rt-ink-2);
+  margin-left: auto; font-size: 10.5px; font-weight: 700; color: var(--rt-ink-2, #64748B);
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
-.rt-mode-popover button.selected .rt-mode-meta { color: var(--rt-blue); }
-.rt-mode-popover .rt-mode-meta.rt-mode-na { color: var(--rt-ink-4); font-weight: 600; }
+.rt-mode-popover button.selected .rt-mode-meta { color: var(--rt-blue, #0B7CC4); }
+.rt-mode-popover .rt-mode-meta.rt-mode-na { color: var(--rt-ink-4, #B0BAC5); font-weight: 600; }
 .rt-mode-popover button .rt-mode-check + .rt-mode-meta,
 .rt-mode-popover button .rt-mode-meta + .rt-mode-check { margin-left: 6px; }
 .rt-mode-popover-note {
-  font-size: 10px; color: var(--rt-ink-4); line-height: 1.5;
-  padding: 6px 10px 3px; border-top: var(--rt-dash); margin-top: 4px;
+  font-size: 10px; color: var(--rt-ink-4, #B0BAC5); line-height: 1.5;
+  padding: 6px 10px 3px; border-top: var(--rt-dash, 1px dashed rgba(130,150,170,0.22)); margin-top: 4px;
 }
+.rt-mode-popover-divider { height: 1px; background: var(--rt-line, rgba(130,150,170,0.18)); margin: 4px 6px; }
+/* "구글맵에서 경로 보기" — 파란색 계열로 눈에 띄게, 나머지 버튼들과 톤을 분리 */
+.rt-mode-popover-gmaps {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px;
+  font-size: 12px; font-weight: 700; color: var(--rt-blue, #0B7CC4); text-decoration: none;
+}
+.rt-mode-popover-gmaps:hover { background: var(--rt-ice, #EAF6FD); }
+.rt-mode-popover-gmaps svg { width: 13px; height: 13px; flex-shrink: 0; }
 
 /* 실측이 아닌 추정 구간임을 커넥터에 아주 작게 표시 (원칙 3-1) */
 .rt-panel-connector-est {

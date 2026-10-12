@@ -43,6 +43,8 @@ import {
   resetRouteStorageProbe,
 } from './routeStore';
 import type { StoredStop } from './routeStore';
+import { planDaySync, sameStops, dedupeStops } from './routeMerge';
+import { rankByRecommendation } from './searchRank';
 import { requestRoutePlan, requestDayDetail } from './aiPlan';
 import type { AiPlanPlace, AiRoutePlanResult, AiDayDetailResult, AiStaySegment } from './aiPlan';
 // 화면에 뜨는 숫자(이동시간·거리·요금·체류시간)는 TIMELINE과 반드시 같아야 하므로
@@ -75,11 +77,13 @@ const IC_WALK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const IC_TRANSIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="14" rx="2"/><path d="M4 11h16M8 21l2-4h4l2 4M8 7h.01M16 7h.01"/></svg>';
 const IC_TAXI = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M5 17a2 2 0 1 0 4 0M15 17a2 2 0 1 0 4 0M5 17l1.5-5h11L19 17M8 12V8h8v4"/></svg>';
 const IC_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
+const IC_MINUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>';
 const IC_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
 const IC_CHEVRON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
 const IC_CHEVRON_UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>';
 const IC_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
 const IC_SPARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18"/></svg>';
+const IC_ARROW_LEFT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>';
 const IC_STAR = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.8 5.9 20.4 7.2 13.7 2.2 9l6.8-.8z"/></svg>';
 const IC_BED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6M3 18v2M21 18v2M3 12V8a2 2 0 0 1 2-2h4v6"/></svg>';
 const IC_PLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
@@ -214,9 +218,19 @@ let activeCatFilters = new Set<CatKey>();
  * 아직 Brainstorm에 담지 않은, "방금 구글에서 찾은" 임시 결과 — 담기 전까지는 지도 위에만
  * 표시되고 새로고침/새 검색/DAY 전환 시 사라진다(candidatePlaces와는 다른 임시 상태). */
 let searchResultPlaces: Place[] = [];
+/** 검색 결과 목록 패널의 맥락 — 무엇을 어디 기준으로 찾았는지(제목·거리 계산용) */
+let searchContext: { title: string; center: LatLngLit | null } | null = null;
+/** 검색 결과 장소 id → 리뷰 수 (Place 행에는 이 칸이 없어 따로 들고 있는다 — 추천순 정렬용) */
+const searchReviewCount = new Map<string, number | null>();
+/** 결과 목록을 마지막으로 그린 상태 — 지도는 줌할 때마다 다시 그려지므로, 목록은 내용이 바뀔 때만 다시 그린다 */
+let renderedResultsSig = '';
 let searchBusy = false;
 let historyByDay = new Map<string, HistoryState>();
 const memoStore = new Map<string, string>();
+/** TIMELINE에서 직접 정한 체류시간(분) — ROUTE엔 이걸 보여주거나 고치는 화면이 없지만,
+ *  저장은 항상 그 DAY 전체를 다시 쓰는 방식(replace)이라 여기서 값을 안 들고 있으면
+ *  ROUTE에서 아무 것도 안 바꾸고 저장만 해도 TIMELINE에서 정한 값이 조용히 지워진다. */
+const customDwellStore = new Map<string, number>();
 const timeOverride = new Map<string, string>();
 const legModeOverride = new Map<string, Leg['mode']>();
 /** "숙소 들르기"로 하루 중간에 되돌아온 지점(예: 짐 두기) — 실제 candidatePlaces에는 없는
@@ -253,7 +267,14 @@ let aiPlanUndo: {
 let realLegs = new Map<string, Record<string, RealLeg>>();
 let realLegPending = false;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
-let lastSavedSig = '';
+/** DAY별로 "내가 마지막으로 DB와 맞춰 본 상태" — 저장/새로고침 때 DB·내 화면과 3자 병합하는 기준 */
+let syncedByDay = new Map<number, StoredStop[]>();
+/** 저장이 지우기까지만 되고 실패한 DAY — 기준을 믿을 수 없으니 다음 동기화에선 내 화면을 정본으로 */
+let baseUnknownDays = new Set<number>();
+let syncRunning = false;
+let syncAgain = false;
+let syncRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let remoteReloadTimer: ReturnType<typeof setTimeout> | null = null;
 
 let mapInstance: any = null;
 let mapMarkers: any[] = [];
@@ -275,8 +296,10 @@ export function teardownRoute(): void {
   if (saveTimer) {
     clearTimeout(saveTimer);
     saveTimer = null;
-    void persistActiveDay();
+    void syncPlan();
   }
+  if (remoteReloadTimer) { clearTimeout(remoteReloadTimer); remoteReloadTimer = null; }
+  if (syncRetryTimer) { clearTimeout(syncRetryTimer); syncRetryTimer = null; }
   unsubscribeRoutePlan();
   resetRouteStorageProbe();
   document.querySelector('.rt-ai-modal-backdrop')?.remove();
@@ -291,7 +314,8 @@ export function teardownRoute(): void {
   dayDetailBusy = false;
   realLegs = new Map();
   realLegPending = false;
-  lastSavedSig = '';
+  syncedByDay = new Map();
+  baseUnknownDays = new Set();
   currentTrip = null;
   basecamp = null;
   staySegments = [];
@@ -321,10 +345,13 @@ export function teardownRoute(): void {
   adhocMode = false;
   placeSearchQuery = '';
   searchResultPlaces = [];
+  searchContext = null;
+  renderedResultsSig = '';
   searchBusy = false;
   activeCatFilters = new Set();
   historyByDay = new Map();
   memoStore.clear();
+  customDwellStore.clear();
   timeOverride.clear();
   legModeOverride.clear();
   lodgingRevisitPurpose.clear();
@@ -391,54 +418,13 @@ function dayLegs(day: RouteDay): Leg[] {
 
 /* ══════════════ 영속화 (supabase/route_plan.sql) ══════════════ */
 
-/** 현재 DAY 상태의 지문 — 실제로 바뀌었을 때만 저장하려고 비교용으로 쓴다 */
-function daySignature(day: RouteDay): string {
-  const stops = day.stopIds.map((id) => {
-    const p = placeById.get(id);
-    return [
-      id,
-      timeOverride.get(timeKey(day.id, id)) ?? '',
-      memoStore.get(id) ?? '',
-      p ? legModeOverrideForArrival(day, id) : '',
-    ].join('~');
-  });
-  return day.id + '|' + stops.join('|');
-}
-
-/** 이 정류지로 **오는** 구간의 수동 이동수단 (저장 스키마가 도착지 기준이라 맞춰줌) */
-function legModeOverrideForArrival(day: RouteDay, placeId: string): string {
-  const seq = orderedStops(day);
-  const idx = seq.findIndex((p) => p.id === placeId);
-  if (idx <= 0) return '';
-  return legModeOverride.get(legKey(seq[idx - 1].id, placeId)) ?? '';
-}
-
-/** 변경이 있으면 잠시 뒤 저장 (연속 조작을 한 번으로 묶음) */
-function scheduleSave(): void {
-  if (!isRouteStorageReady() || !activeDestId || !currentTripId) return;
-  const day = activeDay();
-  if (!day) return;
-  const sig = daySignature(day);
-  if (sig === lastSavedSig) return;
-
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    void persistActiveDay();
-  }, 600);
-}
-
-async function persistActiveDay(): Promise<void> {
-  if (!isRouteStorageReady() || !activeDestId || !currentTripId) return;
-  const day = activeDay();
-  if (!day) return;
-  const dayIndex = days.findIndex((d) => d.id === day.id);
-  if (dayIndex < 0) return;
-
-  const seq = orderedStops(day);
+/** 한 DAY의 현재 화면 상태를 저장 형식으로 바꾼다 — 화면 상태를 건드리지 않는 변환이다
+ *  (시작/끝 앵커 채우기는 동기화 직전에 호출부가 한다). */
+function buildStoredStops(day: RouteDay): StoredStop[] {
+  const seq = day.stopIds.map((id) => placeById.get(id)).filter((p): p is Place => !!p);
   const arrivalId = arrivalAirportId();
   const departureId = departureAirportId();
-  const stops: StoredStop[] = day.stopIds.map((id) => {
+  return day.stopIds.map((id) => {
     const p = placeById.get(id);
     const idx = seq.findIndex((s) => s.id === id);
     const prev = idx > 0 ? seq[idx - 1] : null;
@@ -454,32 +440,238 @@ async function persistActiveDay(): Promise<void> {
       memo: memoStore.get(id) || null,
       travelMode: prev ? legModeOverride.get(legKey(prev.id, id)) ?? null : null,
       purpose: lodgingRevisitPurpose.get(id) ?? null,
+      customDwellMin: customDwellStore.get(id) ?? null,
     };
   });
+}
 
-  const sig = daySignature(day);
-  const ok = await saveRouteDay(currentTripId, activeDestId, dayIndex, stops);
-  if (ok) lastSavedSig = sig;
+/** 내 화면이 DB와 맞춰 본 마지막 상태와 달라졌는지 — 달라졌을 때만 저장한다 */
+function isPlanDirty(): boolean {
+  return days.some((d, i) => !sameStops(buildStoredStops(d), syncedByDay.get(i) ?? []));
+}
+
+/** 변경이 있으면 잠시 뒤 저장 (연속 조작을 한 번으로 묶음) */
+function scheduleSave(): void {
+  if (!isRouteStorageReady() || !activeDestId || !currentTripId) return;
+  if (!isPlanDirty()) return;
+
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    void syncPlan();
+  }, 600);
 }
 
 /**
- * 모든 DAY를 저장한다. 평소엔 활성 DAY만 저장하면 충분하지만(사용자는 한 번에 한 DAY만
- * 편집하므로), AI 일정 추천처럼 여러 DAY를 한 번에 바꾸는 경우엔 전부 저장해야 한다.
+ * DB 동선과 내 화면을 맞춘다 — **저장도, 친구 변경 반영도 이 한 함수가 한다.**
+ *
+ * 예전엔 저장이 "내 화면의 DAY를 통째로 덮어쓰기"였고, 친구 변경이 오면 내 화면을 통째로 DB
+ * 내용으로 바꿨다(저장 대기 중이던 내 변경은 버리고). 그래서 같이 쓰면 늦게 저장한 쪽이 상대가 담은
+ * 장소를 지우거나, 내가 방금 담은 장소가 친구 변경을 받는 순간 사라졌다. 이제는 매번 DB를 먼저
+ * 읽어 (마지막으로 맞춘 상태 / 내 화면 / DB) 3자를 DAY별로 병합하고(routeMerge.ts), 그 결과를
+ * 저장·화면에 반영한다. 동시에 한 번에 하나만 돌고, 도는 중에 요청이 오면 끝난 뒤 한 번 더 돈다.
  */
-async function persistAllDays(): Promise<void> {
-  if (!isRouteStorageReady() || !activeDestId || !currentTripId) return;
-  const keepActive = activeDayId;
-  try {
-    for (const d of days) {
-      // persistActiveDay는 activeDay()를 기준으로 동작하므로 잠깐 활성 DAY를 옮겨가며 저장한다.
-      // (화면은 이 사이에 다시 그리지 않으므로 사용자에게는 보이지 않음)
-      activeDayId = d.id;
-      await persistActiveDay();
-    }
-  } finally {
-    activeDayId = keepActive;
-    lastSavedSig = daySignature(activeDay());
+let syncPromise: Promise<void> | null = null;
+function syncPlan(): Promise<void> {
+  if (!isRouteStorageReady() || !activeDestId || !currentTripId) return Promise.resolve();
+  if (syncPromise) {
+    syncAgain = true;
+    return syncPromise;
   }
+  syncPromise = (async () => {
+    try {
+      do {
+        syncAgain = false;
+        await syncOnce();
+      } while (syncAgain);
+    } finally {
+      syncPromise = null;
+    }
+  })();
+  return syncPromise;
+}
+
+/** 서로 다른 두 화면이 같은 DAY를 계속 고쳐 쓰는 핑퐁이 생기면 DB를 두드리는 걸 멈추는 안전장치 —
+ *  정상 사용(수십 초에 몇 번 저장)에선 걸리지 않는다. */
+const recentSaveTimes: number[] = [];
+function saveRateExceeded(): boolean {
+  const now = Date.now();
+  while (recentSaveTimes.length && now - recentSaveTimes[0] > 20000) recentSaveTimes.shift();
+  if (recentSaveTimes.length >= 12) {
+    console.error('[Route] 20초 안에 저장이 너무 많이 반복돼 잠시 저장을 멈춥니다.');
+    return true;
+  }
+  recentSaveTimes.push(now);
+  return false;
+}
+
+/** 읽기/저장이 실패했을 때 잠시 뒤 다시 시도 (네트워크 순단 대비, 계속 실패하면 포기) */
+let syncRetryCount = 0;
+function retrySyncSoon(): void {
+  if (syncRetryTimer || syncRetryCount >= 5) return;
+  syncRetryCount += 1;
+  syncRetryTimer = setTimeout(() => {
+    syncRetryTimer = null;
+    void syncPlan();
+  }, 3000);
+}
+
+async function syncOnce(): Promise<void> {
+  const destId = activeDestId;
+  const tripId = currentTripId;
+  if (!destId || !tripId || !isRouteStorageReady() || days.length === 0) return;
+
+  // 열어 본 DAY(와 AI가 채운 DAY)는 시작/끝 앵커가 들어간 상태가 "내 화면" — 예전 저장과 같은 기준.
+  // 한 번도 안 연 빈 DAY는 건드리지 않는다(앵커만 든 DAY가 괜히 생겨 저장되지 않게).
+  const active = activeDay();
+  days.forEach((d) => { if (d === active || d.stopIds.length > 0) ensureDayAnchors(d); });
+  const localByDay = days.map((d) => buildStoredStops(d));
+
+  const stored = await loadRoutePlan(destId);
+  if (!stored) { retrySyncSoon(); return; }
+  // 친구가 방금 새로 담은 장소는 내 화면엔 아직 없다 — 이걸 못 불러오면 "없는 장소"로 보고 내 저장이
+  // 지워 버리므로, 불러오지 못했으면 아무것도 쓰지 않고 중단한다.
+  const referenced = stored.flatMap((sd) => sd.stops.map((s) => s.placeId).filter((id): id is string => !!id));
+  if (!(await ensurePlacesLoaded(referenced))) { retrySyncSoon(); return; }
+
+  const stillHere = () => destId === activeDestId;
+  const remoteByDay = new Map(stored.map((sd) => [sd.dayIndex, sd.stops] as const));
+  const applies: Array<{ index: number; merged: StoredStop[]; local: StoredStop[] }> = [];
+  let failed = false;
+
+  for (let i = 0; i < localByDay.length; i++) {
+    const local = localByDay[i];
+    const plan = planDaySync(syncedByDay.get(i) ?? [], local, remoteByDay.get(i) ?? [], baseUnknownDays.has(i));
+
+    if (plan.saveNeeded) {
+      if (saveRateExceeded()) { failed = true; continue; }
+      const result = await saveRouteDay(tripId, destId, i, plan.merged);
+      if (result !== 'ok') {
+        failed = true;
+        // 지우기까지만 되고 넣기가 실패했다면 DB의 이 DAY가 비어 있을 수 있다 — 다음엔 내 화면을 정본으로
+        if (result === 'partial' && stillHere()) baseUnknownDays.add(i);
+        continue;
+      }
+    }
+    if (!stillHere()) continue; // 저장하는 사이 다른 여행지로 넘어갔으면 새 화면 상태를 건드리지 않는다
+    syncedByDay.set(i, plan.merged);
+    baseUnknownDays.delete(i);
+    if (plan.applyNeeded) applies.push({ index: i, merged: plan.merged, local });
+  }
+
+  if (!failed) syncRetryCount = 0;
+  if (stillHere() && rtContainer) {
+    let changed = false;
+    for (const a of applies) {
+      const day = days[a.index];
+      if (!day) continue;
+      // 읽고 저장하는 사이 내가 또 고쳤으면 덮어쓰지 않는다 — 한 번 더 돌면서 내 최신 상태를 얹어 저장한다
+      if (!sameStops(buildStoredStops(day), a.local)) { syncAgain = true; continue; }
+      applyStoredDay(day, a.index, a.merged);
+      changed = true;
+    }
+    if (changed) refreshAll(rtContainer, { refit: false });
+  }
+  if (failed) retrySyncSoon();
+}
+
+/** DB 동선에 있지만 내 화면엔 없는 장소(친구가 방금 담은 곳)를 불러온다. 못 불러오면 false. */
+async function ensurePlacesLoaded(placeIds: string[]): Promise<boolean> {
+  const missing = [...new Set(placeIds)].filter((id) => !placeById.has(id));
+  if (missing.length === 0) return true;
+  const { data, error } = await supabase.from('places').select('*').in('id', missing);
+  if (error) {
+    console.error('[Route] 새로 담긴 장소 로드 실패:', error.message);
+    return false;
+  }
+  const dest = activeDestId ? allDestinations.find((d) => d.id === activeDestId) : null;
+  (data ?? []).forEach((pl) => {
+    placeById.set(pl.id, pl);
+    if (pl.lat == null || pl.lng == null || pl.id === basecamp?.id) return;
+    if (dest && !placeBelongsToDestination(pl, dest)) return;
+    if (!candidatePlaces.some((c) => c.id === pl.id)) candidatePlaces.push(pl);
+  });
+  return true;
+}
+
+/**
+ * 저장된 정류지 하나를 화면의 장소 id로 되돌린다. 지도에 직접 찍은 지점·숙소 재방문은 places 행이
+ * 없어 불러올 때마다 새 id가 필요한데, 이미 같은 이름·좌표의 것이 있으면 새로 만들지 않고 그걸
+ * 다시 쓴다 — 안 그러면 동기화할 때마다 좌측 후보 목록에 같은 지점이 계속 쌓여 "중복으로 담기는" 것처럼 보인다.
+ */
+function resolveStoredStopId(s: StoredStop, dayIndex: number, used: string[]): string | null {
+  if (s.placeId) return placeById.has(s.placeId) ? s.placeId : null;
+  if (s.customLat == null || s.customLng == null) return null;
+
+  // 도착 공항(DAY 0의 첫 정류지) / 출발 공항(마지막 DAY의 끝 정류지)인지 이름+좌표로 확인 — 맞으면
+  // 고정 id의 앵커 Place로 복원(일반 adhoc 핀처럼 취급하면 안 됨: 좌측 후보 목록에 뜨거나, 다음
+  // 렌더에서 ensureDayAnchors가 중복으로 또 만들어 버림).
+  const isArrivalMatch =
+    dayIndex === 0 &&
+    s.customName === activeDestArrivalAirport &&
+    s.customLat === activeDestArrivalLat &&
+    s.customLng === activeDestArrivalLng;
+  const isDepartureMatch =
+    dayIndex === days.length - 1 &&
+    s.customName === activeDestDepartureAirport &&
+    s.customLat === activeDestDepartureLat &&
+    s.customLng === activeDestDepartureLng;
+  if (isArrivalMatch && arrivalAirportPlace()) return arrivalAirportId();
+  if (isDepartureMatch && departureAirportPlace()) return departureAirportId();
+
+  const name = s.customName || (s.purpose ? '숙소' : '직접 추가한 장소');
+  const sameSpot = (pl: Place) =>
+    pl.name === name &&
+    pl.lat != null && pl.lng != null &&
+    pl.lat.toFixed(6) === s.customLat!.toFixed(6) &&
+    pl.lng.toFixed(6) === s.customLng!.toFixed(6);
+  const reuse = (match: (id: string) => boolean): string | null => {
+    for (const [id, pl] of placeById) if (!used.includes(id) && match(id) && sameSpot(pl)) return id;
+    return null;
+  };
+
+  if (s.purpose) {
+    // "숙소 들르기"로 저장된 재방문 지점 — purpose가 있는 건 이 종류뿐이라(일반 adhoc 핀/공항은
+    // 항상 null) 좌표 매칭 없이 purpose 유무만으로 확실히 구분된다.
+    const found = reuse((id) => isRevisitId(id) && lodgingRevisitPurpose.get(id) === s.purpose);
+    if (found) return found;
+    const p = makeRevisitPlace(makeAdhocPlace(name, s.customLat, s.customLng), s.purpose);
+    placeById.set(p.id, p);
+    return p.id;
+  }
+
+  // 지도에 직접 찍었던 일반 지점 복원
+  const found = reuse((id) => id.startsWith('adhoc-'));
+  if (found) return found;
+  const p = makeAdhocPlace(name, s.customLat, s.customLng);
+  placeById.set(p.id, p);
+  candidatePlaces.push(p);
+  return p.id;
+}
+
+/** 저장 형식의 한 DAY를 화면 상태(순서·시각·메모·이동수단·체류시간)로 복원 */
+function applyStoredDay(day: RouteDay, dayIndex: number, stops: StoredStop[]): void {
+  const ids: string[] = [];
+  let prevId: string | null = null;
+
+  stops.forEach((s) => {
+    const id = resolveStoredStopId(s, dayIndex, ids);
+    if (!id) return; // 원본 장소가 지워졌으면 조용히 건너뜀
+    ids.push(id);
+
+    // 값이 없으면 지운다 — 친구가 시각/메모를 지웠을 때 내 화면에 예전 값이 남지 않게
+    const tk = timeKey(day.id, id);
+    if (s.arriveTime) timeOverride.set(tk, s.arriveTime); else timeOverride.delete(tk);
+    if (s.memo) memoStore.set(id, s.memo); else memoStore.delete(id);
+    if (s.customDwellMin != null) customDwellStore.set(id, s.customDwellMin); else customDwellStore.delete(id);
+    if (prevId) {
+      const lk = legKey(prevId, id);
+      if (s.travelMode) legModeOverride.set(lk, s.travelMode as Leg['mode']); else legModeOverride.delete(lk);
+    }
+    prevId = id;
+  });
+
+  day.stopIds = ids;
 }
 
 /** 저장된 동선을 모듈 상태로 복원. 저장된 DAY가 하나도 없으면 false */
@@ -490,59 +682,9 @@ function applyStoredPlan(stored: Awaited<ReturnType<typeof loadRoutePlan>>): boo
   stored.forEach((sd) => {
     const day = days[sd.dayIndex];
     if (!day) return; // 저장된 DAY 수가 더 많으면(기간이 줄어든 경우) 남는 건 무시
-    const ids: string[] = [];
-    // 앵커(숙소/공항)도 이제 sd.stops 안에 실제 위치 그대로 저장돼 있으므로, 예전처럼
-    // basecamp로 prevId를 미리 부트스트랩할 필요 없이 저장된 순서를 그대로 따라가면 된다.
-    let prevId: string | null = null;
-
-    sd.stops.forEach((s) => {
-      let id: string | null = null;
-      if (s.placeId) {
-        if (placeById.has(s.placeId)) id = s.placeId;
-      } else if (s.customLat != null && s.customLng != null) {
-        // 도착 공항(DAY 0의 첫 정류지) / 출발 공항(마지막 DAY의 끝 정류지)인지 이름+좌표로
-        // 확인 — 맞으면 고정 id의 앵커 Place로 복원(일반 adhoc 핀처럼 취급하면 안 됨: 좌측
-        // 후보 목록에 뜨거나, 다음 렌더에서 ensureDayAnchors가 중복으로 또 만들어 버림).
-        const isArrivalMatch =
-          sd.dayIndex === 0 &&
-          s.customName === activeDestArrivalAirport &&
-          s.customLat === activeDestArrivalLat &&
-          s.customLng === activeDestArrivalLng;
-        const isDepartureMatch =
-          sd.dayIndex === days.length - 1 &&
-          s.customName === activeDestDepartureAirport &&
-          s.customLat === activeDestDepartureLat &&
-          s.customLng === activeDestDepartureLng;
-
-        if (isArrivalMatch && arrivalAirportPlace()) {
-          id = arrivalAirportId();
-        } else if (isDepartureMatch && departureAirportPlace()) {
-          id = departureAirportId();
-        } else if (s.purpose) {
-          // "숙소 들르기"로 저장된 재방문 지점 — purpose가 있는 건 이 종류뿐이라(일반 adhoc
-          // 핀/공항은 항상 null) 좌표 매칭 없이 purpose 유무만으로 확실히 구분된다.
-          const base = makeAdhocPlace(s.customName || '숙소', s.customLat, s.customLng);
-          const p = makeRevisitPlace(base, s.purpose);
-          placeById.set(p.id, p);
-          id = p.id;
-        } else {
-          // 지도에 직접 찍었던 일반 지점 복원
-          const p = makeAdhocPlace(s.customName || '직접 추가한 장소', s.customLat, s.customLng);
-          placeById.set(p.id, p);
-          candidatePlaces.push(p);
-          id = p.id;
-        }
-      }
-      if (!id) return; // 원본 장소가 지워졌으면 조용히 건너뜀
-
-      ids.push(id);
-      if (s.arriveTime) timeOverride.set(timeKey(day.id, id), s.arriveTime);
-      if (s.memo) memoStore.set(id, s.memo);
-      if (s.travelMode && prevId) legModeOverride.set(legKey(prevId, id), s.travelMode as Leg['mode']);
-      prevId = id;
-    });
-
-    day.stopIds = ids;
+    // 예전에 동시 저장이 겹쳐 DB에 같은 장소가 두 번 들어가 있어도 한 번만 복원한다 — 화면이
+    // DB와 달라지므로 첫 동기화에서 DB의 중복도 정리된다.
+    applyStoredDay(day, sd.dayIndex, dedupeStops(sd.stops));
     applied = true;
   });
 
@@ -561,6 +703,9 @@ function removeStop(placeId: string): void {
  * 들어가고, 수동으로 옮길 때만 옮겨지게"). 끝 앵커가 아직 stopIds에 없으면(처음 추가하는
  * 경우 등) 그냥 끝에 붙인다. */
 function appendStopBeforeEndAnchor(day: RouteDay, placeId: string): void {
+  // 이미 이 DAY에 있는 장소는 또 넣지 않는다 — 친구가 먼저 담았는데 내 화면은 아직 모르는 경우,
+  // 검색/지도/카드 어디서 담든 같은 장소가 두 번 들어가던 중복의 공통 입구.
+  if (day.stopIds.includes(placeId)) return;
   const dayIndex = days.findIndex((d) => d.id === day.id);
   const { startId, endId } = dayAnchorIds(dayIndex);
   // 시작=끝이 같은 앵커(전환 없는 보통 날)면 그 하나뿐인 앵커 자체가 "끝" 자리를 겸하므로,
@@ -638,6 +783,14 @@ function makeAdhocPlace(name: string, lat: number, lng: number): Place {
     group_id: null,
     group_name: null,
     group_order: null,
+    price_note: null,
+    is_excluded: false,
+    price_per_night: null,
+    price_currency: null,
+    room_condition: null,
+    excluded_reason: null,
+    linked_url: null,
+    linked_url_title: null,
   };
 }
 
@@ -688,6 +841,14 @@ function googleResultToPlace(g: GooglePlaceResult): Place {
     group_id: null,
     group_name: null,
     group_order: null,
+    price_note: null,
+    is_excluded: false,
+    price_per_night: null,
+    price_currency: null,
+    room_condition: null,
+    excluded_reason: null,
+    linked_url: null,
+    linked_url_title: null,
   };
 }
 
@@ -787,9 +948,12 @@ async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
   let restored = false;
   if (activeDestId) {
     const stored = await loadRoutePlan(activeDestId);
+    // 친구가 ROUTE에서 새로 담은 장소 등 내 첫 로딩 목록(mood 있는 것만)에 없는 장소도 불러온 뒤에
+    // 복원한다 — 안 그러면 "없는 장소"로 보고 건너뛰고, 그 상태로 저장하면서 DB에서 지워 버린다.
+    if (stored) await ensurePlacesLoaded(stored.flatMap((sd) => sd.stops.map((s) => s.placeId).filter((id): id is string => !!id)));
     restored = applyStoredPlan(stored);
+    syncedByDay = new Map((stored ?? []).map((sd) => [sd.dayIndex, sd.stops] as const));
   }
-  lastSavedSig = restored ? daySignature(activeDay()) : '';
 }
 
 /* ══════════════ 실제 길찾기 (Routes API + DB 캐시) ══════════════ */
@@ -860,6 +1024,8 @@ async function loadRealLegsForActiveDay(container: HTMLElement): Promise<void> {
 function setLegLoading(container: HTMLElement, on: boolean): void {
   const el = container.querySelector('#rt-legs-loading') as HTMLElement | null;
   if (el) el.style.display = on ? '' : 'none';
+  const btn = container.querySelector('#rt-legs-real-btn') as HTMLButtonElement | null;
+  if (btn) btn.disabled = on;
 }
 
 /** dayIndex(0-based)의 실제 캘린더 날짜(YYYY-MM-DD). 시작일을 모르면 null */
@@ -964,6 +1130,14 @@ function makeAnchorPlace(
     group_id: null,
     group_name: null,
     group_order: null,
+    price_note: null,
+    is_excluded: false,
+    price_per_night: null,
+    price_currency: null,
+    room_condition: null,
+    excluded_reason: null,
+    linked_url: null,
+    linked_url_title: null,
   };
 }
 
@@ -1102,27 +1276,26 @@ export async function renderRouteContent(container: HTMLElement, tripId: string)
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = null;
-      void persistActiveDay();
+      void syncPlan();
     }
   };
   window.addEventListener('beforeunload', beforeUnloadHandler);
 
   // 같은 트립을 보고 있는 다른 멤버의 변경을 실시간으로 반영
-  subscribeRoutePlan(tripId, () => { void reloadFromRemote(); });
-  void loadRealLegsForActiveDay(container);
+  subscribeRoutePlan(tripId, scheduleRemoteSync);
+  // 실제 경로(Route Matrix API)는 더 이상 자동으로 부르지 않는다 — API 비용을 줄이려고
+  // "실제 경로 보기"를 눌렀을 때만 호출한다(estimateNoteHtml의 버튼 참고).
 }
 
-/** 다른 멤버가 동선을 바꿨을 때 — 내 편집 중인 상태를 버리지 않도록 저장 예약을 먼저 비운다 */
-async function reloadFromRemote(): Promise<void> {
-  if (!activeDestId || !rtContainer) return;
-  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
-
-  const stored = await loadRoutePlan(activeDestId);
-  if (!stored) return;
-  days.forEach((d) => { d.stopIds = []; });
-  applyStoredPlan(stored);
-  lastSavedSig = daySignature(activeDay());
-  refreshAll(rtContainer, { refit: false });
+/** 친구가 동선을 바꾸면 DB와 다시 맞춘다. 한 번 저장이 지우기+여러 번 넣기라 이벤트가 연달아 오므로
+ *  잠깐 모아서 한 번만 돈다(중간의 반쯤 저장된 상태를 읽어 화면이 깜빡이거나 잘못 반영되지 않게).
+ *  내 변경은 버리지 않고 같이 병합된다(syncPlan). */
+function scheduleRemoteSync(): void {
+  if (remoteReloadTimer) clearTimeout(remoteReloadTimer);
+  remoteReloadTimer = setTimeout(() => {
+    remoteReloadTimer = null;
+    void syncPlan();
+  }, 500);
 }
 
 function bindHeaderNav(container: HTMLElement): void {
@@ -1167,6 +1340,7 @@ function buildPageHtml(): string {
     '          <div class="rt-float-filters" id="rt-float-filters"></div>',
     '          <div class="rt-float-list" id="rt-float-list"></div>',
     '          <button type="button" class="rt-float-adhoc" id="rt-float-adhoc" title="지도를 클릭한 위치에 Brainstorm에 없는 장소(예: 특정 출입구, 뷰포인트)를 새로 추가해요">' + IC_PIN_PLUS + ' 지도에 직접 추가</button>',
+    '          <div class="rt-float-results" id="rt-float-results"></div>',
     '        </div>',
     '      </div>',
     '    </div>',
@@ -1285,6 +1459,12 @@ function renderDayTabs(container: HTMLElement): void {
 }
 
 /* ── 좌측 플로팅 검색 패널(내 Brainstorm 목록 필터 — 그대로 유지) ── */
+function setLeftPanelCollapsed(container: HTMLElement, collapsed: boolean): void {
+  leftPanelCollapsed = collapsed;
+  container.querySelector('#rt-float-search')?.classList.toggle('collapsed', collapsed);
+  container.querySelector('#rt-float-toggle')?.classList.toggle('is-collapsed', collapsed);
+}
+
 function bindSearchInputs(container: HTMLElement): void {
   const floatInput = container.querySelector('#rt-float-search-input') as HTMLInputElement | null;
   floatInput?.addEventListener('input', () => {
@@ -1294,12 +1474,7 @@ function bindSearchInputs(container: HTMLElement): void {
   bindTopSearch(container);
 
   const toggle = container.querySelector('#rt-float-toggle') as HTMLElement;
-  const panel = container.querySelector('#rt-float-search') as HTMLElement;
-  const setCollapsed = (collapsed: boolean) => {
-    leftPanelCollapsed = collapsed;
-    panel.classList.toggle('collapsed', collapsed);
-    toggle.classList.toggle('is-collapsed', collapsed);
-  };
+  const setCollapsed = (collapsed: boolean) => setLeftPanelCollapsed(container, collapsed);
   toggle?.addEventListener('click', () => setCollapsed(!leftPanelCollapsed));
 
   // 접힌 상태에선 돋보기 아이콘만 남기고(펼치기 버튼은 숨김) — 그 아이콘을 눌러서 펼침
@@ -1335,6 +1510,8 @@ function updateSearchClearButton(container: HTMLElement): void {
 function clearSearchResults(container: HTMLElement): void {
   if (searchResultPlaces.length === 0) return;
   searchResultPlaces = [];
+  searchContext = null;
+  closePlaceCard();
   updateSearchClearButton(container);
   drawRouteOnMap(false);
 }
@@ -1350,7 +1527,9 @@ async function runMapPlaceSearch(query: string, container: HTMLElement): Promise
   try {
     const bounds = typeof mapInstance.getBounds === 'function' ? mapInstance.getBounds() : undefined;
     const results = await searchPlacesByText(q, bounds);
-    searchResultPlaces = results.map(googleResultToPlace);
+    searchResultPlaces = toSearchPlaces(results);
+    const c = typeof mapInstance.getCenter === 'function' ? mapInstance.getCenter() : null;
+    searchContext = { title: "'" + q + "' 검색 결과", center: c ? { lat: c.lat(), lng: c.lng() } : null };
     if (searchResultPlaces.length === 0) window.alert('검색 결과가 없어요. 다른 검색어로 시도해보세요.');
   } finally {
     searchBusy = false;
@@ -1405,7 +1584,7 @@ async function addSearchResultToDay(p: Place, container: HTMLElement, cacheSourc
   // 페이지를 새로고침하는 순간 진행 중이던 네트워크 요청 자체가 취소돼 소용없었다 — 이 함수는
   // "검색해서 찾은 곳을 담는다"는 명확한 단발성 액션이라, 여기서만큼은 디바운스를 건너뛰고
   // 바로 기다려서 반환 전에 DB 반영을 확정한다.
-  await persistActiveDay();
+  await syncPlan();
 }
 
 function filteredCandidates(): Place[] {
@@ -1466,20 +1645,28 @@ function renderLeftPanel(container: HTMLElement): void {
         '  <div class="rt-float-thumb"' + (p.photo_url ? ' style="background-image:url(\'' + p.photo_url + '\')"' : '') + '>' +
           (p.photo_url ? '' : '<span style="color:' + meta.color + '">' + meta.icon + '</span>') + '</div>',
         '  <div class="rt-float-text"><div class="rt-float-name">' + escapeHtml(p.name) + '</div><div class="rt-float-cat">' + escapeHtml(p.category || '') + '</div></div>',
-        '  <button type="button" class="rt-float-add' + (added ? ' added' : '') + '" data-place-id="' + p.id + '">' + (added ? IC_CHECK : IC_PLUS) + '</button>',
+        '  <button type="button" class="rt-float-add' + (added ? ' added' : '') + '" data-place-id="' + p.id + '"' +
+          ' title="' + (added ? '동선에서 빼기' : '동선에 담기') + '" aria-label="' + escapeHtml(p.name) + (added ? ' 동선에서 빼기' : ' 동선에 담기') + '">' +
+          (added ? '<span class="rt-add-on">' + IC_CHECK + '</span><span class="rt-add-off">' + IC_MINUS + '</span>' : IC_PLUS) + '</button>',
         '</div>',
       ].join('');
     })
     .join('');
 
+  // 담기/빼기 토글 — 이미 담은 장소를 한 번 더 누르면 동선에서 뺀다(우측 패널의 ✕와 같은 동작)
   listEl.querySelectorAll('.rt-float-add').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = (btn as HTMLElement).dataset.placeId!;
       const d = activeDay();
-      if (d.stopIds.includes(id)) return;
       pushHistory();
-      appendStopBeforeEndAnchor(d, id);
-      refreshAll(container, { refit: true });
+      if (d.stopIds.includes(id)) {
+        removeStop(id);
+        if (highlightedPlaceId === id) highlightedPlaceId = null;
+        refreshAll(container, { refit: false });
+      } else {
+        appendStopBeforeEndAnchor(d, id);
+        refreshAll(container, { refit: true });
+      }
     });
   });
 }
@@ -1533,16 +1720,20 @@ function bindOptionsMenu(container: HTMLElement): void {
       menu.remove();
       openRouteDestSwitcher(container, btn);
     });
-    menu.querySelector('#rt-opt-reset')?.addEventListener('click', () => {
+    menu.querySelector('#rt-opt-reset')?.addEventListener('click', async () => {
       if (!confirm('이 여행지의 모든 DAY 동선을 초기화할까요?')) { menu.remove(); return; }
       days.forEach((d) => pushHistory(d.id));
       days.forEach((d) => { d.stopIds = []; });
       memoStore.clear();
+      customDwellStore.clear();
       timeOverride.clear();
       legModeOverride.clear();
       menu.remove();
-      if (activeDestId) void clearRoutePlan(activeDestId);
-      lastSavedSig = '';
+      // DB를 먼저 비우고 "맞춘 상태"도 빈 걸로 맞춘 뒤에 다시 그린다 — 안 그러면 비우기와 저장이 엇갈려
+      // 방금 지운 동선이 되살아나거나 저장이 실패한다.
+      if (activeDestId) await clearRoutePlan(activeDestId);
+      syncedByDay = new Map();
+      baseUnknownDays = new Set();
       refreshAll(container, { refit: true });
     });
     const dismiss = (ev: MouseEvent) => {
@@ -1650,6 +1841,17 @@ function handlePinClick(g: any, p: Place): void {
   scrollTimelineTo(p.id);
 }
 
+/** 우측 패널에서 장소를 고르면 지도가 그 핀으로 이동·확대된다. 이미 이 정도 이상 확대돼 있으면
+ *  줌은 그대로 두고 위치만 옮긴다(보던 확대 수준을 일부러 되돌리지 않는다). */
+const PANEL_FOCUS_ZOOM = 16;
+function focusPlaceOnMap(placeId: string): void {
+  const p = placeById.get(placeId);
+  if (!mapInstance || !p || p.lat == null || p.lng == null) return;
+  const zoom = mapInstance.getZoom();
+  if (typeof zoom !== 'number' || zoom < PANEL_FOCUS_ZOOM) mapInstance.setZoom(PANEL_FOCUS_ZOOM);
+  mapInstance.panTo({ lat: p.lat, lng: p.lng });
+}
+
 /** 지도에서 핀을 클릭하면 우측 타임라인도 그 장소가 보이도록 스크롤 */
 function scrollTimelineTo(placeId: string): void {
   const row = rtContainer?.querySelector('.rt-panel-stop[data-place-id="' + placeId + '"]') as HTMLElement | null;
@@ -1664,10 +1866,38 @@ function handleLegClick(fromId: string, toId: string, anchor?: HTMLElement): voi
   openModeOverridePopover(legKey(fromId, toId), anchor);
 }
 
+/** ROUTE의 이동수단 ↔ 구글맵 travelmode 파라미터 매핑 */
+function gmTravelMode(mode: Leg['mode']): string {
+  return mode === 'WALK' ? 'walking' : mode === 'TRANSIT' ? 'transit' : 'driving';
+}
+
+/** 두 지점 사이를 구글맵 경로 화면으로 여는 링크 — 출발/도착이 자동으로 채워진 채 열린다.
+ *  좌표만 있으면 되므로(장소 자체를 조회하지 않음) 추가 API 호출이 들지 않는다. */
+function googleMapsDirUrl(from: { lat: number; lng: number }, to: { lat: number; lng: number }, mode: Leg['mode']): string {
+  return (
+    'https://www.google.com/maps/dir/?api=1&origin=' + from.lat + ',' + from.lng +
+    '&destination=' + to.lat + ',' + to.lng + '&travelmode=' + gmTravelMode(mode)
+  );
+}
+
 function openModeOverridePopover(key: string, anchor?: HTMLElement): void {
   document.querySelectorAll('.rt-mode-popover').forEach((el) => el.remove());
   const cur = legModeOverride.get(key);
   const measured = realLegs.get(key);
+
+  // "구글맵에서 경로 보기" — 지금 화면에 쓰는(override가 있으면 그것, 없으면 자동 선택된)
+  // 이동수단 그대로 구글맵 경로 화면을 연다. 좌표만 있으면 되니 API 호출은 추가로 들지 않는다.
+  const [fromId, toId] = key.split('>');
+  const fromPlace = placeById.get(fromId);
+  const toPlace = placeById.get(toId);
+  const gmUrl =
+    fromPlace?.lat != null && fromPlace?.lng != null && toPlace?.lat != null && toPlace?.lng != null
+      ? googleMapsDirUrl(
+          { lat: fromPlace.lat, lng: fromPlace.lng },
+          { lat: toPlace.lat, lng: toPlace.lng },
+          estimateLegWithOverride(fromPlace, toPlace, cur).mode
+        )
+      : null;
 
   /** 모드별 실제 소요시간·요금을 나란히 보여줘 사용자가 직접 비교해 고르게 한다 */
   const row = (mode: string, icon: string, label: string) => {
@@ -1697,6 +1927,10 @@ function openModeOverridePopover(key: string, anchor?: HTMLElement): void {
     row('TAXI', IC_TAXI, '자동차'),
     row('AUTO', IC_SPARK, '자동 선택'),
     measured ? '' : '<div class="rt-mode-popover-note">실제 경로를 불러오는 중이거나<br>불러오지 못해 추정치를 쓰고 있어요</div>',
+    gmUrl
+      ? '<div class="rt-mode-popover-divider"></div><a class="rt-mode-popover-gmaps" href="' + gmUrl +
+        '" target="_blank" rel="noopener noreferrer">' + IC_EXTLINK + ' 구글맵에서 경로 보기</a>'
+      : '',
   ].join('');
   document.body.appendChild(pop);
   const r = anchor?.getBoundingClientRect();
@@ -1726,12 +1960,52 @@ function openModeOverridePopover(key: string, anchor?: HTMLElement): void {
 }
 
 /**
+ * 여행지 이름(사용자가 직접 입력한 도시명, 예: "방콕", "프라하")으로 현지 통화를 추정 —
+ * 실측 요금이 아직 없는 추정 구간의 통화 폴백에 쓴다. 국가별 공식 통화(ISO 4217)는 실제
+ * 사실 데이터라 원칙 3-1(지어내지 않기)에 어긋나지 않는다 — 예전엔 이 폴백이 무조건
+ * THB(태국)였는데, 방콕이 아닌 다른 여행지에서도 늘 THB로 나오던 버그의 원인이었다.
+ * 목록에 없는 도시는 임의로 특정 나라를 짚어 맞추지 않고 USD로 무난하게 폴백한다.
+ */
+const DEST_CURRENCY_KEYWORDS: Array<[string[], string]> = [
+  [['방콕', '파타야', '푸켓', '치앙마이', '끄라비', '태국', 'bangkok', 'phuket', 'thailand'], 'THB'],
+  [['도쿄', '오사카', '교토', '삿포로', '후쿠오카', '오키나와', '나고야', '일본', 'tokyo', 'osaka', 'japan'], 'JPY'],
+  [['다낭', '하노이', '호치민', '나트랑', '호이안', '푸꾸옥', '베트남', 'vietnam'], 'VND'],
+  [['프라하', '체코', 'prague', 'czech'], 'CZK'],
+  [
+    ['파리', '로마', '베를린', '뮌헨', '바르셀로나', '마드리드', '암스테르담', '비엔나', '빈', '밀라노', '피렌체', '베네치아',
+      '리스본', '아테네', '더블린', '브뤼셀', '독일', '프랑스', '이탈리아', '스페인', '포르투갈', '오스트리아', '그리스', '네덜란드', '아일랜드'],
+    'EUR',
+  ],
+  [['런던', '영국', 'london'], 'GBP'],
+  [['뉴욕', '라스베가스', '로스앤젤레스', '샌프란시스코', '하와이', '괌', '미국', 'new york', 'usa'], 'USD'],
+  [['타이베이', '타이페이', '가오슝', '대만', 'taipei', 'taiwan'], 'TWD'],
+  [['홍콩', 'hong kong'], 'HKD'],
+  [['상하이', '베이징', '광저우', '청두', '시안', '중국', 'china'], 'CNY'],
+  [['싱가포르', 'singapore'], 'SGD'],
+  [['쿠알라룸푸르', '코타키나발루', '페낭', '말레이시아', 'malaysia'], 'MYR'],
+  [['발리', '자카르타', '인도네시아', 'bali', 'indonesia'], 'IDR'],
+  [['세부', '마닐라', '보라카이', '팔라완', '필리핀', 'philippines'], 'PHP'],
+  [['시드니', '멜버른', '브리즈번', '호주', 'sydney', 'australia'], 'AUD'],
+  [['오클랜드', '퀸스타운', '뉴질랜드', 'new zealand'], 'NZD'],
+  [['두바이', '아부다비', 'dubai'], 'AED'],
+  [['취리히', '제네바', '스위스', 'zurich', 'switzerland'], 'CHF'],
+  [['토론토', '밴쿠버', '캐나다', 'toronto', 'vancouver', 'canada'], 'CAD'],
+  [['델리', '뭄바이', '인도', 'india'], 'INR'],
+];
+function guessCurrencyForDestination(name: string | null): string {
+  if (!name) return 'USD';
+  const n = name.toLowerCase();
+  const hit = DEST_CURRENCY_KEYWORDS.find(([keywords]) => keywords.some((k) => n.includes(k.toLowerCase())));
+  return hit?.[1] ?? 'USD';
+}
+
+/**
  * 화면에 쓸 통화 코드. 실측 대중교통 요금이 오면 그 통화를 그대로 쓰고(여행지가 어디든 정확),
- * 없으면 추정 로직이 방콕 기준이라 THB로 폴백한다.
+ * 없으면 이 여행지 이름으로 추정한 현지 통화로 폴백한다.
  */
 function currencyOf(legs: Leg[]): string {
   const withFare = legs.find((l) => l.fare?.currency);
-  return withFare?.fare?.currency ?? 'THB';
+  return withFare?.fare?.currency ?? guessCurrencyForDestination(activeDestName);
 }
 
 // "예상 교통비 원화로 보기" 토글 — 켜져 있으면 fmtCost가 캐시된 환율로 원화 환산해 보여준다.
@@ -1773,16 +2047,24 @@ function estimateNoteHtml(legs: Leg[]): string {
   const realCount = legs.filter((l) => l.real).length;
   const hasTaxi = legs.some((l) => l.mode === 'TAXI');
   const fareEstimated = legs.some((l) => l.mode === 'TRANSIT' && l.real && !l.fare);
+  const allReal = realCount === legs.length;
+
+  // 실제 경로(Route Matrix)는 더 이상 자동으로 안 부르고, 이 버튼을 눌렀을 때만 호출한다
+  // (API 비용 절감) — 아직 하나라도 추정치인 구간이 남아있으면 계속 보여준다.
+  const realBtn = allReal
+    ? ''
+    : ' <button type="button" class="rt-legs-real-btn" id="rt-legs-real-btn">실제 경로 보기</button>';
+  const loadingSpan = '<span id="rt-legs-loading" style="display:none">실제 경로 확인 중… </span>';
 
   if (realCount === 0) {
-    return '<span id="rt-legs-loading" style="display:none">실제 경로 확인 중… </span>* 직선거리 기반 추정치예요';
+    return loadingSpan + '* 직선거리 기반 추정치예요' + realBtn;
   }
   const base =
-    realCount === legs.length
+    allReal
       ? '* 이동시간·거리는 실제 경로 기준'
       : '* 이동시간·거리는 일부만 실제 경로 기준 (' + realCount + '/' + legs.length + '), 나머지는 추정치';
   const costNote = hasTaxi || fareEstimated ? ', 요금은 추정치' : '';
-  return '<span id="rt-legs-loading" style="display:none">실제 경로 확인 중… </span>' + base + costNote + '예요';
+  return loadingSpan + base + costNote + '예요' + realBtn;
 }
 
 /* ── 시간 계산 (수동 오버라이드가 있으면 그 시각을 기준으로 이어서 계산) ── */
@@ -1929,8 +2211,7 @@ async function undoAiRoutePlan(container: HTMLElement): Promise<void> {
 
   aiPlanUndo = null;
   aiPlanNotice = null;
-  lastSavedSig = '';
-  await persistAllDays();
+  await syncPlan();
   refreshAll(container, { refit: true });
 }
 
@@ -2060,8 +2341,7 @@ async function runAiRoutePlan(container: HTMLElement): Promise<void> {
       skippedCount: Math.max(0, candidatePlaces.length - usedCount),
       cached: result.cached,
     };
-    lastSavedSig = '';
-    await persistAllDays();
+    await syncPlan();
   } catch (e) {
     window.alert((e as Error).message);
   } finally {
@@ -2240,7 +2520,7 @@ function openLodgingRevisitModal(container: HTMLElement): void {
     pushHistory();
     appendStopBeforeEndAnchor(activeDay(), p.id);
     refreshAll(container, { refit: false });
-    void persistActiveDay();
+    void syncPlan();
   });
 
   document.body.appendChild(backdrop);
@@ -2435,6 +2715,7 @@ function clearAirportAnchor(id: string, container: HTMLElement): void {
     timeOverride.delete(timeKey(d.id, id));
   });
   memoStore.delete(id);
+  customDwellStore.delete(id);
   placeById.delete(id);
 
   if (isArrival) {
@@ -2483,15 +2764,20 @@ function renderRightPanel(container: HTMLElement): void {
   const dColor = dayColorFor(Math.max(0, dayIndex));
 
   const rows: string[] = [];
-  // 지도 핀(drawRouteOnMap)도 똑같은 stopIdentityColor를 쓰므로 색이 항상 서로 맞는다.
+  // 지도 마커(drawRouteOnMap)도 똑같은 stopIdentityColor를 쓰므로 색이 항상 서로 맞는다.
+  // "숙소 들르기" 재방문 스탑은 번호를 매기지 않으므로, 그 스탑은 건너뛰고 다음 정식
+  // 정류지가 번호를 이어받도록 별도 카운터(displayNum)로 매긴다(배열 인덱스 i와 분리).
+  let displayNum = 0;
   stops.forEach((p, i) => {
     const isBasecamp = isBasecampPlace(p, dayIndex);
     const isAirport = isAirportAnchorPlace(p);
     const isAnchor = isBasecamp || isAirport; // 삭제는 금지하되, 순서는 자유롭게 바꿀 수 있음
     const revisitPurpose = lodgingRevisitPurpose.get(p.id) ?? null;
+    if (!revisitPurpose) displayNum += 1;
     const memo = memoStore.get(p.id) ?? '';
     const highlighted = p.id === highlightedPlaceId;
-    const cardColor = revisitPurpose ? LODGING_REVISIT_COLOR : stopIdentityColor();
+    const isEndpoint = i === 0 || i === stops.length - 1;
+    const cardColor = revisitPurpose ? LODGING_REVISIT_COLOR : stopIdentityColor(isEndpoint);
 
     const manualTime = timeOverride.has(timeKey(day.id, p.id));
     // 예상 체류시간(참고용 추정치) 대신, 그 시각에 실제로 도착하는 시각(HH:MM)을 보여준다 —
@@ -2507,9 +2793,8 @@ function renderRightPanel(container: HTMLElement): void {
         // "순서 정리" 버튼(optimizedOrder)을 누르면 그때만 다시 양 끝으로 고정된다.
         '<div class="rt-panel-stop' + (highlighted ? ' rt-highlighted' : '') + (revisitPurpose ? ' rt-panel-stop-revisit' : '') +
           '" draggable="true" data-place-id="' + p.id + '" title="드래그해서 순서 바꾸기">',
-        revisitPurpose
-          ? '  <span class="rt-panel-badge" style="background:' + LODGING_REVISIT_TINT + ';color:' + LODGING_REVISIT_COLOR + '">' + IC_LODGING + '</span>'
-          : '  <span class="rt-panel-badge" style="background:' + AERO_BLUE_TINT + ';color:' + cardColor + '">' + (i + 1) + '</span>',
+        // 지도 마커처럼 색을 꽉 채운 원 + 흰 글자/아이콘
+        '  <span class="rt-panel-badge" style="background:' + cardColor + ';color:#FFFFFF">' + (revisitPurpose ? IC_LODGING : displayNum) + '</span>',
         '  <div class="rt-panel-name-col"><div class="rt-panel-name">' + escapeHtml(p.name) + '</div><div class="rt-panel-sub">' +
           escapeHtml(revisitPurpose ? '잠깐 들르기 · ' + revisitPurpose : p.category || (isBasecamp ? '숙소' : '')) + '</div></div>',
         timeOrDwellHtml,
@@ -2615,6 +2900,10 @@ function renderRightPanel(container: HTMLElement): void {
 
 function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
   el.querySelector('#rt-ai-plan')?.addEventListener('click', () => openAiPlanNotesModal(container));
+  el.querySelector('#rt-legs-real-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    void loadRealLegsForActiveDay(container);
+  });
   el.querySelectorAll('.rt-panel-remove').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -2676,6 +2965,8 @@ function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
       if ((e.target as HTMLElement).closest('input, button')) return;
       const id = (card as HTMLElement).dataset.placeId!;
       highlightedPlaceId = highlightedPlaceId === id ? null : id;
+      // 선택할 때만 그 핀으로 지도를 옮긴다(선택 해제 땐 보던 화면 그대로)
+      if (highlightedPlaceId) focusPlaceOnMap(id);
       drawRouteOnMap(false);
       renderRightPanel(container);
     });
@@ -2790,48 +3081,53 @@ function refreshAll(container: HTMLElement, opts: { refit: boolean } = { refit: 
   renderLeftPanel(container);
   renderRightPanel(container);
   drawRouteOnMap(opts.refit);
-  // 변경이 실제로 있을 때만 저장되고(지문 비교), 새로 생긴 구간은 실측 데이터를 채운다.
+  // 변경이 실제로 있을 때만 저장된다(지문 비교). 실제 경로는 여기서 자동으로 다시 불러오지
+  // 않는다 — 장소를 추가/재배열할 때마다 Route Matrix API를 부르면 비용이 커지므로, 새로
+  // 생긴 구간은 "실제 경로 보기"를 다시 눌러야 실측으로 채워진다(estimateNoteHtml 참고).
   scheduleSave();
-  void loadRealLegsForActiveDay(container);
 }
 
 /* ══════════════════ 지도 ══════════════════ */
 
 /**
- * 핀·배지·리스트 강조색 — Aero Blue 한 가지로 통일. 이동수단 구분은 색이 아니라 캡슐
- * 배지의 아이콘/라벨과 모드 전환 노드가 담당한다.
+ * 지도 색 — 레퍼런스 시안("고급형") 이미지에서 픽셀로 뽑은 값.
+ *  - 출발·도착(그날 첫/마지막 정류지): 짙은 네이비 핀 + 그 아래 위치 점
+ *  - 중간 경유지: 라이트 블루 원 / 경로선: 그보다 한 톤 짙은 블루의 가는 선
+ *  - 아직 동선에 없는 후보: 더 옅은 블루 핀
+ * 이동수단 구분은 색이 아니라 캡슐 배지의 아이콘/라벨과 모드 전환 노드가 담당한다.
+ * (상수 이름 AERO_BLUE는 유지 — 지금은 "중간 경유지" 색을 가리킨다)
  */
-const AERO_BLUE = '#2F86D6';
-// 리스트 배지 등 옅은 틴트 배경이 필요한 곳에서 쓰는, AERO_BLUE를 10% 불투명도로 깐 버전.
-const AERO_BLUE_TINT = 'rgba(47,134,214,0.1)';
+const AERO_BLUE = '#79BEFC';
+// 동선에 담은 중간 경유지(원) 색 — 경로선(#4E9ADC)과 거의 같은 톤이라 줌아웃하면 선과 원이
+// 한 덩어리로 뭉쳐 보인다는 피드백으로, 선보다 한 단계만 진하게 해서 구분한다.
+const STOP_BLUE = '#2F86D6';
+const ENDPOINT_NAVY = '#0B2E6B';
+const CANDIDATE_BLUE = '#B1D8FD';
+const CANDIDATE_ICON = '#2C64AE';
 // "다음 장소"를 가리킬 때 쓰는 강조색 — 짙은 남색. 처음 시도한 값(#0B0F5C)이 남색보다
 // 검정에 가까워 보인다는 피드백으로, 이 앱 전체에서 이미 쓰는 네이비(--rt-navy)로 교체.
 const ROUTE_NEXT = '#0B2A5C';
 const ROUTE_GRAY = '#9AA7B8';
-// 동선(경로선) 색 — 지도가 구글 기본색(파란 물 포함)이라 핀과 같은 파랑을 쓰면 배경에
-// 묻혀서, 핀은 계속 Aero Blue를 쓰고 "길" 자체만 Tangerine(주황)으로 분리했다.
-const ROUTE_LINE_COLOR = '#F4801F';
+// 시안처럼 흰 테두리(halo) 없이 단색 선 하나로만 그린다.
+const ROUTE_LINE_COLOR = '#4E9ADC';
 // "숙소 들르기"(짐 두기 등 목적만 있는 재방문 스탑) 전용색 — 다른 어떤 카테고리/강조색과도
 // 안 겹치는 바이올렛. 우측 패널 배지·타임라인 카드가 이 색 하나로 서로 짝을 맞춘다.
 const LODGING_REVISIT_COLOR = '#7C5CFC';
-const LODGING_REVISIT_TINT = 'rgba(124,92,252,0.12)';
 
 /**
- * 지도 핀과 우측 패널 배지가 항상 같은 색을 쓰도록 하는 단일 기준 — "이 핀 = 이 카드"가
- * 색으로도 바로 연결되게 한다. 앵커(숙소/공항)든 일반 방문지든 평소(phase='plain') 상태는
- * 전부 AERO_BLUE 하나로 통일 — 진행 상태 강조(다음/지나옴)만 phaseColor가 다른 색을 얹는다.
+ * 지도 마커와 우측 패널 배지가 항상 같은 색을 쓰도록 하는 단일 기준 — "이 마커 = 이 카드"가
+ * 색으로도 바로 연결되게 한다. 그날의 첫/마지막 정류지는 네이비, 그 사이는 경로선 색.
+ * 진행 상태 강조(다음/지나옴)만 phaseColor가 다른 색을 얹는다.
  */
-function stopIdentityColor(): string {
-  return AERO_BLUE;
+function stopIdentityColor(isEndpoint: boolean): string {
+  return isEndpoint ? ENDPOINT_NAVY : STOP_BLUE;
 }
-// 방향 화살표 대신 점선 자체로 "동선"임을 표현 — 모든 이동수단을 점선으로 통일했다.
 // 두께는 항상 고정(줌 배율과 무관) — 이동수단 구분은 색이 아니라 캡슐 배지의
-// 아이콘/라벨과 모드 전환 노드가 담당한다. 점선→실선으로 바꾸면서 실제 길찾기 사이트들이
-// 흔히 쓰는 두께로 살짝 키움(2.6 → 3.5).
+// 아이콘/라벨과 모드 전환 노드가 담당한다. 시안의 선 굵기에 맞춰 2.5로.
 const MODE_STYLE: Record<Leg['mode'], { weight: number }> = {
-  WALK: { weight: 3.5 },
-  TRANSIT: { weight: 3.5 },
-  TAXI: { weight: 3.5 },
+  WALK: { weight: 2.5 },
+  TRANSIT: { weight: 2.5 },
+  TAXI: { weight: 2.5 },
 };
 
 async function initMap(container: HTMLElement): Promise<void> {
@@ -2892,7 +3188,7 @@ async function initMap(container: HTMLElement): Promise<void> {
     appendStopBeforeEndAnchor(activeDay(), p.id);
     refreshAll(rtContainer, { refit: true });
     // scheduleSave의 600ms 디바운스를 기다리다 새로고침하면 유실될 수 있어 바로 저장을 확정한다.
-    void persistActiveDay();
+    void syncPlan();
   });
 
   // 축소할수록 번호 핀이 상대적으로 너무 커 보이는 문제 — 줌 레벨에 따라 핀 크기를 다시 계산.
@@ -2996,9 +3292,14 @@ function drawRouteOnMap(refit: boolean): void {
   let stopInfoShown = false;
 
   // 오늘 동선의 정류지 — 순서 번호 + 정체성 색(평소) / 진행 상태 색(포커스 중일 때만)
+  // 패널 리스트(renderRightPanel)와 동일하게, "숙소 들르기" 재방문 스탑은 건너뛰고 번호를 매긴다.
+  let mapDisplayNum = 0;
   stops.forEach((p, i) => {
     const isBasecamp = isBasecampPlace(p, dayIndex);
-    const baseColor = stopIdentityColor();
+    // 그날의 첫/마지막 정류지만 핀, 그 사이는 원 — 시안과 같은 구성
+    const isEndpoint = i === 0 || i === stops.length - 1;
+    const baseColor = stopIdentityColor(isEndpoint);
+    if (!lodgingRevisitPurpose.has(p.id)) mapDisplayNum += 1;
     // 어떤 장소를 클릭/호버하면 그 장소(current)와 바로 이전 정류지(adjacent)만 강조하고,
     // 나머지는 전부 회색으로 물러난다 — "그 장소로 가는 구간 + 이전 장소만" 강조라는 원칙.
     // 아무것도 선택하지 않았으면 각자의 정체성 색 그대로.
@@ -3011,7 +3312,8 @@ function drawRouteOnMap(refit: boolean): void {
     const marker = buildMarkerV2(g, p, {
       isBasecamp,
       included: true,
-      num: i + 1,
+      endpoint: isEndpoint,
+      num: mapDisplayNum,
       highlighted: p.id === focusId,
       phase,
       baseColor,
@@ -3053,6 +3355,7 @@ function drawRouteOnMap(refit: boolean): void {
   }
 
   if (refit) fitRouteBounds();
+  renderSearchResultsPanel();
 }
 
 /** "이 근처 검색" 카테고리 칩 — Google Nearby Search의 includedTypes 그대로. "전체"는
@@ -3079,6 +3382,10 @@ function nearbySearchCacheKey(placeId: string, types: string[] | null, keyword: 
 async function runNearbySearch(place: Place, types: string[] | null, keyword: string | null): Promise<void> {
   if (place.lat == null || place.lng == null || !rtContainer || searchBusy) return;
   const cacheKey = nearbySearchCacheKey(place.id, types, keyword);
+  const what = types
+    ? NEARBY_CATEGORY_CHIPS.find((c) => c.types.join(',') === types.join(','))?.label ?? '장소'
+    : "'" + keyword!.trim() + "'";
+  searchContext = { title: place.name + ' 근처 ' + what, center: { lat: place.lat, lng: place.lng } };
   const cached = nearbySearchCache.get(cacheKey);
   if (cached) {
     searchResultPlaces = cached;
@@ -3092,7 +3399,7 @@ async function runNearbySearch(place: Place, types: string[] | null, keyword: st
     const results = types
       ? await searchPlacesNearby(center, NEARBY_SEARCH_RADIUS_M, types)
       : await searchPlacesByText(keyword!, { center, radius: NEARBY_SEARCH_RADIUS_M });
-    searchResultPlaces = results.map(googleResultToPlace);
+    searchResultPlaces = toSearchPlaces(results);
     nearbySearchCache.set(cacheKey, searchResultPlaces);
     if (searchResultPlaces.length === 0) window.alert('이 근처에 검색 결과가 없어요.');
   } finally {
@@ -3121,15 +3428,27 @@ function updateStopInfoPanel(
   const legRow = (arrow: string, leg: Leg | null, place: Place | null, manual: boolean): string => {
     if (!leg || !place) return '';
     const extra = leg.mode === 'WALK' ? fmtKm(leg.km) : (leg.costTHB > 0 ? fmtCost(leg.costTHB, currency) : '무료');
+    // 이 구간을 누르면 구글맵 경로 화면으로 — "←"는 place→p, "→"는 p→place 방향.
+    const gmUrl =
+      p.lat != null && p.lng != null && place.lat != null && place.lng != null
+        ? googleMapsDirUrl(
+            arrow === '←' ? { lat: place.lat, lng: place.lng } : { lat: p.lat, lng: p.lng },
+            arrow === '←' ? { lat: p.lat, lng: p.lng } : { lat: place.lat, lng: place.lng },
+            leg.mode
+          )
+        : null;
+    const tag = gmUrl ? 'a' : 'div';
     return [
-      '<div class="rt-stopinfo-leg">',
+      '<' + tag + ' class="rt-stopinfo-leg"' +
+        (gmUrl ? ' href="' + gmUrl + '" target="_blank" rel="noopener noreferrer" title="구글맵에서 경로 보기"' : '') + '>',
       '  <span class="rt-stopinfo-leg-arrow">' + arrow + '</span>',
       '  <span class="rt-stopinfo-leg-name">' + escapeHtml(place.name) + '</span>',
       '  <span class="rt-stopinfo-leg-mode">' + modeIcon(leg.mode) + '</span>',
       '  <span class="rt-stopinfo-leg-time">' + fmtMin(leg.min) + ' <b>·</b> ' + extra + '</span>',
       !leg.real ? '  <span class="rt-stopinfo-leg-est" title="실제 경로를 못 받아 직선거리로 추정한 값이에요">추정</span>' : '',
       manual ? '  <span class="rt-stopinfo-leg-manual" title="직접 지정한 이동수단"></span>' : '',
-      '</div>',
+      gmUrl ? '  <span class="rt-stopinfo-leg-gmaps">' + IC_EXTLINK + '</span>' : '',
+      '</' + tag + '>',
     ].join('');
   };
   const prevManual = prevPlace ? legModeOverride.has(legKey(prevPlace.id, p.id)) : false;
@@ -3219,6 +3538,7 @@ function fitRouteBounds(): void {
 function closePlaceCard(): void {
   if (placeCardOverlay) { placeCardOverlay.setMap(null); placeCardOverlay = null; }
   placeCardPlaceId = null;
+  markSelectedSearchResult();
 }
 
 function openPlaceCard(g: any, p: Place): void {
@@ -3270,7 +3590,7 @@ function openPlaceCard(g: any, p: Place): void {
       closePlaceCard();
       refreshAll(rtContainer!, { refit: false });
       // scheduleSave의 600ms 디바운스를 기다리다 새로고침하면 유실될 수 있어 바로 저장을 확정한다.
-      void persistActiveDay();
+      void syncPlan();
     });
   });
 }
@@ -3309,6 +3629,7 @@ function openSearchResultCard(g: any, p: Place, cacheSource: string): void {
   placeCardOverlay = new Ctor(new g.maps.LatLng(p.lat!, p.lng!), html, 'rt-clickcard');
   placeCardOverlay.setMap(mapInstance);
   placeCardPlaceId = p.id;
+  markSelectedSearchResult();
 
   requestAnimationFrame(() => {
     const div: HTMLElement | null = placeCardOverlay?.div ?? null;
@@ -3324,6 +3645,126 @@ function openSearchResultCard(g: any, p: Place, cacheSource: string): void {
       addBtn.textContent = '추가하는 중…';
       void addSearchResultToDay(p, rtContainer!, cacheSource);
     });
+  });
+}
+
+/** 검색 결과를 지도 핀으로 바꾸면서 리뷰 수를 따로 기억해 둔다(추천순 정렬용) */
+function toSearchPlaces(results: GooglePlaceResult[]): Place[] {
+  return results.map((r) => {
+    const p = googleResultToPlace(r);
+    searchReviewCount.set(p.id, r.userRatingCount ?? null);
+    return p;
+  });
+}
+
+/**
+ * 좌측 패널의 검색 결과 목록 — 지도/근처 검색 결과를 구글맵처럼 추천순으로 나열해, 핀을 하나씩
+ * 눌러 보지 않고도 사진·평점·리뷰 수·거리를 한눈에 비교하고 바로 담을 수 있게 한다.
+ * 결과가 있는 동안엔 좌측 패널이 이 목록으로 바뀌고, ←를 누르면 결과를 지우고 원래 목록으로 돌아간다.
+ */
+function renderSearchResultsPanel(): void {
+  const container = rtContainer;
+  const panel = container?.querySelector('#rt-float-search') as HTMLElement | null;
+  const box = container?.querySelector('#rt-float-results') as HTMLElement | null;
+  if (!container || !panel || !box) return;
+
+  const sig = searchResultPlaces.map((p) => p.id).join(',') + '\n' + (searchContext?.title ?? '');
+  if (sig === renderedResultsSig) { markSelectedSearchResult(); return; }
+  renderedResultsSig = sig;
+  markedSearchResultId = null;
+
+  const hasResults = searchResultPlaces.length > 0;
+  panel.classList.toggle('has-results', hasResults);
+  if (!hasResults) { box.innerHTML = ''; return; }
+  // 새 검색 결과가 오면 접어 둔 패널도 펼쳐서 보여준다
+  if (leftPanelCollapsed) setLeftPanelCollapsed(container, false);
+
+  const center = searchContext?.center ?? null;
+  const ranked = rankByRecommendation(
+    searchResultPlaces.map((p) => ({
+      id: p.id,
+      name: p.name,
+      rating: p.google_rating,
+      reviewCount: searchReviewCount.get(p.id) ?? null,
+      distanceKm: center && p.lat != null && p.lng != null ? haversineKm(center.lat, center.lng, p.lat, p.lng) : null,
+      place: p,
+    }))
+  );
+
+  const rows = ranked.map(({ place: p, reviewCount, distanceKm }) => {
+    const meta = [
+      p.google_rating != null
+        ? '<span class="rt-sr-rate">' + IC_STAR + ' ' + p.google_rating.toFixed(1) + '</span>' +
+          (reviewCount ? '<span class="rt-sr-count">(' + reviewCount.toLocaleString('ko-KR') + ')</span>' : '')
+        : '<span class="rt-sr-norate">평점 없음</span>',
+      p.category ? escapeHtml(p.category) : '',
+      distanceKm != null ? fmtKm(distanceKm) : '',
+    ].filter(Boolean).join('<span class="rt-sr-dot">·</span>');
+    return [
+      '<div class="rt-sr-item" data-sr-id="' + p.id + '" role="button" tabindex="0" title="지도에서 보기">',
+      '  <div class="rt-float-thumb"' + (p.photo_url ? ' style="background-image:url(\'' + p.photo_url + '\')"' : '') + '>' +
+        (p.photo_url ? '' : '<span>' + searchResultIcon(p.category) + '</span>') + '</div>',
+      '  <div class="rt-float-text"><div class="rt-float-name">' + escapeHtml(p.name) + '</div><div class="rt-sr-meta">' + meta + '</div></div>',
+      '  <button type="button" class="rt-float-add" data-sr-add="' + p.id + '" title="일정에 추가" aria-label="' + escapeHtml(p.name) + ' 일정에 추가">' + IC_PLUS + '</button>',
+      '</div>',
+    ].join('');
+  });
+
+  box.innerHTML = [
+    '<div class="rt-sr-head">',
+    '  <button type="button" class="rt-sr-back" id="rt-sr-back" title="검색 결과 닫기" aria-label="검색 결과 닫기">' + IC_ARROW_LEFT + '</button>',
+    '  <div class="rt-sr-head-text">',
+    '    <div class="rt-sr-title">' + escapeHtml(searchContext?.title ?? '검색 결과') + '</div>',
+    '    <div class="rt-sr-sub">' + searchResultPlaces.length + '곳 · <span title="평점과 리뷰 수를 함께 반영해요. 리뷰가 적은 곳은 평점을 덜 믿어요.">추천순</span></div>',
+    '  </div>',
+    '</div>',
+    '<div class="rt-sr-list">' + rows.join('') + '</div>',
+  ].join('');
+  box.scrollTop = 0;
+
+  box.querySelector('#rt-sr-back')?.addEventListener('click', () => clearSearchResults(container));
+  box.querySelectorAll('.rt-sr-item').forEach((row) => {
+    const open = () => {
+      const p = searchResultPlaces.find((sp) => sp.id === (row as HTMLElement).dataset.srId);
+      const g = (window as any).google;
+      if (!p || p.lat == null || p.lng == null || !g?.maps || !mapInstance) return;
+      mapInstance.panTo({ lat: p.lat, lng: p.lng });
+      openSearchResultCard(g, p, 'google_search');
+    };
+    row.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('button')) return;
+      open();
+    });
+    row.addEventListener('keydown', (e) => {
+      const ke = e as KeyboardEvent;
+      if (ke.key === 'Enter' || ke.key === ' ') { ke.preventDefault(); open(); }
+    });
+  });
+  box.querySelectorAll('[data-sr-add]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const p = searchResultPlaces.find((sp) => sp.id === (btn as HTMLElement).dataset.srAdd);
+      if (!p) return;
+      (btn as HTMLButtonElement).disabled = true;
+      void addSearchResultToDay(p, container, 'google_search').finally(() => {
+        (btn as HTMLButtonElement).disabled = false;
+      });
+    });
+  });
+  markSelectedSearchResult();
+}
+
+/** 지도에서 연 검색 결과 카드와 목록의 같은 줄을 맞춘다(목록 전체를 다시 그리지 않고 표시만).
+ *  지도는 줌할 때마다 다시 그려지므로, 선택이 실제로 바뀐 때만 그 줄로 스크롤한다
+ *  — 안 그러면 사용자가 목록을 내려 보는 중에 계속 선택된 줄로 끌려간다. */
+let markedSearchResultId: string | null = null;
+function markSelectedSearchResult(): void {
+  const box = rtContainer?.querySelector('#rt-float-results');
+  if (!box || placeCardPlaceId === markedSearchResultId) return;
+  markedSearchResultId = placeCardPlaceId;
+  box.querySelectorAll('.rt-sr-item').forEach((row) => {
+    const on = (row as HTMLElement).dataset.srId === placeCardPlaceId;
+    row.classList.toggle('is-selected', on);
+    if (on) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   });
 }
 
@@ -3407,6 +3848,8 @@ function phaseColor(phase: StopPhase, baseColor: string): string {
 interface MarkerOpts {
   isBasecamp: boolean;
   included: boolean;
+  /** 동선에 포함된 정류지 중 그날의 첫/마지막이면 true(핀), 아니면 원 */
+  endpoint?: boolean;
   num?: number;
   highlighted?: boolean;
   phase?: StopPhase;
@@ -3426,8 +3869,6 @@ function pinZoomScale(): number {
   return Math.max(PIN_MIN_ZOOM_SCALE, 1 - diff * 0.09);
 }
 
-// 후보(아직 안 담은 곳)도 완전히 배경에 묻히지 않도록 아이콘 톤을 한 단계 진하게(ROUTE_GRAY보다 어두운 slate)
-const CANDIDATE_TONE = '#6B7A93';
 // 머리 중심에서 끝(뾰족한 점)까지의 거리 / 머리 반지름. 작을수록 짧고 통통한(덜 길쭉한) 핀이 된다.
 const PIN_TAIL_RATIO = 1.5;
 
@@ -3450,74 +3891,118 @@ function pinTearPath(cx: number, cy: number, r: number, tipY: number): string {
   );
 }
 
+/** 24×24 선 아이콘을 (cx,cy) 중심, 한 변 size 픽셀로 그린다 */
+function markerIconSvg(icon: string, cx: number, cy: number, size: number, color: string, strokeWidth: number): string {
+  return '<g transform="translate(' + (cx - size / 2) + ',' + (cy - size / 2) + ') scale(' + size / 24 + ')" color="' + color +
+    '" fill="none" stroke="currentColor" stroke-width="' + strokeWidth + '" stroke-linecap="round" stroke-linejoin="round">' +
+    iconInner(icon) + '</g>';
+}
+
+/** 선택된 마커만 같은 색의 옅은 동심원으로 강조 */
+function markerHaloSvg(cx: number, cy: number, r: number, color: string): string {
+  return '<circle cx="' + cx + '" cy="' + cy + '" r="' + (r + 9) + '" fill="' + color + '" fill-opacity="0.12"/>' +
+    '<circle cx="' + cx + '" cy="' + cy + '" r="' + (r + 4.5) + '" fill="' + color + '" fill-opacity="0.1"/>';
+}
+
+/** 핀 실루엣 + 바깥쪽에만 흰 테두리(흰 실루엣을 굵은 선으로 먼저 깔고 그 위에 색 핀을 얹음).
+ *  outline이 0이면 테두리 없이 핀만. */
+function outlinedPinSvg(cx: number, headCy: number, r: number, tipY: number, fill: string, outline: number): string {
+  const d = pinTearPath(cx, headCy, r, tipY);
+  const under = outline > 0
+    ? '<path d="' + d + '" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="' + outline * 2 + '" stroke-linejoin="round"/>'
+    : '';
+  return under + '<path d="' + d + '" fill="' + fill + '"/>';
+}
+
 /**
- * 지도 핀 — 흰 배경 원 + 진행 상태 색 테두리·숫자로 위계를 낮추고, 동그라미 배지가 아니라
- * 끝이 뾰족한 실제 지도 핀 모양으로. 테두리 색은 얇은 링이 아니라 원 아래로 이어지는 뾰족한
- * 부분 전체를 채운다 — 뒤에 색깔 핀 실루엣을 통째로 깔고, 그 위에 살짝 작은 흰 원을 얹어
- * 위쪽만 링처럼 보이고 아래 꼬리는 그대로 색이 드러나는 방식.
- *  - 동선에 포함된 정류지: 순서 번호 + 진행 상태 색 테두리·숫자
- *  - 아직 담지 않은 후보: 더 옅은 톤 테두리 + 카테고리 아이콘(배경으로 물러나게)
+ * 지도 마커 — 레퍼런스 시안("고급형")과 같은 구성. 크기 비율은 시안에서 핀 머리 반지름(r) 대비로 잰 값.
+ *  - 그날의 첫/마지막 정류지: 네이비 핀(흰 카테고리 아이콘) + 실제 위치를 짚는 흰 점(네이비 테두리).
+ *    핀은 점 위에 살짝 떠 있고, 경로선은 점에 닿는다.
+ *  - 중간 경유지: 라이트 블루로 꽉 채운 원 + 흰 번호(얇은 흰 테두리)
+ *  - 아직 담지 않은 후보: 옅은 블루 핀 + 두꺼운 흰 테두리 + 블루 아이콘
+ * "숙소 들르기" 재방문 스탑은 위치와 상관없이 바이올렛 + 숙소 아이콘(번호 없음).
  */
 function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
   const meta = categoryMeta(p, opts.isBasecamp);
   const phase: StopPhase = opts.phase ?? 'plain';
   const scale = (opts.highlighted ? 1.18 : 1) * pinZoomScale();
-  const r = (opts.included ? 15 : 10) * scale; // 머리(원) 반지름 — 기존 크기 기준 유지
+  const pad = opts.highlighted ? 26 : 6;
+  const isRevisit = opts.included && lodgingRevisitPurpose.has(p.id);
 
-  // halo/그림자까지 담을 여유를 둔 캔버스. 핀은 원보다 세로로 조금 길어서 폭/높이를 따로 잰다.
-  const pad = opts.highlighted ? 26 : 12;
-  const tail = r * PIN_TAIL_RATIO;
-  const w = Math.ceil(r * 2 + pad);
-  const h = Math.ceil(r + tail + pad);
-  const cx = w / 2;
-  // 실제 지도 좌표는 핀의 뾰족한 끝이 가리켜야 하므로, 끝점을 anchor로 쓴다(그림자 여유로 살짝 위).
-  const tipY = h - pad / 2;
-  const headCy = tipY - tail;
+  let body: string;
+  let w: number;
+  let h: number;
+  let ax: number;
+  let ay: number;
+  let zIndex: number;
 
-  // "숙소 들르기" 재방문 스탑은 진행 상태색 대신 항상 전용 바이올렛 — 진짜 숙소 핀과
-  // 헷갈리지 않도록 번호 대신 캐리어 아이콘을 보여준다.
-  const isRevisit = lodgingRevisitPurpose.has(p.id);
-  const borderColor = isRevisit ? LODGING_REVISIT_COLOR : opts.included ? phaseColor(phase, opts.baseColor ?? AERO_BLUE) : 'rgba(107,122,147,0.85)';
-  const numberColor = borderColor;
-  // 위쪽에서만 링처럼 보이도록, 흰 원은 머리 반지름보다 살짝 작게(그 차이만큼이 링 두께)
-  const ringWidth = r * 0.24;
-  const whiteR = r - ringWidth;
-
-  // 선택된 지점만 아주 옅은 Aero Blue halo로 강조 — 핀의 머리 부분을 중심으로
-  const halo = opts.highlighted
-    ? '<circle cx="' + cx + '" cy="' + headCy + '" r="' + (r + 9) + '" fill="' + AERO_BLUE + '" fill-opacity="0.09"/>' +
-      '<circle cx="' + cx + '" cy="' + headCy + '" r="' + (r + 4.5) + '" fill="' + AERO_BLUE + '" fill-opacity="0.07"/>'
-    : '';
-  // 그림자는 핀이 실제로 딛고 선 지점(끝)에 얕게
-  const shadow =
-    '<ellipse cx="' + cx + '" cy="' + (tipY + r * 0.1) + '" rx="' + r * 0.42 + '" ry="' + r * 0.15 + '" fill="rgba(11,42,92,0.18)"/>';
-
-  const inner =
-    opts.included && !isRevisit
-      ? '<text x="' + cx + '" y="' + (headCy + 4.2) + '" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="' +
-        Math.round(12 * scale) + '" font-weight="800" fill="' + numberColor + '">' + (opts.num ?? '') + '</text>'
-      : '<g transform="translate(' + (cx - 5.5) + ',' + (headCy - 5.5) + ') scale(0.46)" color="' + numberColor +
-        '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-        iconInner(isRevisit ? IC_LODGING : meta.icon) + '</g>';
+  if (opts.included && opts.endpoint) {
+    const fill = isRevisit ? LODGING_REVISIT_COLOR : phaseColor(phase, opts.baseColor ?? ENDPOINT_NAVY);
+    const r = 15 * scale;
+    const tail = r * PIN_TAIL_RATIO;
+    const gap = r * 0.3;
+    const dotR = r * 0.42;
+    const dotRing = r * 0.2;
+    w = Math.ceil(r * 2 + pad);
+    ax = w / 2;
+    const headCy = pad / 2 + r;
+    const tipY = headCy + tail;
+    ay = tipY + gap + dotR;
+    h = Math.ceil(ay + dotR + pad / 2);
+    body =
+      (opts.highlighted ? markerHaloSvg(ax, headCy, r, fill) : '') +
+      outlinedPinSvg(ax, headCy, r, tipY, fill, 0) +
+      markerIconSvg(isRevisit ? IC_LODGING : meta.icon, ax, headCy, r * 0.9, '#FFFFFF', 2.6) +
+      '<circle cx="' + ax + '" cy="' + ay + '" r="' + (dotR - dotRing / 2) + '" fill="#FFFFFF" stroke="' + fill +
+      '" stroke-width="' + dotRing + '"/>';
+    zIndex = 300;
+  } else if (opts.included) {
+    const fill = isRevisit ? LODGING_REVISIT_COLOR : phaseColor(phase, opts.baseColor ?? STOP_BLUE);
+    const rc = 15 * scale * 0.68;
+    const ring = Math.max(1, rc * 0.1);
+    const outerR = rc + ring;
+    w = h = Math.ceil(outerR * 2 + pad);
+    ax = ay = w / 2;
+    const fontSize = Math.round(rc * 1.1);
+    body =
+      (opts.highlighted ? markerHaloSvg(ax, ay, outerR, fill) : '') +
+      '<circle cx="' + ax + '" cy="' + ay + '" r="' + outerR + '" fill="#FFFFFF"/>' +
+      '<circle cx="' + ax + '" cy="' + ay + '" r="' + rc + '" fill="' + fill + '"/>' +
+      (isRevisit
+        ? markerIconSvg(IC_LODGING, ax, ay, rc * 1.1, '#FFFFFF', 2.2)
+        : '<text x="' + ax + '" y="' + (ay + fontSize * 0.36) + '" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="' +
+          fontSize + '" font-weight="700" fill="#FFFFFF">' + (opts.num ?? '') + '</text>');
+    zIndex = 100 + (opts.num ?? 0);
+  } else {
+    const r = 10 * scale;
+    const outline = r * 0.25;
+    const tail = r * PIN_TAIL_RATIO;
+    w = Math.ceil((r + outline) * 2 + pad);
+    ax = w / 2;
+    const headCy = pad / 2 + outline + r;
+    ay = headCy + tail;
+    h = Math.ceil(ay + outline + pad / 2);
+    body =
+      (opts.highlighted ? markerHaloSvg(ax, headCy, r, AERO_BLUE) : '') +
+      outlinedPinSvg(ax, headCy, r, ay, CANDIDATE_BLUE, outline) +
+      markerIconSvg(meta.icon, ax, headCy, r * 1.05, CANDIDATE_ICON, 2.4);
+    zIndex = 10;
+  }
 
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
-    halo +
-    shadow +
-    '<path d="' + pinTearPath(cx, headCy, r, tipY) + '" fill="' + borderColor + '"/>' +
-    '<circle cx="' + cx + '" cy="' + headCy + '" r="' + whiteR + '" fill="#FFFFFF"/>' +
-    inner +
+    body +
     '</svg>';
 
   return new g.maps.Marker({
     position: { lat: p.lat!, lng: p.lng! },
     map: mapInstance,
     title: p.name,
-    zIndex: opts.highlighted ? 400 : opts.included ? 100 + (opts.num ?? 0) : 10,
+    zIndex: opts.highlighted ? 400 : zIndex,
     icon: {
       url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
       scaledSize: new g.maps.Size(w, h),
-      anchor: new g.maps.Point(cx, tipY),
+      anchor: new g.maps.Point(ax, ay),
     },
   });
 }
@@ -3678,6 +4163,7 @@ interface LegDrawOpts {
   dimmed: boolean;
 }
 
+/** 경로선 한 구간 — 시안처럼 흰 테두리 없이 단색 선 하나 */
 function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDrawOpts): any {
   const style = MODE_STYLE[leg.mode];
 
@@ -3690,7 +4176,7 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
   if (opts.overlapIndex > 0) path = offsetPath(path, opts.overlapIndex * 28);
 
   const color = opts.dimmed ? ROUTE_GRAY : ROUTE_LINE_COLOR;
-  const opacity = opts.dimmed ? 0.5 : opts.selected ? 1 : 0.85;
+  const opacity = opts.dimmed ? 0.5 : 1;
   const weight = opts.selected ? style.weight + 1 : style.weight;
 
   return new g.maps.Polyline({

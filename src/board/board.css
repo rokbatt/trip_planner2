@@ -10,6 +10,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 8px;
   padding: 12px 28px 0;
   box-sizing: border-box;
 }
@@ -36,6 +37,104 @@
 }
 .bd-dest-switch:hover { border-color: #8FD8F8; background: #fff; }
 .bd-dest-switch svg { width: 13px; height: 13px; color: #0B7CC4; }
+
+/* "지도로 보기" 토글 — 여행지 변경 버튼과 같은 톤, 눌려있을 땐("보드로 돌아가기") 네이비로 강조 */
+.bd-map-view-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(130,150,170,0.24);
+  background: rgba(255,255,255,0.65);
+  color: #0B2A5C;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.bd-map-view-btn:hover { border-color: #8FD8F8; background: #fff; }
+.bd-map-view-btn svg { width: 13px; height: 13px; color: #0B7CC4; }
+
+/* ── 지도로 보기: 화면 전체가 지도로 바뀜 ── */
+.bd-map-view { width: 100%; max-width: 1800px; margin: 0 auto; padding: 12px 28px 28px; box-sizing: border-box; }
+.bd-map-view[hidden] { display: none; }
+.bd-map-view-canvas {
+  position: relative;
+  width: 100%;
+  height: calc(100dvh - 220px);
+  min-height: 420px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #F1F6FB;
+  border: 1px solid rgba(130,150,170,0.2);
+}
+.bd-map-view-loading,
+.bd-map-view-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  font-size: 13px;
+  color: #64748B;
+  line-height: 1.6;
+}
+.bd-map-view-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 0 4px;
+  font-size: 11.5px;
+  color: #64748B;
+}
+.bd-map-view-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.bd-map-legend-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dot); flex-shrink: 0; }
+
+/* 범례 = 게이트별 표시/숨김 토글 버튼. 꺼진 칩은 색을 빼고 점만 테두리로 남겨 "지금 안 보이는 것"임을 알린다 */
+.bd-map-legend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid rgba(130,150,170,0.32);
+  border-radius: 999px;
+  background: #FFFFFF;
+  font: inherit;
+  font-size: 11.5px;
+  color: #334155;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease;
+}
+.bd-map-legend-chip:hover { background: #F1F6FB; border-color: rgba(130,150,170,0.55); }
+.bd-map-legend-chip.off { background: #F8FAFC; color: #94A3B8; opacity: 0.75; }
+.bd-map-legend-chip.off .bd-map-legend-dot { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
+.bd-map-legend-hint { font-size: 11px; color: #94A3B8; }
+
+/* 마커 클릭 시 뜨는 정보창 — Google 기본 InfoWindow 안에 들어가는 커스텀 콘텐츠 */
+.bd-map-infowin { width: 180px; font-family: inherit; }
+.bd-map-infowin-photo { width: 100%; height: 90px; border-radius: 8px; background-size: cover; background-position: center; margin-bottom: 6px; }
+.bd-map-infowin-name { font-size: 13px; font-weight: 700; color: #0B2A5C; line-height: 1.4; }
+.bd-map-infowin-gate { font-size: 11px; color: #64748B; margin-top: 2px; }
+.bd-map-infowin-rating { font-size: 11px; color: #C9A227; font-weight: 700; margin-top: 2px; }
+.bd-map-infowin-detail {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 0;
+  border: none;
+  border-radius: 8px;
+  background: #0B2A5C;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
 
 /* 바가 있을 때만 레이아웃 상단 여백을 줄여 이중 여백을 피함 */
 .bd-dest-bar-wrap:not(:empty) + .bd-layout { padding-top: 12px; min-height: calc(100% - 60px); }
@@ -97,6 +196,10 @@
   box-sizing: border-box;
   overflow-x: hidden;
 }
+/* .bd-layout가 display:flex를 직접 지정하고 있어서(author 스타일이 [hidden]의 UA 기본
+   display:none보다 우선순위가 높음) hidden 속성만으로는 실제로 안 숨겨지던 버그 — 지도로
+   보기로 전환해도 이 레이아웃이 계속 보이고 그 아래로 지도가 이어 붙는 것처럼 보였다. */
+.bd-layout[hidden] { display: none; }
 
 .bd-loading {
   display: flex;
@@ -150,6 +253,33 @@
 }
 
 .bd-inbox-header { margin-bottom: 14px; }
+
+.bd-inbox-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.bd-inbox-header-top .bd-inbox-eyebrow { margin-bottom: 0; }
+
+.bd-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(130,150,170,0.24);
+  background: rgba(255,255,255,0.7);
+  color: #0B7CC4;
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+.bd-export-btn svg { width: 11px; height: 11px; }
+.bd-export-btn:hover { background: #EAF6FD; border-color: #8FD8F8; }
 
 .bd-inbox-eyebrow {
   font-size: 10px;
@@ -907,13 +1037,16 @@
 /*
  * outline은 border와 달리 박스 크기(레이아웃)에 전혀 영향을 주지 않는다 — padding:0이라
  * 카드는 그룹 없는 카드와 완전히 같은 위치에서 시작하고, outline-offset으로 테두리만
- * 카드 바깥쪽에 살짝 띄워서 그린다(활주로 조명 느낌의 주황 실선).
+ * 카드 바깥쪽에 살짝 띄워서 그린다(활주로 조명 느낌의 실선). 색은 JS가 --group-color로
+ * 그룹마다 다르게 채워준다(게이트 안에 그룹이 2개 이상이면 서로 구분되도록) — 기본값은
+ * 기존 주황(단일 그룹일 때 화면이 안 바뀌도록).
  */
 .bd-group-cluster {
+  --group-color: #F5A623;
   position: relative;
   padding: 0;
   border-radius: 12px;
-  outline: 1.5px solid #F5A623;
+  outline: 2px solid var(--group-color);
   outline-offset: 4px;
 }
 /* 평소엔 테두리만 보이고, 클러스터에 마우스를 올렸을 때만 좌상단에 이름표가 나타난다 —
@@ -929,7 +1062,7 @@
   gap: 4px;
   padding: 3px 7px;
   background: #FFFFFF;
-  border: 1px solid rgba(245,166,35,0.45);
+  border: 1px solid color-mix(in srgb, var(--group-color) 45%, transparent);
   border-radius: 999px;
   box-shadow: 0 2px 6px rgba(11,42,92,0.1);
   opacity: 0;
@@ -955,8 +1088,8 @@
 .bd-group-cluster-count {
   font-size: 9.5px;
   font-weight: 700;
-  color: #E08E00;
-  background: rgba(245,166,35,0.14);
+  color: color-mix(in srgb, var(--group-color) 80%, black 20%);
+  background: color-mix(in srgb, var(--group-color) 14%, white);
   border-radius: 999px;
   padding: 0 6px;
   flex-shrink: 0;
@@ -1482,4 +1615,118 @@
   flex-shrink: 0;
 }
 .bd-site-arrow svg { width: 100%; height: 100%; }
+
+/* ============================================================
+   AI로 내보내기 — 모은 장소를 텍스트로 정리해 복사하는 모달
+   ============================================================ */
+.bd-export-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(11,42,92,0.35);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 400;
+  padding: 24px;
+}
+.bd-export-modal {
+  width: min(560px, 100%);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  background: #FFFFFF;
+  border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(11,42,92,0.28);
+  padding: 22px;
+  box-sizing: border-box;
+}
+.bd-export-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.bd-export-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #0B7CC4;
+  margin-bottom: 4px;
+}
+.bd-export-title {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0B2A5C;
+}
+.bd-export-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: #F1F6FB;
+  color: #64748B;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 150ms ease, color 150ms ease;
+}
+.bd-export-close svg { width: 13px; height: 13px; }
+.bd-export-close:hover { background: #E7EEF5; color: #0B2A5C; }
+
+.bd-export-hint {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #64748B;
+  margin-bottom: 12px;
+}
+.bd-export-textarea {
+  flex: 1;
+  min-height: 260px;
+  resize: vertical;
+  border: 1px solid rgba(130,150,170,0.24);
+  border-radius: 12px;
+  padding: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #1E293B;
+  background: #F8FBFE;
+  white-space: pre;
+}
+.bd-export-textarea:focus {
+  outline: none;
+  border-color: #8FD8F8;
+  box-shadow: 0 0 0 3px rgba(143,216,248,0.18);
+}
+
+.bd-export-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+.bd-export-copy {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 10px;
+  background: #0B2A5C;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.bd-export-copy:hover { background: #0E3676; }
+.bd-export-copy.copied { background: #1BAF7A; }
+
+@media (max-width: 640px) {
+  .bd-export-modal { padding: 18px; }
+  .bd-export-textarea { min-height: 200px; }
+}
 .bd-site-link:hover .bd-site-arrow { color: #0B7CC4; }

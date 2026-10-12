@@ -16,7 +16,8 @@ import { renderWorkspace, findExistingWorkspace, switchGate, defaultGateFor } fr
 // ─── 인증이 필요 없는 라우트 ───
 // join은 초대코드를 들고 온 비로그인 사용자도 접근해야 해서 public 처리
 // (renderJoinPage 내부에서 로그인 여부를 직접 분기함)
-const PUBLIC_ROUTES = ['login', 'join'];
+// terms/privacy는 로그인 전에도 읽을 수 있어야 한다 — 가입 전에 동의 여부를 판단하는 문서다
+const PUBLIC_ROUTES = ['login', 'join', 'terms', 'privacy'];
 
 // ─── 라우트 등록 ───
 addRoute('login', () => {
@@ -58,6 +59,18 @@ addRoute('join', async (params) => {
   const app = document.getElementById('app')!;
   const el = await renderJoinPage(params.tripId);
   app.replaceChildren(el);
+});
+
+// 약관 · 개인정보처리방침
+addRoute('terms', async () => {
+  const app = document.getElementById('app')!;
+  const { renderLegal } = await import('./legal/legal');
+  app.replaceChildren(renderLegal('terms'));
+});
+addRoute('privacy', async () => {
+  const app = document.getElementById('app')!;
+  const { renderLegal } = await import('./legal/legal');
+  app.replaceChildren(renderLegal('privacy'));
 });
 
 // 하위호환: 기존 #board/:tripId → #trip/:tripId/ideas 로 리다이렉트
@@ -145,6 +158,18 @@ window.addEventListener('hashchange', () => {
 
 if (originalHandleRoute()) {
   startRouter();
+}
+
+// ─── 서비스워커 등록 (홈 화면 추가용) ───
+// public/sw.js는 캐싱을 하지 않는다 — 등록의 목적은 설치 가능 상태를 만드는 것뿐이고,
+// 오프라인 팩은 docs/MOBILE_STRATEGY.md M2에서 별도로 설계한다.
+// dev에서는 등록하지 않는다(HMR과 섞이면 "왜 안 바뀌지"로 시간을 태운다).
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.warn('[SW] 등록 실패(앱 동작에는 영향 없음):', err);
+    });
+  });
 }
 
 // ─── 안전장치: 5초 타임아웃 ───

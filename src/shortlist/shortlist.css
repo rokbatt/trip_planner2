@@ -402,6 +402,16 @@
   color: var(--sl-muted);
   font-size: 13px;
 }
+/* new google.maps.Map(mapEl, ...)가 생성되는 순간 mapEl 내부가 지도 캔버스로 통째로
+   교체되므로, 이 로딩 문구는 지도가 뜨는 즉시 자연히 사라진다(따로 지우는 코드 불필요) */
+.sl-map-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--sl-muted);
+  font-size: 13px;
+}
 .sl-map-legend {
   position: absolute;
   left: 14px;
@@ -816,10 +826,14 @@
   transform: translate(-50%, -50%) scale(var(--zone-zoom-scale));
   text-align: center;
   cursor: pointer;
-  pointer-events: auto;
-  transition: transform 150ms ease;
+  /* 참고용 정보라 평소엔 지도를 덮지 않게 숨겨두고, 그 권역(폴리곤) 위에 마우스가 있을
+     때만(.zone-hovered) 보여줌 — pointer-events도 같이 꺼서 숨어있는 동안은 클릭도 안 먹음 */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease, transform 150ms ease;
 }
-.sl-map-zone-label:hover { transform: translate(-50%, -50%) scale(calc(var(--zone-zoom-scale) * 1.05)); }
+.sl-map-zone-label.zone-hovered { opacity: 1; pointer-events: auto; }
+.sl-map-zone-label.zone-hovered:hover { transform: translate(-50%, -50%) scale(calc(var(--zone-zoom-scale) * 1.05)); }
 /* 작은 권역(도형이 좁은 경우)에서 라벨이 도형 폭을 거의 다 차지해 안에 있는 마커를
    가려 보이던 문제 — 가독성 유지되는 선에서 폰트·패딩을 축소해 필 자체의 자리 차지를 줄임 */
 .sl-map-label-name {
@@ -1169,7 +1183,8 @@
 .sl-basecamp-card {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  flex-wrap: wrap; /* 탈락 사유 선택 UI가 카드 아래로 자연스럽게 펼쳐지도록 */
   gap: 12px;
   padding: 10px;
   border-radius: 12px;
@@ -1181,9 +1196,11 @@
 }
 .sl-basecamp-card:hover { border-color: var(--sl-sky); }
 .sl-basecamp-card.selected { border-color: #185FA5; background: #E6F1FB; }
+/* 비교 대상으로 고른 후보 — 선택(최종 결정)과 헷갈리지 않게 테두리만 아주 옅게 */
+.sl-basecamp-card.in-compare { border-color: rgba(11,124,196,0.45); }
 .sl-basecamp-thumb {
-  width: 56px;
-  height: 56px;
+  width: 64px;
+  height: 64px;
   border-radius: 10px;
   background-size: cover;
   background-position: center;
@@ -1198,8 +1215,449 @@
 }
 .sl-basecamp-thumb-empty svg { width: 22px; height: 22px; }
 .sl-basecamp-info { flex: 1; min-width: 0; }
-.sl-basecamp-name { font-size: 13.5px; font-weight: 700; color: var(--sl-navy); }
-.sl-basecamp-rating { font-size: 12px; color: #F5A623; font-weight: 700; margin-top: 2px; }
+.sl-basecamp-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--sl-navy);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sl-basecamp-rating { font-size: 12px; color: #F5A623; font-weight: 700; flex-shrink: 0; }
+
+/* ============================================================
+   CANDIDATE POOL — 후보 비교 & 소거
+   색은 최소한으로: 기본 White/Slate/Navy, 강조는 아주 옅은 tint만
+   ============================================================ */
+.sl-candidate-pool[hidden], .sl-compare-panel[hidden] { display: none; }
+
+.sl-pool-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.sl-pool-head-text { min-width: 0; }
+.sl-pool-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--sl-accent);
+  margin-bottom: 4px;
+}
+.sl-pool-title { font-size: 15px; font-weight: 700; color: var(--sl-navy); }
+.sl-pool-title-sub { font-size: 12.5px; font-weight: 600; color: var(--sl-muted); }
+.sl-pool-sub { font-size: 12px; color: var(--sl-muted); margin-top: 3px; }
+
+.sl-pool-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.sl-pool-sort {
+  padding: 7px 9px;
+  border: 1px solid var(--sl-border);
+  border-radius: 9px;
+  background: #FFFFFF;
+  font-size: 12px;
+  font-family: inherit;
+  color: #475569;
+  cursor: pointer;
+}
+.sl-pool-sort:focus { outline: none; border-color: var(--sl-sky); }
+.sl-pool-compare-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 9px;
+  background: var(--sl-navy);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 150ms ease;
+}
+.sl-pool-compare-btn:hover:not(:disabled) { background: var(--sl-navy-hover); }
+.sl-pool-compare-btn:disabled { background: #CBD5E1; cursor: not-allowed; }
+.sl-pool-compare-count {
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.22);
+  font-size: 10.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sl-pool-progress {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 12px;
+  min-height: 14px;
+}
+.sl-pool-progress:empty { display: none; }
+.sl-pool-dots { display: flex; align-items: center; gap: 4px; }
+.sl-pool-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #DDE5EF;
+}
+.sl-pool-dot.active { background: var(--sl-navy); }
+.sl-pool-progress-label { font-size: 11px; font-weight: 600; color: var(--sl-muted); }
+.sl-pool-almost {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--sl-accent);
+  background: #EAF6FD;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+/* ── 후보 카드 ── */
+.sl-cand-check { display: flex; align-items: center; flex-shrink: 0; cursor: pointer; }
+.sl-cand-check input { width: 15px; height: 15px; accent-color: var(--sl-navy); cursor: pointer; }
+
+.sl-cand-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+.sl-cand-price-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.sl-cand-price-input {
+  width: 88px;
+  padding: 5px 8px;
+  border: 1px solid rgba(130,150,170,0.22);
+  border-radius: 7px;
+  background: var(--sl-bg);
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 700;
+  color: var(--sl-navy);
+}
+.sl-cand-price-input::placeholder { color: #A8B7C7; font-weight: 500; }
+.sl-cand-price-input:focus { outline: none; border-color: var(--sl-sky); background: #FFFFFF; }
+.sl-cand-currency {
+  padding: 5px 4px;
+  border: 1px solid rgba(130,150,170,0.22);
+  border-radius: 7px;
+  background: var(--sl-bg);
+  font-size: 11px;
+  font-family: inherit;
+  color: #475569;
+  cursor: pointer;
+}
+.sl-cand-currency:focus { outline: none; border-color: var(--sl-sky); }
+.sl-cand-total { font-size: 11.5px; font-weight: 700; color: #8A6D2F; }
+.sl-cand-total-empty { color: var(--sl-muted); font-weight: 500; }
+
+.sl-cand-metrics { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+.sl-cand-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748B;
+}
+.sl-cand-metric svg { width: 11px; height: 11px; color: var(--sl-muted); }
+
+.sl-cand-cond-row { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+.sl-cand-cond-label { font-size: 10.5px; font-weight: 600; color: var(--sl-muted); }
+.sl-cond-stars { display: inline-flex; align-items: center; gap: 1px; }
+.sl-cond-star {
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #DDE5EF;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 120ms ease;
+}
+.sl-cond-star svg { width: 100%; height: 100%; }
+.sl-cond-star.on { color: #C9A227; }
+button.sl-cond-star:hover { color: #E0BC4A; }
+
+.sl-cand-actions { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+.sl-cand-action {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 7px;
+  background: #F1F6FB;
+  color: #64748B;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+.sl-cand-action svg { width: 11px; height: 11px; }
+.sl-cand-action:hover { background: #E4EDF7; color: var(--sl-navy); }
+.sl-cand-elim:hover { background: #FDEEEC; color: #C0392B; }
+
+/* 예약 링크가 아직 연동 안 된 카드 — 점선 테두리로 "연동된 링크(실선)"와 구분 */
+.sl-cand-link-empty { background: transparent; border: 1px dashed var(--sl-border); color: #94A3B8; }
+.sl-cand-link-empty:hover { background: #F1F6FB; color: var(--sl-navy); }
+
+.sl-cand-link-hint {
+  flex-basis: 100%;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--sl-bg);
+  border: 1px solid var(--sl-border);
+  font-size: 11.5px;
+  color: #64748B;
+  line-height: 1.5;
+}
+
+/* ── 탈락 사유 선택 ── */
+.sl-elim-picker {
+  flex-basis: 100%;
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--sl-bg);
+  border: 1px solid var(--sl-border);
+}
+.sl-elim-title { font-size: 12px; font-weight: 700; color: var(--sl-navy); margin-bottom: 8px; }
+.sl-elim-reasons { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.sl-elim-reason {
+  padding: 5px 10px;
+  border: 1px solid var(--sl-border);
+  border-radius: 999px;
+  background: #FFFFFF;
+  font-size: 11.5px;
+  font-family: inherit;
+  color: #475569;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.sl-elim-reason:hover { background: #F1F6FB; border-color: var(--sl-sky); }
+.sl-elim-custom-row { display: flex; gap: 6px; }
+.sl-elim-custom {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 9px;
+  border: 1px solid var(--sl-border);
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-family: inherit;
+  color: var(--sl-navy);
+}
+.sl-elim-custom:focus { outline: none; border-color: var(--sl-sky); }
+.sl-elim-custom-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 7px;
+  background: var(--sl-navy);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+}
+.sl-elim-cancel {
+  margin-top: 8px;
+  border: none;
+  background: none;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--sl-muted);
+  cursor: pointer;
+  padding: 0;
+}
+.sl-elim-cancel:hover { color: var(--sl-navy); }
+
+/* ── 제외한 후보 ── */
+.sl-excluded-section:empty { display: none; }
+.sl-excluded-section { margin-top: 12px; }
+.sl-excluded-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px dashed var(--sl-border);
+  border-radius: 10px;
+  background: none;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--sl-muted);
+  cursor: pointer;
+}
+.sl-excluded-toggle:hover { background: var(--sl-bg); color: #475569; }
+.sl-excluded-chevron { display: inline-flex; width: 13px; height: 13px; transition: transform 150ms ease; }
+.sl-excluded-chevron svg { width: 100%; height: 100%; }
+.sl-excluded-chevron.open { transform: rotate(180deg); }
+.sl-excluded-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.sl-excluded-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: var(--sl-bg);
+}
+.sl-excluded-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #64748B;
+  text-decoration: line-through;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sl-excluded-reason {
+  font-size: 10.5px;
+  color: var(--sl-muted);
+  background: #FFFFFF;
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.sl-excluded-restore {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border: none;
+  border-radius: 7px;
+  background: #FFFFFF;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: inherit;
+  color: var(--sl-accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.sl-excluded-restore svg { width: 11px; height: 11px; }
+.sl-excluded-restore:hover { background: #EAF6FD; }
+
+/* ── 비교 모드 (같은 패널 안에서 열림) ── */
+.sl-compare-head { margin-bottom: 12px; }
+.sl-compare-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: none;
+  padding: 0;
+  margin-bottom: 8px;
+  font-size: 11.5px;
+  font-weight: 700;
+  font-family: inherit;
+  color: var(--sl-accent);
+  cursor: pointer;
+}
+.sl-compare-back svg { width: 12px; height: 12px; transform: rotate(90deg); }
+.sl-compare-title { font-size: 15px; font-weight: 700; color: var(--sl-navy); }
+.sl-compare-sub { font-size: 12px; color: var(--sl-muted); margin-top: 3px; }
+
+.sl-compare-scroll { overflow-x: auto; }
+.sl-compare-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+}
+.sl-compare-corner { width: 108px; min-width: 108px; background: none; border: none; }
+.sl-compare-col {
+  padding: 10px 8px;
+  min-width: 118px;
+  text-align: center;
+  vertical-align: bottom;
+  font-weight: 400;
+  border-bottom: 1px solid var(--sl-border);
+}
+.sl-compare-photo {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 9px;
+  background-size: cover;
+  background-position: center;
+  background-color: #EAF6FD;
+  margin-bottom: 6px;
+}
+.sl-compare-photo-empty { display: flex; align-items: center; justify-content: center; color: var(--sl-sky); }
+.sl-compare-photo-empty svg { width: 22px; height: 22px; }
+.sl-compare-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--sl-navy);
+  line-height: 1.35;
+}
+.sl-compare-rating { font-size: 11.5px; font-weight: 700; color: #F5A623; margin-top: 2px; }
+
+/* th의 display를 flex로 바꾸면 table-cell이 아니게 되어 열 정렬이 깨질 수 있으므로,
+   셀은 table-cell로 두고 내부 요소만 block으로 쌓는다 */
+.sl-compare-rowlabel {
+  padding: 10px 10px 10px 2px;
+  text-align: left;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #475569;
+  border-bottom: 1px solid var(--sl-border);
+  vertical-align: middle;
+}
+.sl-compare-rowlabel > span { display: block; }
+.sl-compare-rownote { font-size: 9.5px; font-weight: 500; color: var(--sl-muted); line-height: 1.3; margin-top: 1px; }
+.sl-compare-cell {
+  padding: 10px 8px;
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--sl-navy);
+  border-bottom: 1px solid var(--sl-border);
+}
+/* 항목별 "가장 나은 값" — 순위가 아니라 눈에 먼저 들어오게만 하는 아주 옅은 tint */
+.sl-compare-cell.best.tint-price { background: #FBF6EA; color: #8A6D2F; }
+.sl-compare-cell.best.tint-time { background: #EFF6FC; color: #1B5E93; }
+.sl-compare-cell.best.tint-score { background: #F1F4FA; color: #2F4470; }
+
+.sl-compare-foot { padding: 12px 8px 0; text-align: center; }
+.sl-compare-decide {
+  display: block;
+  width: 100%;
+  padding: 8px 6px;
+  border: none;
+  border-radius: 8px;
+  background: var(--sl-navy);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.sl-compare-decide:hover { background: var(--sl-navy-hover); }
+.sl-compare-decide.selected { background: #E6F1FB; color: #185FA5; }
+.sl-compare-drop {
+  width: 100%;
+  margin-top: 5px;
+  padding: 6px;
+  border: 1px solid var(--sl-border);
+  border-radius: 8px;
+  background: none;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--sl-muted);
+  cursor: pointer;
+}
+.sl-compare-drop:hover { background: #FDEEEC; border-color: #F3D5D0; color: #C0392B; }
+.sl-compare-elim-wrap { margin-top: 14px; }
+
 .sl-basecamp-selected-badge {
   width: 22px;
   height: 22px;
@@ -1212,6 +1670,20 @@
   flex-shrink: 0;
 }
 .sl-basecamp-selected-badge svg { width: 12px; height: 12px; }
+
+/* "확정됨" — 그냥 선택(선택 중, 아직 최종 확정 전)과는 구분되는 상태라 아이콘만 있는
+   원형 배지 대신 글자가 들어간 필로, 색도 다르게(금색 계열) 표시 */
+.sl-basecamp-confirmed-badge {
+  width: auto;
+  height: auto;
+  border-radius: 999px;
+  background: #C9A227;
+  padding: 4px 10px;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.sl-basecamp-card.confirmed { border-color: #C9A227; background: #FBF6EA; }
 
 .sl-no-candidates {
   padding: 24px;
@@ -1712,6 +2184,30 @@
 }
 .sl-zoom-btn:first-child { border-bottom: 1px solid rgba(130,150,170,0.2); }
 .sl-zoom-btn:hover { background: #F1F6FB; }
+
+/* Step1 지도 좌상단 — 두 장소를 클릭해서 직선거리 재는 토글 버튼 */
+.sl-distance-control { margin: 10px 0 0 10px; }
+.sl-distance-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(11,42,92,0.18);
+  transition: background 120ms ease, color 120ms ease;
+}
+.sl-distance-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+.sl-distance-btn:hover { background: #F1F6FB; }
+.sl-distance-btn.active { background: #0B2A5C; color: #fff; }
+/* 측정 모드에서는 지도를 눌렀을 때 핀 클릭을 유도 — 커서로 상태를 알려줌 */
+.sl-map.sl-distance-mode { cursor: crosshair; }
 
 /* ── 이름으로 숙소 추가 ── */
 .sl-import-link-wrap {

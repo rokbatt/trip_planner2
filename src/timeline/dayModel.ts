@@ -63,6 +63,8 @@ export interface TlStop {
   travelMode: TravelMode | null;
   /** 비어있으면 일반 정류지, 있으면 "숙소 들르기"처럼 목적만 있는 특수 스탑 */
   purpose: string | null;
+  /** 사용자가 직접 정한 체류시간(분). 없으면 카테고리 기본값(dwellMinutes) 추정치를 쓴다 */
+  customDwellMin: number | null;
   /* 표시용 파생값 */
   name: string;
   cat: CatKey;
@@ -244,6 +246,7 @@ export function toStop(ctx: DayModelContext, s: StoredStop, dayIndex: number, or
     placeId: s.placeId,
     customName: s.customName,
     purpose: s.purpose,
+    customDwellMin: s.customDwellMin,
     lat: place?.lat ?? s.customLat,
     lng: place?.lng ?? s.customLng,
     arriveTime: s.arriveTime,
@@ -253,6 +256,13 @@ export function toStop(ctx: DayModelContext, s: StoredStop, dayIndex: number, or
     cat: catKeyFor(place?.mood ?? null, place?.category ?? null, { isBasecamp, isAirport }),
     place,
   };
+}
+
+/** 이 정류지의 체류시간 — 사용자가 직접 정했으면 그 값, 아니면 카테고리 기본값(추정치).
+ *  진행 중(실제 도착/출발 기록) 여부는 모르는 컨텍스트(상세 패널 등)에서 쓴다 — 실제 기록은
+ *  scheduleFor에서만 이보다 우선한다(원칙 3-1 — 실제 기록 > 사용자 지정 > 추정치). */
+export function effectiveDwellMinutes(stop: TlStop): number {
+  return stop.customDwellMin ?? dwellMinutes(stop.cat);
 }
 
 export function toStoredStops(day: TlDay): StoredStop[] {
@@ -265,6 +275,7 @@ export function toStoredStops(day: TlDay): StoredStop[] {
     memo: s.memo || null,
     travelMode: s.travelMode,
     purpose: s.purpose,
+    customDwellMin: s.customDwellMin,
   }));
 }
 
@@ -362,7 +373,7 @@ export function scheduleFor(day: TlDay, realLegs: RealLegMap, progress?: Progres
     const dwell =
       prog?.status === 'skipped' ? 0
       : actualArrive != null && actualDepart != null ? Math.max(0, actualDepart - actualArrive)
-      : dwellMinutes(s.cat);
+      : effectiveDwellMinutes(s);
     const depart = actualDepart ?? arrive + dwell;
 
     arriveMin.push(arrive);

@@ -40,6 +40,8 @@ import {
   fmtAmount,
   krwOf,
   modeOf,
+  isSettled,
+  isSettleable,
   memberName as memberNameOf,
   totalsByCategory as totalsByCategoryOf,
   getTotalBudget as getTotalBudgetOf,
@@ -48,7 +50,9 @@ import {
   sumPaidByMode as sumPaidByModeOf,
   unconvertedCount as unconvertedCountOf,
   computeSettlement as computeSettlementOf,
+  memberBurdenTotal as memberBurdenTotalOf,
   settlementSummaryText as settlementSummaryTextOf,
+  buildPersonalBreakdownText as buildPersonalBreakdownTextOf,
   buildExpensePayload as buildExpensePayloadOf,
   fetchRate as fetchRateOf,
 } from './expenseModel';
@@ -74,9 +78,11 @@ const IC_CHEV_L = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const IC_CHEV_R = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>';
 const IC_CHEV_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
 const IC_CHEV_UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>';
+const IC_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>';
+const IC_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>';
 
 const TIPS = [
-  '정산은 "결제 완료" + "공동 지출" 항목만 반영돼요.',
+  '정산은 결제 완료된 공동 지출 중 "정산 완료" 전 항목만 반영돼요.',
   '카테고리 카드의 ⋯ 메뉴에서 예산을 바로 수정할 수 있어요.',
   '환율은 저장 시점 기준이라 실제 결제 금액과 소폭 다를 수 있어요.',
 ];
@@ -90,7 +96,7 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'settings', label: '설정' },
 ];
 
-type StatusFilter = 'ALL' | 'PLANNED' | 'PAID';
+type StatusFilter = 'ALL' | 'PLANNED' | 'PAID' | 'SETTLED';
 type SplitModeFilter = 'ALL' | SplitMode;
 type CategoryFilter = ExpenseCategory | 'ALL';
 type SortMode = 'created_desc' | 'amount_desc';
@@ -121,6 +127,10 @@ let listPageSize = 20;
 
 let editingBudgetCategory: string | null = null; // 카테고리 그리드에서 인라인 편집 중인 카테고리(또는 'TOTAL')
 let expandedBatchGroups = new Set<string>(); // 펼쳐진 개인 지출 배치 묶음(그룹 키)
+let copyPopoverOpen = false; // "현재 사용" 카드의 복사 대상 선택 팝오버
+let copySelectedMemberIds = new Set<string>(); // 복사 대상으로 고른 멤버(다중 선택)
+let copySelectionTouched = false; // 한 번이라도 사용자가 선택을 건드렸는지 — 안 건드렸으면 팝오버를 열 때 전체 선택으로 기본값 채움
+let settledListOpen = false; // 정산 탭의 "정산 완료된 지출" 목록 펼침 여부
 let lastUsedCurrency = 'KRW';
 let quickAddMode: 'direct' | 'receipt' | 'sms' = 'direct';
 
@@ -151,6 +161,22 @@ function computeSettlement(): { rows: SettleRow[]; transfers: Array<{ from: stri
   return computeSettlementOf(ctx());
 }
 function settlementSummaryText(): string { return settlementSummaryTextOf(ctx()); }
+function memberBurdenTotal(userId: string): number { return memberBurdenTotalOf(ctx(), userId); }
+function buildPersonalBreakdownText(selectedUserIds?: string[]): string {
+  return buildPersonalBreakdownTextOf(ctx(), selectedUserIds, tripPeriodLabel());
+}
+
+/** 트립의 시작~종료일을 "12.18 – 12.20" 형태로 — 복사한 텍스트만 따로 떼어봐도
+ *  어느 여행 건인지 알 수 있게 제목 아래 붙인다. 날짜가 없으면 줄 자체를 생략(3-1). */
+function tripPeriodLabel(): string | null {
+  const trip = store.get('currentTrip');
+  if (!trip?.start_date || !trip?.end_date) return null;
+  const fmt = (d: string) => {
+    const dt = new Date(d + 'T00:00:00');
+    return (dt.getMonth() + 1) + '.' + String(dt.getDate()).padStart(2, '0');
+  };
+  return fmt(trip.start_date) + ' – ' + fmt(trip.end_date);
+}
 function fetchRate(currency: string): Promise<{ rate: number | null; source: string }> { return fetchRateOf(currency); }
 function buildExpensePayload(fields: {
   category: string; title: string; amount: number; currency: string; expenseDate: string | null;
@@ -160,6 +186,12 @@ function buildExpensePayload(fields: {
 }
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+/** 정산 완료 시각을 "10.08" 형태로 */
+function fmtSettledAt(iso: string): string {
+  const d = new Date(iso);
+  return (d.getMonth() + 1) + '.' + String(d.getDate()).padStart(2, '0');
+}
 
 function fmtDateLabel(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00');
@@ -181,6 +213,128 @@ function shareSettlement(): void {
   navigator.clipboard.writeText(text).then(
     () => alert('정산 내역을 복사했어요. 채팅에 붙여넣어 공유해보세요!\n\n' + text),
     () => alert(text)
+  );
+}
+
+/**
+ * 정산 완료 표시/되돌리기 — 이미 돈을 주고받은 공동 지출을 정산 계산에서 빼거나 다시 넣는다.
+ * 화면은 먼저 바꾸고(낙관적 갱신) 저장이 실패하면 원래대로 되돌린다.
+ */
+async function setSettled(ids: string[], settled: boolean): Promise<void> {
+  if (ids.length === 0) return;
+  const at = settled ? new Date().toISOString() : null;
+  const idSet = new Set(ids);
+  const prev = new Map(expenses.filter((e) => idSet.has(e.id)).map((e) => [e.id, e.settled_at ?? null]));
+  expenses = expenses.map((e) => (idSet.has(e.id) ? { ...e, settled_at: at } : e));
+  refreshActiveTabData();
+
+  const { error } = await supabase
+    .from('trip_expenses')
+    .update({ settled_at: at, updated_at: new Date().toISOString() })
+    .in('id', ids);
+  if (error) {
+    console.error('정산 상태 저장 실패:', error.message);
+    expenses = expenses.map((e) => (prev.has(e.id) ? { ...e, settled_at: prev.get(e.id) ?? null } : e));
+    refreshActiveTabData();
+    alert('정산 상태를 저장하지 못했어요. supabase/trip_expenses.sql(settled_at 컬럼)을 실행했는지 확인해주세요.');
+  }
+}
+
+/** 행 안의 "정산 완료"/"되돌리기" 버튼 — 행 클릭(수정 모달 열기)으로 번지지 않게 막는다 */
+function bindSettleButtons(container: ParentNode | null): void {
+  container?.querySelectorAll('.ex-settle-btn[data-settle-id]').forEach((btn) => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const el = btn as HTMLElement;
+      void setSettled([el.dataset.settleId!], el.dataset.undo !== '1');
+    });
+  });
+}
+
+/** "현재 사용" 카드의 복사 버튼 — 멤버별 실제 부담액(개인 지출 + 공동 지출 n분의 1)을
+ *  지출명·메모까지 포함한 텍스트로 클립보드에 복사한다(ChatGPT 등 AI에 붙여넣어 예산
+ *  효율을 분석하기 좋게). 버튼을 누르면 바로 복사하지 않고, 누구 것을 복사할지 다중
+ *  선택하는 팝오버가 먼저 뜬다(전원 복사만 지원하던 이전 버전을 대체). */
+function copyPopoverHtml(): string {
+  if (members.length === 0) {
+    return '<div class="ex-copy-popover-empty">멤버가 없어요</div>';
+  }
+  const allSelected = members.every((m) => copySelectedMemberIds.has(m.user_id));
+  const chips = members.map((m) => {
+    const active = copySelectedMemberIds.has(m.user_id);
+    return '<button type="button" class="ex-copy-chip' + (active ? ' is-active' : '') + '" data-uid="' + m.user_id + '">' + avatarHtml(m.user_id, 'sm') + '<span>' + escapeHtml(m.display_name || '멤버') + '</span></button>';
+  }).join('');
+  const disabled = copySelectedMemberIds.size === 0;
+  return [
+    '<div class="ex-copy-popover-title">누구 걸 복사할까요?</div>',
+    '<div class="ex-copy-popover-members">' + chips + '</div>',
+    '<button type="button" class="ex-copy-popover-selectall" id="ex-copy-selectall">' + (allSelected ? '전체 해제' : '전체 선택') + '</button>',
+    '<button type="button" class="al-btn-primary ex-copy-popover-confirm" id="ex-copy-confirm"' + (disabled ? ' disabled' : '') + '>' + IC_COPY + ' 복사하기</button>',
+  ].join('');
+}
+
+function renderCopyPopover(): void {
+  const el = rootEl?.querySelector('#ex-copy-popover') as HTMLElement | null;
+  if (!el) return;
+  el.classList.toggle('is-open', copyPopoverOpen);
+  el.innerHTML = copyPopoverOpen ? copyPopoverHtml() : '';
+  if (copyPopoverOpen) bindCopyPopover();
+}
+
+function toggleCopyPopover(): void {
+  copyPopoverOpen = !copyPopoverOpen;
+  // 처음 열 때는(사용자가 아직 한 번도 건드린 적 없으면) 전원 선택을 기본값으로 채워둔다
+  if (copyPopoverOpen && !copySelectionTouched) {
+    members.forEach((m) => copySelectedMemberIds.add(m.user_id));
+  }
+  renderCopyPopover();
+}
+
+function bindCopyPopover(): void {
+  rootEl?.querySelectorAll('.ex-copy-chip').forEach((btn) => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const uid = (btn as HTMLElement).dataset.uid!;
+      copySelectionTouched = true;
+      if (copySelectedMemberIds.has(uid)) copySelectedMemberIds.delete(uid);
+      else copySelectedMemberIds.add(uid);
+      renderCopyPopover();
+    });
+  });
+  rootEl?.querySelector('#ex-copy-selectall')?.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    copySelectionTouched = true;
+    const allSelected = members.every((m) => copySelectedMemberIds.has(m.user_id));
+    if (allSelected) copySelectedMemberIds.clear();
+    else members.forEach((m) => copySelectedMemberIds.add(m.user_id));
+    renderCopyPopover();
+  });
+  rootEl?.querySelector('#ex-copy-confirm')?.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (copySelectedMemberIds.size === 0) return;
+    copyPersonalBreakdown(Array.from(copySelectedMemberIds));
+    copyPopoverOpen = false;
+    renderCopyPopover();
+  });
+}
+
+function copyPersonalBreakdown(selectedUserIds: string[]): void {
+  const text = buildPersonalBreakdownText(selectedUserIds);
+  const btn = rootEl?.querySelector('#ex-copy-breakdown') as HTMLButtonElement | null;
+  navigator.clipboard.writeText(text).then(
+    () => {
+      if (!btn) return;
+      const original = btn.innerHTML;
+      btn.innerHTML = IC_CHECK;
+      btn.classList.add('is-copied');
+      setTimeout(() => {
+        btn.innerHTML = original;
+        btn.classList.remove('is-copied');
+      }, 1500);
+    },
+    () => {
+      window.prompt('복사에 실패했어요 — 아래 내용을 직접 복사하세요', text);
+    }
   );
 }
 
@@ -281,11 +435,16 @@ function statsHtml(): string {
   const remaining = totalBudget != null ? totalBudget - usage : null;
   const pct = totalBudget != null && totalBudget > 0 ? Math.round((usage / totalBudget) * 100) : null;
   const over = remaining != null && remaining < 0;
-  const people = Math.max(1, headcount);
-  const perPerson = usage / people;
-
   const sharedUsage = sumPaidByMode('SHARED');
   const personalUsage = sumPaidByMode('PERSONAL');
+  // "1인당 예상 부담액"은 평균이 아니라 지금 보고 있는 사람 본인의 실제 부담액(개인 지출
+  // 전액 + 결제 완료된 공동 지출의 n분의 1)으로 보여준다. 현재 사용자가 이 트립 멤버로
+  // 확인되지 않는 드문 경우에만 예전 방식(공동 지출 총액 ÷ 인원수)으로 폴백한다.
+  const me = store.get('user');
+  const meMember = me ? members.find((m) => m.user_id === me.id) : null;
+  const burdenLabel = meMember ? (meMember.display_name || '나') + '의 예상 부담액' : '1인당 예상 부담액';
+  const burdenValue = meMember ? memberBurdenTotal(meMember.user_id) : sharedUsage / Math.max(1, headcount);
+  const burdenFoot = meMember ? '개인 지출 + 공동 지출 분담액' : Math.max(1, headcount) + '명 평균 · 공동 지출 기준';
   const sharedPct = usage > 0 ? Math.round((sharedUsage / usage) * 100) : 0;
   const personalPct = usage > 0 ? 100 - sharedPct : 0;
 
@@ -311,8 +470,11 @@ function statsHtml(): string {
     gauge,
     (remaining != null ? '<div class="ex-stat-foot' + (over ? ' is-over' : '') + '">' + (over ? '예산 초과 ' : '남은 예산 ') + fmtKRW(Math.abs(remaining)) + '</div>' : ''),
     '  </div>',
-    '  <div class="ex-stat-card al-glass">',
-    '    <div class="ex-stat-card-top"><span class="ex-stat-label">현재 사용</span></div>',
+    '  <div class="ex-stat-card al-glass ex-stat-card-usage">',
+    '    <div class="ex-stat-card-top"><span class="ex-stat-label">현재 사용</span>',
+    '      <button type="button" class="ex-stat-copy-btn" id="ex-copy-breakdown" title="개인별 지출 내역 텍스트로 복사(AI 분석용)">' + IC_COPY + '</button>',
+    '    </div>',
+    '    <div class="ex-copy-popover' + (copyPopoverOpen ? ' is-open' : '') + '" id="ex-copy-popover">' + (copyPopoverOpen ? copyPopoverHtml() : '') + '</div>',
     '    <div class="ex-stat-value">' + fmtKRW(usage) + '</div>',
     '    <div class="ex-usage-split">',
     '      <div class="ex-usage-split-bar"><span style="width:' + sharedPct + '%;background:var(--al-action)"></span><span style="width:' + personalPct + '%;background:var(--al-text-tertiary)"></span></div>',
@@ -322,9 +484,9 @@ function statsHtml(): string {
     unconvertedNote,
     '  </div>',
     '  <div class="ex-stat-card al-glass">',
-    '    <div class="ex-stat-card-top"><span class="ex-stat-label">1인당 예상 부담액</span>' + IC_WALLET + '</div>',
-    '    <div class="ex-stat-value">' + fmtKRW(perPerson) + '</div>',
-    '    <div class="ex-stat-foot">' + people + '명 평균</div>',
+    '    <div class="ex-stat-card-top"><span class="ex-stat-label">' + escapeHtml(burdenLabel) + '</span>' + IC_WALLET + '</div>',
+    '    <div class="ex-stat-value">' + fmtKRW(burdenValue) + '</div>',
+    '    <div class="ex-stat-foot">' + burdenFoot + '</div>',
     '    <button type="button" class="ex-more-link" id="ex-perperson-detail">상세 보기</button>',
     '  </div>',
     '</div>',
@@ -412,6 +574,8 @@ function recentListHtml(): string {
 function settleWidgetHtml(): string {
   const { rows, transfers } = computeSettlement();
   const hasPaid = expenses.some((e) => e.is_paid && modeOf(e) === 'SHARED');
+  const pendingCount = expenses.filter(isSettleable).length;
+  const settledCount = expenses.filter((e) => e.is_paid && modeOf(e) === 'SHARED' && isSettled(e)).length;
   const top = rows
     .filter((r) => members.some((m) => m.user_id === r.userId) && Math.abs(r.balance) > 0.5)
     .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance))
@@ -419,7 +583,9 @@ function settleWidgetHtml(): string {
 
   const body = !hasPaid
     ? '<div class="ex-settle-empty">공동 지출을 결제 완료로 표시하면<br/>정산 현황이 여기 표시돼요.</div>'
-    : top.length === 0
+    : pendingCount === 0
+      ? '<div class="ex-settle-done">공동 지출 정산을 모두 마쳤어요 ✓</div>'
+      : top.length === 0
       ? '<div class="ex-settle-done">모두 정산이 맞아요 ✓</div>'
       : top.map((r) => {
           const cls = r.balance > 0 ? ' is-plus' : ' is-minus';
@@ -435,6 +601,7 @@ function settleWidgetHtml(): string {
     '  <button type="button" class="ex-more-link" id="ex-settle-detail">자세히 보기</button>',
     '</div>',
     '<div class="ex-settlewidget-body">' + body + '</div>',
+    (hasPaid ? '<div class="ex-settlewidget-meta">정산 대기 ' + pendingCount + '건 · 정산 완료 ' + settledCount + '건</div>' : ''),
     (transfers.length > 0 ? '<button type="button" class="al-btn-primary ex-settle-cta" id="ex-settle-cta">' + IC_SWAP + ' 정산하기</button>' : ''),
     '<div class="ex-tip-row">',
     '  <button type="button" class="ex-tip-nav" id="ex-tip-prev" aria-label="이전 팁">' + IC_CHEV_L + '</button>',
@@ -449,6 +616,11 @@ function bindOverviewData(): void {
   if (!rootEl) return;
 
   rootEl.querySelector('#ex-edit-total')?.addEventListener('click', () => switchTab('settings'));
+  rootEl.querySelector('#ex-copy-breakdown')?.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    toggleCopyPopover();
+  });
+  if (copyPopoverOpen) bindCopyPopover();
   rootEl.querySelector('#ex-perperson-detail')?.addEventListener('click', () => switchTab('settlement'));
   rootEl.querySelector('#ex-settle-detail')?.addEventListener('click', () => switchTab('settlement'));
   rootEl.querySelector('#ex-settle-cta')?.addEventListener('click', shareSettlement);
@@ -538,6 +710,7 @@ function bindOverviewData(): void {
       if (e) openSheet(e);
     });
   });
+  bindSettleButtons(rootEl.querySelector('#ex-recent'));
   bindGroupToggles(rootEl.querySelector('#ex-recent') as HTMLElement, renderOverviewData);
 }
 
@@ -793,6 +966,7 @@ function renderQuickAddBody(container: HTMLElement): void {
 function matchesFilter(e: TripExpense): boolean {
   if (statusFilter === 'PLANNED' && e.is_paid) return false;
   if (statusFilter === 'PAID' && !e.is_paid) return false;
+  if (statusFilter === 'SETTLED' && !(e.is_paid && modeOf(e) === 'SHARED' && isSettled(e))) return false;
   if (splitModeFilter !== 'ALL' && modeOf(e) !== splitModeFilter) return false;
   if (categoryFilter !== 'ALL' && e.category !== categoryFilter) return false;
   if (searchQuery) {
@@ -802,7 +976,12 @@ function matchesFilter(e: TripExpense): boolean {
   return true;
 }
 
-function expenseRowHtml(e: TripExpense): string {
+/**
+ * 지출 한 줄. 결제 완료된 공동 지출이면 오른쪽에 "정산 완료" 버튼이 붙고, 정산 완료된
+ * 항목은 PAID 대신 "정산완료" 도장으로 바뀐다. `showUndo`면(정산 탭의 완료 목록) 되돌리기
+ * 버튼을 보여준다 — 다른 곳에선 수정 모달에서 되돌릴 수 있다.
+ */
+function expenseRowHtml(e: TripExpense, opts: { showUndo?: boolean } = {}): string {
   const cat = (EXPENSE_CATEGORIES as readonly string[]).includes(e.category) ? (e.category as ExpenseCategory) : 'ETC';
   const meta = CATEGORY_META[cat];
   const krw = krwOf(e);
@@ -818,21 +997,31 @@ function expenseRowHtml(e: TripExpense): string {
     amountPart = '<span class="ex-item-amount">' + escapeHtml(fmtAmount(e.amount, e.currency)) + '</span>' + sub;
   }
 
-  const statusBadge = e.is_paid
-    ? '<span class="ex-stamp is-paid">PAID</span>'
-    : '<span class="ex-stamp">예정</span>';
+  const settled = isSettled(e) && e.is_paid && mode === 'SHARED';
+  const statusBadge = settled
+    ? '<span class="ex-stamp is-settled">' + IC_CHECK + '정산완료</span>'
+    : e.is_paid
+      ? '<span class="ex-stamp is-paid">PAID</span>'
+      : '<span class="ex-stamp">예정</span>';
   const modeBadge = '<span class="ex-mode-badge ex-mode-' + mode.toLowerCase() + '">' + SPLIT_MODE_LABEL[mode] + '</span>';
 
   const memo = e.memo ? '<span class="ex-item-memo">' + escapeHtml(e.memo) + '</span>' : '';
 
+  const action = isSettleable(e)
+    ? '<button type="button" class="ex-settle-btn" data-settle-id="' + e.id + '" title="이미 돈을 주고받은 지출로 표시 — 이후 정산 계산에서 빠져요">' + IC_CHECK + '정산 완료</button>'
+    : settled && opts.showUndo
+      ? '<button type="button" class="ex-settle-btn is-undo" data-settle-id="' + e.id + '" data-undo="1" title="다시 정산 계산에 포함">되돌리기</button>'
+      : '';
+
   return [
-    '<div class="ex-item" data-id="' + e.id + '">',
+    '<div class="ex-item' + (settled ? ' is-settled' : '') + '" data-id="' + e.id + '">',
     '  <span class="ex-item-cat" style="color:' + meta.color + '" title="' + meta.label + '">' + meta.icon + '</span>',
     '  <div class="ex-item-main">',
     '    <div class="ex-item-title-row"><span class="ex-item-title">' + escapeHtml(e.title) + '</span>' + statusBadge + modeBadge + '</div>',
     '    <div class="ex-item-meta">' + avatarHtml(e.paid_by, 'sm', e.paid_by_name, e.paid_by_avatar) + '<span>' + escapeHtml(e.paid_by ? memberName(e.paid_by) : (e.paid_by_name || '결제 미지정')) + '</span>' + memo + '</div>',
     '  </div>',
     '  <div class="ex-item-right">' + amountPart + '</div>',
+    action,
     '</div>',
   ].join('');
 }
@@ -901,7 +1090,7 @@ function expenseGroupRowHtml(group: TripExpense[]): string {
   ].join('');
 
   const childrenHtml = expanded
-    ? '<div class="ex-item-group-children">' + group.map(expenseRowHtml).join('') + '</div>'
+    ? '<div class="ex-item-group-children">' + group.map((e) => expenseRowHtml(e)).join('') + '</div>'
     : '';
 
   return header + childrenHtml;
@@ -928,7 +1117,7 @@ function sortExpenses(items: TripExpense[]): TripExpense[] {
 
 function listFilterBarHtml(): string {
   const statusOptions = [
-    { v: 'ALL', l: '전체' }, { v: 'PLANNED', l: '예정' }, { v: 'PAID', l: '결제 완료' },
+    { v: 'ALL', l: '전체' }, { v: 'PLANNED', l: '예정' }, { v: 'PAID', l: '결제 완료' }, { v: 'SETTLED', l: '정산 완료' },
   ].map((o) => '<option value="' + o.v + '"' + (statusFilter === o.v ? ' selected' : '') + '>' + o.l + '</option>').join('');
 
   const splitOptions = [
@@ -1064,6 +1253,7 @@ function bindListBody(panel: HTMLElement): void {
       if (e) openSheet(e);
     });
   });
+  bindSettleButtons(panel);
   bindGroupToggles(panel, () => refreshListBody(panel));
 }
 
@@ -1071,11 +1261,17 @@ function bindListBody(panel: HTMLElement): void {
 
 function mountSettlementTab(panel: HTMLElement): void {
   const { rows, transfers, skipped } = computeSettlement();
-  const hasPaid = expenses.some((e) => e.is_paid && modeOf(e) === 'SHARED');
+  const sharedPaid = expenses.filter((e) => e.is_paid && modeOf(e) === 'SHARED');
+  const pending = sortExpenses(sharedPaid.filter((e) => !isSettled(e)));
+  const settled = [...sharedPaid.filter(isSettled)].sort((a, b) => (b.settled_at ?? '').localeCompare(a.settled_at ?? ''));
+  const sumOf = (list: TripExpense[]): number => list.reduce((acc, e) => acc + (krwOf(e) ?? 0), 0);
 
-  let body: string;
-  if (!hasPaid) {
-    body = '<div class="ex-settle-empty">결제 완료로 표시한 공동 지출부터 정산에 반영돼요.<br/>여행 중 휴대폰으로 기록하면서 바로 정산해보세요.</div>';
+  let summary: string;
+  if (sharedPaid.length === 0) {
+    summary = '<div class="ex-settle-empty">결제 완료로 표시한 공동 지출부터 정산에 반영돼요.<br/>여행 중 휴대폰으로 기록하면서 바로 정산해보세요.</div>';
+  } else if (pending.length === 0) {
+    summary = '<div class="ex-settle-done">공동 지출 정산을 모두 마쳤어요 ✓</div>' +
+      '<div class="ex-settle-note-muted">새로 결제한 공동 지출이 생기면 여기서 다시 정산해요.</div>';
   } else {
     const memberRows = rows.filter((r) => members.some((m) => m.user_id === r.userId)).map((r) => {
       const balCls = r.balance > 0.5 ? ' is-plus' : r.balance < -0.5 ? ' is-minus' : '';
@@ -1097,24 +1293,73 @@ function mountSettlementTab(panel: HTMLElement): void {
         transfers.map((t) =>
           '<div class="ex-transfer"><span class="ex-transfer-from">' + escapeHtml(memberName(t.from)) + '</span><span class="ex-transfer-arrow">→</span><span class="ex-transfer-to">' + escapeHtml(memberName(t.to)) + '</span><span class="ex-transfer-amount">' + fmtKRW(t.amount) + '</span></div>'
         ).join('') +
-        '<button type="button" class="al-btn-primary ex-settle-cta" id="ex-settle-share">' + IC_SWAP + ' 정산 내역 공유하기</button>' +
         '</div>'
       : '<div class="ex-settle-done">모두 정산이 맞아요 ✓</div>';
+
+    const actions = [
+      '<div class="ex-settle-actions">',
+      (transfers.length > 0 ? '  <button type="button" class="ex-settle-secondary" id="ex-settle-share">' + IC_SWAP + ' 정산 내역 공유하기</button>' : ''),
+      '  <button type="button" class="al-btn-primary ex-settle-cta ex-settle-all" id="ex-settle-all">' + IC_CHECK + ' 모두 정산 완료로 표시</button>',
+      '</div>',
+      '<div class="ex-settle-note-muted">송금을 마쳤다면 눌러주세요. 아래 ' + pending.length + '건이 정산 계산에서 빠지고, 지출 기록은 그대로 남아요.</div>',
+    ].join('');
 
     const skippedNote = skipped > 0
       ? '<div class="ex-settle-note">결제 멤버가 없거나 환산 불가라 정산에서 빠진 항목 ' + skipped + '건</div>'
       : '';
 
-    body = memberRows + transferRows + skippedNote;
+    summary = memberRows + transferRows + actions + skippedNote;
   }
 
+  const pendingSection = sharedPaid.length === 0 ? '' : [
+    '<div class="ex-card al-glass ex-settle-section">',
+    '  <div class="ex-section-header">',
+    '    <span class="ex-card-title al-sign-label">정산 대기 중인 공동 지출</span>',
+    '    <span class="ex-settle-section-meta">' + pending.length + '건 · ' + fmtKRW(sumOf(pending)) + '</span>',
+    '  </div>',
+    pending.length > 0
+      ? '  <div class="ex-list">' + pending.map((e) => expenseRowHtml(e)).join('') + '</div>'
+      : '  <div class="ex-settle-empty">정산할 공동 지출이 없어요.</div>',
+    '</div>',
+  ].join('');
+
+  const settledSection = settled.length === 0 ? '' : [
+    '<div class="ex-card al-glass ex-settle-section">',
+    '  <button type="button" class="ex-settle-section-toggle" id="ex-settled-toggle" aria-expanded="' + settledListOpen + '">',
+    '    <span class="ex-card-title al-sign-label">정산 완료된 지출</span>',
+    '    <span class="ex-settle-section-meta">' + settled.length + '건 · ' + fmtKRW(sumOf(settled)) + '</span>',
+    '    <span class="ex-settle-section-chev">' + (settledListOpen ? IC_CHEV_UP : IC_CHEV_DOWN) + '</span>',
+    '  </button>',
+    settledListOpen ? '  <div class="ex-list">' + settled.map((e) => expenseRowHtml(e, { showUndo: true })).join('') + '</div>' : '',
+    '</div>',
+  ].join('');
+
   panel.innerHTML = [
-    '<div class="ex-card al-glass ex-settle-full">',
-    body,
+    '<div class="ex-settle-tab">',
+    '  <div class="ex-card al-glass ex-settle-full">' + summary + '</div>',
+    pendingSection,
+    settledSection,
     '</div>',
   ].join('\n');
 
   panel.querySelector('#ex-settle-share')?.addEventListener('click', shareSettlement);
+  panel.querySelector('#ex-settle-all')?.addEventListener('click', () => {
+    const ids = expenses.filter(isSettleable).map((e) => e.id);
+    if (ids.length === 0) return;
+    if (!window.confirm('공동 지출 ' + ids.length + '건(' + fmtKRW(sumOf(expenses.filter(isSettleable))) + ')을 정산 완료로 표시할까요?\n이후 정산 계산에서 빠지고, "정산 완료된 지출"에서 언제든 되돌릴 수 있어요.')) return;
+    void setSettled(ids, true);
+  });
+  panel.querySelector('#ex-settled-toggle')?.addEventListener('click', () => {
+    settledListOpen = !settledListOpen;
+    mountSettlementTab(panel);
+  });
+  panel.querySelectorAll('.ex-item[data-id]').forEach((row) => {
+    row.addEventListener('click', () => {
+      const e = expenses.find((x) => x.id === (row as HTMLElement).dataset.id);
+      if (e) openSheet(e);
+    });
+  });
+  bindSettleButtons(panel);
 }
 
 /* ══════════════════════ 동행 탭 ══════════════════════ */
@@ -1274,6 +1519,9 @@ function openSheet(editing: TripExpense | null): void {
     '  <button type="button" class="ex-sheet-close" id="ex-sheet-close">' + IC_CLOSE + '</button>',
     '</div>',
     '<div class="ex-sheet-body">',
+    (editing && isSettled(editing) && editing.is_paid && modeOf(editing) === 'SHARED'
+      ? '  <div class="ex-sheet-settled">' + IC_CHECK + '<span>' + fmtSettledAt(editing.settled_at!) + ' 정산 완료 처리된 지출이에요</span><button type="button" class="ex-settle-btn is-undo" id="ex-sheet-unsettle">되돌리기</button></div>'
+      : ''),
     '  <label class="ex-field"><span class="ex-field-label">내용</span>',
     '    <input type="text" class="ex-field-input" id="ex-f-title" placeholder="예: 방콕행 항공권" value="' + escapeHtml(editing?.title ?? '') + '" maxlength="80" />',
     '  </label>',
@@ -1422,6 +1670,12 @@ function openSheet(editing: TripExpense | null): void {
     paidToggle.setAttribute('aria-checked', String(isPaid));
   });
 
+  sheet.querySelector('#ex-sheet-unsettle')?.addEventListener('click', () => {
+    if (!editing) return;
+    closeSheet();
+    void setSettled([editing.id], false);
+  });
+
   sheet.querySelector('#ex-sheet-delete')?.addEventListener('click', async () => {
     if (!editing) return;
     if (!window.confirm('이 지출을 삭제할까요?')) return;
@@ -1452,6 +1706,8 @@ function openSheet(editing: TripExpense | null): void {
 
     if (editing) {
       const payload = await buildExpensePayload({ category, title, amount, currency, expenseDate: dateVal, isPaid, splitMode, payer: payerIds[0] ?? null, split, memo });
+      // 개인 지출로 바꾸거나 결제 전으로 돌리면 "정산 완료"는 의미가 없으니 같이 풀어준다
+      if (editing.settled_at && (splitMode !== 'SHARED' || !isPaid)) payload.settled_at = null;
       const { data, error } = await supabase.from('trip_expenses').update(payload).eq('id', editing.id).select().single();
       if (error) {
         console.error('지출 수정 실패:', error.message);
@@ -1521,6 +1777,10 @@ export function teardownExpense(): void {
   listPageSize = 20;
   editingBudgetCategory = null;
   expandedBatchGroups = new Set();
+  settledListOpen = false;
+  copyPopoverOpen = false;
+  copySelectedMemberIds = new Set();
+  copySelectionTouched = false;
   tipIndex = 0;
   quickAddMode = 'direct';
 }
@@ -1544,11 +1804,14 @@ export async function renderExpenseContent(container: HTMLElement, tripId: strin
   rootEl.querySelector('#ex-fab')?.addEventListener('click', () => openSheet(null));
 
   outsideClickHandler = (e: MouseEvent) => {
-    if ((e.target as HTMLElement).closest('.ex-catcard-top')) return;
-    if (openCategoryMenu !== null) {
+    if (!(e.target as HTMLElement).closest('.ex-catcard-top') && openCategoryMenu !== null) {
       openCategoryMenu = null;
       const catgridEl = rootEl?.querySelector('#ex-catgrid');
       if (catgridEl) { catgridEl.innerHTML = EXPENSE_CATEGORIES.map(categoryCardHtml).join(''); bindOverviewData(); }
+    }
+    if (!(e.target as HTMLElement).closest('.ex-stat-card-usage') && copyPopoverOpen) {
+      copyPopoverOpen = false;
+      renderCopyPopover();
     }
   };
   document.addEventListener('click', outsideClickHandler);

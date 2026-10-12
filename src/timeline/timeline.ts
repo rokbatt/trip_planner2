@@ -22,7 +22,7 @@
 
 import { supabase } from '../supabase';
 import { store } from '../store';
-import { setActiveDestinationId, isSyntheticDestination } from '../trips/destinations';
+import { setActiveDestinationId, isSyntheticDestination, placeBelongsToDestination } from '../trips/destinations';
 import {
   saveRouteDay,
   subscribeRoutePlan,
@@ -37,7 +37,9 @@ import {
   scheduleFor,
   stopLegKey,
   toStoredStops,
+  toStop,
   todaysHoursLine,
+  effectiveDwellMinutes,
   MODES,
 } from './dayModel';
 import type { TlStop, TlDay, DaySchedule, DayModelContext, RealLegMap } from './dayModel';
@@ -46,7 +48,6 @@ import {
   estimateLegBetween,
   legKey,
   catKeyFor,
-  dwellMinutes,
   modeLabel,
   modeColorClass,
   fmtMin,
@@ -54,11 +55,23 @@ import {
   minToHHMM,
   hhmmToMin,
   parseTimeInput,
+  parseDwellInput,
   CAT_LABEL,
 } from '../utils/travelEstimate';
 import type { Leg, RealLeg, TravelMode, CatKey } from '../utils/travelEstimate';
 import { requestPlaceBrief, placeBriefKey } from './placeBrief';
 import type { PlaceBrief, PlaceBriefRequest } from './placeBrief';
+import {
+  loadChecklist,
+  addChecklistItem,
+  setChecklistChecked,
+  deleteChecklistItem,
+  subscribeChecklistScoped,
+  isChecklistItemForPlace,
+  checklistTitleForPlace,
+} from '../mobile/checklist';
+import type { ChecklistPlace } from '../mobile/checklist';
+import type { TripChecklistItem } from '../types/database';
 import type { Database, StaySegment, TripDestination } from '../types/database';
 import './timeline.css';
 
@@ -91,6 +104,7 @@ const IC_PD_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 const IC_PD_MAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3 3 5v16l6-2 6 2 6-2V3l-6 2-6-2Z"/><path d="M9 3v16M15 5v16"/></svg>';
 const IC_PD_WEB = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a13 13 0 0 1 0 18M12 3a13 13 0 0 0 0 18"/></svg>';
 const IC_PD_BOOK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0 0 4h13"/></svg>';
+const IC_PLUS_SM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
 const IC_PD_REFRESH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>';
 // 섹션 제목·체크리스트용 얇은 선 아이콘 — 이모지는 OS/브라우저마다 모양과 색이 달라
 // 컨셉(Airport Lounge, 얇은 선 아이콘)에서 튀고 "AI가 붙인 스티커"처럼 보인다.
@@ -145,6 +159,10 @@ let basecampIds = new Set<string>();
  * 여기서 다시 구글 API를 부르지 않고 그대로 읽어 쓴다(원칙 3-2). */
 let airportPlaceByName = new Map<string, Place>();
 
+/** DAY 번호 → 그 DAY에 걸어둔 공용 문서·메모 수 (DOCUMENTS 게이트가 만든 데이터).
+ *  타임라인 화면 자체는 그대로 두고, 하루 요약 줄에 "관련 자료" 한 칸만 덧붙인다. */
+let dayAttachments = new Map<number, { documents: number; notes: number }>();
+
 let days: TlDay[] = [];
 let activeDayIndex = 0;
 let viewMode: ViewMode = 'day';
@@ -163,6 +181,13 @@ let detailTab: PdTab = 'overview';
 let placeBriefs = new Map<string, PlaceBrief>();
 let placeBriefLoading = new Set<string>();
 let placeBriefErrors = new Map<string, string>();
+/** 트립 공유 체크리스트(Companion과 같은 목록). null이면 저장소를 못 쓰는 상태(마이그레이션 전)라
+ *  장소별 준비 체크리스트 UI를 통째로 숨긴다. */
+let checklistItems: TripChecklistItem[] | null = null;
+/** "담아둔 장소에서 추가" 피커 — 하루 보기 목록 맨 아래에 펼쳐진다. 검색어는 다시 그려도 유지 */
+let addPickerOpen = false;
+let addPickerQuery = '';
+let checklistUnsub: (() => void) | null = null;
 
 /** legKey → 모드별 실측. 없으면 직선거리 추정치 (ROUTE와 같은 캐시 전략) */
 let realLegs: RealLegMap = new Map();
@@ -185,6 +210,7 @@ let mapOpen = true;
 /* ══════════════ 정리 ══════════════ */
 
 export function teardownTimeline(): void {
+  dayAttachments = new Map();
   // 화면을 떠날 때 대기 중인 저장은 버리지 않고 커밋한다 (Claude.md 알려진 버그 패턴)
   if (saveTimer) {
     clearTimeout(saveTimer);
@@ -216,9 +242,14 @@ export function teardownTimeline(): void {
   openLegIndex = null;
   detailKey = null;
   detailTab = 'overview';
+  addPickerOpen = false;
+  addPickerQuery = '';
   placeBriefs = new Map();
   placeBriefLoading = new Set();
   placeBriefErrors = new Map();
+  checklistUnsub?.();
+  checklistUnsub = null;
+  checklistItems = null;
   realLegs = new Map();
   realLegPending = false;
   storageReady = false;
@@ -427,6 +458,8 @@ export async function renderTimelineContent(host: HTMLElement, tripId: string): 
   subscribeRoutePlan(tripId, () => { void reloadFromRemote(); });
   void loadRealLegsForActiveDay();
   void initMap();
+  void loadDayAttachments(tripId);
+  void loadTimelineChecklist(tripId);
 
   // "지금" 표시는 분 단위로만 움직이면 충분하다
   nowTimer = setInterval(() => { if (todayDayIndex() >= 0) renderNowMarker(); }, 60_000);
@@ -674,6 +707,7 @@ function renderDayStrip(): void {
       selectedKey = null;
       openLegIndex = null;
       detailKey = null; // 다른 DAY의 정류지를 보여주던 상세 패널은 의미가 없어 닫는다
+      addPickerOpen = false;
       mapFitKey = ''; // DAY가 바뀌면 지도를 그 하루에 맞춰 다시 잡는다
       viewMode = 'day';
       render();
@@ -692,8 +726,9 @@ function dayScheduleHtml(): string {
       '<div class="tl-dayempty">',
       '  <span class="tl-dayempty-icon">' + IC_ROUTEPATH + '</span>',
       '  <div class="tl-dayempty-title">' + escapeHtml(day.label) + '은(는) 아직 비어 있어요</div>',
-      '  <div class="tl-dayempty-hint">일부러 비워둔 날일 수도 있어요. 일정을 넣으려면 ROUTE에서 이 DAY에 장소를 담아주세요.</div>',
+      '  <div class="tl-dayempty-hint">일부러 비워둔 날일 수도 있어요. 담아둔 장소를 여기서 바로 넣거나, ROUTE에서 동선을 짜 보세요.</div>',
       '  <button type="button" class="tl-empty-btn" id="tl-day-go-route">' + IC_ARROW_BACK + ' ROUTE에서 채우기</button>',
+      '  <div class="tl-addrow-empty">' + addBlockHtml(day) + '</div>',
       '</div>',
     ].join('');
   }
@@ -705,10 +740,317 @@ function dayScheduleHtml(): string {
     if (i < day.stops.length - 1) rows.push(legRowHtml(s.legs[i], day.stops[i + 1], i, s.arriveMin[i + 1]));
   });
 
-  return ['<div class="tl-day">', dayHeadHtml(day, s), '  <ol class="tl-list" id="tl-list">' + rows.join('') + '</ol>', '</div>'].join('');
+  return [
+    '<div class="tl-day">',
+    dayHeadHtml(day, s),
+    '  <ol class="tl-list" id="tl-list">' + rows.join('') + '</ol>',
+    // 카드 칸에 맞춰 정렬되도록 같은 3열 격자에 얹는다(시각·스파인 칸은 비움)
+    '  <div class="tl-row tl-addrow"><div class="tl-col-time"></div><div class="tl-col-spine"></div>' +
+      '<div class="tl-col-card">' + addBlockHtml(day) + '</div></div>',
+    '</div>',
+  ].join('');
+}
+
+/* ══════════════ 담아둔 장소에서 추가 ══════════════ */
+
+/**
+ * 이 여행지에서 Brainstorm으로 분류해 둔 장소들 — ROUTE 좌측 패널의 후보와 같은 기준
+ * (숙소 제외, 좌표 있음, 이 여행지 소속). 새 장소를 찾는 검색이 아니라 "이미 담아둔 것 중에서
+ * 고르기"라 API 호출이 없다(원칙 3-2). 장소 목록은 loadDayModel이 이미 불러와 둔 것을 쓴다.
+ */
+function savedPlaces(): Place[] {
+  const dest = activeDestId ? allDestinations.find((d) => d.id === activeDestId) ?? null : null;
+  return [...placeById.values()].filter(
+    (p) => !basecampIds.has(p.id) && p.lat != null && p.lng != null && (!dest || placeBelongsToDestination(p, dest))
+  );
+}
+
+/** 장소 → 그 장소가 이미 들어 있는 **다른** DAY 라벨. 같은 장소를 여러 DAY에 담는 건 막지 않는다
+ *  (ROUTE도 지금 DAY에 있는지만 본다) — 대신 어디 있는지 알려줘서 실수로 겹치지 않게 한다. */
+function scheduledElsewhere(activeIndex: number): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  days.forEach((d, i) => {
+    if (i === activeIndex) return;
+    d.stops.forEach((st) => {
+      if (!st.placeId) return;
+      const list = map.get(st.placeId) ?? [];
+      if (!list.includes(d.label)) list.push(d.label);
+      map.set(st.placeId, list);
+    });
+  });
+  return map;
+}
+
+/**
+ * 새 장소가 들어갈 자리 — ROUTE의 appendStopBeforeEndAnchor와 같은 규칙. 보통 날은 맨 끝이지만,
+ * 마지막 정류지가 숙소·공항(끝 앵커: DAY1의 공항→숙소, 숙소를 옮기는 날, 출국일)이면 그 앞이다.
+ * 안 그러면 "숙소에 돌아온 뒤 관광"처럼 하루 순서가 뒤집힌다.
+ */
+function addInsertIndex(day: TlDay): number {
+  const n = day.stops.length;
+  const last = day.stops[n - 1];
+  return n > 1 && (last.cat === 'STAY' || last.cat === 'AIRPORT') ? n - 1 : n;
+}
+
+function addPlaceToActiveDay(placeId: string): void {
+  const day = activeDay();
+  if (!day || !placeById.has(placeId)) return;
+  const stored: StoredStop = {
+    placeId,
+    customName: null,
+    customLat: null,
+    customLng: null,
+    arriveTime: null,
+    memo: null,
+    travelMode: null,
+    purpose: null,
+    customDwellMin: null,
+  };
+  // 키는 이 DAY 안에서만 유일하면 된다 — 순번 자리에 시각을 넣어 기존 정류지 키와 겹치지 않게
+  const stop = toStop(dayCtx, stored, day.dayIndex, Date.now());
+  day.stops.splice(addInsertIndex(day), 0, stop);
+  selectedKey = stop.key; // 어디에 들어갔는지 바로 보이게 카드를 선택 상태로
+  openLegIndex = null;
+  mapFitKey = '';
+  scheduleSave(day.dayIndex);
+  render();
+  void loadRealLegsForActiveDay();
+}
+
+function addPickerListHtml(day: TlDay): string {
+  const all = savedPlaces();
+  if (!all.length) {
+    return '<div class="tl-addpick-empty">Brainstorm에 담아둔 장소가 아직 없어요.</div>';
+  }
+  const inDay = new Set(day.stops.map((st) => st.placeId).filter((id): id is string => !!id));
+  const elsewhere = scheduledElsewhere(days.indexOf(day));
+  const q = addPickerQuery.trim().toLowerCase();
+  const items = all
+    .filter((p) => !inDay.has(p.id))
+    .filter((p) => {
+      if (!q) return true;
+      const cat = CAT_LABEL[catKeyFor(p.mood ?? null, p.category ?? null)];
+      return [p.name, p.category ?? '', cat].some((t) => t.toLowerCase().includes(q));
+    })
+    // 아직 어느 DAY에도 없는 장소를 먼저 — 보통 "빠뜨린 곳"을 찾으러 여는 목록이라
+    .sort((a, b) => Number(elsewhere.has(a.id)) - Number(elsewhere.has(b.id)));
+
+  if (!items.length) {
+    return '<div class="tl-addpick-empty">' + (q ? '찾는 장소가 없어요.' : '담아둔 장소가 모두 이 DAY에 들어 있어요.') + '</div>';
+  }
+
+  return items
+    .map((p) => {
+      const cat = CAT_LABEL[catKeyFor(p.mood ?? null, p.category ?? null)];
+      const meta = [cat, p.category ?? ''].filter(Boolean).join(' · ');
+      const other = elsewhere.get(p.id);
+      return [
+        '<button type="button" class="tl-addpick-item" data-add-place="' + p.id + '">',
+        p.photo_url
+          ? '  <span class="tl-addpick-thumb" data-photo="' + escapeHtml(p.photo_url) + '"></span>'
+          : '  <span class="tl-addpick-thumb is-empty">' + IC_PIN_SMALL + '</span>',
+        '  <span class="tl-addpick-text">',
+        '    <b>' + escapeHtml(p.name) + '</b>',
+        // 이름이 가장 중요하니 "DAY n에 있음"은 이름 줄이 아니라 보조 정보 줄에 붙인다(좁은 폭에서 이름이 잘리지 않게)
+        '    <span class="tl-addpick-meta"><span class="tl-addpick-metatext">' + escapeHtml(meta) +
+          (typeof p.google_rating === 'number' ? ' · ' + IC_STAR + p.google_rating.toFixed(1) : '') + '</span>' +
+          (other ? '<span class="tl-addpick-tag">' + escapeHtml(other.join(', ')) + '에 있음</span>' : '') + '</span>',
+        '  </span>',
+        '  <span class="tl-addpick-plus">' + IC_PLUS_SM + '</span>',
+        '</button>',
+      ].join('');
+    })
+    .join('');
+}
+
+/** 목록 맨 아래의 "담아둔 장소 추가" — 닫혀 있으면 버튼, 열리면 고르는 카드 */
+function addBlockHtml(day: TlDay): string {
+  if (!addPickerOpen) {
+    return '<button type="button" class="tl-add-open" id="tl-add-open">' + IC_PLUS_SM + '<span>담아둔 장소 추가</span></button>';
+  }
+  return [
+    '<div class="tl-addpick" id="tl-addpick">',
+    '  <div class="tl-addpick-head">',
+    '    <span class="tl-addpick-title">담아둔 장소에서 추가</span>',
+    '    <button type="button" class="tl-addpick-close" id="tl-add-close" aria-label="장소 추가 닫기">' + IC_PD_CLOSE + '</button>',
+    '  </div>',
+    '  <input type="text" class="tl-addpick-search" id="tl-add-search" placeholder="이름·분류로 찾기" value="' +
+      escapeHtml(addPickerQuery) + '" aria-label="담아둔 장소 찾기" />',
+    '  <div class="tl-addpick-list" id="tl-add-list">' + addPickerListHtml(day) + '</div>',
+    '</div>',
+  ].join('');
+}
+
+function bindAddPickerList(list: HTMLElement): void {
+  list.querySelectorAll('.tl-addpick-thumb[data-photo]').forEach((el) => {
+    const url = (el as HTMLElement).dataset.photo;
+    if (url) (el as HTMLElement).style.backgroundImage = 'url("' + url.replace(/"/g, '%22') + '")';
+  });
+  list.querySelectorAll('[data-add-place]').forEach((btn) => {
+    // 고른 뒤에도 피커는 열어 둔다 — 여러 곳을 연달아 넣는 경우가 많고, 넣은 곳은 목록에서 빠진다
+    btn.addEventListener('click', () => addPlaceToActiveDay((btn as HTMLElement).dataset.addPlace!));
+  });
+}
+
+function bindAddPicker(main: HTMLElement): void {
+  main.querySelector('#tl-add-open')?.addEventListener('click', () => {
+    addPickerOpen = true;
+    addPickerQuery = '';
+    render();
+    container?.querySelector('#tl-addpick')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    (container?.querySelector('#tl-add-search') as HTMLInputElement | null)?.focus({ preventScroll: true });
+  });
+  // 명시적으로 닫는 수단 두 가지(원칙 3-3) — ✕와 Esc
+  main.querySelector('#tl-add-close')?.addEventListener('click', () => {
+    addPickerOpen = false;
+    render();
+  });
+  const search = main.querySelector('#tl-add-search') as HTMLInputElement | null;
+  const list = main.querySelector('#tl-add-list') as HTMLElement | null;
+  // 검색어를 칠 때마다 목록만 갈아끼운다 — 전체를 다시 그리면 입력칸 포커스가 날아간다
+  search?.addEventListener('input', () => {
+    addPickerQuery = search.value;
+    const day = activeDay();
+    if (!day || !list) return;
+    list.innerHTML = addPickerListHtml(day);
+    bindAddPickerList(list);
+  });
+  search?.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      addPickerOpen = false;
+      render();
+    }
+  });
+  if (list) bindAddPickerList(list);
+}
+
+/* ══════════════ 장소별 준비 체크리스트 (Companion과 같은 트립 공유 목록) ══════════════ */
+
+/** 이 정류지의 장소를 체크리스트에서 가리키는 키 — 정류지가 아니라 장소 단위라,
+ *  같은 장소를 여러 DAY에 담아도 준비물 목록은 하나다(AI 브리핑과 같은 기준). */
+function checklistPlaceOf(stop: TlStop): ChecklistPlace {
+  return { key: stop.placeId ?? 'name:' + stop.name, name: stop.name };
+}
+
+function checklistFor(stop: TlStop): TripChecklistItem[] {
+  if (!checklistItems) return [];
+  const place = checklistPlaceOf(stop);
+  return checklistItems.filter((c) => isChecklistItemForPlace(c, place));
+}
+
+async function loadTimelineChecklist(tripId: string): Promise<void> {
+  const items = await loadChecklist(tripId);
+  // 불러오는 사이 다른 트립·게이트로 넘어갔으면 버린다
+  if (!container || currentTripId !== tripId) return;
+  checklistItems = items;
+  render();
+  if (items && !checklistUnsub) {
+    checklistUnsub = subscribeChecklistScoped(tripId, 'tl', () => { void reloadTimelineChecklist(); });
+  }
+}
+
+async function reloadTimelineChecklist(): Promise<void> {
+  const tripId = currentTripId;
+  if (!tripId) return;
+  const items = await loadChecklist(tripId);
+  if (!container || currentTripId !== tripId) return;
+  checklistItems = items;
+  render();
+}
+
+async function addPrepItem(stop: TlStop, text: string): Promise<void> {
+  const title = text.trim();
+  if (!title || !checklistItems) return;
+  const maxOrder = checklistItems.reduce((m, c) => Math.max(m, c.sort_order), 0);
+  const created = await addChecklistItem(currentTripId, title, maxOrder + 1, checklistPlaceOf(stop));
+  if (created) await reloadTimelineChecklist();
+}
+
+/** DOCUMENTS 게이트에 저장된 "관련 DAY" 정보를 읽어와 하루 요약 줄에 반영한다.
+ *  문서함을 아직 안 쓰는 여행이면 빈 Map이 와서 화면이 그대로 유지된다. */
+async function loadDayAttachments(tripId: string): Promise<void> {
+  try {
+    const mod = await import('../docs/docsStore');
+    const counts = await mod.loadDayAttachmentCounts(tripId);
+    if (currentTripId !== tripId) return; // 그 사이 다른 트립으로 옮겼으면 버린다
+    dayAttachments = counts;
+    paintAttachmentChip();
+  } catch (e) {
+    console.error('[Timeline] 관련 문서 수 로드 실패:', (e as Error).message);
+  }
+}
+
+/** "DAY 3" 라벨에서 여행 전체 기준 DAY 번호를 뽑는다(여행지가 여러 개면 번호가 이어짐) */
+function dayNumberOf(day: TlDay): number | null {
+  const matched = /(\d+)/.exec(day.label);
+  return matched ? Number(matched[1]) : null;
+}
+
+/** 이 DAY에 걸린 문서·메모가 있을 때만 한 칸 — 없으면 아무것도 그리지 않는다 */
+function attachmentChipHtml(day: TlDay): string {
+  const num = dayNumberOf(day);
+  const found = num === null ? undefined : dayAttachments.get(num);
+  if (!found || found.documents + found.notes === 0) return '';
+  const parts: string[] = [];
+  if (found.documents > 0) parts.push('문서 ' + found.documents);
+  if (found.notes > 0) parts.push('메모 ' + found.notes);
+  return (
+    '<button type="button" class="tl-hstat tl-hstat-link" id="tl-day-docs" title="DOCUMENTS에서 보기">' +
+    '<span class="tl-hstat-k">관련 자료</span><span class="tl-hstat-v">' + parts.join(' · ') + '</span></button>'
+  );
+}
+
+/** 문서 수는 화면을 다 그린 뒤 따라오므로, 다시 그리지 않고 그 한 칸만 갈아끼운다 */
+function paintAttachmentChip(): void {
+  const day = activeDay();
+  const statsEl = document.querySelector('.tl-dayhead-stats');
+  if (!day || !statsEl) return;
+  statsEl.querySelector('#tl-day-docs')?.remove();
+  const html = attachmentChipHtml(day);
+  if (html) statsEl.insertAdjacentHTML('beforeend', html);
+  bindAttachmentChip();
+}
+
+function bindAttachmentChip(): void {
+  document.querySelector('#tl-day-docs')?.addEventListener('click', () => gotoGate('docs'));
 }
 
 /** 하루의 요약은 별도 패널이 아니라 제목 옆 한 줄로 — 화면을 나눠 쓰지 않고도 다 읽힌다 */
+/**
+ * 하루 이동이 이만큼을 넘으면 "동선을 한 번 다시 볼 만하다"고 알려준다. 판단 근거는 새로
+ * 만든 값이 아니라 DAY 헤더에 이미 보이는 이동시간 합계이고, 기준선만 여기서 정한다.
+ */
+const LONG_MOVE_DAY_MIN = 120;
+
+/** 하루 동선을 정류지 이름으로 한 줄에 — 스크롤하지 않고도 "어디서 어디까지"가 보이게.
+ *  동네(권역) 이름으로 묶지 않는 이유: 정류지별 권역 데이터가 없어 지어내야 한다(원칙 3-1). */
+function dayRouteLineHtml(day: TlDay): string {
+  if (day.stops.length < 2) return '';
+  const names = day.stops.map((st) => st.name);
+  return (
+    '<div class="tl-dayhead-route" title="' + escapeHtml(names.join(' → ')) + '">' +
+    names.map((n) => '<span>' + escapeHtml(n) + '</span>').join('<i aria-hidden="true">→</i>') +
+    '</div>'
+  );
+}
+
+/** 이동이 긴 하루 — 가장 긴 구간을 같이 짚어줘야 "어디를 고치면 되는지"가 바로 보인다 */
+function dayMoveTipHtml(day: TlDay, s: DaySchedule): string {
+  if (s.totalMoveMin < LONG_MOVE_DAY_MIN) return '';
+  let longest = -1;
+  s.legs.forEach((l, i) => {
+    if (l && (longest < 0 || l.min > (s.legs[longest]?.min ?? 0))) longest = i;
+  });
+  const leg = longest >= 0 ? s.legs[longest] : null;
+  const detail = leg
+    ? ' 가장 긴 구간은 ' + day.stops[longest].name + ' → ' + day.stops[longest + 1].name + '(' + fmtMin(leg.min) + ')이에요.'
+    : '';
+  return (
+    '<div class="tl-dayhead-tip">' + IC_ALERT +
+    '<span>이동에만 ' + fmtMin(s.totalMoveMin) + '이 걸리는 동선이에요.' + escapeHtml(detail) + '</span></div>'
+  );
+}
+
 function dayHeadHtml(day: TlDay, s: DaySchedule): string {
   const estNote =
     s.legCount === 0
@@ -725,6 +1067,8 @@ function dayHeadHtml(day: TlDay, s: DaySchedule): string {
     ['예상 교통비', s.totalCost.toLocaleString() + ' ' + s.currency],
   ];
 
+  const attachment = attachmentChipHtml(day);
+
   return [
     '  <div class="tl-dayhead">',
     '    <div class="tl-dayhead-title">',
@@ -732,11 +1076,13 @@ function dayHeadHtml(day: TlDay, s: DaySchedule): string {
     '      <span class="tl-dayhead-date">' + escapeHtml(dateLabel(day.date)) + '</span>',
     '      <span class="tl-dayhead-span">' + minToHHMM(s.spanStartMin) + ' – ' + minToHHMM(s.spanEndMin) + '</span>',
     '    </div>',
+    dayRouteLineHtml(day),
     '    <div class="tl-dayhead-stats">',
     stats.map(([k, v]) =>
       '<span class="tl-hstat"><span class="tl-hstat-k">' + k + '</span><span class="tl-hstat-v">' + escapeHtml(v) + '</span></span>'
-    ).join(''),
+    ).join('') + attachment,
     '    </div>',
+    dayMoveTipHtml(day, s),
     // 원칙 3-1 — 실측/추정을 섞어 쓰므로 어느 쪽인지 반드시 밝힌다
     estNote ? '    <div class="tl-dayhead-note">* ' + estNote + '예요</div>' : '',
     '  </div>',
@@ -772,8 +1118,17 @@ function stopCardHtml(stop: TlStop, i: number, s: DaySchedule, dateISO: string |
   const catParts = [CAT_LABEL[stop.cat], place?.category ?? ''].filter(Boolean);
   const catLine = catParts.length ? '<span class="tl-cat">' + escapeHtml(catParts.join(' · ')) + '</span>' : '';
 
-  const hoursLine = todaysHoursLine(place, dateISO);
+  // 숙소·공항은 거의 언제나 "24시간 영업"이라 카드에 띄우면 정보가 아니라 소음이다.
+  // 관광지·식당은 마감 시각이 일정을 좌우하므로 그대로 둔다(상세 패널엔 모두 그대로 있음).
+  const hoursLine = stop.cat === 'STAY' || stop.cat === 'AIRPORT' ? null : todaysHoursLine(place, dateISO);
   const badges = hoursLine ? '<span class="tl-badge">' + escapeHtml(hoursLine) + '</span>' : '';
+  // 이 장소에 딸린 준비 체크리스트 진행 상황 — 항목이 있을 때만(없는데 "0/0"을 띄우지 않는다)
+  const prep = checklistFor(stop);
+  const prepDone = prep.filter((c) => c.checked_at != null).length;
+  const prepChip = prep.length
+    ? '<span class="tl-badge tl-prep-chip' + (prepDone === prep.length ? ' is-done' : '') + '" title="이 장소 준비 체크리스트">' +
+      IC_CHECK_SM + '준비 ' + prepDone + '/' + prep.length + '</span>'
+    : '';
 
   // 사진 주소는 style 속성에 직접 끼워 넣지 않는다 — 따옴표·괄호가 섞이면 CSS가 깨지고,
   // 이미 인코딩된 주소를 다시 인코딩하면(encodeURI) %23 → %2523이 되어 이미지가 안 뜬다.
@@ -788,19 +1143,20 @@ function stopCardHtml(stop: TlStop, i: number, s: DaySchedule, dateISO: string |
     ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(stop.lat + ',' + stop.lng)
     : null;
 
-  // 우측 체류 요약 박스 — 도착/출발은 항상, "예상 체류"는 실제로 머무는 시간이 있을 때만
-  // (앵커 정류지처럼 체류시간이 0인 곳에 없는 값을 지어내 보여주지 않기 위해)
-  const stayBox = [
-    '<div class="tl-staybox">',
+  // 우측 체류 박스 — 예상 체류만. 도착/출발 시각은 왼쪽 시각 칸(도착 입력 + "HH:MM 출발")과
+  // 똑같은 값의 반복이라 뺐다. 체류시간이 0인 곳(숙소 등 앵커)은 보여줄 게 없으니 박스째 생략.
+  // 체류시간은 카테고리 기본값(추정치)일 뿐이라 틀릴 수 있어 — .tl-time과 같은 방식으로
+  // 직접 입력해 바꿀 수 있게 한다(비우면 다시 기본값으로 돌아간다).
+  const stayBox =
     dwell > 0
-      ? '  <span class="tl-staybox-label">예상 체류</span><span class="tl-staybox-value">' + fmtMin(dwell) + '</span>'
-      : '',
-    '  <div class="tl-staybox-times">',
-    '    <span class="tl-staybox-time"><b>도착</b>' + minToHHMM(s.arriveMin[i]) + '</span>',
-    '    <span class="tl-staybox-time"><b>출발</b>' + minToHHMM(s.departMin[i]) + '</span>',
-    '  </div>',
-    '</div>',
-  ].join('');
+      ? '<div class="tl-staybox">' +
+        '  <span class="tl-staybox-label">예상 체류</span>' +
+        '  <input type="text" class="tl-staybox-input' + (stop.customDwellMin != null ? ' is-custom' : '') + '"' +
+        ' value="' + fmtMin(dwell) + '" data-key="' + stop.key + '" inputmode="numeric" spellcheck="false"' +
+        ' title="' + (stop.customDwellMin != null ? '직접 정한 체류시간 · 비우면 기본값(추정치)으로 돌아가요' : '카테고리 기본값(추정치) · 입력하면 직접 정한 값으로 바뀌어요') + '"' +
+        ' aria-label="' + escapeHtml(stop.name) + ' 예상 체류시간" />' +
+        '</div>'
+      : '';
 
   return [
     '<li class="tl-row tl-stop' + (selected ? ' is-selected' : '') + '" data-key="' + stop.key + '" data-idx="' + i + '" draggable="true">',
@@ -830,7 +1186,7 @@ function stopCardHtml(stop: TlStop, i: number, s: DaySchedule, dateISO: string |
     warn,
     '        </div>',
     catLine ? '        <div class="tl-catrow">' + catLine + '</div>' : '',
-    (rating || badges) ? '        <div class="tl-metarow">' + rating + badges + '</div>' : '',
+    (rating || badges || prepChip) ? '        <div class="tl-metarow">' + rating + badges + prepChip + '</div>' : '',
     '        <div class="tl-memo-row">',
     '          <span class="tl-memo-label">메모</span>',
     '          <input type="text" class="tl-memo" placeholder="메모 추가" value="' + escapeHtml(stop.memo ?? '') + '"' +
@@ -904,8 +1260,11 @@ function legRowHtml(leg: Leg | null, to: TlStop, i: number, nextArriveMin: numbe
 
   const open = openLegIndex === i;
   const manual = !!to.travelMode;
-  // 걸어서 가는 구간엔 요금이 없으므로 거리만 한 번 보여준다
-  const costText = leg.costTHB > 0 ? '예상 요금 ' + leg.costTHB.toLocaleString() + ' ' + (leg.fare?.currency ?? 'THB') : '';
+  // 바에는 "얼마나 걸리고 얼마 드는지"만 — 거리(km)는 펼쳤을 때만 보인다.
+  // 걸어서 가는 구간엔 요금이 없으므로 시간만 남는다.
+  const fareText = leg.costTHB > 0 ? '약 ' + leg.costTHB.toLocaleString() + ' ' + (leg.fare?.currency ?? 'THB') : '';
+  const legDetail =
+    '거리 ' + fmtKm(leg.km) + ' · ' + (leg.real ? '실제 경로 기준' : '직선거리 기반 추정');
 
   const modeBtns = MODES.map((m) =>
     '<button type="button" class="tl-modebtn' + (to.travelMode === m ? ' active' : '') + '"' +
@@ -924,11 +1283,12 @@ function legRowHtml(leg: Leg | null, to: TlStop, i: number, nextArriveMin: numbe
     '      <span class="tl-legcard-icon' + (manual ? ' is-manual" title="직접 지정한 이동수단' : '') + '">' +
       MODE_ICON[leg.mode] + '</span>',
     '      <span class="tl-legcard-mode">' + modeLabel(leg.mode) + '</span>',
-    // 소요시간·거리·요금은 왼쪽 라벨과 붙지 않고 오른쪽(도착 예정 앞)으로 몰아 정렬한다
+    // 소요시간·요금은 왼쪽 라벨과 붙지 않고 오른쪽(도착 예정 앞)으로 몰아 한 줄로 정렬한다.
+    // "추정" 표시는 접지 않는다 — 원칙 3-1상 바만 봐도 추정치인지 알 수 있어야 한다.
     '      <div class="tl-legcard-info">',
-    '        <span class="tl-legcard-stats"><b>' + fmtMin(leg.min) + '</b><b>' + fmtKm(leg.km) + '</b>' +
+    '        <span class="tl-legcard-stats"><b>' + fmtMin(leg.min) + '</b>' +
+      (fareText ? '<span class="tl-legcard-fare">' + escapeHtml(fareText) + '</span>' : '') +
       (!leg.real ? '<span class="tl-est" title="실제 경로를 못 받아 직선거리로 추정한 값이에요">추정</span>' : '') + '</span>',
-    costText ? '        <span class="tl-legcard-cost">' + escapeHtml(costText) + '</span>' : '',
     '      </div>',
     // 시각과 "도착 예정"을 따로 감싼다 — 좁은 화면에선 말(label)만 접고 시각은 남기려고
     '      <button type="button" class="tl-legcard-eta" data-leg-idx="' + i + '" aria-expanded="' + open + '" title="눌러서 이동수단 바꾸기">',
@@ -936,7 +1296,7 @@ function legRowHtml(leg: Leg | null, to: TlStop, i: number, nextArriveMin: numbe
       '<span class="tl-eta-label">도착 예정</span>' + IC_CHEVRON_DOWN,
     '      </button>',
     '    </div>',
-    open ? '    <div class="tl-modes">' + modeBtns + '</div>' : '',
+    open ? '    <div class="tl-modes"><span class="tl-legdetail">' + legDetail + '</span>' + modeBtns + '</div>' : '',
     '  </div>',
     '</li>',
   ].join('');
@@ -1282,7 +1642,7 @@ function pdHeroHtml(stop: TlStop): string {
     '  <div class="tl-pd-facts">',
     rating,
     catParts.length ? '<span class="tl-pd-fact">' + escapeHtml(catParts.join(' · ')) + '</span>' : '',
-    '    <span class="tl-pd-fact">' + IC_CLOCK + '<span>예상 체류 ' + fmtMin(dwellMinutes(stop.cat)) + '</span></span>',
+    '    <span class="tl-pd-fact">' + IC_CLOCK + '<span>예상 체류 ' + fmtMin(effectiveDwellMinutes(stop)) + '</span></span>',
     '  </div>',
     '</div>',
   ].join('\n');
@@ -1454,6 +1814,64 @@ function pdCheckRow(icon: string, label: string, value: string | null, src: 'dat
 }
 
 /**
+ * 이 장소 준비 체크리스트 — 새 목록이 아니라 Companion의 트립 공유 체크리스트에 "이 장소 것"
+ * 표시만 붙여 저장한다(일행이 같이 보고 같이 체크한다). AI가 쓴 Before You Go 항목은 한 번
+ * 눌러 그대로 넣을 수 있게 칩으로 띄우되, AI 값이라는 표시는 유지한다(원칙 3-1).
+ * 저장소를 못 쓰는 상태(마이그레이션 전)면 블록째 숨긴다.
+ */
+function pdPrepChecklistHtml(stop: TlStop): string {
+  if (!checklistItems) return '';
+  const place = checklistPlaceOf(stop);
+  const items = checklistFor(stop);
+  const taken = new Set(items.map((c) => checklistTitleForPlace(c, place)));
+  const bg = pdBriefOf(stop)?.beforeYouGo;
+  const suggestions = bg
+    ? [bg.booking, bg.dress, bg.cash, ...bg.tips]
+        .map((t) => t.trim())
+        .filter((t, k, arr) => t && !taken.has(t) && arr.indexOf(t) === k)
+        .slice(0, 4)
+    : [];
+
+  const rows = items
+    .map((c) => {
+      const title = checklistTitleForPlace(c, place);
+      const checked = c.checked_at != null;
+      return [
+        '<li class="tl-pd-prep-item' + (checked ? ' is-done' : '') + '">',
+        '  <button type="button" class="tl-pd-prep-box" data-prep-toggle="' + c.id + '" aria-pressed="' + checked + '"' +
+          ' aria-label="' + escapeHtml(title) + (checked ? ' 체크 해제' : ' 체크') + '">' + (checked ? IC_CHECK_SM : '') + '</button>',
+        '  <span class="tl-pd-prep-title">' + escapeHtml(title) + '</span>',
+        // 누가 했는지는 저장된 이름이 있을 때만(원칙 3-1)
+        checked && c.checked_by_name ? '  <span class="tl-pd-prep-by">' + escapeHtml(c.checked_by_name) + '</span>' : '',
+        '  <button type="button" class="tl-pd-prep-del" data-prep-del="' + c.id + '" aria-label="' + escapeHtml(title) + ' 삭제">' + IC_PD_CLOSE + '</button>',
+        '</li>',
+      ].join('');
+    })
+    .join('');
+
+  return [
+    '<div class="tl-pd-prep">',
+    '  <div class="tl-pd-prep-head">',
+    '    <span class="tl-pd-prep-label">준비 체크리스트</span>',
+    '    <span class="tl-pd-prep-note">일행과 같이 보는 목록에 저장돼요</span>',
+    '  </div>',
+    items.length ? '  <ul class="tl-pd-prep-list">' + rows + '</ul>' : '',
+    suggestions.length
+      ? '  <div class="tl-pd-prep-suggest"><span class="tl-pd-prep-sugglabel">' + PD_AI_TAG + ' 내용에서 추가</span>' +
+        suggestions
+          .map((t) => '<button type="button" class="tl-pd-prep-chip" data-prep-add="' + escapeHtml(t) + '">+ ' + escapeHtml(t) + '</button>')
+          .join('') +
+        '</div>'
+      : '',
+    '  <input type="text" class="tl-pd-prep-input" id="tl-pd-prep-input" maxlength="80"' +
+      ' placeholder="이 장소 준비물 추가 (Enter)" aria-label="' + escapeHtml(place.name) + ' 준비물 추가" />',
+    '</div>',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/**
  * 🧳 Before You Go — 보조 정보라 여기서부터 카드 스타일을 준다(위 두 섹션과 위계를 벌린다).
  * 운영시간·위치·예상 체류는 우리 DB의 실제 값이고, 예약·복장·현금은 AI가 채운 참고 정보다.
  * AI 브리핑을 아직 안 받았으면 그 세 줄은 "확인 필요"로 남는다 — 빈칸을 지어내지 않는다.
@@ -1465,7 +1883,7 @@ function pdBeforeGoSectionHtml(stop: TlStop, dateISO: string | null): string {
   const rows = [
     pdCheckRow(IC_CLOCK, '운영시간', hours),
     pdCheckRow(IC_PIN_SMALL, '위치', place.address),
-    pdCheckRow(IC_PD_HOURGLASS, '예상 체류', fmtMin(dwellMinutes(stop.cat))),
+    pdCheckRow(IC_PD_HOURGLASS, '예상 체류', fmtMin(effectiveDwellMinutes(stop))),
     pdCheckRow(IC_PD_TICKET, '예약·입장', bg?.booking || null, 'ai'),
     pdCheckRow(IC_PD_SHIRT, '복장 규정', bg?.dress || null, 'ai'),
     pdCheckRow(IC_PD_CASH, '현금 필요 여부', bg?.cash || null, 'ai'),
@@ -1480,6 +1898,7 @@ function pdBeforeGoSectionHtml(stop: TlStop, dateISO: string | null): string {
         tips.map((t) => '<li>' + escapeHtml(t) + '</li>').join('') +
         '</ul>'
       : '',
+    pdPrepChecklistHtml(stop),
     '</section>',
   ]
     .filter(Boolean)
@@ -1631,6 +2050,46 @@ function bindPlaceDetail(el: HTMLElement, stop: TlStop, day: TlDay): void {
     });
   });
 
+  // 준비 체크리스트 — 체크는 누르자마자 보이게 먼저 반영하고, 저장 뒤 다시 불러와
+  // "누가 체크했는지"를 채우거나(성공) 원래대로 되돌린다(실패).
+  el.querySelectorAll('[data-prep-toggle]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const item = checklistItems?.find((c) => c.id === (btn as HTMLElement).dataset.prepToggle);
+      if (!item) return;
+      const next = item.checked_at == null;
+      item.checked_at = next ? new Date().toISOString() : null;
+      render();
+      await setChecklistChecked(item.id, next);
+      await reloadTimelineChecklist();
+    });
+  });
+  el.querySelectorAll('[data-prep-del]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = (btn as HTMLElement).dataset.prepDel;
+      if (!id || !checklistItems) return;
+      checklistItems = checklistItems.filter((c) => c.id !== id);
+      render();
+      await deleteChecklistItem(id);
+      await reloadTimelineChecklist();
+    });
+  });
+  el.querySelectorAll('[data-prep-add]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      void addPrepItem(stop, (btn as HTMLElement).dataset.prepAdd ?? '');
+    });
+  });
+  const prepInput = el.querySelector('#tl-pd-prep-input') as HTMLInputElement | null;
+  prepInput?.addEventListener('keydown', async (e) => {
+    if (e.key !== 'Enter' || e.isComposing) return; // 한글 조합 중 Enter는 글자 확정용
+    e.preventDefault();
+    const text = prepInput.value;
+    if (!text.trim()) return;
+    prepInput.value = '';
+    await addPrepItem(stop, text);
+    // 다시 그리면서 입력칸이 새로 만들어지므로, 연달아 적을 수 있게 포커스를 돌려준다
+    (container?.querySelector('#tl-pd-prep-input') as HTMLInputElement | null)?.focus();
+  });
+
   // 메모는 카드 목록의 한 줄 입력과 같은 값을 공유한다 — 입력 중 전체를 다시 그리면 포커스가
   // 날아가므로 값만 갱신하고, 카드 쪽 입력창도 DOM에서 직접 맞춰준다(scheduleSave 패턴과 동일)
   const memo = el.querySelector('#tl-pd-memo') as HTMLTextAreaElement | null;
@@ -1674,6 +2133,7 @@ function bindShell(): void {
     viewMode = 'day';
     selectedKey = null;
     detailKey = null;
+    addPickerOpen = false;
     mapFitKey = '';
     render();
     void loadRealLegsForActiveDay();
@@ -1690,6 +2150,7 @@ function bindAllDays(main: HTMLElement): void {
       viewMode = 'day';
       selectedKey = null;
       detailKey = null;
+      addPickerOpen = false;
       mapFitKey = '';
       render();
       void loadRealLegsForActiveDay();
@@ -1707,6 +2168,8 @@ function findStop(key: string): { day: TlDay; stop: TlStop; index: number } | nu
 
 function bindDaySchedule(main: HTMLElement): void {
   main.querySelector('#tl-day-go-route')?.addEventListener('click', () => gotoGate('route'));
+  bindAddPicker(main);
+  bindAttachmentChip();
 
   main.querySelectorAll('.tl-photo').forEach((el) => {
     const url = (el as HTMLElement).dataset.photo;
@@ -1768,6 +2231,29 @@ function bindDaySchedule(main: HTMLElement): void {
       // 형식이 잘못됐으면 조용히 되돌린다 (재렌더가 계산값으로 복구)
       if (raw && !next) { render(); return; }
       found.stop.arriveTime = next;
+      scheduleSave(found.day.dayIndex);
+      render();
+    };
+    el.addEventListener('change', commit);
+    el.addEventListener('keydown', (e) => {
+      const ke = e as KeyboardEvent;
+      if (ke.key === 'Enter') { ke.preventDefault(); el.blur(); }
+      if (ke.key === 'Escape') { ke.preventDefault(); render(); }
+    });
+    el.addEventListener('click', (e) => e.stopPropagation());
+  });
+
+  /* 예상 체류시간 — 비우면 다시 카테고리 기본값(추정치)으로 돌아간다(.tl-time과 같은 관례) */
+  main.querySelectorAll('.tl-staybox-input').forEach((input) => {
+    const el = input as HTMLInputElement;
+    const commit = () => {
+      const found = findStop(el.dataset.key!);
+      if (!found) return;
+      const raw = el.value.trim();
+      const next = raw ? parseDwellInput(raw) : null;
+      // 형식이 잘못됐으면 조용히 되돌린다 (재렌더가 계산값으로 복구)
+      if (raw && next == null) { render(); return; }
+      found.stop.customDwellMin = next;
       scheduleSave(found.day.dayIndex);
       render();
     };
