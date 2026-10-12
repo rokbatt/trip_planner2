@@ -485,6 +485,9 @@ async function renderGate(body: HTMLElement, tripId: string, gate: string): Prom
   // MOBILE(Companion)은 자체 셸이 화면을 꽉 채우고 스스로 스크롤한다 — 바깥 컨테이너까지
   // 같이 스크롤되면 sticky/바텀탭이 엉키므로 스크롤 주체를 하나로 넘겨준다.
   body.classList.toggle('is-mobile-gate', gate === 'go');
+  // 폰에서는 이 게이트가 **앱 전체**가 된다 — 워크스페이스 크롬(헤더·채팅 FAB)을 숨기려면
+  // 셸 루트에 표식이 필요하다(헤더는 body의 형제가 아니라 조상 쪽에 있어 선택할 수 없다).
+  body.closest('.ws-page')?.classList.toggle('is-companion', gate === 'go');
 
   if (gate === 'ideas') {
     const mod = await import('../board/board');

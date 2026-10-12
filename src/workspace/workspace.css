@@ -1016,6 +1016,18 @@
 
   .ws-mobile-menu { display: flex; }
 
+  /* ── 폰에서 Companion은 앱 전체다 ──────────────────────────────
+     계획용 크롬(보딩패스 헤더·채팅 FAB)을 그 위에 겹쳐 두면, 자체 상단바·하단탭을
+     가진 화면에 머리가 두 개 달린 꼴이 되고 FAB은 하단탭 위에 그대로 올라앉는다.
+     폰 = Companion 하나라는 결론(docs/MOBILE_STRATEGY.md)을 화면에서도 지킨다.
+
+     **폭 조건부인 게 핵심이다** — PC에서 Companion 게이트를 열어 볼 땐 헤더로 다른
+     게이트에 돌아가야 하므로 크롬이 그대로 있어야 한다. 그래서 이 블록은 모바일
+     미디어쿼리 안에만 둔다. 다른 게이트(route 등)도 크롬을 유지하므로, 폰에서
+     "PC에서 하세요" 링크를 눌러 들어가도 햄버거로 되돌아올 길이 남는다. */
+  .ws-page.is-companion .ws-content-header,
+  .ws-page.is-companion .ws-drawer-fab { display: none; }
+
   .ws-mobile-overlay {
     position: fixed;
     inset: 0;
