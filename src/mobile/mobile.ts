@@ -100,6 +100,8 @@ import {
   dayDateRangeLabel,
 } from '../docs/docsStore';
 import type { DocCategory } from '../docs/docsStore';
+import { fetchWeather, resetWeatherCache } from './weather';
+import type { Weather } from './weather';
 import { loadGoogleMapsScript } from '../utils/googleMaps';
 import { requestPlaceBrief, placeBriefKey } from '../timeline/placeBrief';
 import type { PlaceBrief, PlaceBriefRequest } from '../timeline/placeBrief';
@@ -151,6 +153,16 @@ const IC = {
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
   calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
   swap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4 3 8l4 4"/><path d="M3 8h13a4 4 0 0 1 0 8h-1"/><path d="m17 20 4-4-4-4"/></svg>',
+};
+
+/** 날씨 아이콘 — weather.ts의 WeatherIcon과 1:1. 이모지를 쓰지 않는다(Claude.md 5-3). */
+const WX_ICON: Record<Weather['icon'], string> = {
+  sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4"/></svg>',
+  cloud: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 11.1 3.5 3.5 0 0 0 7 18z"/></svg>',
+  rain: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 15h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 8.1 3.5 3.5 0 0 0 7 15z"/><path d="M8.5 18.5 8 20.5M12 18.5l-.5 2M15.5 18.5l-.5 2"/></svg>',
+  snow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 15h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 8.1 3.5 3.5 0 0 0 7 15z"/><path d="M8.5 19h.01M12 20h.01M15.5 19h.01"/></svg>',
+  storm: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 14h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 7.1 3.5 3.5 0 0 0 7 14z"/><path d="m13 16-3 4h4l-3 4"/></svg>',
+  fog: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 9h16M4 13h16M6 17h12"/></svg>',
 };
 
 const MODE_ICON: Record<TravelMode, string> = { WALK: IC.walk, TRANSIT: IC.transit, TAXI: IC.taxi };
@@ -230,6 +242,12 @@ let padMode: 'expense' | 'calc' = 'expense';
 /** 현재 통화의 환율 미리보기(≈₩) — fetchRate가 통화당 1회만 조회하고 캐시한다 */
 let padRate: { rate: number | null; source: string } | null = null;
 
+/* ── 날씨 ── */
+/** 활성 DAY의 날씨. 못 받으면 null이고 그 줄은 아예 안 그린다(원칙 3-1). */
+let weather: Weather | null = null;
+/** 지금 담긴 날씨가 어느 (좌표·날짜)의 것인지 — 같은 날을 반복 조회하지 않게 */
+let weatherKey = '';
+
 /* ── 지갑: 예약 서류 ── */
 /** 지갑 탭을 처음 열 때만 불러온다(원칙 3-2) */
 let walletDocs: TripDocument[] = [];
@@ -308,6 +326,9 @@ export function teardownMobile(): void {
     supabase.removeChannel(linksChannel);
     linksChannel = null;
   }
+  weather = null;
+  weatherKey = '';
+  resetWeatherCache();
   walletDocs = [];
   walletDocsLoading = false;
   walletDocsLoaded = false;
@@ -443,6 +464,7 @@ export async function renderMobileContent(host: HTMLElement, tripId: string): Pr
   subscribeStopProgress(tripId, () => { void loadProgressForActiveDay(); });
   void loadRealLegsForActiveDay();
   void loadProgressForActiveDay();
+  void loadWeatherForActiveDay();
   // 요약 카드의 "예약 서류 N건"이 이 값을 쓴다 — 지갑 탭과 같은 데이터를 한 번만 받는다
   void ensureWalletDocs();
 
@@ -459,6 +481,28 @@ async function reloadFromRemote(): Promise<void> {
   staySegments = model.staySegments;
   placeById = model.ctx.placeById;
   if (activeDayIndex >= days.length) activeDayIndex = Math.max(0, days.length - 1);
+  render();
+}
+
+/**
+ * 활성 DAY의 날씨를 채운다. 좌표는 그 날 **첫 정류지의 저장된 좌표**를 쓴다 — 하루 동선이
+ * 보통 한 도시 안이라 그걸로 충분하고, 사용자 위치 권한을 따로 묻지 않아도 된다.
+ * 좌표가 없거나 조회가 실패하면 그냥 안 그린다.
+ */
+async function loadWeatherForActiveDay(): Promise<void> {
+  const day = activeDay();
+  const pin = day?.stops.find((st) => st.lat != null && st.lng != null);
+  if (!day?.date || !pin) {
+    if (weather) { weather = null; weatherKey = ''; render(); }
+    return;
+  }
+  const key = pin.lat!.toFixed(2) + ',' + pin.lng!.toFixed(2) + ',' + day.date;
+  if (key === weatherKey) return; // 같은 날·같은 곳이면 다시 묻지 않는다
+  weatherKey = key;
+  const w = await fetchWeather(pin.lat!, pin.lng!, day.date);
+  // 그 사이 사용자가 DAY를 옮겼으면 버린다
+  if (weatherKey !== key) return;
+  weather = w;
   render();
 }
 
@@ -602,8 +646,23 @@ function topBarHtml(): string {
     '<div class="mb-daymeta">',
     isToday ? '  <span class="mb-today-chip">TODAY</span>' : '',
     '  <span class="mb-date">' + escapeHtml(dateLabel(day?.date ?? null)) + '</span>',
+    weatherChipHtml(),
     '</div>',
   ].join('');
+}
+
+/**
+ * 날씨 한 조각. **못 받았으면 빈 문자열** — 자리를 비워 두지 "—"나 기본값을 찍지 않는다(원칙 3-1).
+ * 오늘은 지금 기온, 다른 날은 그날 최고/최저를 보여준다. 둘을 같은 모양으로 찍으면
+ * 내일 칸의 숫자를 "지금 기온"으로 읽게 되므로 표기를 일부러 다르게 둔다.
+ */
+function weatherChipHtml(): string {
+  if (!weather) return '';
+  const text =
+    weather.kind === 'now'
+      ? weather.tempC + '° ' + weather.label
+      : weather.maxC + '° / ' + weather.minC + '° ' + weather.label;
+  return '  <span class="mb-wx">' + WX_ICON[weather.icon] + escapeHtml(text) + '</span>';
 }
 
 /* ── 하단 탭 ── */
@@ -1321,6 +1380,7 @@ function onPagerSettle(pager: HTMLElement): void {
   pagerLoadTimer = setTimeout(() => {
     void loadRealLegsForActiveDay();
     void loadProgressForActiveDay();
+    void loadWeatherForActiveDay();
   }, 350);
 }
 
@@ -2730,6 +2790,7 @@ function bind(): void {
       render();
       void loadRealLegsForActiveDay();
       void loadProgressForActiveDay();
+      void loadWeatherForActiveDay();
     });
   });
   root.querySelectorAll('[data-goday]').forEach((btn) => {
@@ -2739,6 +2800,7 @@ function bind(): void {
       render();
       void loadRealLegsForActiveDay();
       void loadProgressForActiveDay();
+      void loadWeatherForActiveDay();
     });
   });
 
