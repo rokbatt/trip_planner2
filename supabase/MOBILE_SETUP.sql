@@ -1,31 +1,28 @@
 -- ════════════════════════════════════════════════════════════════════
---  몽실이 — 모바일 Companion 마이그레이션 (한 번에 실행용 합본)
+--  몽실이 — 모바일 Companion 마이그레이션 (Supabase 대시보드 붙여넣기용)
 --
---  Supabase 대시보드 → SQL Editor 에 **이 파일 전체를 붙여넣고 Run** 하세요.
+--  【1부】를 통째로 복사 → SQL Editor 에 붙여넣고 Run. 그게 전부입니다.
+--  【2부】는 실시간 동기화용이고 **에러가 나도 괜찮습니다**(이유는 2부 머리말 참고).
 --
---  ⚠️ 여러 번 실행해도 안전합니다(idempotent).
---     이미 돌린 적 있는 항목이 섞여 있어도 그냥 통과합니다 —
---     create table/index는 if not exists, 정책은 drop 후 재생성,
---     제약조건은 존재 확인 후 추가, 버킷은 on conflict do nothing 입니다.
---     그러니 "뭘 돌렸는지 기억 안 날 때"도 그냥 전체를 다시 돌리면 됩니다.
+--  ⚠️ 여러 번 실행해도 안전합니다(idempotent). 뭘 돌렸는지 기억 안 나면 그냥 다시 돌리세요.
 --
---  ⚠️ 실행 전에도 앱은 동작합니다. 다만 아래 기능이 **저장되지 않습니다**:
+--  ⚠️ 실행 전에도 앱은 동작합니다. 다만 아래가 **저장되지 않습니다**:
 --       · 도착/출발 기록, GPS 자동 체크인  → trip_stop_progress
 --       · 여행 준비 체크리스트             → trip_checklist(+_place)
 --       · 여행 지갑(예약 서류·파일)        → trip_documents
 --
---  이 합본은 **모바일 Companion에 필요한 것만** 모았습니다. 다른 기능(채팅·지출·
---  링크 등)이 안 보이면 supabase/ 폴더의 해당 .sql을 따로 확인하세요.
---
---  생성: supabase/MOBILE_SETUP.sql — 원본 4개를 순서대로 합친 것이며,
---        원본을 고치면 이 파일도 같이 고쳐야 합니다(아래 목차 순서 유지).
---
---  목차
---    1. trip_stop_progress   도착/출발 기록
---    2. trip_checklist       준비 체크리스트
---    3. trip_checklist_place 체크리스트 ↔ 장소 연결   (2 다음이어야 함)
---    4. trip_documents       여행 지갑 + trip-docs 버킷
+--  ── 왜 do $$ 블록이 하나도 없는가 ──────────────────────────────
+--  Supabase 대시보드 SQL Editor는 do $$ ... end $$; 블록 **안쪽의 세미콜론**에서 구문을
+--  잘라버려 "unterminated dollar-quoted string" 에러를 낸다(실제로 겪음). 그래서 이 합본은
+--  do 블록을 쓰지 않는다:
+--    · 제약조건 → "drop constraint if exists" + "add constraint" 두 평문으로 (멱등)
+--    · 실시간   → 2부로 분리 (Postgres에 publication용 if-not-exists 문법이 없어서)
+--  **이 파일에 do $$ 를 다시 넣지 말 것.** 원본 supabase/*.sql은 psql용이라 그대로 둔다.
 -- ════════════════════════════════════════════════════════════════════
+
+
+-- ████████████████████████  1부 · 필수  ████████████████████████
+--  여기부터 "2부" 표시 전까지 전체를 복사해 Run 하세요. 에러 없이 끝나야 합니다.
 
 -- ╔══════════════════════════════════════════════════════════════════╗
 -- ║  trip_stop_progress.sql
@@ -74,15 +71,6 @@ create unique index if not exists trip_stop_progress_dest_day_key_uniq
 
 create index if not exists trip_stop_progress_trip_id_idx on trip_stop_progress(trip_id);
 
-do $$
-begin
-  if not exists (select 1 from pg_constraint where conname = 'trip_stop_progress_status_chk') then
-    alter table trip_stop_progress
-      add constraint trip_stop_progress_status_chk
-      check (status in ('pending', 'arrived', 'departed', 'skipped'));
-  end if;
-end $$;
-
 -- ── RLS ──────────────────────────────────────────────────────
 alter table trip_stop_progress enable row level security;
 
@@ -96,17 +84,6 @@ create policy "trip_stop_progress_member_all" on trip_stop_progress
 
 -- ── 실시간 동기화 ──────────────────────────────────────────
 --    한 멤버가 "도착"을 누르면 같은 트립의 다른 멤버 화면에도 즉시 반영되도록 publication에 추가.
-do $$
-begin
-  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
-    if not exists (
-      select 1 from pg_publication_tables
-      where pubname = 'supabase_realtime' and tablename = 'trip_stop_progress'
-    ) then
-      alter publication supabase_realtime add table trip_stop_progress;
-    end if;
-  end if;
-end $$;
 
 
 
@@ -163,17 +140,6 @@ create policy "trip_checklist_member_all" on trip_checklist
 -- ── 실시간 동기화 ──────────────────────────────────────────
 --    한 명이 "유심 구매"를 체크하면 다른 멤버 화면에서도 즉시 지워지도록 publication에 추가.
 --    체크리스트는 여럿이 동시에 만지는 목록이라 이게 없으면 중복 준비가 그대로 발생한다.
-do $$
-begin
-  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
-    if not exists (
-      select 1 from pg_publication_tables
-      where pubname = 'supabase_realtime' and tablename = 'trip_checklist'
-    ) then
-      alter publication supabase_realtime add table trip_checklist;
-    end if;
-  end if;
-end $$;
 
 
 
@@ -290,27 +256,6 @@ create index if not exists trip_documents_owner_idx on trip_documents(owner_id);
 -- 등)와 같은 방식으로 문자열째 저장한다.
 alter table if exists trip_documents add column if not exists region text;
 
-do $$
-begin
-  if not exists (select 1 from pg_constraint where conname = 'trip_documents_visibility_chk') then
-    alter table trip_documents
-      add constraint trip_documents_visibility_chk
-      check (visibility in ('SHARED','PERSONAL'));
-  end if;
-  -- PERSONAL 문서는 반드시 주인이 있어야 하고, SHARED는 주인을 갖지 않는다
-  if not exists (select 1 from pg_constraint where conname = 'trip_documents_owner_chk') then
-    alter table trip_documents
-      add constraint trip_documents_owner_chk
-      check ((visibility = 'PERSONAL' and owner_id is not null)
-          or (visibility = 'SHARED'   and owner_id is null));
-  end if;
-  if not exists (select 1 from pg_constraint where conname = 'trip_documents_category_chk') then
-    alter table trip_documents
-      add constraint trip_documents_category_chk
-      check (category in ('FLIGHT','STAY','TRANSPORT','TICKET','INSURANCE','VISA','RECEIPT','OTHER'));
-  end if;
-end $$;
-
 -- ── 메모 ─────────────────────────────────────────────────────
 -- 체크리스트(trip_checklist)와 역할이 다르다:
 --   CHECKLIST = 여행 중 "해야 하는 행동"
@@ -335,15 +280,6 @@ create index if not exists trip_notes_trip_id_idx on trip_notes(trip_id);
 
 -- 지역/도시(선택) — trip_documents.region과 같은 이유·같은 방식(스냅샷 텍스트)
 alter table if exists trip_notes add column if not exists region text;
-
-do $$
-begin
-  if not exists (select 1 from pg_constraint where conname = 'trip_notes_category_chk') then
-    alter table trip_notes
-      add constraint trip_notes_category_chk
-      check (category in ('FLIGHT','BAGGAGE','STAY','TRANSPORT','PACKING','VISA','BOOKING','SHOPPING','OTHER'));
-  end if;
-end $$;
 
 -- ── RLS ──────────────────────────────────────────────────────
 --    이 앱의 다른 테이블과 같은 기준: "그 트립의 멤버인가".
@@ -392,19 +328,6 @@ create policy "trip_notes_member_all" on trip_notes
 
 -- ── 실시간 동기화 ──────────────────────────────────────────
 --    한 명이 공용 문서를 올리면 같은 트립을 보고 있는 다른 멤버 화면에도 즉시 뜨도록.
-do $$
-begin
-  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
-    if not exists (select 1 from pg_publication_tables
-                   where pubname = 'supabase_realtime' and tablename = 'trip_documents') then
-      alter publication supabase_realtime add table trip_documents;
-    end if;
-    if not exists (select 1 from pg_publication_tables
-                   where pubname = 'supabase_realtime' and tablename = 'trip_notes') then
-      alter publication supabase_realtime add table trip_notes;
-    end if;
-  end if;
-end $$;
 
 -- ── 파일 저장소 ──────────────────────────────────────────────
 --    place-photos / link-previews와 달리 이 버킷은 비공개다 — 항공권·여권 사본처럼
@@ -449,4 +372,53 @@ create policy "trip_docs_member_delete" on storage.objects
 
 
 
--- ════════ 전부 완료 ════════
+-- ── 체크 제약조건 (do 블록 없이, 멱등) ─────────────────────────
+
+alter table trip_stop_progress drop constraint if exists trip_stop_progress_status_chk;
+alter table trip_stop_progress
+  add constraint trip_stop_progress_status_chk
+  check (status in ('pending', 'arrived', 'departed', 'skipped'));
+
+alter table trip_documents drop constraint if exists trip_documents_visibility_chk;
+alter table trip_documents
+  add constraint trip_documents_visibility_chk
+  check (visibility in ('SHARED','PERSONAL'));
+
+alter table trip_documents drop constraint if exists trip_documents_owner_chk;
+alter table trip_documents
+  add constraint trip_documents_owner_chk
+  check ((visibility = 'PERSONAL' and owner_id is not null)
+      or (visibility = 'SHARED'   and owner_id is null));
+
+alter table trip_documents drop constraint if exists trip_documents_category_chk;
+alter table trip_documents
+  add constraint trip_documents_category_chk
+  check (category in ('FLIGHT','STAY','TRANSPORT','TICKET','INSURANCE','VISA','RECEIPT','OTHER'));
+
+alter table trip_notes drop constraint if exists trip_notes_category_chk;
+alter table trip_notes
+  add constraint trip_notes_category_chk
+  check (category in ('FLIGHT','BAGGAGE','STAY','TRANSPORT','PACKING','VISA','BOOKING','SHOPPING','OTHER'));
+
+
+-- ████████████████████████  2부 · 실시간 (선택)  ████████████████████████
+--
+--  같은 트립을 보는 다른 멤버 화면에 변경이 즉시 반영되게 하는 설정입니다.
+--  **안 해도 앱은 정상 동작합니다** — 새로고침하면 보일 뿐입니다.
+--
+--  ⚠️ Postgres에는 publication 멤버십용 "if not exists" 문법이 없습니다. 그래서 이미
+--     추가된 테이블을 또 추가하면 다음 에러가 납니다:
+--
+--         ERROR: relation "..." is already member of publication "supabase_realtime"
+--
+--     **이 에러는 "이미 돼 있다"는 뜻이라 무시해도 됩니다.** 에러가 난 줄만 빼고
+--     나머지 줄을 다시 Run 하거나, 대시보드 Database → Replication 에서 토글해도 됩니다.
+--
+--  한 줄씩 따로 실행하는 걸 권합니다(한 줄이 실패해도 나머지는 들어가도록).
+
+alter publication supabase_realtime add table trip_stop_progress;
+alter publication supabase_realtime add table trip_checklist;
+alter publication supabase_realtime add table trip_documents;
+alter publication supabase_realtime add table trip_notes;
+
+-- ════════ 끝 ════════
