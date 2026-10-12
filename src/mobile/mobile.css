@@ -3,74 +3,68 @@
  *
  * ══ 컬러: Light가 기본, Dark는 기기 설정을 따라간다 ══
  *
- * **Light (기본) — "Daylight Lounge"**
- * 프로젝트 원래 디자인 시스템(Claude.md 2장, Airport Lounge Premium Light)을 그대로 따른다.
- * 배경 `#F8FBFE`, 포인트 딥네이비 `#0B2A5C`, 액션 `#2F86D6`, 스카이블루 `#8FD8F8`.
- * 데스크톱 게이트들과 같은 톤이라 PC에서 계획하고 폰으로 넘어와도 같은 앱으로 읽힌다.
+ * **Light (기본) — "Ivory Companion"**
+ * 아이보리 바탕(`#F7F5F1`) 위에 흰 카드가 떠 있는 구성. 글자는 네이비(`#14264A`),
+ * 주요 액션은 **몽실이 대표 블루 `#2F86D6`**로 통일한다(길찾기·선택된 탭·선택된 날짜).
+ * 레퍼런스 디자인의 코발트 대신 브랜드 블루를 쓰므로 PC 게이트들과 같은 앱으로 읽힌다.
+ *
+ * 바탕을 흰색이 아니라 아이보리로 두는 이유: 카드가 흰색일 때 **카드와 바탕이 구분되어야**
+ * 떠 있는 느낌이 나온다. 바탕까지 흰색이면 테두리에만 의존하게 되고 화면이 납작해진다.
  *
  * **Dark — "Night Lounge"** (`prefers-color-scheme: dark`)
  * 같은 라운지의 밤. 차가운 슬레이트 잉크 바탕 + 따뜻한 황동 조명.
  *
  * 두 테마 모두에서 지키는 원칙:
  *
- *   1. **한 가지 색의 투명도 변주로 화면을 다 채우지 않는다.** 테두리·배경·아이콘·구분선을
- *      전부 같은 색이 담당하면 단색으로 보인다. 색 온도를 섞어 대비를 만든다 —
- *      Light는 차가운 네이비 구조 + 따뜻한 골드 보석 하나, Dark는 그 반대.
+ *   1. **그라데이션·그림자를 과하게 쓰지 않는다.** 바탕은 단색 아이보리, 그림자는 아주 옅은
+ *      확산형 하나뿐이다. 깊이는 그림자가 아니라 **바탕/카드 대비**로 만든다.
  *   2. **사진 위 스크림은 중성 먹색**(`--mb-scrim`)이다. 남색 스크림을 씌우면 사원의 금빛도
  *      바다의 청록도 같은 파랑으로 죽어 화면이 단색이 된다. 사진이 자기 색을 유지해야
- *      콘텐츠가 알아서 색 다양성을 만든다. 색은 두 테마 공통이지만 **진하기는 테마마다
- *      다르다**(`--mb-scrim-a/b/c`) — Light는 셸 자체가 밝아서 카드까지 짙게 누르면 카드만
- *      밤처럼 튀므로 얕게, Dark는 셸이 이미 어두워서 카드가 짙어도 자연스러우므로 원래
- *      진하기를 유지한다. 사진 카드 위의 글자·배지는 스크림 진하기와 무관하게 두 테마 모두
- *      흰색 계열로 고정한다(어차피 스크림이 그 위에서 대비를 만들어준다).
+ *      콘텐츠가 알아서 색 다양성을 만든다. 진하기는 테마마다 다르다(`--mb-scrim-a/b/c`).
+ *      사진 카드 위의 글자·배지는 두 테마 모두 흰색 계열로 고정한다.
  *   3. **색에도 의미를 고정한다**(원칙 3-1의 "출처를 섞지 않는다"를 색으로도 지킨다) —
- *      골드/황동 = AI가 만든 값 · 별점 / 파랑 = 우리 DB의 실제 값 · 링크 /
- *      회색 = 추정 / 주황 = 지금.
+ *      파랑 = 주요 액션 · 우리 DB의 실제 값 / 초록 = 완료된 예약 / 주황 = 지금 /
+ *      골드 = AI가 만든 값 · 별점 / 회색 = 추정.
  *
  * 새 색을 만들 땐 반드시 두 테마 모두에 값을 준다. 한쪽에만 정의된 색은 다른 테마에서
  * 배경과 같은 색이 되어 사라진다.
- *
- * 시간축은 왼쪽 여백이 아니라 **화면 한가운데**를 지난다. 카드가 그 선에 꿰인 것처럼 보이도록
- * 선은 카드 뒤(z-index 0)를 지나고, 카드 사이의 빈 구간에서만 드러나며, 이동 구간 칩이
- * 그 선 위 한가운데에 앉는다.
  */
 
 .mb-app {
-  /* ══ Light (기본) ══ */
+  /* ══ Light (기본) — Ivory Companion ══ */
 
-  /* 바탕 — 브랜드 배경 #F8FBFE를 가운데 두고 위는 흰색, 아래는 살짝 눌러 깊이를 준다 */
-  --mb-bg-hi: #FFFFFF;
-  --mb-bg: #F8FBFE;
-  --mb-bg-lo: #EDF3FA;
-  /* 광원 두 개 — 위쪽 중앙의 스카이블루 wash(브랜드)와 오른쪽의 옅은 샴페인.
-     단색 그라데이션 하나만 깔면 평평하고 인공적으로 보인다. */
-  --mb-app-bg:
-    radial-gradient(130% 55% at 50% -10%, rgba(143, 216, 248, 0.26) 0%, rgba(143, 216, 248, 0) 62%),
-    radial-gradient(88% 44% at 104% 3%, rgba(199, 170, 116, 0.13) 0%, rgba(199, 170, 116, 0) 70%),
-    linear-gradient(180deg, var(--mb-bg-hi) 0%, var(--mb-bg) 42%, var(--mb-bg-lo) 100%);
-  --mb-detail-bg:
-    radial-gradient(120% 38% at 50% 28%, rgba(143, 216, 248, 0.18) 0%, rgba(143, 216, 248, 0) 60%),
-    linear-gradient(180deg, var(--mb-bg-hi) 0%, var(--mb-bg) 46%, var(--mb-bg-lo) 100%);
+  /* 바탕 — 단색 아이보리. 흰 카드가 떠 보이게 하는 게 바탕의 유일한 일이다. */
+  --mb-bg-hi: #FAF8F5;
+  --mb-bg: #F7F5F1;
+  --mb-bg-lo: #F2EFEA;
+  --mb-app-bg: var(--mb-bg);
+  --mb-detail-bg: var(--mb-bg);
 
   /* 표면 */
   --mb-surface: #FFFFFF;
-  --mb-surface-2: #F4F8FD;
-  --mb-surface-3: #E7EFF8;
+  --mb-surface-2: #FAFBFC;
+  --mb-surface-3: #F1F4F8;
 
-  /* 선 — 무채색 회색이 아니라 네이비를 아주 옅게. 흰 배경에선 이게 고급 신호다 */
-  --mb-line: rgba(11, 42, 92, 0.14);
-  --mb-line-soft: rgba(11, 42, 92, 0.08);
-  --mb-line-cool: rgba(130, 150, 170, 0.22);
+  /* 선 */
+  --mb-line: #E5E9F0;
+  --mb-line-soft: #EEF0F4;
+  --mb-line-cool: #EEF0F4;
 
-  /* 골드 — Light에선 장식이 아니라 "보석 하나". 별점·AI에만 쓴다 */
+  /* 골드 — 장식이 아니라 "보석 하나". 별점·AI에만 쓴다 */
   --mb-brass: #B08430;
   --mb-brass-lit: #8A6828;
   --mb-brass-wash: rgba(176, 132, 48, 0.11);
 
-  /* 파랑 — 구조·사실·링크 (브랜드 액션 컬러) */
+  /* 파랑 — 몽실이 대표 블루. 주요 액션·선택 상태·링크 */
   --mb-sky: #2F86D6;
-  --mb-sky-wash: rgba(47, 134, 214, 0.11);
+  --mb-sky-wash: #EAF2FC;
   --mb-navy: #0B2A5C;
+
+  /* 완료된 예약 */
+  --mb-ok: #15966D;
+  --mb-ok-wash: #E6F6EF;
+  /* 확인 필요 */
+  --mb-warn: #D97706;
 
   /* 지금 */
   --mb-live: #D96D0C;
@@ -79,69 +73,67 @@
   --mb-live-fg: #2A1405;
 
   /* 글자 */
-  --mb-ink: #17212B;
-  --mb-ink-2: #445569;
-  --mb-muted: #7A8798;
+  --mb-ink: #14264A;
+  --mb-ink-2: #4A5A77;
+  --mb-muted: #71809A;
+  --mb-disabled: #9BA6B7;
 
   /* 이동수단 — 흰 배경에서 읽히도록 채도·명도를 낮춘 자연색 */
-  --mb-walk: #14876B;
-  --mb-transit: #2F7CC4;
+  --mb-walk: #15966D;
+  --mb-transit: #2F86D6;
   --mb-taxi: #B4702A;
-  --mb-walk-wash: rgba(20, 135, 107, 0.11);
-  --mb-transit-wash: rgba(47, 124, 196, 0.11);
-  --mb-taxi-wash: rgba(180, 112, 42, 0.12);
+  --mb-walk-wash: rgba(21, 150, 109, 0.1);
+  --mb-transit-wash: rgba(47, 134, 214, 0.1);
+  --mb-taxi-wash: rgba(180, 112, 42, 0.11);
 
-  /* 채움 — 흰 배경에선 흰색 알파가 안 보이므로 네이비 알파를 쓴다 */
-  --mb-fill-subtle: rgba(11, 42, 92, 0.055);
-  --mb-fill-faint: rgba(11, 42, 92, 0.035);
-  --mb-input-bg: #F4F8FD;
+  /* 채움 */
+  --mb-fill-subtle: rgba(20, 38, 74, 0.05);
+  --mb-fill-faint: rgba(20, 38, 74, 0.03);
+  --mb-input-bg: #F7F8FA;
 
-  /* 그림자 — 무채색 회색이 아니라 네이비를 머금은 그림자 */
-  --mb-shadow-card: 0 1px 2px rgba(11, 42, 92, 0.05), 0 10px 26px rgba(11, 42, 92, 0.09);
-  --mb-shadow-card-now: 0 0 0 1px rgba(217, 109, 12, 0.22), 0 12px 30px rgba(217, 109, 12, 0.16);
-  --mb-shadow-chip: 0 3px 12px rgba(11, 42, 92, 0.1);
-  --mb-shadow-sheet: 0 -16px 44px rgba(11, 42, 92, 0.16);
-  --mb-shadow-pd: 0 -18px 40px rgba(11, 42, 92, 0.1);
+  /* 그림자 — 아주 옅은 확산형 하나. 깊이는 바탕/카드 대비가 만든다 */
+  --mb-shadow-card: 0 1px 2px rgba(20, 38, 74, 0.04), 0 4px 14px rgba(20, 38, 74, 0.05);
+  --mb-shadow-card-now: 0 0 0 1px rgba(217, 109, 12, 0.2), 0 6px 18px rgba(217, 109, 12, 0.12);
+  --mb-shadow-chip: 0 2px 8px rgba(20, 38, 74, 0.07);
+  --mb-shadow-sheet: 0 -12px 36px rgba(20, 38, 74, 0.13);
+  --mb-shadow-pd: 0 -12px 32px rgba(20, 38, 74, 0.09);
   --mb-inset-hi: 0 0 0 0 transparent;
 
-  --mb-tabbar-bg: rgba(255, 255, 255, 0.93);
-  --mb-backdrop: rgba(23, 33, 43, 0.34);
+  --mb-tabbar-bg: rgba(255, 255, 255, 0.96);
+  --mb-backdrop: rgba(20, 38, 74, 0.34);
 
-  /* Primary 액션 — Light에선 브랜드 액션 블루 */
-  --mb-btn-bg: linear-gradient(180deg, #3D93E0 0%, #2F86D6 100%);
+  /* Primary 액션 — 단색 브랜드 블루(그라데이션 없음) */
+  --mb-btn-bg: #2F86D6;
   --mb-btn-fg: #FFFFFF;
-  --mb-btn-shadow: 0 6px 18px rgba(47, 134, 214, 0.28);
+  --mb-btn-shadow: 0 4px 12px rgba(47, 134, 214, 0.24);
 
   --mb-danger: #C0392B;
   --mb-danger-wash: rgba(192, 57, 43, 0.1);
 
-  /* 시간축 — Light에선 액션 블루 레일 */
+  /* 시간축 */
   --mb-spine-grad: linear-gradient(
     to bottom,
     rgba(47, 134, 214, 0) 0%,
-    rgba(47, 134, 214, 0.4) 7%,
-    rgba(47, 134, 214, 0.4) 93%,
+    rgba(47, 134, 214, 0.32) 7%,
+    rgba(47, 134, 214, 0.32) 93%,
     rgba(47, 134, 214, 0) 100%
   );
-  --mb-node-border: rgba(47, 134, 214, 0.55);
+  --mb-node-border: rgba(47, 134, 214, 0.5);
 
-  /* 사진 위 스크림 — 색 자체(중성 먹색)는 두 테마 공통이지만, 진하기는 테마마다 다르다.
-     밝은 Light 셸 위에서 카드까지 짙게 눌러 버리면 카드만 밤처럼 튄다 — Light에서는
-     사진이 최대한 밝게 보이도록 얕게, 대신 글자가 앉는 하단만 읽히는 정도로 눌러준다. */
+  /* 사진 위 스크림 — 중성 먹색. 진하기는 테마마다 다르다. */
   --mb-scrim: 13, 12, 11;
-  --mb-scrim-a: 0.06;  /* 카드 위쪽(사진이 가장 잘 보여야 하는 자리) */
-  --mb-scrim-b: 0.3;   /* 카드 중간 */
-  --mb-scrim-c: 0.72;  /* 글자가 앉는 하단 — 흰 글자 대비 확보 */
-  --mb-hero-a: 0.28;   /* 히어로 위쪽(닫기·공유 버튼이 앉는 자리) */
+  --mb-scrim-a: 0.06;
+  --mb-scrim-b: 0.3;
+  --mb-scrim-c: 0.72;
+  --mb-hero-a: 0.28;
   --mb-hero-b: 0.08;
   --mb-hero-c: 0.12;
-  /* 사진이 없는 카드도 흰 글자를 쓰므로 어둡게 채운다 — 두 테마 모두 어두움 */
-  --mb-nophoto-bg: linear-gradient(158deg, rgba(11, 42, 92, 0.9) 0%, rgba(23, 33, 43, 0.95) 72%);
-  /* 히어로 사진 아래쪽이 상세 패널 색으로 자연스럽게 넘어가게 */
-  --mb-hero-fade: rgba(248, 251, 254, 0.94);
+  --mb-nophoto-bg: linear-gradient(158deg, rgba(11, 42, 92, 0.9) 0%, rgba(20, 38, 74, 0.95) 72%);
+  --mb-hero-fade: rgba(247, 245, 241, 0.94);
 
   --mb-radius: 18px;
   --mb-radius-sm: 12px;
+  --mb-radius-xs: 10px;
   --mb-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 
   position: relative;
@@ -191,6 +183,12 @@
     --mb-sky: #7FC2E4;
     --mb-sky-wash: rgba(127, 194, 228, 0.14);
     --mb-navy: #8FD8F8;
+
+    /* Light에 새로 생긴 토큰들 — 한쪽에만 정의하면 다른 테마에서 배경과 같은 색이 되어 사라진다 */
+    --mb-ok: #6FC3A1;
+    --mb-ok-wash: rgba(111, 195, 161, 0.14);
+    --mb-warn: #E0A458;
+    --mb-disabled: #6B7787;
 
     --mb-live: #F4801F;
     --mb-live-soft: #F0B98A;
@@ -314,21 +312,6 @@
 
 /* DAY 선택 */
 .mb-daybar { padding: 2px 18px 0; flex: none; }
-.mb-daypick {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: 0.01em;
-  color: var(--mb-ink);
-}
-.mb-daypick-dest { letter-spacing: 0.04em; }
-.mb-daypick-sep { color: var(--mb-muted); font-weight: 400; }
-.mb-daypick-day { color: var(--mb-sky); }
-.mb-daypick-chev { display: grid; place-items: center; color: var(--mb-muted); }
-.mb-daypick-chev svg { width: 17px; height: 17px; }
 
 .mb-daymeta {
   display: flex;
@@ -363,17 +346,6 @@
 }
 .mb-scroll::-webkit-scrollbar { display: none; }
 
-.mb-daysum {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 2px 10px;
-  font-size: 12.5px;
-  color: var(--mb-muted);
-  font-variant-numeric: tabular-nums;
-}
-.mb-daysum-dot { opacity: 0.5; }
-
 .mb-estimate-note {
   font-size: 11.5px;
   line-height: 1.6;
@@ -389,119 +361,6 @@
   display: flex;
   flex-direction: column;
   padding-bottom: 4px;
-}
-
-/**
- * 카드 뒤를 지나는 중앙선. 카드가 불투명하므로 선은 카드 사이에서만 드러나고,
- * 그래서 "카드가 선에 꿰여 있다"는 인상이 만들어진다.
- */
-.mb-spine {
-  position: absolute;
-  left: 50%;
-  top: 6px;
-  bottom: 6px;
-  width: 2px;
-  margin-left: -1px;
-  z-index: 0;
-  background: var(--mb-spine-grad);
-  border-radius: 2px;
-  pointer-events: none;
-}
-
-/* ── 일정 카드 ── */
-
-/**
- * 카드 래퍼. 카드 자체는 사진 때문에 overflow:hidden이라 바깥으로 나가는 것을 못 그린다 —
- * 시간축이 카드로 들어가고 나오는 마디와 NOW 배지는 그래서 이 래퍼에 얹는다.
- */
-.mb-stop {
-  position: relative;
-  z-index: 1;
-}
-
-/* 선이 카드를 꿰고 들어가고 나오는 지점 */
-.mb-stop::before,
-.mb-stop::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  width: 9px;
-  height: 9px;
-  margin-left: -4.5px;
-  border-radius: 50%;
-  background: var(--mb-bg);
-  border: 2px solid var(--mb-node-border);
-  z-index: 3;
-}
-.mb-stop::before { top: -4.5px; }
-.mb-stop::after { bottom: -4.5px; }
-.mb-stop.is-now::before,
-.mb-stop.is-now::after { border-color: var(--mb-live); }
-
-.mb-card {
-  position: relative;
-  z-index: 1;
-  display: block;
-  width: 100%;
-  min-height: 178px;
-  border-radius: var(--mb-radius);
-  overflow: hidden;
-  border: 1px solid var(--mb-line-soft);
-  background: var(--mb-surface);
-  text-align: left;
-  box-shadow: var(--mb-shadow-card);
-  transition: transform var(--mb-ease) 180ms, border-color var(--mb-ease) 180ms;
-}
-.mb-card:active { transform: scale(0.985); }
-
-.mb-card-photo {
-  position: absolute;
-  inset: 0;
-  background-size: cover;
-  background-position: center;
-}
-/* 사진이 없어도 흰 글자를 쓰므로 어둡게 채운다 (두 테마 모두 어두움) */
-.mb-card.no-photo .mb-card-scrim { background: var(--mb-nophoto-bg); }
-/* 중성 먹색 스크림 — 사진의 고유색(사원의 금빛, 바다의 청록)을 죽이지 않는다 */
-.mb-card-scrim {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    to bottom,
-    rgba(var(--mb-scrim), var(--mb-scrim-a)) 0%,
-    rgba(var(--mb-scrim), var(--mb-scrim-b)) 42%,
-    rgba(var(--mb-scrim), var(--mb-scrim-c)) 100%
-  );
-}
-
-/* 사진 위에 얹히는 것들은 테마와 무관하게 흰색 계열로 고정한다 */
-.mb-card-num {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: 2;
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: rgba(13, 12, 11, 0.62);
-  border: 1px solid rgba(255, 255, 255, 0.34);
-  backdrop-filter: blur(6px);
-  font-size: 13px;
-  font-weight: 800;
-  color: #fff;
-  font-variant-numeric: tabular-nums;
-}
-
-/* 카드 우상단 액션 두 개(길찾기·저장) — 한 컨테이너로 묶어 absolute 위치를 한 번만 잡는다 */
-.mb-card-actions {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 2;
-  display: flex;
-  gap: 6px;
 }
 .mb-card-nav,
 .mb-card-bm {
@@ -526,108 +385,6 @@
   background: color-mix(in srgb, var(--mb-live) 75%, transparent);
   border-color: color-mix(in srgb, var(--mb-live) 55%, transparent);
 }
-
-.mb-card-body {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 52px 14px 14px;
-  min-height: 178px;
-  justify-content: flex-end;
-}
-
-.mb-card-name {
-  font-size: 19px;
-  font-weight: 800;
-  letter-spacing: -0.015em;
-  line-height: 1.28;
-  color: #fff;
-  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.45);
-}
-.mb-card-cat {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.66);
-  letter-spacing: 0.01em;
-}
-
-.mb-card-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 14px;
-  margin-top: 3px;
-}
-.mb-meta-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12.5px;
-  color: rgba(255, 255, 255, 0.9);
-  font-variant-numeric: tabular-nums;
-}
-.mb-meta-item svg { width: 13px; height: 13px; opacity: 0.8; flex: none; }
-/* 별점은 사진 위에서도 골드 — 두 테마 공통의 "보석" 하나 */
-.mb-meta-item.rating { color: #F0CC85; }
-
-.mb-card-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  margin-top: 5px;
-  padding: 7px 10px;
-  border-radius: 9px;
-  background: rgba(13, 12, 11, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  font-size: 11.5px;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.8);
-}
-.mb-card-note svg { width: 13px; height: 13px; flex: none; margin-top: 1px; opacity: 0.75; }
-
-.mb-card-warn {
-  margin-top: 5px;
-  padding: 6px 10px;
-  border-radius: 9px;
-  font-size: 11.5px;
-  color: #FFD2A8;
-  background: rgba(217, 109, 12, 0.34);
-  border: 1px solid rgba(255, 178, 112, 0.44);
-}
-/* 영업시간 경고는 "늦어요"(주황=지금)와 뜻이 다르다 — 가도 소용없다는 신호라 붉은 쪽을 쓴다.
-   카드 위 글자는 사진 위에 놓이므로 두 테마 모두 고정색이다(mobile.css 상단 규칙 2). */
-.mb-card-warn.is-hours {
-  color: #FFD5CD;
-  background: rgba(150, 38, 26, 0.42);
-  border-color: rgba(255, 150, 134, 0.46);
-}
-/* 영업시간 배지 자체도 어긋났을 땐 같이 붉어진다 — 숫자와 경고가 따로 놀지 않게 */
-.mb-card-note.is-warn { color: #FFC9BF; }
-
-/* 지금 진행 중인 일정 — 화면에서 유일하게 주황을 쓰는 자리 */
-.mb-card.is-now {
-  border-color: var(--mb-live);
-  box-shadow: var(--mb-shadow-card-now);
-}
-.mb-now-flag {
-  position: absolute;
-  top: -10px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 4;
-  padding: 2px 10px;
-  border-radius: 999px;
-  font-size: 9.5px;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  color: var(--mb-live-fg);
-  background: var(--mb-live-grad);
-  box-shadow: 0 2px 12px rgba(217, 109, 12, 0.4);
-}
-
-/* 이미 다녀왔거나 건너뛴 카드는 살짝 가라앉힌다 — 아직 안 간 곳으로 눈이 자연히 가게 */
-.mb-card.is-done { opacity: 0.8; }
 
 /* ── 도착/출발/건너뛰기 — 사진 위에서도 읽히도록 카드 노트(.mb-card-note)와 같은 유리질감 ── */
 .mb-track {
@@ -677,109 +434,6 @@
   text-underline-offset: 2px;
 }
 .mb-track-undo:hover { color: rgba(255, 255, 255, 0.85); }
-
-/* 목적만 있는 스탑("숙소 들르기" 등) — 사진이 없으므로 얇은 줄로 */
-.mb-card-slim {
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 13px 14px;
-  background: var(--mb-surface);
-  border: 1px solid var(--mb-line-soft);
-}
-/* 사진이 없는 줄 카드라 배지도 배경색 기준으로 되돌린다 */
-.mb-card-slim .mb-card-num {
-  position: static;
-  width: 26px;
-  height: 26px;
-  flex: none;
-  background: var(--mb-sky-wash);
-  border-color: var(--mb-line);
-  color: var(--mb-sky);
-  backdrop-filter: none;
-}
-.mb-slim-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.mb-slim-name { font-size: 14.5px; font-weight: 700; }
-.mb-slim-meta { font-size: 11.5px; color: var(--mb-muted); font-variant-numeric: tabular-nums; }
-
-/* ── 이동 구간 — 중앙선 위에 앉는 칩 ── */
-
-.mb-leg {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  justify-content: center;
-  padding: 13px 0;
-}
-
-.mb-leg-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--mb-bg);
-  border: 1.5px solid var(--mb-node-border);
-}
-
-.mb-leg-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 12px 6px 7px;
-  border-radius: 999px;
-  /* 선을 가리는 불투명 배경이라야 "선 위에 얹힌 구슬"로 읽힌다 */
-  background: var(--mb-surface);
-  border: 1px solid var(--mb-line);
-  box-shadow: var(--mb-shadow-chip);
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--mb-ink-2);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-.mb-leg-ic {
-  display: grid;
-  place-items: center;
-  width: 21px;
-  height: 21px;
-  border-radius: 50%;
-  flex: none;
-}
-.mb-leg-ic svg { width: 12.5px; height: 12.5px; }
-/* 이동수단은 채도를 낮춘 자연색 — 원색 3개를 나란히 두면 유아용처럼 보인다 */
-.mb-leg-chip.walk .mb-leg-ic { background: var(--mb-walk-wash); color: var(--mb-walk); }
-.mb-leg-chip.transit .mb-leg-ic { background: var(--mb-transit-wash); color: var(--mb-transit); }
-.mb-leg-chip.taxi .mb-leg-ic { background: var(--mb-taxi-wash); color: var(--mb-taxi); }
-.mb-leg-km { color: var(--mb-muted); font-weight: 500; }
-.mb-leg-est {
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  padding: 1.5px 5px;
-  border-radius: 5px;
-  color: var(--mb-muted);
-  background: var(--mb-fill-subtle);
-}
-
-/* ── 일정 추가 ── */
-
-.mb-add {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  width: 100%;
-  margin-top: 14px;
-  padding: 14px;
-  border-radius: var(--mb-radius-sm);
-  border: 1px dashed var(--mb-line);
-  color: var(--mb-ink-2);
-  font-size: 13.5px;
-  font-weight: 600;
-  transition: background var(--mb-ease) 160ms, border-color var(--mb-ease) 160ms, color var(--mb-ease) 160ms;
-}
-.mb-add:hover { background: var(--mb-fill-subtle); border-color: var(--mb-sky); color: var(--mb-sky); }
-.mb-add svg { width: 16px; height: 16px; }
 
 /* ══════════════ TIMELINE — 옆으로 넘겨 보는 DAY ══════════════
  *
@@ -976,6 +630,397 @@
 }
 .mb-tl-open svg { width: 13px; height: 13px; }
 .mb-tl-open:hover { border-color: var(--mb-sky); color: var(--mb-sky); }
+
+/* ══════════════ 오늘 화면 — 요약 카드 · 날짜 띠 · 일정 줄 ══════════════
+ *
+ * 레퍼런스 디자인의 밀도를 따른다. 사진이 카드를 가득 채우던 예전 구조보다 훨씬 얕아서
+ * 하루가 한 화면에 더 많이 들어온다 — 여행 중엔 "몇 개 남았나"를 스크롤 없이 보는 게 중요하다.
+ */
+
+/* ── 오늘 요약 카드 ── */
+.mb-sum {
+  position: relative;
+  height: 118px;
+  border-radius: var(--mb-radius);
+  overflow: hidden;
+  margin-bottom: 14px;
+  background: var(--mb-nophoto-bg);
+  box-shadow: var(--mb-shadow-card);
+}
+.mb-sum-photo { position: absolute; inset: 0; background-size: cover; background-position: center; }
+/* 사진 위 스크림 — 중성 먹색(두 테마 공통). 글자가 앉는 아래쪽만 눌러준다 */
+.mb-sum-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(var(--mb-scrim), 0.12) 0%,
+    rgba(var(--mb-scrim), 0.4) 55%,
+    rgba(var(--mb-scrim), 0.74) 100%
+  );
+}
+.mb-sum-body { position: absolute; left: 16px; right: 16px; bottom: 14px; }
+/* 사진 위 글자는 두 테마 모두 흰색 고정 (mobile.css 상단 원칙 2) */
+.mb-sum-title { font-size: 18px; font-weight: 700; color: #FFFFFF; letter-spacing: -0.01em; }
+.mb-sum-meta { margin-top: 3px; font-size: 12.5px; color: rgba(255, 255, 255, 0.86); }
+
+/* ── 날짜 띠 ── */
+.mb-dates { display: flex; gap: 8px; margin-bottom: 18px; }
+.mb-date-cell {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 4px;
+  min-height: 56px;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line);
+  transition: background var(--mb-ease) 160ms, border-color var(--mb-ease) 160ms;
+}
+.mb-date-num { font-size: 16px; font-weight: 700; color: var(--mb-ink); font-variant-numeric: tabular-nums; }
+.mb-date-wd { font-size: 11px; color: var(--mb-muted); }
+/* 선택된 날짜 — 화면에서 파랑을 가장 크게 쓰는 자리 중 하나 */
+.mb-date-cell.active { background: var(--mb-sky); border-color: transparent; }
+.mb-date-cell.active .mb-date-num,
+.mb-date-cell.active .mb-date-wd { color: #FFFFFF; }
+/* 오늘은 선택이 아니어도 표시가 남아야 한다 */
+.mb-date-cell.is-today:not(.active) { border-color: var(--mb-sky); }
+.mb-date-cell.is-today:not(.active) .mb-date-num { color: var(--mb-sky); }
+.mb-date-cal {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line);
+  color: var(--mb-ink-2);
+}
+.mb-date-cal svg { width: 19px; height: 19px; }
+
+/* ── 섹션 머리 ── */
+.mb-sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.mb-sec-title { font-size: 17px; font-weight: 700; color: var(--mb-ink); }
+.mb-sec-meta { font-size: 12px; color: var(--mb-muted); font-variant-numeric: tabular-nums; }
+
+/* ── 일정 줄 ──
+   왼쪽에 시각 + 세로선이 흐르고, 오른쪽에 흰 카드가 붙는다. 세로선은 .mb-row-node의
+   ::before로 그려서 줄과 줄 사이가 자연스럽게 이어진다. */
+/* 세로선은 줄마다 긋지 않고 **타래 전체에 하나**로 긋는다. 줄마다 그으면 카드 높이를
+   미리 알아야 해서(긴 이름·경고·도착 버튼이 붙으면 늘어난다) 어딘가에서 끊긴다.
+   마디(.mb-row-node)가 표면색 배경을 갖고 그 위에 올라앉아 선을 끊어 보이게 한다.
+   left 값은 시각 칸(44px) + gap(10px) + 마디 절반(5px) − 선 절반(1px) = 58px. */
+.mb-thread { position: relative; display: flex; flex-direction: column; }
+.mb-thread::before {
+  content: '';
+  position: absolute;
+  left: 58px;
+  top: 22px;
+  bottom: 22px;
+  width: 2px;
+  background: var(--mb-line);
+}
+
+.mb-row { position: relative; display: flex; gap: 10px; }
+.mb-row-time { flex: none; width: 44px; padding-top: 13px; text-align: right; }
+.mb-row-clock {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--mb-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.mb-row-nowtag {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  background: var(--mb-live-grad);
+  color: var(--mb-live-fg);
+}
+/* 마디 + 그 아래로 흐르는 세로선 */
+.mb-row-node {
+  position: relative;
+  flex: none;
+  width: 10px;
+  margin-top: 17px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--mb-surface);
+  border: 2px solid var(--mb-node-border);
+  z-index: 1;
+}
+.mb-row.is-now .mb-row-node { border-color: var(--mb-live); background: var(--mb-live); }
+
+.mb-row-card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 10px;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line);
+  box-shadow: var(--mb-shadow-card);
+  text-align: left;
+  transition: border-color var(--mb-ease) 160ms;
+}
+.mb-row-card:hover { border-color: var(--mb-sky); }
+.mb-row.is-now .mb-row-card { border-color: var(--mb-live); box-shadow: var(--mb-shadow-card-now); }
+/* 다녀온 곳은 가라앉혀서 눈이 "아직 안 간 곳"으로 가게 한다 */
+.mb-row.is-done .mb-row-card { opacity: 0.62; }
+.mb-row.is-skipped .mb-row-name { text-decoration: line-through; color: var(--mb-muted); }
+
+.mb-row-thumb {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: var(--mb-radius-xs);
+  background-size: cover;
+  background-position: center;
+  background-color: var(--mb-surface-3);
+}
+.mb-row-thumb.is-blank { display: grid; place-items: center; color: var(--mb-muted); }
+.mb-row-thumb.is-blank svg { width: 18px; height: 18px; }
+
+.mb-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mb-row-name {
+  font-size: 14.5px;
+  font-weight: 650;
+  color: var(--mb-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mb-row-sub {
+  font-size: 11.5px;
+  color: var(--mb-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mb-row-warn { font-size: 11px; font-weight: 600; color: var(--mb-danger); }
+
+.mb-row-acts { flex: none; display: flex; flex-direction: column; gap: 5px; }
+.mb-row-nav,
+.mb-row-detail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 74px;
+  padding: 7px 9px;
+  min-height: 32px;
+  border-radius: var(--mb-radius-xs);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.mb-row-nav svg,
+.mb-row-detail svg { width: 13px; height: 13px; flex: none; }
+/* 길찾기가 이 화면에서 가장 자주 눌리는 버튼이라 유일하게 채운다 */
+.mb-row-nav { background: var(--mb-sky); color: #FFFFFF; }
+.mb-row-detail { background: var(--mb-sky-wash); color: var(--mb-sky); }
+
+.mb-row-track { position: absolute; left: 74px; right: 0; bottom: 8px; }
+
+/* ── 구간 이동 (얇은 줄) ── */
+.mb-leglite {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px 74px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  align-self: flex-start;
+  font-size: 11px;
+  color: var(--mb-muted);
+  background: var(--mb-fill-faint);
+  font-variant-numeric: tabular-nums;
+}
+.mb-leglite.is-gap { display: none; }
+.mb-leglite-ic { display: grid; place-items: center; }
+.mb-leglite-ic svg { width: 12px; height: 12px; }
+.mb-leglite-ic.walk { color: var(--mb-walk); }
+.mb-leglite-ic.transit { color: var(--mb-transit); }
+.mb-leglite-ic.taxi { color: var(--mb-taxi); }
+.mb-leglite-est { opacity: 0.75; }
+
+/* ── 하단 "다음 일정" 바 ── */
+.mb-nextup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 12px 14px;
+  min-height: 46px;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-sky-wash);
+  text-align: left;
+}
+.mb-nextup-ic { display: grid; place-items: center; color: var(--mb-sky); flex: none; }
+.mb-nextup-ic svg { width: 16px; height: 16px; }
+.mb-nextup-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--mb-sky);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mb-nextup-chev { display: grid; place-items: center; color: var(--mb-sky); flex: none; }
+.mb-nextup-chev svg { width: 14px; height: 14px; }
+
+/* ══════════════ 지도 탭 ══════════════ */
+
+.mb-map-wrap { display: flex; flex-direction: column; gap: 12px; }
+.mb-map-head { display: flex; align-items: baseline; justify-content: space-between; }
+.mb-map-day { font-size: 17px; font-weight: 700; color: var(--mb-ink); }
+.mb-map-count { font-size: 12px; color: var(--mb-muted); }
+.mb-map {
+  height: 300px;
+  border-radius: var(--mb-radius);
+  overflow: hidden;
+  background: var(--mb-surface-3);
+  border: 1px solid var(--mb-line);
+  display: grid;
+  place-items: center;
+}
+.mb-map-err {
+  padding: 16px;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--mb-muted);
+}
+.mb-map-list {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line);
+  overflow: hidden;
+}
+.mb-map-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--mb-line-soft);
+  text-align: left;
+}
+.mb-map-row:last-child { border-bottom: 0; }
+.mb-map-num {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--mb-sky);
+  color: #FFFFFF;
+  font-size: 11px;
+  font-weight: 700;
+}
+.mb-map-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--mb-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mb-map-chev { display: grid; place-items: center; color: var(--mb-muted); flex: none; }
+.mb-map-chev svg { width: 15px; height: 15px; }
+
+/* ══════════════ 여행 지갑 — 예약 서류 ══════════════ */
+
+.mb-wd-head { padding: 2px 0 16px; }
+.mb-wd-h1 { font-size: 25px; font-weight: 700; letter-spacing: -0.02em; color: var(--mb-ink); }
+.mb-wd-h2 { margin-top: 4px; font-size: 13px; color: var(--mb-muted); }
+
+.mb-wd-list {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line);
+  overflow: hidden;
+  box-shadow: var(--mb-shadow-card);
+}
+.mb-wd-row,
+.mb-wd-locked {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 13px 12px;
+  border-bottom: 1px solid var(--mb-line-soft);
+  text-align: left;
+}
+.mb-wd-row:last-child { border-bottom: 0; }
+.mb-wd-locked {
+  border: 1px solid var(--mb-line);
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+}
+.mb-wd-ic {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--mb-radius-xs);
+  flex: none;
+  background: var(--mb-sky-wash);
+  color: var(--mb-sky);
+}
+.mb-wd-ic svg { width: 18px; height: 18px; }
+.mb-wd-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mb-wd-title {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--mb-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mb-wd-desc {
+  font-size: 12px;
+  color: var(--mb-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mb-wd-sub { font-size: 11.5px; color: var(--mb-muted); font-variant-numeric: tabular-nums; }
+/* 파일이 없는 문서는 "열면 뭔가 나온다"고 오해하지 않게 분명히 적는다 */
+.mb-wd-nofile { font-size: 11px; color: var(--mb-disabled); }
+.mb-wd-chev { display: grid; place-items: center; color: var(--mb-muted); flex: none; }
+.mb-wd-chev svg { width: 15px; height: 15px; }
+
+.mb-wd-empty {
+  padding: 26px 18px;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line);
+  text-align: center;
+}
+.mb-wd-empty-title { font-size: 14.5px; font-weight: 700; color: var(--mb-ink); }
+.mb-wd-empty-sub { margin: 7px 0 16px; font-size: 12.5px; line-height: 1.7; color: var(--mb-muted); }
 
 /* ══════════════ 하단 탭 ══════════════ */
 

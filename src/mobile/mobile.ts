@@ -91,9 +91,19 @@ import {
   unsubscribeChecklist,
   resetChecklistStorageProbe,
 } from './checklist';
+import {
+  loadSharedDocuments,
+  loadPersonalDocuments,
+  getUnlockedUserId,
+  normalizeDocCategory,
+  signedUrlFor,
+  dayDateRangeLabel,
+} from '../docs/docsStore';
+import type { DocCategory } from '../docs/docsStore';
+import { loadGoogleMapsScript } from '../utils/googleMaps';
 import { requestPlaceBrief, placeBriefKey } from '../timeline/placeBrief';
 import type { PlaceBrief, PlaceBriefRequest } from '../timeline/placeBrief';
-import type { Database, TripDestination, StaySegment, TripChecklistItem, TripLink } from '../types/database';
+import type { Database, TripDestination, StaySegment, TripChecklistItem, TripLink, TripDocument } from '../types/database';
 import './mobile.css';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -132,6 +142,14 @@ const IC = {
   navigate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
   padDel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 5H9L3 12l6 7h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1z"/><path d="M17 9.5 12.5 14M12.5 9.5 17 14"/></svg>',
+  map: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5v-13L15 6.5 9 4z"/><path d="M9 4v13M15 6.5v13"/></svg>',
+  ticket: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1.5a1.5 1.5 0 0 0 0 3V15a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1.5a1.5 1.5 0 0 0 0-3V9z"/></svg>',
+  plane: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5a2.1 2.1 0 0 0-3-3L13 8 4.8 6.2a.8.8 0 0 0-.8 1.3L8 10l-2 2-2.5-.5a.6.6 0 0 0-.6 1L5 14l1.5 2.1a.6.6 0 0 0 1-.6L7 13l2-2 2.5 4a.8.8 0 0 0 1.3-.8z"/></svg>',
+  bed: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20v-8a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v8M2 17h20M6 10V7a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v3"/></svg>',
+  doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>',
+  lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
+  back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
   swap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4 3 8l4 4"/><path d="M3 8h13a4 4 0 0 1 0 8h-1"/><path d="m17 20 4-4-4-4"/></svg>',
 };
 
@@ -139,7 +157,14 @@ const MODE_ICON: Record<TravelMode, string> = { WALK: IC.walk, TRANSIT: IC.trans
 
 const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
 
-type MbTab = 'today' | 'timeline' | 'wallet' | 'more';
+/**
+ * 하단 탭 네 개. 레퍼런스 디자인(오늘·지도·지갑·여행)에 맞춰 재구성했고, 기존 화면은
+ * 하나도 버리지 않고 아래로 들어갔다 — TIMELINE(DAY 페이저)과 MORE(숙소·체크리스트)는
+ * `trip`(여행) 탭 안으로, 지출 지갑은 `wallet`(지갑) 탭의 한 섹션으로 옮겼다.
+ */
+type MbTab = 'today' | 'map' | 'wallet' | 'trip';
+/** 여행 탭 안의 두 화면 — 예전 TIMELINE / MORE */
+type TripSub = 'days' | 'info';
 type PdTab = 'overview' | 'guide' | 'reviews';
 
 /* ══════════════ 모듈 상태 ══════════════ */
@@ -153,6 +178,8 @@ let allDestinations: TripDestination[] = [];
 let days: TlDay[] = [];
 let activeDayIndex = 0;
 let activeTab: MbTab = 'today';
+/** 여행 탭 안에서 보고 있는 화면 (예전 TIMELINE / MORE) */
+let tripSub: TripSub = 'days';
 
 /** 숙소 구간(체크인~체크아웃)과 그 숙소 Place를 찾기 위한 조회표 — 둘 다 loadDayModel이 이미
  *  돌려주는 값이라 MORE 탭 때문에 따로 조회하지 않는다(원칙 3-2). */
@@ -203,6 +230,14 @@ let padMode: 'expense' | 'calc' = 'expense';
 /** 현재 통화의 환율 미리보기(≈₩) — fetchRate가 통화당 1회만 조회하고 캐시한다 */
 let padRate: { rate: number | null; source: string } | null = null;
 
+/* ── 지갑: 예약 서류 ── */
+/** 지갑 탭을 처음 열 때만 불러온다(원칙 3-2) */
+let walletDocs: TripDocument[] = [];
+let walletDocsLoading = false;
+let walletDocsLoaded = false;
+/** 이 기기에서 개인 문서 잠금을 푼 적이 있는지 */
+let walletPersonalUnlocked = false;
+
 /* ── MORE ── */
 /** 체크리스트·공유 링크. WALLET과 같은 규칙으로 **MORE를 처음 열 때만** 불러온다(원칙 3-2). */
 let moreLoading = false;
@@ -223,6 +258,7 @@ export function teardownMobile(): void {
   resetStopProgressStorageProbe();
   unsubscribeChecklist();
   resetChecklistStorageProbe();
+  teardownMap();
   if (nowTimer) {
     clearInterval(nowTimer);
     nowTimer = null;
@@ -245,6 +281,7 @@ export function teardownMobile(): void {
   placeById = new Map();
   activeDayIndex = 0;
   activeTab = 'today';
+  tripSub = 'days';
   detailKey = null;
   detailTab = 'overview';
   placeBriefs = new Map();
@@ -271,6 +308,10 @@ export function teardownMobile(): void {
     supabase.removeChannel(linksChannel);
     linksChannel = null;
   }
+  walletDocs = [];
+  walletDocsLoading = false;
+  walletDocsLoaded = false;
+  walletPersonalUnlocked = false;
   moreLoading = false;
   moreLoaded = false;
   checklist = [];
@@ -402,6 +443,8 @@ export async function renderMobileContent(host: HTMLElement, tripId: string): Pr
   subscribeStopProgress(tripId, () => { void loadProgressForActiveDay(); });
   void loadRealLegsForActiveDay();
   void loadProgressForActiveDay();
+  // 요약 카드의 "예약 서류 N건"이 이 값을 쓴다 — 지갑 탭과 같은 데이터를 한 번만 받는다
+  void ensureWalletDocs();
 
   // "지금" 표시는 분 단위로만 움직이면 충분하다
   nowTimer = setInterval(() => { if (todayDayIndex() >= 0 && !detailKey) render(); }, 60_000);
@@ -498,13 +541,16 @@ function render(): void {
   // 곧 페이지 위치이므로 매 렌더마다 거기로 되돌려 놓는다(애니메이션 없이: 이미 그 자리다).
   const pager = container.querySelector('#mb-tl-pager') as HTMLElement | null;
   if (pager) pager.scrollLeft = activeDayIndex * pager.clientWidth;
+
+  // 지도는 마크업이 DOM에 올라온 뒤에야 붙일 수 있다
+  if (activeTab === 'map' && !detailKey) void mountMap();
 }
 
 function appHtml(): string {
   if (detailKey) return detailHtml();
   // TIMELINE은 세로로 흐르지 않는다 — 가로 페이저가 남은 높이를 다 쓰고, 세로 스크롤은
   // 페이지 안쪽이 맡는다(축이 달라 서로 싸우지 않는다)
-  const scrollCls = 'mb-scroll' + (activeTab === 'timeline' && days.some((d) => d.stops.length) ? ' is-pager' : '');
+  const scrollCls = 'mb-scroll' + (activeTab === 'trip' && tripSub === 'days' && days.some((d) => d.stops.length) ? ' is-pager' : '');
   return [
     topBarHtml(),
     '<main class="' + scrollCls + '">' + tabBodyHtml() + '</main>',
@@ -516,9 +562,9 @@ function appHtml(): string {
 
 function tabBodyHtml(): string {
   if (activeTab === 'today') return todayTabHtml();
-  if (activeTab === 'timeline') return allDaysTabHtml();
+  if (activeTab === 'map') return mapTabHtml();
   if (activeTab === 'wallet') return walletTabHtml();
-  return moreTabHtml();
+  return tripSub === 'days' ? allDaysTabHtml() : moreTabHtml();
 }
 
 /* ── 상단 바 ── */
@@ -538,10 +584,9 @@ function topBarHtml(): string {
     '</header>',
   ].join('');
 
-  // DAY 선택 버튼은 TODAY에서만 의미가 있다. 지갑·MORE는 하루가 아니라 여행 전체를 다루고,
-  // TIMELINE은 DAY 칩 줄과 페이지 머리가 이미 "어느 날인지"를 말하고 있어서 여기 또 두면 겹친다.
+  // 화면 제목은 탭마다 다르다. TODAY는 날짜 띠가 바로 아래에 있어서 상단에 DAY 피커를 또 두지 않는다.
   if (activeTab !== 'today') {
-    const title = activeTab === 'wallet' ? '지갑' : activeTab === 'more' ? '여행 정보' : '전체 일정';
+    const title = activeTab === 'wallet' ? '지갑' : activeTab === 'map' ? '지도' : tripSub === 'info' ? '여행 정보' : '전체 일정';
     return [
       brandRow,
       '<div class="mb-daybar"><span class="mb-screen-title">' + title + '</span></div>',
@@ -553,14 +598,7 @@ function topBarHtml(): string {
 
   return [
     brandRow,
-    '<div class="mb-daybar">',
-    '  <button class="mb-daypick" id="mb-daypick">',
-    '    <span class="mb-daypick-dest">' + escapeHtml(destName().toUpperCase()) + '</span>',
-    '    <span class="mb-daypick-sep">·</span>',
-    '    <span class="mb-daypick-day">' + escapeHtml(day?.label ?? 'DAY 1') + '</span>',
-    '    <span class="mb-daypick-chev">' + IC.chevDown + '</span>',
-    '  </button>',
-    '</div>',
+    '<div class="mb-daybar"><span class="mb-screen-title">' + escapeHtml(currentTrip?.name || destName()) + '</span></div>',
     '<div class="mb-daymeta">',
     isToday ? '  <span class="mb-today-chip">TODAY</span>' : '',
     '  <span class="mb-date">' + escapeHtml(dateLabel(day?.date ?? null)) + '</span>',
@@ -572,10 +610,10 @@ function topBarHtml(): string {
 
 function tabBarHtml(): string {
   const items: Array<{ key: MbTab; label: string; icon: string }> = [
-    { key: 'today', label: 'TODAY', icon: IC.home },
-    { key: 'timeline', label: 'TIMELINE', icon: IC.route },
-    { key: 'wallet', label: 'WALLET', icon: IC.wallet },
-    { key: 'more', label: 'MORE', icon: IC.dots },
+    { key: 'today', label: '오늘', icon: IC.home },
+    { key: 'map', label: '지도', icon: IC.map },
+    { key: 'wallet', label: '지갑', icon: IC.wallet },
+    { key: 'trip', label: '여행', icon: IC.bag },
   ];
   return (
     '<nav class="mb-tabs">' +
@@ -818,6 +856,77 @@ function driftLineHtml(day: TlDay): string {
     : '<p class="mb-drift">계획보다 ' + fmtMin(-delta) + ' 빨라요 · ' + minToHHMM(real.spanEndMin) + ' 종료</p>';
 }
 
+/* ── 오늘 화면의 머리 두 조각: 요약 카드 + 날짜 선택 바 ───────────
+ *
+ * 레퍼런스 디자인의 상단 구조를 따른다. 둘 다 **이미 가진 값만** 쓴다 —
+ * 날씨는 연결된 데이터가 없어서 아예 그리지 않는다(없는 걸 그리면 그 순간 거짓이 된다).
+ */
+
+/** 이 DAY에 걸리는 예약 서류 수. day_start~day_end 범위로만 셀 수 있다(아래 주석 참고). */
+function docCountForDay(dayIndex: number): number {
+  if (!walletDocsLoaded) return -1; // 아직 모름 — 숫자를 지어내지 않고 줄을 생략한다
+  const n = dayIndex + 1; // 문서의 day_start/day_end는 1부터
+  return walletDocs.filter((d) => {
+    if (d.day_start == null && d.day_end == null) return false; // 전체 일정 문서는 "오늘 예약"이 아니다
+    const from = d.day_start ?? d.day_end ?? 0;
+    const to = d.day_end ?? d.day_start ?? 0;
+    return n >= from && n <= to;
+  }).length;
+}
+
+function daySummaryCardHtml(day: TlDay): string {
+  const dest = destName();
+  // 대표 이미지 — 그 날 정류지 중 **실제로 저장된 사진**이 있는 첫 곳. 없으면 단색으로 둔다.
+  const photo = day.stops.find((st) => st.place?.photo_url)?.place?.photo_url ?? null;
+  const docs = docCountForDay(day.dayIndex);
+
+  const meta = [day.stops.length + '곳'];
+  if (docs > 0) meta.push('예약 서류 ' + docs + '건');
+
+  return [
+    '<section class="mb-sum' + (photo ? '' : ' no-photo') + '">',
+    photo ? '  <div class="mb-sum-photo" data-photo="' + escapeHtml(photo) + '"></div>' : '',
+    '  <div class="mb-sum-scrim"></div>',
+    '  <div class="mb-sum-body">',
+    '    <h2 class="mb-sum-title">오늘은 ' + escapeHtml(dest) + '에서 보내요</h2>',
+    '    <p class="mb-sum-meta">' + escapeHtml(meta.join(' · ')) + '</p>',
+    '  </div>',
+    '</section>',
+  ].join('');
+}
+
+/** 앞뒤로 훑어보기 좋은 날짜 띠 — 선택된 날은 브랜드 블루로 채운다 */
+function dateStripHtml(): string {
+  if (!days.length) return '';
+  // 활성 DAY를 가운데 두되 양 끝에서는 밀어 넣어 항상 4칸이 차게 한다
+  const WINDOW = 4;
+  let from = Math.max(0, activeDayIndex - 1);
+  if (from + WINDOW > days.length) from = Math.max(0, days.length - WINDOW);
+  const shown = days.slice(from, from + WINDOW);
+  const t = todayISO();
+
+  return [
+    '<div class="mb-dates">',
+    shown
+      .map((d, i) => {
+        const idx = from + i;
+        const active = idx === activeDayIndex;
+        const dd = d.date ? new Date(d.date + 'T00:00:00') : null;
+        const num = dd ? String(dd.getDate()) : String(idx + 1);
+        const wd = dd ? WEEKDAY[dd.getDay()] : 'DAY';
+        return (
+          '<button class="mb-date-cell' + (active ? ' active' : '') + (d.date === t ? ' is-today' : '') + '" data-day="' + idx + '">' +
+          '<span class="mb-date-num">' + escapeHtml(num) + '</span>' +
+          '<span class="mb-date-wd">' + escapeHtml(wd) + '</span>' +
+          '</button>'
+        );
+      })
+      .join(''),
+    '  <button class="mb-date-cal" id="mb-daypick" aria-label="날짜 선택">' + IC.calendar + '</button>',
+    '</div>',
+  ].join('');
+}
+
 function todayTabHtml(): string {
   const day = activeDay();
   if (!day) return emptyHtml('일정이 아직 없어요', 'PC에서 ROUTE로 동선을 먼저 만들어 주세요.');
@@ -838,30 +947,113 @@ function todayTabHtml(): string {
 
   const rows: string[] = [];
   day.stops.forEach((stop, i) => {
-    rows.push(stopCardHtml(stop, i, s, day.date, i === nowIdx, isToday, progress.get(stop.key)));
-    if (i < day.stops.length - 1) rows.push(legNodeHtml(s.legs[i], i));
+    rows.push(stopRowHtml(stop, i, s, day.date, i === nowIdx, isToday, progress.get(stop.key)));
+    // 구간 이동은 행과 행 **사이**에 작게 — 실측이 있으면 실측, 없으면 "추정"을 달고 보여준다
+    if (i < day.stops.length - 1) rows.push(legRowHtml(s.legs[i]));
   });
 
   const nowState = computeNowState(day, s);
 
   return [
-    nowState ? heroHtml(nowState, day, s) : '',
+    daySummaryCardHtml(day),
+    dateStripHtml(),
     isToday ? driftLineHtml(day) : '',
-    '<div class="mb-daysum">',
-    '  <span>' + minToHHMM(s.spanStartMin) + ' – ' + minToHHMM(s.spanEndMin) + '</span>',
-    '  <span class="mb-daysum-dot">·</span>',
-    '  <span>' + day.stops.length + '곳</span>',
-    s.legCount ? '  <span class="mb-daysum-dot">·</span><span>이동 ' + fmtMin(s.totalMoveMin) + '</span>' : '',
+    '<div class="mb-sec-head">',
+    '  <h3 class="mb-sec-title">' + (isToday ? '오늘의 일정' : escapeHtml(day.label) + ' 일정') + '</h3>',
+    '  <span class="mb-sec-meta">' + minToHHMM(s.spanStartMin) + ' – ' + minToHHMM(s.spanEndMin) + '</span>',
     '</div>',
+    '<div class="mb-thread">' + rows.join('') + '</div>',
     // 원칙 3-1 — 개별 구간마다 "추정"을 반복하는 대신 하루 단위로 한 번 밝힌다
     s.legCount > s.realLegCount
       ? '<p class="mb-estimate-note">* 이동·체류 시간은 추정치예요.</p>'
       : '',
-    '<div class="mb-thread">',
-    '  <div class="mb-spine" aria-hidden="true"></div>',
-    rows.join(''),
+    // 레퍼런스의 하단 "다음 일정까지" 바 — 지금 상태를 알 때만 뜬다
+    nowState ? nextUpBarHtml(nowState, s) : '',
+  ].join('');
+}
+
+/** 하단의 "다음 일정까지" 한 줄 — 여행 중이고 다음 목적지를 알 때만. */
+function nextUpBarHtml(st: NowState, s: DaySchedule): string {
+  if (st.kind === 'moving') {
+    const left = st.minsTo > 0 ? fmtLeft(st.minsTo) + ' 뒤 도착 예정' : minToHHMM(s.arriveMin[st.index]) + ' 도착 예정';
+    return '<button class="mb-nextup" data-stop="' + escapeHtml(st.stop.key) + '">' +
+      '<span class="mb-nextup-ic">' + IC.pin + '</span>' +
+      '<span class="mb-nextup-text">다음 · ' + escapeHtml(st.stop.name) + ' · ' + escapeHtml(left) + '</span>' +
+      '<span class="mb-nextup-chev">' + IC.chevRight + '</span></button>';
+  }
+  if (st.kind === 'at' && st.next) {
+    return '<button class="mb-nextup" data-stop="' + escapeHtml(st.next.key) + '">' +
+      '<span class="mb-nextup-ic">' + IC.pin + '</span>' +
+      '<span class="mb-nextup-text">다음 · ' + escapeHtml(st.next.name) + ' · ' + fmtLeft(Math.max(0, st.minsLeft)) + ' 뒤 출발</span>' +
+      '<span class="mb-nextup-chev">' + IC.chevRight + '</span></button>';
+  }
+  if (st.kind === 'pre') {
+    return '<button class="mb-nextup" data-stop="' + escapeHtml(st.stop.key) + '">' +
+      '<span class="mb-nextup-ic">' + IC.pin + '</span>' +
+      '<span class="mb-nextup-text">첫 일정 · ' + escapeHtml(st.stop.name) + ' · ' + fmtLeft(st.minsTo) + ' 뒤</span>' +
+      '<span class="mb-nextup-chev">' + IC.chevRight + '</span></button>';
+  }
+  return '';
+}
+
+/**
+ * 일정 한 줄 — 레퍼런스의 밀도를 따른다.
+ *   시각 │ 마디 │ 썸네일 + 이름/지역 │ 길찾기·상세 버튼
+ * 사진을 카드 전체에 깔던 예전 디자인보다 훨씬 얕아서 하루가 한 화면에 더 많이 들어온다.
+ */
+function stopRowHtml(
+  stop: TlStop,
+  i: number,
+  s: DaySchedule,
+  dateISO: string | null,
+  isNow: boolean,
+  showTrack: boolean,
+  prog: StopProgress | undefined
+): string {
+  const place = stop.place;
+  const photo = place?.photo_url ?? null;
+  const done = prog?.status === 'departed' || prog?.status === 'skipped';
+  const skipped = prog?.status === 'skipped';
+  const warn = hoursWarning(place ?? null, dateISO, s.arriveMin[i], s.departMin[i]);
+  // 지역 한 줄 — 저장된 주소에서 앞쪽만. 없으면 카테고리, 그것도 없으면 줄을 지운다(원칙 3-1)
+  const sub = place?.address ? place.address.split(',').slice(0, 2).join(', ') : place?.category ?? '';
+
+  return [
+    '<div class="mb-row' + (isNow ? ' is-now' : '') + (done ? ' is-done' : '') + (skipped ? ' is-skipped' : '') + '">',
+    '  <div class="mb-row-time">',
+    '    <span class="mb-row-clock">' + minToHHMM(s.arriveMin[i]) + '</span>',
+    isNow ? '    <span class="mb-row-nowtag">NOW</span>' : '',
+    '  </div>',
+    '  <span class="mb-row-node" aria-hidden="true"></span>',
+    '  <div class="mb-row-card" data-stop="' + escapeHtml(stop.key) + '" role="button" tabindex="0">',
+    photo
+      ? '    <span class="mb-row-thumb" data-photo="' + escapeHtml(photo) + '"></span>'
+      : '    <span class="mb-row-thumb is-blank">' + IC.pin + '</span>',
+    '    <div class="mb-row-main">',
+    '      <div class="mb-row-name">' + escapeHtml(stop.name) + '</div>',
+    sub ? '      <div class="mb-row-sub">' + escapeHtml(sub) + '</div>' : '',
+    warn ? '      <div class="mb-row-warn">' + escapeHtml(hoursWarnText(warn)) + '</div>' : '',
+    '    </div>',
+    '    <div class="mb-row-acts">',
+    '      <a class="mb-row-nav" href="' + directionsHref(stop) + '" target="_blank" rel="noopener" data-nav="' + escapeHtml(stop.key) + '">' + IC.navigate + ' 길찾기</a>',
+    '      <span class="mb-row-detail">' + IC.doc + ' 상세</span>',
+    '    </div>',
+    '  </div>',
+    showTrack ? '  <div class="mb-row-track">' + trackHtml(stop, prog) + '</div>' : '',
     '</div>',
-    '<button class="mb-add" id="mb-add">' + IC.plus + ' 일정 추가</button>',
+  ].join('');
+}
+
+/** 두 일정 사이의 이동 — 레퍼런스의 얇은 회색 줄 */
+function legRowHtml(leg: ReturnType<typeof scheduleFor>['legs'][number]): string {
+  if (!leg) return '<div class="mb-leglite is-gap"></div>';
+  const cls = leg.mode === 'WALK' ? 'walk' : leg.mode === 'TRANSIT' ? 'transit' : 'taxi';
+  return [
+    '<div class="mb-leglite">',
+    '  <span class="mb-leglite-ic ' + cls + '">' + MODE_ICON[leg.mode] + '</span>',
+    '  <span>' + escapeHtml(modeLabel(leg.mode)) + ' ' + fmtMin(leg.min) + ' · ' + fmtKm(leg.km) + '</span>',
+    leg.real ? '' : '  <span class="mb-leglite-est">추정</span>',
+    '</div>',
   ].join('');
 }
 
@@ -892,76 +1084,6 @@ function hoursWarnText(w: HoursWarning): string {
   }
 }
 
-function stopCardHtml(
-  stop: TlStop,
-  i: number,
-  s: DaySchedule,
-  dateISO: string | null,
-  isNow: boolean,
-  showTrack: boolean,
-  prog: StopProgress | undefined
-): string {
-  const place = stop.place;
-  const photo = place?.photo_url ?? null;
-  const rating = typeof place?.google_rating === 'number' ? place.google_rating : null;
-  const hours = todaysHoursLine(place ?? null, dateISO);
-  const hoursWarn = hoursWarning(place ?? null, dateISO, s.arriveMin[i], s.departMin[i]);
-  const timeRange = minToHHMM(s.arriveMin[i]) + ' - ' + minToHHMM(s.departMin[i]);
-  const overrun = s.overrunMin[i];
-  // 이미 다녀왔거나 건너뛴 곳은 살짝 가라앉혀서, 눈이 자연히 "아직 안 간 곳"으로 가게 한다
-  const done = prog?.status === 'departed' || prog?.status === 'skipped';
-
-  // "숙소 들르기"처럼 목적만 있는 스탑은 사진·평점이 없으므로 얇은 줄 카드로 따로 그린다
-  if (stop.purpose) {
-    return [
-      '<div class="mb-stop">',
-      '<article class="mb-card mb-card-slim">',
-      '  <span class="mb-card-num">' + (i + 1) + '</span>',
-      '  <div class="mb-slim-body">',
-      '    <div class="mb-slim-name">' + escapeHtml(stop.name) + '</div>',
-      '    <div class="mb-slim-meta">' + escapeHtml(stop.purpose) + ' · ' + timeRange + '</div>',
-      '  </div>',
-      '</article>',
-      '</div>',
-    ].join('');
-  }
-
-  // 카드는 사진을 위해 overflow:hidden이라 NOW 배지·시간축 마디가 잘린다 —
-  // 그래서 잘리면 안 되는 것들은 카드 바깥의 래퍼(.mb-stop)에 얹는다.
-  return [
-    '<div class="mb-stop' + (isNow ? ' is-now' : '') + '">',
-    isNow ? '  <span class="mb-now-flag">NOW</span>' : '',
-    '<article class="mb-card' + (isNow ? ' is-now' : '') + (photo ? '' : ' no-photo') + (done ? ' is-done' : '') + '"',
-    '  data-stop="' + escapeHtml(stop.key) + '" role="button" tabindex="0">',
-    photo ? '  <div class="mb-card-photo" data-photo="' + escapeHtml(photo) + '"></div>' : '',
-    '  <div class="mb-card-scrim"></div>',
-    '  <span class="mb-card-num">' + (i + 1) + '</span>',
-    '  <div class="mb-card-actions">',
-    // 상세로 안 들어가고 바로 이동할 수 있는 원터치 길찾기 — 여행 중 가장 자주 쓰는 동작
-    '    <a class="mb-card-nav" href="' + directionsHref(stop) + '" target="_blank" rel="noopener" aria-label="길찾기" data-nav="' + escapeHtml(stop.key) + '">' + IC.navigate + '</a>',
-    '    <button class="mb-card-bm" data-bm="' + escapeHtml(stop.key) + '" aria-label="저장">' + IC.bookmark + '</button>',
-    '  </div>',
-    '  <div class="mb-card-body">',
-    '    <h3 class="mb-card-name">' + escapeHtml(stop.name) + '</h3>',
-    // 실제 저장된 카테고리가 있을 때만 (원칙 3-1)
-    place?.category ? '    <p class="mb-card-cat">' + escapeHtml(place.category) + '</p>' : '',
-    '    <div class="mb-card-meta">',
-    '      <span class="mb-meta-item">' + IC.clock + timeRange + '</span>',
-    rating != null ? '      <span class="mb-meta-item rating">' + IC.star + rating.toFixed(1) + '</span>' : '',
-    '    </div>',
-    // 저장된 실제 값만 배지로 — 없으면 아예 안 보여준다
-    hours ? '    <div class="mb-card-note' + (hoursWarn ? ' is-warn' : '') + '">' + IC.clock + '<span>' + escapeHtml(hours) + '</span></div>' : '',
-    stop.memo ? '    <div class="mb-card-note">' + IC.pencil + '<span>' + escapeHtml(stop.memo) + '</span></div>' : '',
-    hoursWarn ? '    <div class="mb-card-warn is-hours">' + escapeHtml(hoursWarnText(hoursWarn)) + '</div>' : '',
-    overrun > 0
-      ? '    <div class="mb-card-warn">앞 일정을 다 하면 ' + fmtMin(overrun) + ' 늦어요</div>'
-      : '',
-    showTrack ? trackHtml(stop, prog) : '',
-    '  </div>',
-    '</article>',
-    '</div>',
-  ].join('');
-}
 
 /** ISO 타임스탬프를 "HH:MM"으로 — 여행자의 폰이 현지 시간대를 따라간다고 가정한다 */
 function fmtClock(iso: string): string {
@@ -1015,26 +1137,6 @@ function trackHtml(stop: TlStop, prog: StopProgress | undefined): string {
   ].join('');
 }
 
-/**
- * 카드와 카드 사이 — 중앙선 위에 얹히는 이동 구간 노드.
- * 선이 카드를 관통하는 것처럼 보이게 하는 핵심 요소라, 칩 자체가 선 위 한가운데에 앉는다.
- */
-function legNodeHtml(leg: ReturnType<typeof scheduleFor>['legs'][number], i: number): string {
-  if (!leg) {
-    return '<div class="mb-leg"><span class="mb-leg-dot" aria-hidden="true"></span></div>';
-  }
-  const cls = leg.mode === 'WALK' ? 'walk' : leg.mode === 'TRANSIT' ? 'transit' : 'taxi';
-  return [
-    '<div class="mb-leg" data-leg="' + i + '">',
-    '  <span class="mb-leg-chip ' + cls + '">',
-    '    <span class="mb-leg-ic">' + MODE_ICON[leg.mode] + '</span>',
-    '    <span class="mb-leg-text">' + escapeHtml(modeLabel(leg.mode)) + ' ' + fmtMin(leg.min) + '</span>',
-    '    <span class="mb-leg-km">' + fmtKm(leg.km) + '</span>',
-    leg.real ? '' : '    <span class="mb-leg-est">추정</span>',
-    '  </span>',
-    '</div>',
-  ].join('');
-}
 
 /* ══════════════ TIMELINE 탭 — 옆으로 넘겨 보는 DAY ══════════════
  *
@@ -1222,6 +1324,146 @@ function onPagerSettle(pager: HTMLElement): void {
   }, 350);
 }
 
+/* ══════════════════════ 지도 탭 ══════════════════════
+ *
+ * 오늘(활성 DAY)의 정류지를 실제 지도 위에 찍어 보여준다. **자체 내비게이션은 만들지 않는다** —
+ * 길을 안내하는 건 여전히 Google Maps 딥링크의 몫이고, 여기는 "오늘 동선이 대충 어떻게 생겼나"를
+ * 한눈에 보는 자리다.
+ *
+ * Maps JS는 **이 탭을 처음 열 때만** 받는다(원칙 3-2). index.html에서 동기 로드를 걷어낸 이유와
+ * 같은 맥락이라, 여기서 미리 불러오면 그 작업이 무의미해진다.
+ */
+
+let mapEl: HTMLElement | null = null;
+let mapInstance: any = null;
+let mapMarkers: Array<{ setMap: (m: unknown) => void }> = [];
+let mapLoading = false;
+let mapError = '';
+
+function mapTabHtml(): string {
+  const day = activeDay();
+  const pins = (day?.stops ?? []).filter((s) => s.lat != null && s.lng != null);
+
+  if (!day || !day.stops.length) {
+    return emptyHtml('이 날은 일정이 없어요', 'PC에서 ROUTE로 동선을 먼저 만들어 주세요.');
+  }
+  if (!pins.length) {
+    return emptyHtml('지도에 찍을 좌표가 없어요', '정류지에 좌표가 저장되어 있어야 지도에 표시할 수 있어요.');
+  }
+
+  return [
+    '<div class="mb-map-wrap">',
+    '  <div class="mb-map-head">',
+    '    <span class="mb-map-day">' + escapeHtml(day.label) + '</span>',
+    '    <span class="mb-map-count">' + pins.length + '곳</span>',
+    '  </div>',
+    mapError
+      ? '  <div class="mb-map-err">' + escapeHtml(mapError) + '</div>'
+      : '  <div class="mb-map" id="mb-map">' + (mapLoading ? '<span class="mb-spinner"></span>' : '') + '</div>',
+    '  <div class="mb-map-list">',
+    pins
+      .map(
+        (s, i) =>
+          '<button class="mb-map-row" data-mapgo="' + escapeHtml(s.key) + '">' +
+          '<span class="mb-map-num">' + (i + 1) + '</span>' +
+          '<span class="mb-map-name">' + escapeHtml(s.name) + '</span>' +
+          '<span class="mb-map-chev">' + IC.chevRight + '</span>' +
+          '</button>'
+      )
+      .join(''),
+    '  </div>',
+    '</div>',
+  ].join('');
+}
+
+/** 지도를 실제로 띄운다 — 렌더 직후 호출된다(마크업이 DOM에 있어야 Map을 붙일 수 있다). */
+async function mountMap(): Promise<void> {
+  if (activeTab !== 'map' || !container) return;
+  const host = container.querySelector('#mb-map') as HTMLElement | null;
+  if (!host) return;
+
+  const day = activeDay();
+  const pins = (day?.stops ?? []).filter((s) => s.lat != null && s.lng != null);
+  if (!pins.length) return;
+
+  // 같은 DOM 노드에 이미 지도가 붙어 있으면 마커만 다시 그린다
+  if (mapInstance && mapEl === host) { drawMapMarkers(pins); return; }
+
+  if (mapLoading) return;
+  mapLoading = true;
+  mapError = '';
+  try {
+    await loadGoogleMapsScript();
+    if (activeTab !== 'map' || !container) return;
+    const live = container.querySelector('#mb-map') as HTMLElement | null;
+    if (!live) return;
+
+    const g = (window as unknown as { google?: any }).google;
+    if (!g?.maps) throw new Error('지도를 불러오지 못했어요');
+
+    live.innerHTML = '';
+    mapEl = live;
+    mapInstance = new g.maps.Map(live, {
+      center: { lat: pins[0].lat!, lng: pins[0].lng! },
+      zoom: 13,
+      gestureHandling: 'greedy',
+      clickableIcons: false,
+      zoomControl: false,
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: false,
+      rotateControl: false,
+    });
+    drawMapMarkers(pins);
+  } catch (e) {
+    // 지도를 못 띄워도 아래 목록과 길찾기는 그대로 쓸 수 있다 — 그래서 탭 전체를 죽이지 않는다
+    console.error('[Mobile] 지도 로드 실패:', e);
+    mapError = '지도를 불러오지 못했어요. 아래 목록에서 길찾기는 그대로 쓸 수 있어요.';
+    mapInstance = null;
+    mapEl = null;
+    render();
+  } finally {
+    mapLoading = false;
+  }
+}
+
+function drawMapMarkers(pins: TlStop[]): void {
+  const g = (window as unknown as { google?: any }).google;
+  if (!g?.maps || !mapInstance) return;
+
+  mapMarkers.forEach((m) => m.setMap(null));
+  mapMarkers = [];
+
+  const bounds = new g.maps.LatLngBounds();
+  pins.forEach((s, i) => {
+    const pos = { lat: s.lat!, lng: s.lng! };
+    const marker: any = new g.maps.Marker({
+      position: pos,
+      map: mapInstance,
+      label: { text: String(i + 1), color: '#FFFFFF', fontSize: '12px', fontWeight: '700' },
+      title: s.name,
+    });
+    marker.addListener('click', () => {
+      detailKey = s.key;
+      detailTab = 'overview';
+      render();
+    });
+    mapMarkers.push(marker);
+    bounds.extend(pos);
+  });
+
+  if (pins.length > 1) (mapInstance as any).fitBounds(bounds, 48);
+}
+
+function teardownMap(): void {
+  mapMarkers.forEach((m) => m.setMap(null));
+  mapMarkers = [];
+  mapInstance = null;
+  mapEl = null;
+  mapLoading = false;
+  mapError = '';
+}
+
 /* ══════════════════════ WALLET 탭 ══════════════════════ */
 
 /** 지출 데이터를 아직 안 불렀으면 불러온다 — WALLET을 처음 열 때만(원칙 3-2) */
@@ -1266,18 +1508,183 @@ async function reloadExpenses(): Promise<void> {
   }
 }
 
+/* ── 여행 지갑: 예약·문서 ──────────────────────────────────
+ *
+ * 레퍼런스의 "여행 지갑"은 **여행 중 자주 꺼내 보는 예약 서류**를 모은 화면이다. 다행히
+ * 이 데이터는 이미 있다 — DOCUMENTS 게이트의 `trip_documents`(FLIGHT/STAY/TICKET/
+ * INSURANCE/VISA…)와 비공개 버킷 `trip-docs`. 그래서 새 테이블을 만들지 않고 그대로 읽는다.
+ *
+ * 지키는 선 세 가지:
+ *   · **바코드·QR을 그리지 않는다.** 우리에겐 탑승권 이미지가 있을 수도, 없을 수도 있다.
+ *     있으면 그 파일을 열어 주고, 없으면 없다고 말한다 — 가짜 바코드는 공항에서 안 찍힌다.
+ *   · **"오프라인 저장 완료"를 표시하지 않는다.** `sw.js`가 캐싱을 안 하므로 사실이 아니다.
+ *   · **개인 문서(여권 등)는 잠금을 존중한다.** 이 기기에서 PIN을 푼 적이 있을 때만 보이고,
+ *     아니면 잠긴 상태로 두고 PC Documents로 안내한다.
+ *
+ * 기존 "지출 지갑"은 사라지지 않는다 — 같은 탭 아래쪽 섹션으로 들어간다(돈도 지갑이다).
+ */
+
+/** 레퍼런스의 카드 순서 — 여행 중 꺼내 보는 빈도순이다 */
+const WALLET_SECTIONS: Array<{ cat: DocCategory; label: string; icon: string }> = [
+  { cat: 'FLIGHT', label: '항공권', icon: IC.plane },
+  { cat: 'STAY', label: '숙소 예약', icon: IC.bed },
+  { cat: 'TICKET', label: '관광지 티켓', icon: IC.ticket },
+  { cat: 'TRANSPORT', label: '교통', icon: IC.transit },
+];
+
+/** 위 네 가지에 안 들어가는 나머지는 "중요 문서"로 묶는다 */
+const WALLET_DOC_CATS: DocCategory[] = ['INSURANCE', 'VISA', 'RECEIPT', 'OTHER'];
+
+async function ensureWalletDocs(): Promise<void> {
+  if (walletDocsLoaded || walletDocsLoading || !currentTripId) return;
+  walletDocsLoading = true;
+  render();
+  try {
+    const shared = await loadSharedDocuments(currentTripId);
+    // 이 기기에서 이미 잠금을 푼 개인 문서만 추가로 가져온다(아니면 잠긴 채로 둔다)
+    const unlocked = getUnlockedUserId(currentTripId);
+    const personal = unlocked ? await loadPersonalDocuments(currentTripId, unlocked) : [];
+    walletDocs = [...shared, ...personal];
+    walletPersonalUnlocked = unlocked != null;
+    walletDocsLoaded = true;
+  } catch (e) {
+    console.error('[Mobile] 문서 로드 실패:', e);
+  } finally {
+    walletDocsLoading = false;
+    render();
+  }
+}
+
+function docsOf(cat: DocCategory): TripDocument[] {
+  return walletDocs.filter((d) => normalizeDocCategory(d.category) === cat);
+}
+
+/**
+ * 서류 한 건 열기. 파일은 비공개 버킷에 있으므로 **열 때마다 짧게 사는 signed URL**을 받는다
+ * (공개 URL을 만들어 두면 링크를 가진 누구나 여권을 볼 수 있다).
+ * 파일이 없는 문서는 예약 정보만 있는 것이므로 PC Documents로 보낸다.
+ */
+async function openDoc(docId: string): Promise<void> {
+  const doc = walletDocs.find((d) => d.id === docId);
+  if (!doc) return;
+  if (!doc.file_path) { gotoGate('docs'); return; }
+
+  // 팝업 차단을 피하려면 탭을 **사용자 제스처 안에서** 먼저 열고 나중에 주소를 채워야 한다
+  const tab = window.open('', '_blank');
+  try {
+    const url = await signedUrlFor(doc.file_path, 600);
+    if (!url) throw new Error('signed URL 발급 실패');
+    if (tab) tab.location.href = url;
+    else window.location.href = url;
+  } catch (e) {
+    console.error('[Mobile] 서류 열기 실패:', e);
+    tab?.close();
+    gotoGate('docs');
+  }
+}
+
+/** 문서 한 건을 카드 줄로. 파일이 있으면 열 수 있고, 없으면 예약 정보만 보여준다. */
+function docRowHtml(doc: TripDocument, icon: string): string {
+  const hasFile = !!doc.file_path;
+  const sub: string[] = [];
+  if (doc.reference_code) sub.push('예약번호 ' + doc.reference_code);
+  const range = dayDateRangeLabel(currentTrip, doc.day_start, doc.day_end);
+  if (range) sub.push(range);
+
+  return [
+    '<button class="mb-wd-row" data-doc="' + escapeHtml(doc.id) + '">',
+    '  <span class="mb-wd-ic">' + icon + '</span>',
+    '  <div class="mb-wd-main">',
+    '    <div class="mb-wd-title">' + escapeHtml(doc.title) + '</div>',
+    // 설명·예약번호·기간은 저장된 값이 있을 때만 (원칙 3-1)
+    doc.description ? '    <div class="mb-wd-desc">' + escapeHtml(doc.description) + '</div>' : '',
+    sub.length ? '    <div class="mb-wd-sub">' + escapeHtml(sub.join(' · ')) + '</div>' : '',
+    hasFile ? '' : '    <div class="mb-wd-nofile">첨부 파일 없음 · 예약 정보만</div>',
+    '  </div>',
+    '  <span class="mb-wd-chev">' + IC.chevRight + '</span>',
+    '</button>',
+  ].join('');
+}
+
+function walletDocsHtml(): string {
+  if (walletDocsLoading && !walletDocsLoaded) {
+    return '<div class="mb-wallet-loading"><span class="mb-spinner"></span>예약 정보 불러오는 중…</div>';
+  }
+
+  const out: string[] = [];
+
+  for (const sec of WALLET_SECTIONS) {
+    const list = docsOf(sec.cat);
+    if (!list.length) continue;
+    out.push(
+      '<section class="mb-more-sec">',
+      '  <div class="mb-more-sec-head"><h4 class="mb-more-sec-title">' + sec.label + '</h4>' +
+        (list.length > 1 ? '<span class="mb-more-sec-note">' + list.length + '건</span>' : '') + '</div>',
+      '  <div class="mb-wd-list">' + list.map((d) => docRowHtml(d, sec.icon)).join('') + '</div>',
+      '</section>'
+    );
+  }
+
+  const others = walletDocs.filter((d) => WALLET_DOC_CATS.includes(normalizeDocCategory(d.category)));
+  if (others.length) {
+    out.push(
+      '<section class="mb-more-sec">',
+      '  <div class="mb-more-sec-head"><h4 class="mb-more-sec-title">중요 문서</h4></div>',
+      '  <div class="mb-wd-list">' + others.map((d) => docRowHtml(d, IC.doc)).join('') + '</div>',
+      '</section>'
+    );
+  }
+
+  // 개인 문서(여권 등)는 이 기기에서 잠금을 푼 적이 있을 때만 보인다 — 아니면 잠겼다고 말한다
+  if (!walletPersonalUnlocked) {
+    out.push(
+      '<section class="mb-more-sec">',
+      '  <div class="mb-more-sec-head"><h4 class="mb-more-sec-title">개인 문서</h4></div>',
+      '  <button class="mb-wd-locked" id="mb-wd-unlock">',
+      '    <span class="mb-wd-ic">' + IC.lock + '</span>',
+      '    <div class="mb-wd-main">',
+      '      <div class="mb-wd-title">여권 사본 같은 개인 문서는 잠겨 있어요</div>',
+      '      <div class="mb-wd-sub">PC Documents에서 PIN을 풀면 이 기기에서도 보여요</div>',
+      '    </div>',
+      '    <span class="mb-wd-chev">' + IC.chevRight + '</span>',
+      '  </button>',
+      '</section>'
+    );
+  }
+
+  if (!out.length) {
+    out.push(
+      '<section class="mb-more-sec">',
+      '  <div class="mb-wd-empty">',
+      '    <div class="mb-wd-empty-title">아직 저장된 예약 서류가 없어요</div>',
+      '    <p class="mb-wd-empty-sub">항공권·숙소 바우처·입장권을 PC Documents에 올려두면<br />여행 중엔 여기서 바로 꺼내 볼 수 있어요.</p>',
+      '    <button class="mb-ghost-btn" id="mb-wd-add">PC에서 서류 올리기</button>',
+      '  </div>',
+      '</section>'
+    );
+  }
+
+  return out.join('');
+}
+
 function walletTabHtml(): string {
+  return [
+    '<section class="mb-wd-head">',
+    '  <h2 class="mb-wd-h1">여행 지갑</h2>',
+    // 레퍼런스엔 "오프라인 저장 완료" 배지가 있지만 우리는 아직 캐싱을 안 한다 — 쓰지 않는다
+    '  <p class="mb-wd-h2">예약 서류와 지출을 한곳에</p>',
+    '</section>',
+    walletDocsHtml(),
+    walletMoneyHtml(),
+  ].join('');
+}
+
+/** 기존 "지출 지갑" — 탭이 문서 중심으로 바뀌어도 돈은 그대로 여기 남는다 */
+function walletMoneyHtml(): string {
   if (expenseLoading && !expenseCtx) {
     return '<div class="mb-wallet-loading"><span class="mb-spinner"></span>지출 불러오는 중…</div>';
   }
-  if (!expenseCtx) {
-    return [
-      '<div class="mb-empty">',
-      '  <div class="mb-empty-title">지갑을 불러오지 못했어요</div>',
-      '  <p class="mb-empty-sub">잠시 후 다시 시도해 주세요.</p>',
-      '</div>',
-    ].join('');
-  }
+  if (!expenseCtx) return '';
 
   const ctx = expenseCtx;
   const today = sumPaidOn(ctx, todayISO());
@@ -1288,7 +1695,8 @@ function walletTabHtml(): string {
   const unconverted = unconvertedCount(ctx);
 
   return [
-    // ── 히어로: 오늘 쓴 돈 하나만 크게 ──
+    '<section class="mb-more-sec">',
+    '  <div class="mb-more-sec-head"><h4 class="mb-more-sec-title">지출</h4></div>',
     '<section class="mb-wal-hero">',
     '  <div class="mb-wal-hero-label">오늘 쓴 돈</div>',
     '  <div class="mb-wal-hero-value">' + fmtKRW(today) + '</div>',
@@ -1309,11 +1717,11 @@ function walletTabHtml(): string {
     settleLineHtml(ctx),
     recentExpensesHtml(ctx),
     // 여행 중 지갑에서 하는 일은 둘뿐이다 — 쓴 걸 넣거나, 얼마인지 보거나.
-    // "얼마예요?"가 계산기 앱을 대신하는 자리다.
     '<div class="mb-wal-acts">',
     '  <button class="mb-wal-add" id="mb-wal-add">' + IC.plus + ' 지출 추가</button>',
     '  <button class="mb-wal-calc" id="mb-wal-calc">' + IC.swap + ' 얼마예요?</button>',
     '</div>',
+    '</section>',
   ].join('');
 }
 
@@ -1642,7 +2050,7 @@ async function reloadChecklist(): Promise<void> {
   const items = await loadChecklist(currentTripId);
   if (items == null) return;
   checklist = items;
-  if (activeTab === 'more') render();
+  if (activeTab === 'trip') render();
 }
 
 /** 다른 멤버가 채팅에 예약 링크를 올리면 MORE에도 즉시 뜬다 (expenses와 같은 패턴) */
@@ -1668,7 +2076,7 @@ async function reloadLinks(): Promise<void> {
     .limit(50);
   if (error) return;
   tripLinks = ((data ?? []) as TripLink[]).filter((l) => BOOKING_LINK_CATEGORIES.has(l.category));
-  if (activeTab === 'more') render();
+  if (activeTab === 'trip') render();
 }
 
 function moreTabHtml(): string {
@@ -2299,8 +2707,10 @@ function bind(): void {
       const tab = (btn as HTMLElement).dataset.tab as MbTab;
       activeTab = tab;
       render();
-      if (tab === 'wallet') void ensureExpenseCtx();
-      if (tab === 'more') void ensureMoreCtx();
+      if (tab === 'wallet') { void ensureExpenseCtx(); void ensureWalletDocs(); }
+      if (tab === 'trip') void ensureMoreCtx();
+      // 다른 탭으로 나가면 지도 인스턴스를 버린다 — 다시 들어오면 새로 붙인다
+      if (tab !== 'map') teardownMap();
     });
   });
 
@@ -2401,7 +2811,6 @@ function bind(): void {
   // ── 그 외 ──
   root.querySelector('#mb-goto-route')?.addEventListener('click', () => gotoGate('route'));
   root.querySelector('#mb-trips')?.addEventListener('click', () => navigate('trips'));
-  root.querySelector('#mb-add')?.addEventListener('click', () => gotoGate('route'));
 
   // ── TODAY 히어로 ──
   root.querySelectorAll('[data-hero-arrive]').forEach((btn) => {
@@ -2484,6 +2893,22 @@ function bind(): void {
     render();
   });
   root.querySelector('#mb-wal-calc')?.addEventListener('click', () => openCalc());
+
+  // ── 지갑: 예약 서류 ──
+  root.querySelectorAll('[data-doc]').forEach((btn) => {
+    btn.addEventListener('click', () => { void openDoc((btn as HTMLElement).dataset.doc!); });
+  });
+  root.querySelector('#mb-wd-unlock')?.addEventListener('click', () => gotoGate('docs'));
+  root.querySelector('#mb-wd-add')?.addEventListener('click', () => gotoGate('docs'));
+
+  // ── 지도 ──
+  root.querySelectorAll('[data-mapgo]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      detailKey = (btn as HTMLElement).dataset.mapgo!;
+      detailTab = 'overview';
+      render();
+    });
+  });
 }
 
 /**
