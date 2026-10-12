@@ -100,6 +100,8 @@ import {
   dayDateRangeLabel,
 } from '../docs/docsStore';
 import type { DocCategory } from '../docs/docsStore';
+import { matchStop, startWatch, stopWatch, isWatching, isGeoSupported } from './geo';
+import type { GeoFix } from './geo';
 import { fetchWeather, resetWeatherCache } from './weather';
 import type { Weather } from './weather';
 import { loadGoogleMapsScript } from '../utils/googleMaps';
@@ -242,6 +244,20 @@ let padMode: 'expense' | 'calc' = 'expense';
 /** 현재 통화의 환율 미리보기(≈₩) — fetchRate가 통화당 1회만 조회하고 캐시한다 */
 let padRate: { rate: number | null; source: string } | null = null;
 
+/* ── GPS 현재 위치 ── */
+/**
+ * 위치 자동 확인은 **기본 꺼짐**이다. 권한을 묻는 건 사용자 제스처 안에서만 해야 하고
+ * (자동으로 물으면 대부분 거절당하고 그 뒤로는 다시 못 묻는다), 위치 구독은 배터리를 쓴다.
+ * 여행 중 배터리는 생명줄이라 사용자가 켤 때만 켠다.
+ */
+let geoOn = false;
+let geoFix: GeoFix | null = null;
+let geoError = '';
+/** GPS가 지금 여기라고 판정한 정류지 key */
+let geoAtKey: string | null = null;
+/** GPS로 이미 자동 기록한 정류지 — 같은 곳을 반복해서 쓰지 않게 */
+const geoRecorded = new Set<string>();
+
 /* ── 날씨 ── */
 /** 활성 DAY의 날씨. 못 받으면 null이고 그 줄은 아예 안 그린다(원칙 3-1). */
 let weather: Weather | null = null;
@@ -326,6 +342,12 @@ export function teardownMobile(): void {
     supabase.removeChannel(linksChannel);
     linksChannel = null;
   }
+  stopWatch();
+  geoOn = false;
+  geoFix = null;
+  geoError = '';
+  geoAtKey = null;
+  geoRecorded.clear();
   weather = null;
   weatherKey = '';
   resetWeatherCache();
@@ -1016,6 +1038,7 @@ function todayTabHtml(): string {
   return [
     daySummaryCardHtml(day),
     dateStripHtml(),
+    geoBarHtml(day),
     isToday ? driftLineHtml(day) : '',
     '<div class="mb-sec-head">',
     '  <h3 class="mb-sec-title">' + (isToday ? '오늘의 일정' : escapeHtml(day.label) + ' 일정') + '</h3>',
@@ -1028,6 +1051,83 @@ function todayTabHtml(): string {
       : '',
     // 레퍼런스의 하단 "다음 일정까지" 바 — 지금 상태를 알 때만 뜬다
     nowState ? nextUpBarHtml(nowState, s) : '',
+  ].join('');
+}
+
+/* ── GPS 자동 체크인 ────────────────────────────────────────
+ *
+ * "공항에 있으면 현재 위치가 공항으로 잡히게" — 판정은 `geo.ts`의 순수 함수가 하고,
+ * 여기서는 켜고 끄기, 화면 표시, 도착 기록만 다룬다.
+ *
+ * **자동 기록은 오늘 DAY에서만** 한다. 지난 날·미래 날의 정류지 좌표에 우연히 가까워졌다고
+ * 도착을 찍으면 그 날 일정이 통째로 어긋난다.
+ */
+function toggleGeo(): void {
+  if (geoOn) {
+    stopWatch();
+    geoOn = false;
+    geoFix = null;
+    geoAtKey = null;
+    geoError = '';
+    render();
+    return;
+  }
+  geoError = '';
+  const ok = startWatch(
+    (fix) => { geoFix = fix; geoError = ''; evaluateGeo(); },
+    (msg) => { geoError = msg; geoAtKey = null; render(); }
+  );
+  geoOn = ok && isWatching();
+  render();
+}
+
+/** 새 위치가 올 때마다: 어느 정류지인지 가리고, 오늘이면 도착을 기록한다. */
+function evaluateGeo(): void {
+  const day = activeDay();
+  if (!geoFix || !day) { geoAtKey = null; render(); return; }
+
+  const candidates = day.stops
+    .filter((st) => st.lat != null && st.lng != null)
+    .map((st) => ({ key: st.key, lat: st.lat!, lng: st.lng!, cat: st.cat }));
+
+  const hit = matchStop(geoFix, candidates);
+  const prevKey = geoAtKey;
+  geoAtKey = hit?.key ?? null;
+
+  // 오늘이 아니면 표시만 하고 기록하지 않는다
+  const isToday = day.date === todayISO();
+  if (isToday && hit && hit.key !== prevKey && !geoRecorded.has(hit.key)) {
+    const prog = progress.get(hit.key);
+    // 이미 사용자가 직접 기록한 정류지는 건드리지 않는다 — 사람이 누른 게 GPS보다 믿을 만하다
+    if (!prog || prog.status === 'pending') {
+      geoRecorded.add(hit.key);
+      void recordAction('arrive', hit.key);
+    }
+  }
+  render();
+}
+
+/** 상단의 위치 토글 + 지금 어디인지 한 줄 */
+function geoBarHtml(day: TlDay): string {
+  if (!isGeoSupported()) return '';
+
+  const atStop = geoAtKey ? day.stops.find((st) => st.key === geoAtKey) : null;
+  const label = !geoOn
+    ? '위치로 자동 체크인'
+    : geoError
+      ? geoError
+      : atStop
+        ? '지금 여기 · ' + atStop.name
+        : geoFix
+          ? '일정 중인 장소 근처가 아니에요'
+          : '위치 확인 중…';
+
+  return [
+    '<button class="mb-geo' + (geoOn ? ' is-on' : '') + (geoError ? ' is-err' : '') + '" id="mb-geo">',
+    '  <span class="mb-geo-ic">' + IC.pin + '</span>',
+    '  <span class="mb-geo-text">' + escapeHtml(label) + '</span>',
+    '  <span class="mb-geo-sw">' + (geoOn ? '끄기' : '켜기') + '</span>',
+    '</button>',
   ].join('');
 }
 
@@ -2496,6 +2596,15 @@ function briefRequestFor(stop: TlStop): PlaceBriefRequest {
   };
 }
 
+/* ══════════════ 장소 상세 (레퍼런스 화면 B) ══════════════
+ *
+ * 상단 네비 → 대표 사진 → 이름·주소 → 액션 3개 → 정보 행 목록 → 지도 CTA 순서.
+ * 레퍼런스에 있던 **즐겨찾기(하트)는 넣지 않았다** — 저장할 데이터 모델이 없어서, 눌러도
+ * 아무 일이 없는 버튼이 된다(명세: 죽은 버튼 금지).
+ *
+ * 기존 OVERVIEW/GUIDE/REVIEWS 탭(AI 브리핑)은 **그대로 아래에 남긴다** — 레퍼런스에 없다고
+ * 이미 동작하는 기능을 버릴 이유가 없다.
+ */
 function detailHtml(): string {
   const found = detailKey ? findStop(detailKey) : null;
   if (!found) return '<div class="mb-loading">장소를 찾을 수 없어요.</div>';
@@ -2505,32 +2614,67 @@ function detailHtml(): string {
   const rating = typeof place?.google_rating === 'number' ? place.google_rating : null;
   const photo = place?.photo_url ?? null;
   const dwell = s.dwellMin[index] ?? dwellMinutes(stop.cat);
+  const leg = s.legs[index];
+  const nextStop = day.stops[index + 1] ?? null;
+  const warn = hoursWarning(place ?? null, day.date, s.arriveMin[index], s.departMin[index]);
+  const tickets = ticketsForDay(day.dayIndex);
+
+  // 정보 행 — **저장된 값이 있는 줄만** 만든다. 빈 줄을 "—"로 채우지 않는다(원칙 3-1).
+  const rows: string[] = [];
+  rows.push(infoRowHtml(IC.clock, '방문 예정', minToHHMM(s.arriveMin[index]) + ' – ' + minToHHMM(s.departMin[index])));
+  if (place?.address) rows.push(infoRowHtml(IC.pin, '주소', place.address, 'copy', place.address));
+  const hours = todaysHoursLine(place ?? null, day.date);
+  if (hours) rows.push(infoRowHtml(IC.clock, '영업시간', hours, undefined, undefined, !!warn));
+  if (leg && nextStop) {
+    rows.push(infoRowHtml(MODE_ICON[leg.mode], '다음 장소까지', modeLabel(leg.mode) + ' ' + fmtMin(leg.min) + ' · ' + escapeHtml(nextStop.name)));
+  }
+  if (stop.memo) rows.push(infoRowHtml(IC.pencil, '메모', stop.memo));
 
   return [
     '<div class="mb-detail">',
-    '  <div class="mb-hero' + (photo ? '' : ' no-photo') + '"' + (photo ? ' data-photo="' + escapeHtml(photo) + '"' : '') + '>',
-    '    <div class="mb-hero-scrim"></div>',
-    '    <button class="mb-hero-btn" id="mb-pd-close" aria-label="닫기">' + IC.chevDown + '</button>',
-    '    <div class="mb-hero-right">',
-    '      <button class="mb-hero-btn" id="mb-pd-share" aria-label="공유">' + IC.share + '</button>',
-    '      <button class="mb-hero-btn" id="mb-pd-more" aria-label="더보기">' + IC.more + '</button>',
+    // ── 상단 네비 ──
+    '  <header class="mb-pdnav">',
+    '    <button class="mb-pdnav-btn" id="mb-pd-close" aria-label="뒤로">' + IC.back + '</button>',
+    '    <h1 class="mb-pdnav-title">' + escapeHtml(stop.name) + '</h1>',
+    '    <button class="mb-pdnav-btn" id="mb-pd-share" aria-label="공유">' + IC.share + '</button>',
+    '  </header>',
+    '  <div class="mb-pdscroll">',
+    // ── 대표 사진 ──
+    '    <div class="mb-pdhero' + (photo ? '' : ' no-photo') + '"' + (photo ? ' data-photo="' + escapeHtml(photo) + '"' : '') + '>',
+    photo ? '' : '      <span class="mb-pdhero-blank">' + IC.pin + '</span>',
+    '      <div class="mb-pdhero-foot">',
+    '        <span class="mb-pdhero-time">' + IC.clock + minToHHMM(s.arriveMin[index]) + ' – ' + minToHHMM(s.departMin[index]) + '</span>',
+    // 티켓 배지는 그 날 예약 서류가 **실제로 있을 때만**. 없으면 아예 안 띄운다.
+    tickets.length ? '        <span class="mb-pdhero-tag">' + IC.ticket + '티켓 ' + tickets.length + '건</span>' : '',
+    '      </div>',
     '    </div>',
-    '  </div>',
-    '  <div class="mb-pd">',
-    '    <div class="mb-pd-head">',
-    '      <span class="mb-pd-num">' + (index + 1) + '</span>',
-    '      <h2 class="mb-pd-name">' + escapeHtml(stop.name) + '</h2>',
-    rating != null
-      ? '      <span class="mb-pd-rating">' + IC.star + rating.toFixed(1) + '</span>'
-      : '',
-    '    </div>',
-    '    <div class="mb-pd-sub">',
-    '      <span>' + escapeHtml(place?.category ?? CAT_LABEL[stop.cat]) + '</span>',
-    '      <span class="mb-pd-sub-right">' + minToHHMM(s.arriveMin[index]) + ' – ' + minToHHMM(s.departMin[index]) + '</span>',
-    '    </div>',
-    '    <div class="mb-pd-chip">' + IC.clock + '예상 체류 ' + fmtMin(dwell) + ' <span class="mb-tag-est">추정</span></div>',
-    '    <div class="mb-pd-tabs">',
-    ['overview', 'guide', 'reviews']
+    '    <div class="mb-pd">',
+    // ── 이름 · 주소 ──
+    '      <div class="mb-pd-head">',
+    '        <h2 class="mb-pd-name">' + escapeHtml(stop.name) + '</h2>',
+    rating != null ? '        <span class="mb-pd-rating">' + IC.star + rating.toFixed(1) + '</span>' : '',
+    '      </div>',
+    place?.address
+      ? '      <p class="mb-pd-addr">' + IC.pin + '<span>' + escapeHtml(place.address) + '</span></p>'
+      : place?.category
+        ? '      <p class="mb-pd-addr">' + IC.pin + '<span>' + escapeHtml(place.category) + '</span></p>'
+        : '',
+    warn ? '      <div class="mb-pd-warn">' + escapeHtml(hoursWarnText(warn)) + '</div>' : '',
+    // ── 액션 3개 ──
+    '      <div class="mb-pd-acts">',
+    '        <a class="mb-pd-act is-primary" href="' + directionsHref(stop) + '" target="_blank" rel="noopener">' +
+      '<span class="mb-pd-act-ic">' + IC.navigate + '</span>길찾기</a>',
+    '        <button class="mb-pd-act" id="mb-pd-ticket">' +
+      '<span class="mb-pd-act-ic">' + IC.ticket + '</span>티켓 보기</button>',
+    '        <button class="mb-pd-act" id="mb-pd-share2">' +
+      '<span class="mb-pd-act-ic">' + IC.share + '</span>공유</button>',
+    '      </div>',
+    // ── 정보 행 ──
+    '      <div class="mb-pd-rows">' + rows.join('') + '</div>',
+    '      <div class="mb-pd-chip">' + IC.clock + '예상 체류 ' + fmtMin(dwell) + ' <span class="mb-tag-est">추정</span></div>',
+    // ── 기존 AI 브리핑 탭 (유지) ──
+    '      <div class="mb-pd-tabs">',
+    (['overview', 'guide', 'reviews'] as PdTab[])
       .map(
         (t) =>
           '<button class="mb-pd-tab' + (detailTab === t ? ' active' : '') + '" data-pdtab="' + t + '">' +
@@ -2538,9 +2682,49 @@ function detailHtml(): string {
           '</button>'
       )
       .join(''),
+    '      </div>',
+    '      <div class="mb-pd-body">' + pdBodyHtml(stop, index, s, day) + '</div>',
     '    </div>',
-    '    <div class="mb-pd-body">' + pdBodyHtml(stop, index, s, day) + '</div>',
     '  </div>',
+    // ── 하단 CTA — 이 화면에서 가장 중요한 동작 ──
+    '  <div class="mb-pd-cta">',
+    '    <a class="mb-pd-cta-btn" href="' + directionsHref(stop) + '" target="_blank" rel="noopener">' +
+      IC.map + ' 지도 앱으로 길찾기</a>',
+    '  </div>',
+    '</div>',
+  ].join('');
+}
+
+/** 그 DAY에 걸리는 티켓/입장권 서류 — 지갑과 **같은 데이터**를 본다(중복 저장 없음). */
+function ticketsForDay(dayIndex: number): TripDocument[] {
+  if (!walletDocsLoaded) return [];
+  const n = dayIndex + 1;
+  return walletDocs.filter((d) => {
+    if (normalizeDocCategory(d.category) !== 'TICKET') return false;
+    if (d.day_start == null && d.day_end == null) return false;
+    const from = d.day_start ?? d.day_end ?? 0;
+    const to = d.day_end ?? d.day_start ?? 0;
+    return n >= from && n <= to;
+  });
+}
+
+/** 정보 행 하나. `action='copy'`면 우측에 복사 버튼이 붙는다. */
+function infoRowHtml(
+  icon: string,
+  label: string,
+  value: string,
+  action?: 'copy',
+  copyText?: string,
+  warn?: boolean
+): string {
+  return [
+    '<div class="mb-pd-row' + (warn ? ' is-warn' : '') + '">',
+    '  <span class="mb-pd-row-ic">' + icon + '</span>',
+    '  <span class="mb-pd-row-label">' + escapeHtml(label) + '</span>',
+    '  <span class="mb-pd-row-val">' + escapeHtml(value) + '</span>',
+    action === 'copy' && copyText
+      ? '  <button class="mb-pd-row-copy" data-copy="' + escapeHtml(copyText) + '" aria-label="복사">' + IC.share + '</button>'
+      : '',
     '</div>',
   ].join('');
 }
@@ -2852,6 +3036,8 @@ function bind(): void {
     });
   });
   root.querySelector('#mb-pd-share')?.addEventListener('click', () => { void sharePlace(); });
+  root.querySelector('#mb-pd-share2')?.addEventListener('click', () => { void sharePlace(); });
+  root.querySelector('#mb-pd-ticket')?.addEventListener('click', () => { void openTicketForDetail(); });
 
   // ── AI 브리핑 ──
   root.querySelectorAll('[data-brief]').forEach((btn) => {
@@ -2873,6 +3059,7 @@ function bind(): void {
   // ── 그 외 ──
   root.querySelector('#mb-goto-route')?.addEventListener('click', () => gotoGate('route'));
   root.querySelector('#mb-trips')?.addEventListener('click', () => navigate('trips'));
+  root.querySelector('#mb-geo')?.addEventListener('click', () => toggleGeo());
 
   // ── TODAY 히어로 ──
   root.querySelectorAll('[data-hero-arrive]').forEach((btn) => {
@@ -2996,6 +3183,24 @@ async function recordAction(kind: 'arrive' | 'depart' | 'skip' | 'reset', stopKe
   const save = kind === 'arrive' ? markArrived : kind === 'depart' ? markDeparted : kind === 'skip' ? markSkipped : resetProgress;
   const ok = await save(currentTripId, activeDestId, activeDayIndex, stopKey);
   if (!ok) console.error('[Mobile] 진행 기록 저장 실패:', kind, stopKey);
+}
+
+/**
+ * "티켓 보기" — 그 DAY의 티켓 서류를 연다. 지갑과 **같은 `trip_documents`**를 보므로 같은
+ * 예약이 두 군데에 따로 저장되지 않는다. 한 건이면 바로 열고, 여러 건이면 지갑으로 보낸다.
+ * 없으면 **없다고 말한다** — 티켓이 있는 척하지 않는다(원칙 3-1).
+ */
+async function openTicketForDetail(): Promise<void> {
+  const found = detailKey ? findStop(detailKey) : null;
+  if (!found) return;
+  const tickets = ticketsForDay(found.day.dayIndex);
+  if (tickets.length === 1) { await openDoc(tickets[0].id); return; }
+  if (tickets.length > 1) { detailKey = null; activeTab = 'wallet'; render(); void ensureWalletDocs(); return; }
+  // 한 건도 없으면 지갑으로 보내 직접 올리게 한다(빈 화면에 안내가 떠 있다)
+  detailKey = null;
+  activeTab = 'wallet';
+  render();
+  void ensureWalletDocs();
 }
 
 async function sharePlace(): Promise<void> {
