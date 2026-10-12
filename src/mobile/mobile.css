@@ -113,6 +113,7 @@
   --mb-btn-shadow: 0 6px 18px rgba(47, 134, 214, 0.28);
 
   --mb-danger: #C0392B;
+  --mb-danger-wash: rgba(192, 57, 43, 0.1);
 
   /* 시간축 — Light에선 액션 블루 레일 */
   --mb-spine-grad: linear-gradient(
@@ -227,6 +228,7 @@
     --mb-btn-shadow: 0 6px 18px rgba(199, 170, 116, 0.18);
 
     --mb-danger: #E9A79B;
+    --mb-danger-wash: rgba(233, 167, 155, 0.14);
 
     --mb-spine-grad: linear-gradient(
       to bottom,
@@ -593,6 +595,15 @@
   background: rgba(217, 109, 12, 0.34);
   border: 1px solid rgba(255, 178, 112, 0.44);
 }
+/* 영업시간 경고는 "늦어요"(주황=지금)와 뜻이 다르다 — 가도 소용없다는 신호라 붉은 쪽을 쓴다.
+   카드 위 글자는 사진 위에 놓이므로 두 테마 모두 고정색이다(mobile.css 상단 규칙 2). */
+.mb-card-warn.is-hours {
+  color: #FFD5CD;
+  background: rgba(150, 38, 26, 0.42);
+  border-color: rgba(255, 150, 134, 0.46);
+}
+/* 영업시간 배지 자체도 어긋났을 땐 같이 붉어진다 — 숫자와 경고가 따로 놀지 않게 */
+.mb-card-note.is-warn { color: #FFC9BF; }
 
 /* 지금 진행 중인 일정 — 화면에서 유일하게 주황을 쓰는 자리 */
 .mb-card.is-now {
@@ -913,6 +924,8 @@
   white-space: nowrap;
 }
 .mb-tl-meta { font-size: 11px; color: var(--mb-muted); }
+/* 압축 표에선 카테고리·체류시간보다 "가도 닫혀 있다"가 먼저다 — 자리를 바꿔 차지한다 */
+.mb-tl-warn { font-size: 11px; font-weight: 600; color: var(--mb-danger); }
 /* 건너뛴 곳은 지우지 않고 흐리게 — 계획에 있었다는 사실 자체가 정보다 */
 .mb-tl-row.is-skipped .mb-tl-name { color: var(--mb-muted); text-decoration: line-through; }
 
@@ -1033,6 +1046,18 @@
   line-height: 1.6;
   color: var(--mb-muted);
   font-variant-numeric: tabular-nums;
+}
+/* 히어로의 영업시간 경고 — 이미 출발한 뒤에 알면 늦으므로 제목 바로 아래에 둔다.
+   히어로는 사진 위가 아니라 표면 위라 테마 토큰을 그대로 쓴다. */
+.mb-now-warn {
+  margin-top: 8px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mb-danger);
+  background: var(--mb-danger-wash);
+  border: 1px solid var(--mb-danger-wash);
 }
 
 /* 체류 진행 바 — 예상 체류 중 얼마나 지났는지 */
@@ -1273,7 +1298,6 @@
   justify-content: center;
   gap: 7px;
   width: 100%;
-  margin-top: 22px;
   padding: 15px;
   min-height: 50px;
   border-radius: var(--mb-radius-sm);
@@ -1286,6 +1310,50 @@
 }
 .mb-wal-add:hover { filter: brightness(1.06); }
 .mb-wal-add svg { width: 17px; height: 17px; }
+
+/* 지갑의 두 가지 동작 — "쓴 걸 넣는다"(채움) / "얼마인지 본다"(테두리).
+   Primary는 하나만 둔다: 기록이 이 탭의 본분이고 계산기는 거들 뿐이다. */
+.mb-wal-acts { display: flex; gap: 8px; margin-top: 22px; }
+.mb-wal-acts .mb-wal-add { flex: 1.35; margin-top: 0; }
+.mb-wal-calc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+  padding: 15px 10px;
+  min-height: 50px;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--mb-ink-2);
+  transition: border-color var(--mb-ease) 160ms, color var(--mb-ease) 160ms;
+}
+.mb-wal-calc svg { width: 16px; height: 16px; }
+.mb-wal-calc:hover { border-color: var(--mb-sky); color: var(--mb-sky); }
+
+/* ── 계산기 모드 ── */
+.mb-calc-out {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 0 2px;
+  min-height: 62px;
+  justify-content: center;
+}
+.mb-calc-value {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--mb-sky);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.mb-calc-rate { font-size: 11.5px; color: var(--mb-muted); font-variant-numeric: tabular-nums; }
+.mb-calc-note { font-size: 12.5px; color: var(--mb-muted); text-align: center; line-height: 1.6; }
 
 /* ══════════════ MORE 탭 — 하루 바깥의 것들 ══════════════
  *
@@ -1757,6 +1825,9 @@
 }
 .mb-pad-save:hover:not(:disabled) { filter: brightness(1.06); }
 .mb-pad-save:disabled { opacity: 0.45; box-shadow: none; cursor: default; }
+/* 계산기 모드에서 처음으로 이 버튼에 아이콘이 들어간다 — 크기를 안 잡으면 SVG가 버튼을
+   가득 채워버린다(실제로 났던 버그). 새 버튼에 아이콘을 넣을 땐 항상 같이 잡을 것. */
+.mb-pad-save svg { width: 16px; height: 16px; flex: none; }
 
 /* ══════════════ DAY 선택 시트 ══════════════ */
 

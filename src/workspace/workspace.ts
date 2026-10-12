@@ -191,13 +191,31 @@ export async function switchGate(page: HTMLElement, tripId: string, gate: string
   if (body) await renderGate(body, tripId, gate);
 }
 
+/**
+ * 게이트를 지정하지 않고 트립을 열었을 때 어디로 보낼지.
+ *
+ * PC는 예전처럼 IDEAS(계획의 시작점)지만, **폰은 Companion으로 보낸다.** 폰에서 IDEAS는
+ * 쓸 수 없는 화면이라고 전략 단계에서 이미 결론 낸 자리인데(docs/MOBILE_STRATEGY.md),
+ * 트립을 열 때마다 그 화면을 먼저 띄우고 햄버거 → 사이드바를 거쳐야 Companion에 닿았다.
+ * 현지에서 폰을 꺼내는 사람에게 이 경로는 그 자체로 이탈 사유다.
+ *
+ * 기준은 화면 폭 하나뿐이다 — `.ws-sidebar`가 서랍으로 접히는 중단점(768px)과 같은 값을
+ * 쓴다. UA 문자열은 보지 않는다(태블릿·폴더블에서 틀리고, 창을 줄인 PC도 폰처럼 좁다).
+ * 주소에 게이트가 명시돼 있으면(`#trip/:id/ideas`) 항상 그쪽이 우선이라 공유 링크는 그대로 열린다.
+ */
+const MOBILE_BREAKPOINT = 768;
+
+export function defaultGateFor(viewportWidth: number): string {
+  return viewportWidth <= MOBILE_BREAKPOINT ? 'go' : 'ideas';
+}
+
 /** 워크스페이스 셸 렌더 */
 export async function renderWorkspace(tripId: string, subPath?: string): Promise<HTMLElement> {
   const page = document.createElement('div');
   page.className = 'ws-page';
   page.dataset.tripId = tripId; // 같은 트립 내 게이트 이동 시 셸을 재사용하는지 판단용(switchGate)
 
-  const activeGate = subPath || 'ideas';
+  const activeGate = subPath || defaultGateFor(window.innerWidth);
 
   page.innerHTML = [
     '<div class="ws-sidebar" id="ws-sidebar"></div>',

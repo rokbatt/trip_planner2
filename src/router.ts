@@ -28,11 +28,21 @@ export function setNotFound(render: RenderFn): void {
   notFoundRender = render;
 }
 
-/** 프로그래밍 방식 이동 */
-export function navigate(path: string): void {
+/**
+ * 프로그래밍 방식 이동.
+ *
+ * `replace: true`면 히스토리에 새 항목을 쌓지 않고 현재 항목을 갈아끼운다. 생략형 주소를
+ * 정식 주소로 고쳐 쓸 때(예: `#trip/:id` → `#trip/:id/go`) 꼭 필요하다 — push로 하면
+ * 뒤로 가기가 생략형으로 돌아갔다가 다시 정식 주소로 튕겨서 영영 빠져나올 수 없다.
+ */
+export function navigate(path: string, opts?: { replace?: boolean }): void {
   const hash = '#' + path;
   if (window.location.hash === hash) {
     handleRoute();
+  } else if (opts?.replace) {
+    // hashchange가 안 나므로 라우팅을 직접 한 번 돌린다
+    history.replaceState(null, '', hash);
+    void handleRoute();
   } else {
     window.location.hash = hash;
   }

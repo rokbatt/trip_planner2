@@ -11,7 +11,7 @@ import { addRoute, setNotFound, startRouter, navigate, rerender, currentPath } f
 import { renderLogin } from './auth/auth';
 import { renderTripList } from './trips/trip-list';
 import { renderJoinPage, consumePendingInvite } from './trips/trip-join';
-import { renderWorkspace, findExistingWorkspace, switchGate } from './workspace/workspace';
+import { renderWorkspace, findExistingWorkspace, switchGate, defaultGateFor } from './workspace/workspace';
 
 // ─── 인증이 필요 없는 라우트 ───
 // join은 초대코드를 들고 온 비로그인 사용자도 접근해야 해서 public 처리
@@ -36,13 +36,21 @@ addRoute('trips', async () => {
 addRoute('trip', async (params) => {
   const app = document.getElementById('app')!;
   const tripId = params.tripId ?? '';
-  const gate = params.subPath || 'ideas';
+
+  // 게이트를 생략한 주소(#trip/:id)는 정식 주소로 고쳐 쓴다 — 폰이면 Companion, PC면 IDEAS.
+  // 주소를 바꿔둬야 새로고침·뒤로가기·공유가 전부 같은 화면을 가리킨다(replace라 히스토리는 안 쌓임).
+  if (!params.subPath && tripId) {
+    navigate('trip/' + tripId + '/' + defaultGateFor(window.innerWidth), { replace: true });
+    return;
+  }
+
+  const gate = params.subPath || defaultGateFor(window.innerWidth);
   const existing = findExistingWorkspace(tripId);
   if (existing) {
     await switchGate(existing, tripId, gate);
     return;
   }
-  const el = await renderWorkspace(tripId, params.subPath);
+  const el = await renderWorkspace(tripId, gate);
   app.replaceChildren(el);
 });
 
