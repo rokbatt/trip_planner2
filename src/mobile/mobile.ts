@@ -41,8 +41,8 @@ import { supabase } from '../supabase';
 import { store } from '../store';
 import { navigate } from '../router';
 import { subscribeRoutePlan, unsubscribeRoutePlan, resetRouteStorageProbe } from '../route/routeStore';
-import { loadDayModel, scheduleFor, stopLegKey, todaysHoursLine } from '../timeline/dayModel';
-import type { TlDay, TlStop, DaySchedule, RealLegMap, ProgressMap, StopProgress } from '../timeline/dayModel';
+import { loadDayModel, scheduleFor, stopLegKey, todaysHoursLine, hoursWarning } from '../timeline/dayModel';
+import type { TlDay, TlStop, DaySchedule, RealLegMap, ProgressMap, StopProgress, HoursWarning } from '../timeline/dayModel';
 import {
   loadStopProgress,
   markArrived,
@@ -132,6 +132,7 @@ const IC = {
   navigate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
   padDel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 5H9L3 12l6 7h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1z"/><path d="M17 9.5 12.5 14M12.5 9.5 17 14"/></svg>',
+  swap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4 3 8l4 4"/><path d="M3 8h13a4 4 0 0 1 0 8h-1"/><path d="m17 20 4-4-4-4"/></svg>',
 };
 
 const MODE_ICON: Record<TravelMode, string> = { WALK: IC.walk, TRANSIT: IC.transit, TAXI: IC.taxi };
@@ -191,6 +192,14 @@ let padAmount = '';
 let padCurrency = 'KRW';
 let padCategory: ExpenseCategory = 'ETC';
 let padSaving = false;
+/**
+ * 숫자패드의 두 가지 쓰임.
+ *   'expense' — 쓴 돈을 기록한다 (원래 용도)
+ *   'calc'    — **그냥 얼마인지만 본다.** 시장에서 "500밧이면 얼마야"를 확인하려고 계산기 앱을
+ *               여는 일을 없애려는 모드다. 환율·숫자패드·통화 칩이 이미 다 있어서 새로 만들 게
+ *               없고, 계산하다가 실제로 샀으면 금액을 그대로 들고 기록 모드로 넘어간다.
+ */
+let padMode: 'expense' | 'calc' = 'expense';
 /** 현재 통화의 환율 미리보기(≈₩) — fetchRate가 통화당 1회만 조회하고 캐시한다 */
 let padRate: { rate: number | null; source: string } | null = null;
 
@@ -256,6 +265,7 @@ export function teardownMobile(): void {
   padCurrency = 'KRW';
   padCategory = 'ETC';
   padSaving = false;
+  padMode = 'expense';
   padRate = null;
   if (linksChannel) {
     supabase.removeChannel(linksChannel);
@@ -692,6 +702,13 @@ function heroHtml(st: NowState, day: TlDay, s: DaySchedule): string {
       '</section>',
     ].join('');
 
+  /** 지금 향하고 있는 곳이 닫혀 있으면 히어로에서 먼저 알린다 — 이미 출발한 뒤에 카드까지
+   *  스크롤해서 발견하면 늦는다. 판단 불가면 빈 문자열이라 아무것도 안 뜬다. */
+  const heroWarn = (stop: TlStop, arrive: number, depart?: number): string => {
+    const w = hoursWarning(stop.place ?? null, day.date, arrive, depart);
+    return w ? '  <p class="mb-now-warn">' + escapeHtml(hoursWarnText(w)) + '</p>' : '';
+  };
+
   if (st.kind === 'before') {
     const d = st.daysLeft;
     return wrap(
@@ -732,7 +749,7 @@ function heroHtml(st: NowState, day: TlDay, s: DaySchedule): string {
       'TODAY',
       '첫 일정까지 ' + fmtLeft(st.minsTo),
       escapeHtml(st.stop.name) + ' · ' + minToHHMM(st.at) + ' 시작',
-      '',
+      heroWarn(st.stop, st.at),
       '<a class="mb-now-btn primary" href="' + directionsHref(st.stop) + '" target="_blank" rel="noopener">' + IC.navigate + '길찾기</a>'
     );
   }
@@ -767,7 +784,7 @@ function heroHtml(st: NowState, day: TlDay, s: DaySchedule): string {
       escapeHtml(st.stop.name) + '으로 이동',
       (legText ? escapeHtml(legText) + ' · ' : '') +
         (late ? '도착 예정 시각을 ' + fmtLeft(-st.minsTo) + ' 지났어요' : minToHHMM(s.arriveMin[st.index]) + ' 도착 예정'),
-      '',
+      heroWarn(st.stop, s.arriveMin[st.index], s.departMin[st.index]),
       '<a class="mb-now-btn primary" href="' + directionsHref(st.stop) + '" target="_blank" rel="noopener">' + IC.navigate + '길찾기</a>' +
         '<button class="mb-now-btn ghost" data-hero-arrive="' + escapeHtml(st.stop.key) + '">' + IC.check + '도착</button>'
     );
@@ -853,6 +870,26 @@ function todayTabHtml(): string {
  * `showTrack`(오늘 DAY일 때만 true)이면 도착/출발/건너뛰기 버튼을 카드 하단에 붙인다 —
  * 지난 날·미래 날에는 "도착"이 의미가 없으므로 아예 렌더링하지 않는다.
  */
+/* ── 영업시간 경고 ──
+ *
+ * 영업시간은 전부터 카드에 떠 있었지만 **도착 시각과 맞춰보진 않았다** — "19:40 도착"과
+ * "18:00 마감"이 나란히 있어도 사람이 직접 비교해야 했다. 대조는 `dayModel.hoursWarning`이
+ * 하고(새 데이터 없음, 가진 두 값의 비교), 여기서는 문장으로만 바꾼다.
+ * 판단할 수 없으면 아예 안 뜬다 — 틀린 "닫혀 있어요"는 침묵보다 나쁘다(원칙 3-1).
+ */
+function hoursWarnText(w: HoursWarning): string {
+  switch (w.kind) {
+    case 'closed-day':
+      return '이 날은 휴무예요';
+    case 'before-open':
+      return '도착 예정 시각엔 아직 안 열어요 (' + minToHHMM(w.at) + ' 오픈)';
+    case 'after-close':
+      return '도착 예정 시각엔 이미 닫아요 (' + minToHHMM(w.at) + ' 마감)';
+    case 'closes-during':
+      return '머무는 중에 닫아요 (' + minToHHMM(w.at) + ' 마감)';
+  }
+}
+
 function stopCardHtml(
   stop: TlStop,
   i: number,
@@ -866,6 +903,7 @@ function stopCardHtml(
   const photo = place?.photo_url ?? null;
   const rating = typeof place?.google_rating === 'number' ? place.google_rating : null;
   const hours = todaysHoursLine(place ?? null, dateISO);
+  const hoursWarn = hoursWarning(place ?? null, dateISO, s.arriveMin[i], s.departMin[i]);
   const timeRange = minToHHMM(s.arriveMin[i]) + ' - ' + minToHHMM(s.departMin[i]);
   const overrun = s.overrunMin[i];
   // 이미 다녀왔거나 건너뛴 곳은 살짝 가라앉혀서, 눈이 자연히 "아직 안 간 곳"으로 가게 한다
@@ -910,8 +948,9 @@ function stopCardHtml(
     rating != null ? '      <span class="mb-meta-item rating">' + IC.star + rating.toFixed(1) + '</span>' : '',
     '    </div>',
     // 저장된 실제 값만 배지로 — 없으면 아예 안 보여준다
-    hours ? '    <div class="mb-card-note">' + IC.clock + '<span>' + escapeHtml(hours) + '</span></div>' : '',
+    hours ? '    <div class="mb-card-note' + (hoursWarn ? ' is-warn' : '') + '">' + IC.clock + '<span>' + escapeHtml(hours) + '</span></div>' : '',
     stop.memo ? '    <div class="mb-card-note">' + IC.pencil + '<span>' + escapeHtml(stop.memo) + '</span></div>' : '',
+    hoursWarn ? '    <div class="mb-card-warn is-hours">' + escapeHtml(hoursWarnText(hoursWarn)) + '</div>' : '',
     overrun > 0
       ? '    <div class="mb-card-warn">앞 일정을 다 하면 ' + fmtMin(overrun) + ' 늦어요</div>'
       : '',
@@ -1098,13 +1137,16 @@ function dayPageHtml(day: TlDay, idx: number): string {
       const skipped = prog?.status === 'skipped';
       const visited = prog?.status === 'arrived' || prog?.status === 'departed';
       const leg = s.legs[i];
+      const warn = hoursWarning(stop.place ?? null, day.date, s.arriveMin[i], s.departMin[i]);
       return [
         '<div class="mb-tl-row' + (skipped ? ' is-skipped' : '') + (visited ? ' is-visited' : '') + '" data-stop="' + escapeHtml(stop.key) + '" role="button" tabindex="0">',
         '  <span class="mb-tl-time">' + minToHHMM(s.arriveMin[i]) + '</span>',
         '  <span class="mb-tl-dot" aria-hidden="true"></span>',
         '  <div class="mb-tl-main">',
         '    <div class="mb-tl-name">' + escapeHtml(stop.name) + '</div>',
-        '    <div class="mb-tl-meta">' + escapeHtml(CAT_LABEL[stop.cat] ?? '') + ' · ' + fmtMin(s.dwellMin[i]) + ' 머무름</div>',
+        warn
+          ? '    <div class="mb-tl-warn">' + escapeHtml(hoursWarnText(warn)) + '</div>'
+          : '    <div class="mb-tl-meta">' + escapeHtml(CAT_LABEL[stop.cat] ?? '') + ' · ' + fmtMin(s.dwellMin[i]) + ' 머무름</div>',
         '  </div>',
         '</div>',
         // 구간 이동은 행 사이에 작게 — 여기선 "얼마나 걸리나"만 알면 된다
@@ -1264,7 +1306,12 @@ function walletTabHtml(): string {
     '</section>',
     settleLineHtml(ctx),
     recentExpensesHtml(ctx),
-    '<button class="mb-wal-add" id="mb-wal-add">' + IC.plus + ' 지출 추가</button>',
+    // 여행 중 지갑에서 하는 일은 둘뿐이다 — 쓴 걸 넣거나, 얼마인지 보거나.
+    // "얼마예요?"가 계산기 앱을 대신하는 자리다.
+    '<div class="mb-wal-acts">',
+    '  <button class="mb-wal-add" id="mb-wal-add">' + IC.plus + ' 지출 추가</button>',
+    '  <button class="mb-wal-calc" id="mb-wal-calc">' + IC.swap + ' 얼마예요?</button>',
+    '</div>',
   ].join('');
 }
 
@@ -1367,6 +1414,18 @@ function openPad(): void {
   padAmount = '';
   padCategory = guess?.category ?? 'ETC';
   padSaving = false;
+  padMode = 'expense';
+  padOpen = true;
+  padRate = null;
+  render();
+  void refreshPadRate();
+}
+
+/** 계산기 모드로 열기 — 기록할 생각 없이 "이거 얼마야"만 볼 때 */
+function openCalc(): void {
+  padAmount = '';
+  padSaving = false;
+  padMode = 'calc';
   padOpen = true;
   padRate = null;
   render();
@@ -1410,32 +1469,55 @@ function padSheetHtml(): string {
     )
     .join('');
 
+  const isCalc = padMode === 'calc';
+
+  // 계산기 모드의 본문 — 환산 결과가 주인공이라 크게 띄우고, 환율은 출처까지 같이 밝힌다.
+  // 환율을 못 받으면 숫자를 지어내지 않고 "환산할 수 없다"고 말한다(원칙 3-1).
+  const calcBody = [
+    '  <div class="mb-calc-out">',
+    padCurrency === 'KRW'
+      ? '    <div class="mb-calc-note">원화는 환산할 게 없어요. 위에서 외화를 골라주세요.</div>'
+      : krw != null
+        ? '    <div class="mb-calc-value">' + escapeHtml(fmtKRW(krw)) + '</div>' +
+          '    <div class="mb-calc-rate">1 ' + escapeHtml(padCurrency) + ' ≈ ' + (padRate!.rate as number).toFixed(2) + '원' +
+          (padRate?.source === 'fallback' ? ' <span class="mb-tag-est">참고용</span>' : '') + '</div>'
+        : padRate === null
+          ? '    <div class="mb-calc-note">환율 확인 중…</div>'
+          : '    <div class="mb-calc-note">환율을 못 받았어요 · 지금은 환산할 수 없어요</div>',
+    '  </div>',
+  ].join('');
+
   return [
     '<div class="mb-sheet-back" id="mb-pad-back"></div>',
-    '<div class="mb-pad" role="dialog" aria-label="지출 추가">',
+    '<div class="mb-pad" role="dialog" aria-label="' + (isCalc ? '환율 계산기' : '지출 추가') + '">',
     '  <div class="mb-pad-head">',
     '    <button class="mb-pad-close" id="mb-pad-close" aria-label="닫기">' + IC.close + '</button>',
-    '    <span class="mb-pad-title">지출 추가</span>',
+    '    <span class="mb-pad-title">' + (isCalc ? '얼마예요?' : '지출 추가') + '</span>',
     '  </div>',
     '  <div class="mb-pad-amount">',
     '    <span class="mb-pad-sym">' + escapeHtml(symbolOf(padCurrency)) + '</span>',
     '    <span class="mb-pad-num' + (padAmount ? '' : ' is-empty') + '">' + escapeHtml(padAmount || '0') + '</span>',
     '  </div>',
-    padCurrency !== 'KRW'
-      ? '  <div class="mb-pad-krw">' +
-        (krw != null
-          ? '≈ ' + escapeHtml(fmtKRW(krw)) + (padRate?.source === 'fallback' ? ' <span class="mb-tag-est">참고용 환율</span>' : '')
-          : padRate === null ? '환율 확인 중…' : '<span class="mb-pad-warn">환율을 못 받았어요 · 원화 환산 없이 저장돼요</span>') +
-        '</div>'
-      : '',
+    isCalc
+      ? calcBody
+      : padCurrency !== 'KRW'
+        ? '  <div class="mb-pad-krw">' +
+          (krw != null
+            ? '≈ ' + escapeHtml(fmtKRW(krw)) + (padRate?.source === 'fallback' ? ' <span class="mb-tag-est">참고용 환율</span>' : '')
+            : padRate === null ? '환율 확인 중…' : '<span class="mb-pad-warn">환율을 못 받았어요 · 원화 환산 없이 저장돼요</span>') +
+          '</div>'
+        : '',
     '  <div class="mb-pad-currencies">' + currencyChips + '</div>',
-    '  <div class="mb-pad-cats">' + catChips + '</div>',
-    guess
+    isCalc ? '' : '  <div class="mb-pad-cats">' + catChips + '</div>',
+    !isCalc && guess
       ? '  <p class="mb-pad-hint">' + escapeHtml(guess.title) + '에서 쓴 걸로 저장돼요</p>'
       : '',
     '  <div class="mb-pad-keys">' + pad + '</div>',
-    '  <button class="mb-pad-save" id="mb-pad-save"' + (amount > 0 && !padSaving ? '' : ' disabled') + '>' +
-      (padSaving ? '<span class="mb-spinner"></span>저장 중…' : '저장') + '</button>',
+    // 계산해놓고 실제로 샀으면 금액을 그대로 들고 기록 모드로 — 다시 입력할 이유가 없다
+    isCalc
+      ? '  <button class="mb-pad-save" id="mb-pad-tolog"' + (amount > 0 ? '' : ' disabled') + '>' + IC.plus + ' 이 금액을 지출로 기록</button>'
+      : '  <button class="mb-pad-save" id="mb-pad-save"' + (amount > 0 && !padSaving ? '' : ' disabled') + '>' +
+        (padSaving ? '<span class="mb-spinner"></span>저장 중…' : '저장') + '</button>',
     '</div>',
   ].join('');
 }
@@ -2393,6 +2475,13 @@ function bind(): void {
     });
   });
   root.querySelector('#mb-pad-save')?.addEventListener('click', () => { void savePadExpense(); });
+  // 계산기 → 기록: 금액·통화는 그대로 두고 모드만 바꾼다(다시 칠 이유가 없다)
+  root.querySelector('#mb-pad-tolog')?.addEventListener('click', () => {
+    padMode = 'expense';
+    padCategory = guessFromCurrentStop()?.category ?? 'ETC';
+    render();
+  });
+  root.querySelector('#mb-wal-calc')?.addEventListener('click', () => openCalc());
 }
 
 /**

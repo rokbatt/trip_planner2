@@ -32,6 +32,10 @@ import {
 } from '../utils/travelEstimate';
 import type { Leg, RealLeg, TravelMode, CatKey } from '../utils/travelEstimate';
 import type { Database, StaySegment, TripDestination } from '../types/database';
+import { warningFor } from './openingHours';
+import type { HoursWarning } from './openingHours';
+
+export type { HoursWarning } from './openingHours';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type Trip = Database['public']['Tables']['trips']['Row'];
@@ -145,6 +149,27 @@ export function todaysHoursLine(place: Place | null, dateISO: string | null): st
   // "월요일: 09:00~18:00" 형식이면 요일 접두어는 떼고 시간만 배지에 보여준다
   const colonIdx = line.indexOf(':');
   return colonIdx >= 0 && colonIdx < 6 ? line.slice(colonIdx + 1).trim() : line;
+}
+
+/* ══════════════ 영업시간 대조 ══════════════ */
+
+/**
+ * 이 정류지의 계획 시각이 영업시간과 어긋나는지. 어긋나지 않거나 판단할 수 없으면 null.
+ *
+ * 영업시간은 전부터 저장돼 있었지만(`opening_hours`) **보여주기만 하고 도착 시각과 맞춰보진
+ * 않았다** — "19:40 도착"과 "18:00 마감"이 한 화면에 떠 있어도 사람이 직접 비교해야 했다.
+ * 여기서 그 대조를 한다. 새로 받아오는 데이터는 없고 이미 가진 두 값을 비교할 뿐이다.
+ *
+ * 문자열 해석 규칙은 `openingHours.ts`(의존성 없는 순수 모듈)에 있다 — 못 읽으면 경고를
+ * 포기한다(원칙 3-1). 새 영업시간 형식이 안 읽히면 그 파일을 고치고 그 파일에서 검증할 것.
+ */
+export function hoursWarning(
+  place: Place | null,
+  dateISO: string | null,
+  arriveMin: number,
+  departMin?: number
+): HoursWarning | null {
+  return warningFor(todaysHoursLine(place, dateISO), arriveMin, departMin);
 }
 
 /* ══════════════ 공항 앵커 ══════════════ */

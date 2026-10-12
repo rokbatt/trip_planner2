@@ -2,11 +2,32 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <!-- viewport-fit=cover 가 있어야 env(safe-area-inset-*)가 0이 아닌 실제 값으로 계산된다.
+       모바일 Companion의 하단 탭바가 이 값을 쓰므로, 빼면 아이폰 홈 인디케이터에 탭이 깔린다. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+
+  <!-- 홈 화면에 추가했을 때 (iOS는 manifest를 아직 다 못 읽어서 apple-* 메타가 따로 필요하다) -->
+  <link rel="apple-touch-icon" href="/icon-180.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="몽실이" />
+
+  <!-- 상태바 색을 테마에 맞춘다 (mobile.css의 Light/Dark 배경색과 같은 값) -->
+  <meta name="theme-color" content="#F8FBFE" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0B121C" media="(prefers-color-scheme: dark)" />
+
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
   <title>몽실이 — 여행 플래너</title>
-  <script src="https://maps.googleapis.com/maps/api/js?key=%VITE_GOOGLE_MAPS_KEY%&libraries=places"></script>
+
+  <!-- ⚠️ Google Maps 스크립트를 여기서 불러오지 않는다.
+       예전엔 이 자리에 동기(blocking) <script>가 있었는데, 지도를 한 번도 안 쓰는 화면
+       (특히 딥링크만 쓰는 모바일 Companion)에서도 매번 받아오느라 첫 화면이 그만큼 늦었다.
+       로딩은 utils/googleMaps.ts의 loadGoogleMapsScript()가 맡는다 — 필요한 게이트에서만
+       async로 받고, 이미 떠 있으면 바로 resolve 한다. 여기에 다시 추가하지 말 것. -->
 </head>
 <body>
   <!-- SPA 셸: 라우터가 이 안을 교체함 -->
