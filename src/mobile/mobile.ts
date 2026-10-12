@@ -530,8 +530,10 @@ function topBarHtml(): string {
     '<header class="mb-top">',
     '  <div class="mb-brand"><span class="mb-brand-mark">' + IC.logo + '</span>몽실이</div>',
     '  <div class="mb-top-actions">',
-    '    <button class="mb-icon-btn" id="mb-links" aria-label="링크">' + IC.bell + '</button>',
-    '    <button class="mb-icon-btn" id="mb-menu" aria-label="메뉴">' + IC.menu + '</button>',
+    // 폰에서 Companion은 앱 전체라 워크스페이스 헤더가 숨겨져 있다 — 여기서 PC 게이트로
+    // 보내면 돌아올 길이 애매해진다. 그래서 나가는 길은 "다른 여행 고르기" 하나만 둔다.
+    // (링크는 MORE 탭에 이미 있어서 종 아이콘은 없앴다 — 버튼 두 개가 할 일이 겹쳤다.)
+    '    <button class="mb-icon-btn" id="mb-trips" aria-label="다른 여행">' + IC.menu + '</button>',
     '  </div>',
     '</header>',
   ].join('');
@@ -2398,9 +2400,7 @@ function bind(): void {
 
   // ── 그 외 ──
   root.querySelector('#mb-goto-route')?.addEventListener('click', () => gotoGate('route'));
-  root.querySelector('#mb-goto-desktop')?.addEventListener('click', () => gotoGate('timeline'));
-  root.querySelector('#mb-links')?.addEventListener('click', () => gotoGate('links'));
-  root.querySelector('#mb-menu')?.addEventListener('click', () => gotoGate('timeline'));
+  root.querySelector('#mb-trips')?.addEventListener('click', () => navigate('trips'));
   root.querySelector('#mb-add')?.addEventListener('click', () => gotoGate('route'));
 
   // ── TODAY 히어로 ──
