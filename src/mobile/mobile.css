@@ -439,7 +439,33 @@
 /* 페이저 바깥의 두 줄(요약·칩)만 좌우 여백을 갖는다 — 페이지는 화면 끝까지 차야 스와이프가
    화면 폭과 정확히 맞는다 */
 .mb-scroll.is-pager > .mb-tl-sum,
-.mb-scroll.is-pager > .mb-tl-chips { margin: 0 16px; }
+.mb-scroll.is-pager > .mb-tl-chips,
+.mb-scroll.is-pager > .mb-trip-seg { margin: 0 16px; }
+.mb-scroll.is-pager > .mb-trip-seg { margin-top: 6px; margin-bottom: 10px; }
+
+/* ── 여행 탭 전환: 전체 일정 | 여행 정보 ── */
+.mb-trip-seg {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 3px;
+  margin-bottom: 12px;
+  border-radius: 12px;
+  background: var(--mb-fill-subtle);
+}
+.mb-trip-seg-btn {
+  flex: 1;
+  height: 34px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mb-muted);
+}
+.mb-trip-seg-btn.active {
+  background: var(--mb-surface);
+  color: var(--mb-ink);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.10);
+}
 
 /* ── 여행 전체 진행 ── */
 .mb-tl-sum { display: flex; flex-direction: column; gap: 7px; flex: none; padding: 2px 0 10px; }
@@ -484,6 +510,20 @@
   color: #FFFFFF;
 }
 /* 오늘은 활성이 아닐 때도 표시가 남아야 한다 — 여행 중엔 "오늘이 어디냐"가 기준점이다 */
+/* 여행지가 바뀌는 자리의 이름표 — 칩이 아니라 구분선 역할이다 */
+.mb-tl-dest {
+  flex: none;
+  align-self: center;
+  margin: 0 2px 0 6px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--mb-sky);
+  background: var(--mb-sky-wash);
+}
+.mb-tl-chips { scroll-behavior: smooth; }
 .mb-tl-chip.is-today:not(.active) { border-color: var(--mb-live); color: var(--mb-live); }
 
 /* ── 페이저 ── */
@@ -516,6 +556,14 @@
 
 .mb-tl-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex: none; }
 .mb-tl-head-main { display: flex; align-items: center; gap: 8px; }
+.mb-tl-desttag {
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--mb-sky);
+  background: var(--mb-sky-wash);
+}
 .mb-tl-day { font-size: 17px; font-weight: 800; letter-spacing: -0.01em; color: var(--mb-ink); }
 .mb-tl-date { font-size: 12px; color: var(--mb-muted); font-variant-numeric: tabular-nums; }
 .mb-tl-blank { font-size: 12.5px; color: var(--mb-muted); padding: 26px 0; text-align: center; }
@@ -685,6 +733,20 @@
 }
 .mb-date-num { font-size: 16px; font-weight: 700; color: var(--mb-ink); font-variant-numeric: tabular-nums; }
 .mb-date-wd { font-size: 11px; color: var(--mb-muted); }
+/* 여행지가 여럿일 때만 칸 아래에 여행지 이름이 붙는다 */
+.mb-date-cell.has-dest { min-height: 66px; }
+.mb-date-dest {
+  max-width: 100%;
+  margin-top: 1px;
+  padding: 0 2px;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--mb-sky);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mb-date-cell.active .mb-date-dest { color: rgba(255, 255, 255, 0.9); }
 /* 선택된 날짜 — 화면에서 파랑을 가장 크게 쓰는 자리 중 하나 */
 .mb-date-cell.active { background: var(--mb-sky); border-color: transparent; }
 .mb-date-cell.active .mb-date-num,
@@ -2194,6 +2256,16 @@
   flex: none;
 }
 .mb-sheet-list { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; min-height: 0; }
+/* 여행지 머리 — 항목이 아니라 묶음 제목이다 */
+.mb-sheet-dest {
+  padding: 12px 4px 4px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--mb-sky);
+}
+.mb-sheet-dest:first-child { padding-top: 2px; }
+
 .mb-sheet-item {
   display: flex;
   align-items: center;

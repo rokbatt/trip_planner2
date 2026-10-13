@@ -552,6 +552,25 @@ PC/노트북  = PLANNER    여행 전, 4개 게이트로 결정한다        (�
   **지도**(활성 DAY 핀) · **지갑**(예약 서류 + 지출) · **여행**(DAY 페이저 + 여행 정보)
   - 예전 네 탭에서 **없어진 화면은 하나도 없다** — TIMELINE과 MORE는 `여행` 탭 안의
     두 화면(`tripSub: 'days' | 'info'`)으로, 지출 지갑은 `지갑` 탭의 한 섹션으로 들어갔다.
+    **단, 두 화면을 오가는 스위치(`[전체 일정 | 여행 정보]`, `data-tripsub`)가 한동안 빠져 있어
+    여행 정보(숙소·준비물·예약 링크)가 열리지 않았다.** 상태만 만들고 바꾸는 버튼을 안 만든
+    회귀였다 — "화면을 옮겼다"고 쓸 땐 **그 화면으로 가는 길이 있는지**를 따로 확인할 것.
+    여행 정보 데이터는 그 화면을 **처음 열 때** 읽는다(3-2).
+- **여러 여행지는 폰에서 하나의 DAY 목록으로 이어진다.** 여행지를 고르지 않아도 방콕 DAY 1~4
+  다음에 푸켓 DAY 5~가 쭉 나온다(`loadTripDayModel`, 규칙은 `timeline/tripSpans.ts`).
+  PC TIMELINE(`loadDayModel`)은 **활성 여행지 하나만** 그대로다 — 둘은 같은 조립 함수
+  (`buildDestinationDays`)를 쓰므로 여행지가 하나뿐이면 결과가 같다(테스트가 붙든다).
+  - `TlDay`는 세 가지 번호를 가진다 — `dayIndex`(여행지 **안** 순번, 도착 기록 키),
+    `dayNumber`(여행 **전체** 번호, 서류의 `day_start`와 같은 기준), `destId/destName`.
+    진행 기록은 `(destination_id, day_index)`로 저장하므로 이어붙인 번호로 저장하면 안 된다.
+  - **서류 매칭은 전체 번호**(`docCountForDay(dayNumber)`)다. 예전엔 활성 여행지 안의 번호로
+    비교해 두 번째 여행지에서 서류가 엉뚱한 날에 붙었다(잠복 버그, 같이 고침).
+  - **여행지가 바뀌는 날은 같은 날짜가 두 번** 나온다(방콕 출국일 = 푸켓 도착일). 날짜 띠·칩·
+    DAY 시트에 여행지 이름을 달아 구분하고, "오늘"은 `pickTodayIndex`가 일정이 있는 쪽을 고른다.
+  - `정류지 키(d{dayIndex}-…)`는 **여행지 안에서만** 유일하다 → 진행 기록은 활성 DAY의 것만
+    읽고(`progressOf`) 다른 날에는 빈 값을 준다.
+  - **트레이드오프:** 여행지 수만큼 route_plan을 읽는다(병렬 N회). 진행 기록·실제 이동시간·
+    날씨는 여전히 **활성 DAY만** 읽는다(3-2).
 - **컬러는 브랜드 배경(`#F8FBFE`, 2장) + 흰 카드 + 네이비 글자(`#14264A`)**, 액션은 **몽실이 대표
   블루 `#2F86D6`** 하나로 통일한다. 레퍼런스는 아이보리 바탕 + 코발트였지만 둘 다 브랜드 값으로
   바꿨다 — PC 게이트들과 같은 앱으로 읽혀야 한다. 바탕을 순백으로 두지 않는 이유는 **카드가
@@ -921,6 +940,7 @@ src/
   route/routeStore.ts                ← route_days/route_stops 영속화 + 실시간 (Route/Timeline 공용)
   timeline/timeline.ts, timeline.css ← Timeline 게이트 (날짜별 시각표, 5-3 참고)
   timeline/dayModel.ts               ← 하루를 시간축에 올리는 규칙의 단일 기준 (Timeline/Mobile 공용, 5-4 참고)
+  timeline/tripSpans.ts              ← 여러 여행지를 이어붙이는 순수 규칙 (정렬·번호·오늘 고르기, 5-4 참고)
   timeline/placeBrief.ts             ← 장소 상세 AI 브리핑 클라이언트 (Timeline/Mobile 공용)
   timeline/openingHours.ts           ← 영업시간 문자열 파서 (의존성 없는 순수 모듈, 5-4 참고)
   mobile/mobile.ts, mobile.css       ← Mobile Companion 게이트 (여행 중 화면, 5-4 참고)

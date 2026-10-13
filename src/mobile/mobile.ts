@@ -41,7 +41,7 @@ import { supabase } from '../supabase';
 import { store } from '../store';
 import { navigate } from '../router';
 import { subscribeRoutePlan, unsubscribeRoutePlan, resetRouteStorageProbe } from '../route/routeStore';
-import { loadDayModel, scheduleFor, stopLegKey, todaysHoursLine, hoursWarning } from '../timeline/dayModel';
+import { loadTripDayModel, scheduleFor, stopLegKey, todaysHoursLine, hoursWarning } from '../timeline/dayModel';
 import type { TlDay, TlStop, DaySchedule, RealLegMap, ProgressMap, StopProgress, HoursWarning } from '../timeline/dayModel';
 import {
   loadStopProgress,
@@ -102,6 +102,7 @@ import {
 import type { DocCategory } from '../docs/docsStore';
 import { matchStop, startWatch, stopWatch, isWatching, isGeoSupported } from './geo';
 import type { GeoFix } from './geo';
+import { pickTodayIndex, tripDestinationLabel } from '../timeline/tripSpans';
 import { fetchWeather, resetWeatherCache } from './weather';
 import type { Weather } from './weather';
 import { loadGoogleMapsScript } from '../utils/googleMaps';
@@ -384,8 +385,8 @@ function nowMinutes(): number {
 
 /** 오늘이 여행 기간 안이면 그 DAY 인덱스, 아니면 -1 */
 function todayDayIndex(): number {
-  const t = todayISO();
-  return days.findIndex((d) => d.date === t);
+  // 여행지가 바뀌는 날은 같은 날짜가 두 번 나온다 — 일정 있는 쪽을 우선한다(tripSpans.ts)
+  return pickTodayIndex(days, todayISO());
 }
 
 function activeDay(): TlDay | null {
@@ -400,9 +401,30 @@ function dateLabel(iso: string | null): string {
   return (d.getMonth() + 1) + '.' + String(d.getDate()).padStart(2, '0') + ' (' + WEEKDAY[d.getDay()] + ')';
 }
 
+/** 지금 보고 있는 DAY의 여행지 이름 — 여행지가 여럿이면 날마다 다르다 */
 function destName(): string {
-  const d = allDestinations.find((x) => x.id === activeDestId);
-  return d?.name ?? currentTrip?.destinations?.[0] ?? '여행';
+  return activeDay()?.destName ?? tripDestName();
+}
+
+/** 여행 **전체**의 여행지 이름 — "방콕 → 푸켓". 하루가 아니라 여행을 말하는 자리에 쓴다. */
+function tripDestName(): string {
+  return tripDestinationLabel(allDestinations) || currentTrip?.destinations?.[0] || '여행';
+}
+
+/** 여행지가 둘 이상인가 — 그럴 때만 날마다 어느 여행지인지 표시한다(하나뿐이면 군더더기다) */
+function isMultiDest(): boolean {
+  return new Set(days.map((d) => d.destId)).size > 1;
+}
+
+/**
+ * 진행 기록은 **활성 DAY 것만** 불러와 있다(원칙 3-2). 그걸 다른 DAY에 넘기면, 여행지가 다르고
+ * 순번·장소 이름이 같은 정류지의 기록이 엉뚱한 날에 "다녀옴"으로 비칠 수 있다(키가 여행지 안에서만
+ * 유일하다). 그래서 활성 DAY에만 넘기고 나머지는 빈 맵을 준다.
+ */
+const NO_PROGRESS: ProgressMap = new Map();
+function progressOf(day: TlDay): ProgressMap {
+  const a = activeDay();
+  return a && day.destId === a.destId && day.dayIndex === a.dayIndex ? progress : NO_PROGRESS;
 }
 
 async function loadTrip(tripId: string): Promise<Trip | null> {
@@ -468,7 +490,8 @@ export async function renderMobileContent(host: HTMLElement, tripId: string): Pr
     return;
   }
 
-  const model = await loadDayModel(trip);
+  // 여행지를 고르지 않아도 모든 여행지가 DAY로 이어져 보인다(방콕 DAY 1~4 다음 푸켓 DAY 5~)
+  const model = await loadTripDayModel(trip);
   days = model.days;
   allDestinations = model.destinations;
   activeDestId = model.activeDestId;
@@ -496,7 +519,7 @@ export async function renderMobileContent(host: HTMLElement, tripId: string): Pr
 
 async function reloadFromRemote(): Promise<void> {
   if (!currentTrip) return;
-  const model = await loadDayModel(currentTrip);
+  const model = await loadTripDayModel(currentTrip);
   days = model.days;
   allDestinations = model.destinations;
   activeDestId = model.activeDestId;
@@ -530,12 +553,17 @@ async function loadWeatherForActiveDay(): Promise<void> {
 
 /** 활성 DAY의 진행 기록만 불러온다(원칙 3-2). DAY를 옮길 때마다 다시 호출한다. */
 async function loadProgressForActiveDay(): Promise<void> {
-  if (!activeDestId) {
+  const day = activeDay();
+  // 진행 기록은 (여행지, 여행지 안의 DAY 순번)으로 저장된다 — 이어 붙인 목록의 전체 순번이 아니다
+  if (!day?.destId) {
     if (progress.size) { progress = new Map(); render(); }
     return;
   }
-  const map = await loadStopProgress(activeDestId, activeDayIndex);
+  const map = await loadStopProgress(day.destId, day.dayIndex);
   if (!map) return; // 저장소를 못 씀(마이그레이션 전) — 조용히 유지
+  // 기다리는 사이 다른 DAY로 옮겼으면 이 응답은 버린다(남의 날 기록으로 덮어쓰지 않게)
+  const now = activeDay();
+  if (!now || now.destId !== day.destId || now.dayIndex !== day.dayIndex) return;
   progress = map;
   render();
 }
@@ -607,6 +635,7 @@ function render(): void {
   // 곧 페이지 위치이므로 매 렌더마다 거기로 되돌려 놓는다(애니메이션 없이: 이미 그 자리다).
   const pager = container.querySelector('#mb-tl-pager') as HTMLElement | null;
   if (pager) pager.scrollLeft = activeDayIndex * pager.clientWidth;
+  centerActiveChip();
 
   // 지도는 마크업이 DOM에 올라온 뒤에야 붙일 수 있다
   if (activeTab === 'map' && !detailKey) void mountMap();
@@ -657,14 +686,14 @@ function topBarHtml(): string {
       brandRow,
       '<div class="mb-daybar"><span class="mb-screen-title">' + title + '</span></div>',
       '<div class="mb-daymeta">',
-      '  <span class="mb-date">' + escapeHtml(destName()) + ' · 여행 전체</span>',
+      '  <span class="mb-date">' + escapeHtml(tripDestName()) + ' · 여행 전체</span>',
       '</div>',
     ].join('');
   }
 
   return [
     brandRow,
-    '<div class="mb-daybar"><span class="mb-screen-title">' + escapeHtml(currentTrip?.name || destName()) + '</span></div>',
+    '<div class="mb-daybar"><span class="mb-screen-title">' + escapeHtml(currentTrip?.name || tripDestName()) + '</span></div>',
     '<div class="mb-daymeta">',
     isToday ? '  <span class="mb-today-chip">TODAY</span>' : '',
     '  <span class="mb-date">' + escapeHtml(dateLabel(day?.date ?? null)) + '</span>',
@@ -752,7 +781,9 @@ function computeNowState(day: TlDay, s: DaySchedule): NowState | null {
   }
   // 여행 중인데 다른 날을 보고 있음 — 오늘로 돌아갈 길만 안내한다
   const todayIdx = todayDayIndex();
-  if (todayIdx >= 0 && todayIdx !== activeDayIndex) {
+  // 날짜로 판단한다 — 여행지가 바뀌는 날은 같은 날짜의 DAY가 둘이라, 인덱스로 비교하면
+  // 그 둘 중 하나를 보고 있을 때도 "다른 날을 보고 있어요"가 뜬다
+  if (todayIdx >= 0 && day.date !== t) {
     return { kind: 'otherday', todayIdx, todayLabel: days[todayIdx]?.label ?? '오늘' };
   }
   if (day.date !== t || !day.stops.length) return null;
@@ -835,7 +866,7 @@ function heroHtml(st: NowState, day: TlDay, s: DaySchedule): string {
     return wrap(
       'is-plan',
       'D-' + d,
-      escapeHtml(destName()) + ' 여행까지 ' + d + '일',
+      escapeHtml(tripDestName()) + ' 여행까지 ' + d + '일',
       (st.startDate ? escapeHtml(dateLabel(st.startDate)) + ' 출발' : '') + (st.totalStops ? ' · 일정 ' + st.totalStops + '곳' : ''),
       '',
       ''
@@ -943,10 +974,16 @@ function driftLineHtml(day: TlDay): string {
  * 날씨는 연결된 데이터가 없어서 아예 그리지 않는다(없는 걸 그리면 그 순간 거짓이 된다).
  */
 
-/** 이 DAY에 걸리는 예약 서류 수. day_start~day_end 범위로만 셀 수 있다(아래 주석 참고). */
-function docCountForDay(dayIndex: number): number {
+/**
+ * 이 DAY에 걸리는 예약 서류 수. day_start~day_end 범위로만 셀 수 있다(아래 주석 참고).
+ *
+ * `dayNumber`는 **여행 전체 기준** DAY 번호(`TlDay.dayNumber`)여야 한다. 서류의 day_start/day_end가
+ * 여행지를 이어 붙인 번호이기 때문이다 — 여행지 안의 순번(`dayIndex`)을 넣으면 두 번째 여행지부터
+ * 서류가 엉뚱한 날에 붙는다.
+ */
+function docCountForDay(dayNumber: number): number {
   if (!walletDocsLoaded) return -1; // 아직 모름 — 숫자를 지어내지 않고 줄을 생략한다
-  const n = dayIndex + 1; // 문서의 day_start/day_end는 1부터
+  const n = dayNumber;
   return walletDocs.filter((d) => {
     if (d.day_start == null && d.day_end == null) return false; // 전체 일정 문서는 "오늘 예약"이 아니다
     const from = d.day_start ?? d.day_end ?? 0;
@@ -956,10 +993,11 @@ function docCountForDay(dayIndex: number): number {
 }
 
 function daySummaryCardHtml(day: TlDay): string {
-  const dest = destName();
+  // 그 날이 속한 여행지 — 여행지가 여럿이면 날마다 다르다
+  const dest = day.destName ?? tripDestName();
   // 대표 이미지 — 그 날 정류지 중 **실제로 저장된 사진**이 있는 첫 곳. 없으면 단색으로 둔다.
   const photo = day.stops.find((st) => st.place?.photo_url)?.place?.photo_url ?? null;
-  const docs = docCountForDay(day.dayIndex);
+  const docs = docCountForDay(day.dayNumber);
 
   const meta = [day.stops.length + '곳'];
   if (docs > 0) meta.push('예약 서류 ' + docs + '건');
@@ -985,6 +1023,8 @@ function dateStripHtml(): string {
   if (from + WINDOW > days.length) from = Math.max(0, days.length - WINDOW);
   const shown = days.slice(from, from + WINDOW);
   const t = todayISO();
+  // 창 안이 아니라 **여행 전체**가 기준이다 — 창을 밀 때 칸 높이가 들썩이지 않게
+  const multi = isMultiDest();
 
   return [
     '<div class="mb-dates">',
@@ -996,9 +1036,12 @@ function dateStripHtml(): string {
         const num = dd ? String(dd.getDate()) : String(idx + 1);
         const wd = dd ? WEEKDAY[dd.getDay()] : 'DAY';
         return (
-          '<button class="mb-date-cell' + (active ? ' active' : '') + (d.date === t ? ' is-today' : '') + '" data-day="' + idx + '">' +
+          '<button class="mb-date-cell' + (active ? ' active' : '') + (d.date === t ? ' is-today' : '') + (multi ? ' has-dest' : '') + '" data-day="' + idx + '">' +
           '<span class="mb-date-num">' + escapeHtml(num) + '</span>' +
           '<span class="mb-date-wd">' + escapeHtml(wd) + '</span>' +
+          // 여행지가 여럿일 때만 어느 여행지인지 적는다. 바뀌는 날은 같은 날짜가 두 칸이라
+          // 이게 없으면 "29 수"가 두 번 나와 구분이 안 된다.
+          (multi && d.destName ? '<span class="mb-date-dest">' + escapeHtml(d.destName) + '</span>' : '') +
           '</button>'
         );
       })
@@ -1311,22 +1354,42 @@ function trackHtml(stop: TlStop, prog: StopProgress | undefined): string {
  * "멈춘 뒤 어느 페이지인지" 읽어 상태에 반영하는 것뿐이다(아래 bindPager).
  */
 
+/**
+ * 여행 탭 안의 두 화면 전환 — 전체 일정 / 여행 정보(숙소·준비물·예약 링크).
+ * 이 스위치가 없으면 여행 정보 화면은 열 방법이 없다(PR #209 이후 한동안 그랬다).
+ */
+function tripSegHtml(): string {
+  const btn = (sub: TripSub, label: string) =>
+    '<button class="mb-trip-seg-btn' + (tripSub === sub ? ' active' : '') + '" data-tripsub="' + sub + '">' + label + '</button>';
+  return '<div class="mb-trip-seg" role="tablist">' + btn('days', '전체 일정') + btn('info', '여행 정보') + '</div>';
+}
+
 function allDaysTabHtml(): string {
   if (!days.some((d) => d.stops.length)) {
-    return emptyHtml('일정이 아직 없어요', 'PC에서 ROUTE로 동선을 먼저 만들어 주세요.');
+    return tripSegHtml() + emptyHtml('일정이 아직 없어요', 'PC에서 ROUTE로 동선을 먼저 만들어 주세요.');
   }
   const t = todayISO();
 
+  const multi = isMultiDest();
   const chips = days
-    .map(
-      (d, i) =>
+    .map((d, i) => {
+      // 여행지가 바뀌는 자리에 이름표를 끼운다 — 칩이 아니라서(`.mb-tl-chip`이 아님) 칩 개수·순서와
+      // 페이지 번호(data-page)를 어긋나게 하지 않는다
+      const marker =
+        multi && (i === 0 || days[i - 1].destId !== d.destId) && d.destName
+          ? '<span class="mb-tl-dest">' + escapeHtml(d.destName) + '</span>'
+          : '';
+      return (
+        marker +
         '<button class="mb-tl-chip' + (i === activeDayIndex ? ' active' : '') + (d.date === t ? ' is-today' : '') + '" data-page="' + i + '">' +
         escapeHtml(d.label) +
         '</button>'
-    )
+      );
+    })
     .join('');
 
   return [
+    tripSegHtml(),
     tripProgressHtml(),
     '<div class="mb-tl-chips" id="mb-tl-chips">' + chips + '</div>',
     '<div class="mb-tl-pager" id="mb-tl-pager">' + days.map((d, i) => dayPageHtml(d, i)).join('') + '</div>',
@@ -1371,14 +1434,15 @@ function tripProgressHtml(): string {
 /** 한 DAY = 한 페이지. 사진 없이 시각·이름만 있는 압축 표라 하루가 한 화면에 들어온다. */
 function dayPageHtml(day: TlDay, idx: number): string {
   const isToday = day.date === todayISO();
-  // progress는 활성 DAY만 채워져 있다(원칙 3-2). 다른 DAY의 키와 겹치지 않으므로 그냥 넘겨도
-  // 안전하고, 활성 DAY에서는 실제 기록이 반영된 시각이 나오는 보너스가 된다.
-  const s = scheduleFor(day, realLegs, progress);
+  // 진행 기록은 활성 DAY 것만 불러와 있다(원칙 3-2). progressOf가 활성 DAY에만 넘기고 나머지는
+  // 빈 맵을 준다 — 여행지가 다르면 키가 겹칠 수 있어서 "그냥 넘겨도 안전"하지 않다.
+  const s = scheduleFor(day, realLegs, progressOf(day));
 
   const head = [
     '  <header class="mb-tl-head">',
     '    <div class="mb-tl-head-main">',
     '      <span class="mb-tl-day">' + escapeHtml(day.label) + '</span>',
+    isMultiDest() && day.destName ? '      <span class="mb-tl-desttag">' + escapeHtml(day.destName) + '</span>' : '',
     isToday ? '      <span class="mb-today-chip">TODAY</span>' : '',
     '    </div>',
     '    <span class="mb-tl-date">' + escapeHtml(dateLabel(day.date)) + '</span>',
@@ -1396,7 +1460,7 @@ function dayPageHtml(day: TlDay, idx: number): string {
 
   const rows = day.stops
     .map((stop, i) => {
-      const prog = progress.get(stop.key);
+      const prog = progressOf(day).get(stop.key);
       const skipped = prog?.status === 'skipped';
       const visited = prog?.status === 'arrived' || prog?.status === 'departed';
       const leg = s.legs[i];
@@ -1451,6 +1515,7 @@ function bindPager(root: HTMLElement): void {
     chip.addEventListener('click', () => {
       const i = Number((chip as HTMLElement).dataset.page);
       root.querySelectorAll('.mb-tl-chip').forEach((c, ci) => c.classList.toggle('active', ci === i));
+      centerActiveChip();
       pager.scrollTo({ left: i * pager.clientWidth, behavior: 'smooth' });
     });
   });
@@ -1463,6 +1528,18 @@ function bindPager(root: HTMLElement): void {
     },
     { passive: true }
   );
+}
+
+/**
+ * 칩 줄이 옆으로 길어졌을 때(여행지가 여럿이면 DAY가 열 개를 넘는다) 지금 보는 칩이 화면 밖에
+ * 있으면 어디를 보고 있는지 알 수 없다 — 활성 칩을 가운데로 가져온다.
+ * `scrollIntoView`는 바깥 세로 스크롤까지 건드릴 수 있어서 칩 줄의 scrollLeft만 직접 맞춘다.
+ */
+function centerActiveChip(): void {
+  const strip = container?.querySelector('#mb-tl-chips') as HTMLElement | null;
+  const chip = strip?.querySelector('.mb-tl-chip.active') as HTMLElement | null;
+  if (!strip || !chip) return;
+  strip.scrollLeft = chip.offsetLeft - (strip.clientWidth - chip.offsetWidth) / 2;
 }
 
 function onPagerSettle(pager: HTMLElement): void {
@@ -2250,6 +2327,7 @@ function moreTabHtml(): string {
   const check = checklistSecHtml();
 
   return [
+    tripSegHtml(),
     tripHeadHtml(),
     traveling ? stay + check : check + stay,
     bookingLinksHtml(),
@@ -2277,10 +2355,10 @@ function tripHeadHtml(): string {
   return [
     '<section class="mb-more-head">',
     '  <div class="mb-more-head-top">',
-    '    <h2 class="mb-more-title">' + escapeHtml(currentTrip?.name || destName()) + '</h2>',
+    '    <h2 class="mb-more-title">' + escapeHtml(currentTrip?.name || tripDestName()) + '</h2>',
     badge,
     '  </div>',
-    range ? '  <div class="mb-more-sub">' + escapeHtml(destName()) + ' · ' + escapeHtml(range) + '</div>' : '',
+    range ? '  <div class="mb-more-sub">' + escapeHtml(tripDestName()) + ' · ' + escapeHtml(range) + '</div>' : '',
     '</section>',
   ].join('');
 }
@@ -2328,7 +2406,7 @@ function stayCardHtml(): string {
       '    <span class="mb-stay-ic">' + IC.bag + '</span>',
       '    <div class="mb-stay-main">',
       '      <div class="mb-stay-name">숙소가 아직 확정되지 않았어요</div>',
-      '      <div class="mb-stay-meta">' + escapeHtml(seg.zone_name ?? destName()) + ' · PC의 STAY에서 정할 수 있어요</div>',
+      '      <div class="mb-stay-meta">' + escapeHtml(seg.zone_name ?? tripDestName()) + ' · PC의 STAY에서 정할 수 있어요</div>',
       '    </div>',
       '    <span class="mb-stay-chev">' + IC.chevRight + '</span>',
       '  </button>',
@@ -2561,6 +2639,10 @@ function daySheetHtml(): string {
     '  <div class="mb-sheet-list">',
     days
       .map((d, i) =>
+        // 여행지가 바뀌는 자리에 머리를 끼운다(여행지가 하나뿐이면 안 나온다)
+        (isMultiDest() && (i === 0 || days[i - 1].destId !== d.destId) && d.destName
+          ? '<div class="mb-sheet-dest">' + escapeHtml(d.destName) + '</div>'
+          : '') +
         '<button class="mb-sheet-item' + (i === activeDayIndex ? ' active' : '') + '" data-day="' + i + '">' +
         '<span class="mb-sheet-day">' + escapeHtml(d.label) + '</span>' +
         '<span class="mb-sheet-date">' + escapeHtml(dateLabel(d.date)) + (d.date === t ? ' · TODAY' : '') + '</span>' +
@@ -2576,21 +2658,24 @@ function daySheetHtml(): string {
 /* ══════════════ 장소 상세 ══════════════ */
 
 function findStop(key: string): { stop: TlStop; index: number; day: TlDay } | null {
-  for (const d of days) {
+  // 키는 여행지 안에서만 유일하다 — 다른 여행지의 같은 키가 있어도 지금 보는 DAY를 먼저 맞춘다
+  const a = activeDay();
+  const order = a ? [a, ...days.filter((d) => d !== a)] : days;
+  for (const d of order) {
     const idx = d.stops.findIndex((s) => s.key === key);
     if (idx >= 0) return { stop: d.stops[idx], index: idx, day: d };
   }
   return null;
 }
 
-function briefRequestFor(stop: TlStop): PlaceBriefRequest {
+function briefRequestFor(stop: TlStop, destination: string): PlaceBriefRequest {
   const p = stop.place;
   return {
     name: stop.name,
     googlePlaceId: p?.google_place_id ?? null,
     category: p?.category ?? null,
     address: p?.address ?? null,
-    destination: destName(),
+    destination,
     rating: typeof p?.google_rating === 'number' ? p.google_rating : null,
     hours: Array.isArray(p?.opening_hours) ? (p!.opening_hours as string[]) : null,
   };
@@ -2610,14 +2695,14 @@ function detailHtml(): string {
   if (!found) return '<div class="mb-loading">장소를 찾을 수 없어요.</div>';
   const { stop, index, day } = found;
   const place = stop.place;
-  const s = scheduleFor(day, realLegs, progress);
+  const s = scheduleFor(day, realLegs, progressOf(day));
   const rating = typeof place?.google_rating === 'number' ? place.google_rating : null;
   const photo = place?.photo_url ?? null;
   const dwell = s.dwellMin[index] ?? dwellMinutes(stop.cat);
   const leg = s.legs[index];
   const nextStop = day.stops[index + 1] ?? null;
   const warn = hoursWarning(place ?? null, day.date, s.arriveMin[index], s.departMin[index]);
-  const tickets = ticketsForDay(day.dayIndex);
+  const tickets = ticketsForDay(day.dayNumber);
 
   // 정보 행 — **저장된 값이 있는 줄만** 만든다. 빈 줄을 "—"로 채우지 않는다(원칙 3-1).
   const rows: string[] = [];
@@ -2696,9 +2781,9 @@ function detailHtml(): string {
 }
 
 /** 그 DAY에 걸리는 티켓/입장권 서류 — 지갑과 **같은 데이터**를 본다(중복 저장 없음). */
-function ticketsForDay(dayIndex: number): TripDocument[] {
+function ticketsForDay(dayNumber: number): TripDocument[] {
   if (!walletDocsLoaded) return [];
-  const n = dayIndex + 1;
+  const n = dayNumber; // 여행 전체 기준 번호(docCountForDay 주석 참고)
   return walletDocs.filter((d) => {
     if (normalizeDocCategory(d.category) !== 'TICKET') return false;
     if (d.day_start == null && d.day_end == null) return false;
@@ -2738,7 +2823,7 @@ function pdBodyHtml(stop: TlStop, index: number, s: DaySchedule, day: TlDay): st
 /* ── Overview ── */
 
 function pdOverviewHtml(stop: TlStop, index: number, s: DaySchedule, day: TlDay): string {
-  const key = placeBriefKey(briefRequestFor(stop));
+  const key = placeBriefKey(briefRequestFor(stop, day.destName ?? tripDestName()));
   const brief = placeBriefs.get(key) ?? null;
   const loading = placeBriefLoading.has(key);
   const err = placeBriefErrors.get(key) ?? null;
@@ -2952,9 +3037,18 @@ function bind(): void {
       activeTab = tab;
       render();
       if (tab === 'wallet') { void ensureExpenseCtx(); void ensureWalletDocs(); }
-      if (tab === 'trip') void ensureMoreCtx();
+      if (tab === 'trip' && tripSub === 'info') void ensureMoreCtx();
       // 다른 탭으로 나가면 지도 인스턴스를 버린다 — 다시 들어오면 새로 붙인다
       if (tab !== 'map') teardownMap();
+    });
+  });
+
+  // ── 여행 탭 안 전환 (전체 일정 ↔ 여행 정보) ──
+  root.querySelectorAll('[data-tripsub]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      tripSub = (btn as HTMLElement).dataset.tripsub as TripSub;
+      render();
+      if (tripSub === 'info') void ensureMoreCtx(); // 여행 정보를 처음 열 때만 읽는다
     });
   });
 
@@ -3168,7 +3262,8 @@ function bind(): void {
  * 같은 전제 — 쓰기는 기본적으로 성공한다고 보고, 실패는 로그만 남긴다).
  */
 async function recordAction(kind: 'arrive' | 'depart' | 'skip' | 'reset', stopKey: string): Promise<void> {
-  if (!activeDestId || !currentTripId) return;
+  const day = activeDay();
+  if (!day?.destId || !currentTripId) return;
 
   const nowIso = new Date().toISOString();
   const prev = progress.get(stopKey);
@@ -3181,7 +3276,7 @@ async function recordAction(kind: 'arrive' | 'depart' | 'skip' | 'reset', stopKe
   render();
 
   const save = kind === 'arrive' ? markArrived : kind === 'depart' ? markDeparted : kind === 'skip' ? markSkipped : resetProgress;
-  const ok = await save(currentTripId, activeDestId, activeDayIndex, stopKey);
+  const ok = await save(currentTripId, day.destId, day.dayIndex, stopKey);
   if (!ok) console.error('[Mobile] 진행 기록 저장 실패:', kind, stopKey);
 }
 
@@ -3193,7 +3288,7 @@ async function recordAction(kind: 'arrive' | 'depart' | 'skip' | 'reset', stopKe
 async function openTicketForDetail(): Promise<void> {
   const found = detailKey ? findStop(detailKey) : null;
   if (!found) return;
-  const tickets = ticketsForDay(found.day.dayIndex);
+  const tickets = ticketsForDay(found.day.dayNumber);
   if (tickets.length === 1) { await openDoc(tickets[0].id); return; }
   if (tickets.length > 1) { detailKey = null; activeTab = 'wallet'; render(); void ensureWalletDocs(); return; }
   // 한 건도 없으면 지갑으로 보내 직접 올리게 한다(빈 화면에 안내가 떠 있다)
@@ -3230,7 +3325,7 @@ async function sharePlace(): Promise<void> {
 async function loadBrief(force = false): Promise<void> {
   const found = detailKey ? findStop(detailKey) : null;
   if (!found) return;
-  const req = briefRequestFor(found.stop);
+  const req = briefRequestFor(found.stop, found.day.destName ?? tripDestName());
   const key = placeBriefKey(req);
   if (placeBriefLoading.has(key)) return;
   if (!force && placeBriefs.has(key)) return;
