@@ -323,6 +323,8 @@ export function teardownMobile(): void {
   staySegments = [];
   placeById = new Map();
   activeDayIndex = 0;
+  datesCenteredFor = -1;
+  datesScrollLeft = 0;
   activeTab = 'today';
   tripSub = 'days';
   detailKey = null;
@@ -407,6 +409,47 @@ function dateLabel(iso: string | null): string {
   const d = new Date(iso + 'T00:00:00');
   if (Number.isNaN(d.getTime())) return '';
   return (d.getMonth() + 1) + '.' + String(d.getDate()).padStart(2, '0') + ' (' + WEEKDAY[d.getDay()] + ')';
+}
+
+/** "10월 26일 (월)" — 상단 메타 줄 */
+function dateShort(iso: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return '';
+  return (d.getMonth() + 1) + '월 ' + d.getDate() + '일 (' + WEEKDAY[d.getDay()] + ')';
+}
+
+/** "10월 26일 · 월요일" — 대표 사진 위 */
+function dateLong(iso: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return '';
+  return (d.getMonth() + 1) + '월 ' + d.getDate() + '일 · ' + WEEKDAY[d.getDay()] + '요일';
+}
+
+/** "10월 26일" — 일정 제목 */
+function dateMonthDay(iso: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return '';
+  return (d.getMonth() + 1) + '월 ' + d.getDate() + '일';
+}
+
+/** 여행지 안에서 며칠째인지 — "첫째 날", "둘째 날" … 열째 뒤로는 "11일째" */
+const ORDINAL_DAY = ['첫째', '둘째', '셋째', '넷째', '다섯째', '여섯째', '일곱째', '여덟째', '아홉째', '열째'];
+function dayOrdinal(dayIndex: number): string {
+  return dayIndex < ORDINAL_DAY.length ? ORDINAL_DAY[dayIndex] + ' 날' : dayIndex + 1 + '일째';
+}
+
+/**
+ * 자정을 넘긴 시각 표시. 일정 시각은 "그 날 0시부터의 분"이라 1440 이상이면 다음 날이다.
+ * `minToHHMM`은 24시간 안으로 접기만 하므로(00:54), 다음 날이라는 표시를 따로 붙인다 —
+ * 안 붙이면 "21:30 – 00:54"가 거꾸로 된 범위처럼 읽힌다.
+ */
+function clockHtml(min: number, long = false): string {
+  if (min < 1440) return escapeHtml(minToHHMM(min));
+  // 좁은 시각 칸(일정 줄)에서는 아래 줄에 "다음 날"로, 한 줄짜리 범위에서는 "+1"로
+  return escapeHtml(minToHHMM(min)) + (long ? '<span class="mb-nextday">다음 날</span>' : '<span class="mb-plus1" title="다음 날">+1</span>');
 }
 
 /** 지금 보고 있는 DAY의 여행지 이름 — 여행지가 여럿이면 날마다 다르다 */
@@ -628,9 +671,15 @@ async function loadRealLegsForActiveDay(): Promise<void> {
 
 /* ══════════════ 렌더 ══════════════ */
 
+/** 날짜 띠를 마지막으로 가운데 맞춘 DAY — 같은 날을 다시 그릴 땐 사용자가 넘겨 둔 위치를 지킨다 */
+let datesCenteredFor = -1;
+let datesScrollLeft = 0;
+
 function render(): void {
   if (!container) return;
   const scrollTop = (container.querySelector('.mb-scroll') as HTMLElement | null)?.scrollTop ?? 0;
+  const datesEl = container.querySelector('#mb-dates-scroll') as HTMLElement | null;
+  if (datesEl) datesScrollLeft = datesEl.scrollLeft;
 
   container.innerHTML = '<div class="mb-app">' + appHtml() + '</div>';
   applyPhotos();
@@ -645,6 +694,7 @@ function render(): void {
   const pager = container.querySelector('#mb-tl-pager') as HTMLElement | null;
   if (pager) pager.scrollLeft = activeDayIndex * pager.clientWidth;
   centerActiveChip();
+  centerActiveDate();
 
   // 지도는 마크업이 DOM에 올라온 뒤에야 붙일 수 있다
   if (activeTab === 'map' && !detailKey) void mountMap();
@@ -700,12 +750,16 @@ function topBarHtml(): string {
     ].join('');
   }
 
+  // 여행 **전체** 제목(위)과 **이 날** 머무는 도시(아래)를 다른 줄에 둔다 — "방콕·푸켓"이
+  // 제목인지 오늘 위치인지 헷갈리지 않게. 날씨는 받았을 때만 붙는다(원칙 3-1).
+  const dest = day?.destName ?? tripDestName();
+  const date = dateShort(day?.date ?? null);
   return [
     brandRow,
     '<div class="mb-daybar"><span class="mb-screen-title">' + escapeHtml(currentTrip?.name || tripDestName()) + '</span></div>',
     '<div class="mb-daymeta">',
-    isToday ? '  <span class="mb-today-chip">TODAY</span>' : '',
-    '  <span class="mb-date">' + escapeHtml(dateLabel(day?.date ?? null)) + '</span>',
+    dest ? '  <span class="mb-meta-item mb-meta-dest">' + IC.pin + escapeHtml(dest) + '</span>' : '',
+    date ? '  <span class="mb-meta-item mb-date">' + escapeHtml(date) + '</span>' : '',
     weatherChipHtml(),
     '</div>',
   ].join('');
@@ -722,7 +776,7 @@ function weatherChipHtml(): string {
     weather.kind === 'now'
       ? weather.tempC + '° ' + weather.label
       : weather.maxC + '° / ' + weather.minC + '° ' + weather.label;
-  return '  <span class="mb-wx">' + WX_ICON[weather.icon] + escapeHtml(text) + '</span>';
+  return '  <span class="mb-meta-item mb-wx">' + WX_ICON[weather.icon] + escapeHtml(text) + '</span>';
 }
 
 /* ── 하단 탭 ── */
@@ -1001,61 +1055,79 @@ function docCountForDay(dayNumber: number): number {
   }).length;
 }
 
+/**
+ * 대표 사진 — 이 날의 분위기를 맡는다(개별 장소 정보는 아래 일정 카드가 맡는다).
+ *
+ * 사진은 **이 날 정류지에 실제로 저장된 사진**만 쓴다. 공항·숙소 사진은 그 날의 얼굴로 약하니
+ * 관광·액티비티 쪽을 먼저 고르고, 없으면 아무 사진이나, 그것도 없으면 사진 없는 배경으로 둔다 —
+ * 관련 없는 사진을 대신 넣지 않는다(원칙 3-1).
+ *
+ * 제목은 "방콕 여행 첫째 날". 영문 도시명(BANGKOK)은 저장돼 있지 않아서 만들어 넣으면 지어낸
+ * 값이 된다 — 한국어 표기 하나로 통일했다. "오늘은 방콕에서 보내요" 같은 문장은 이미 아는
+ * 사실을 감성적으로 다시 말할 뿐이라 뺐다.
+ */
 function daySummaryCardHtml(day: TlDay): string {
-  // 그 날이 속한 여행지 — 여행지가 여럿이면 날마다 다르다
   const dest = day.destName ?? tripDestName();
-  // 대표 이미지 — 그 날 정류지 중 **실제로 저장된 사진**이 있는 첫 곳. 없으면 단색으로 둔다.
-  const photo = day.stops.find((st) => st.place?.photo_url)?.place?.photo_url ?? null;
+  const photoOf = (st: TlStop) => st.place?.photo_url ?? null;
+  const photo =
+    photoOf(day.stops.find((st) => (st.cat === 'VISIT' || st.cat === 'ACTIVITY') && photoOf(st)) ?? ({} as TlStop)) ??
+    day.stops.map(photoOf).find(Boolean) ??
+    null;
   const docs = docCountForDay(day.dayNumber);
+  const isToday = day.date === todayISO();
 
-  const meta = [day.stops.length + '곳'];
+  const title = (dest ? dest + ' 여행 ' : '여행 ') + dayOrdinal(day.dayIndex);
+  const meta = [(isToday ? '오늘 일정 ' : '일정 ') + day.stops.length + '곳'];
   if (docs > 0) meta.push('예약 서류 ' + docs + '건');
+  const date = dateLong(day.date);
 
   return [
     '<section class="mb-sum' + (photo ? '' : ' no-photo') + '">',
     photo ? '  <div class="mb-sum-photo" data-photo="' + escapeHtml(photo) + '"></div>' : '',
     '  <div class="mb-sum-scrim"></div>',
     '  <div class="mb-sum-body">',
-    '    <h2 class="mb-sum-title">오늘은 ' + escapeHtml(dest) + '에서 보내요</h2>',
-    '    <p class="mb-sum-meta">' + escapeHtml(meta.join(' · ')) + '</p>',
+    '    <h2 class="mb-sum-title">' + escapeHtml(title) + '</h2>',
+    date ? '    <p class="mb-sum-date">' + escapeHtml(date) + '</p>' : '',
+    '    <p class="mb-sum-meta">' + IC.calendar + escapeHtml(meta.join(' · ')) + '</p>',
     '  </div>',
     '</section>',
   ].join('');
 }
 
-/** 앞뒤로 훑어보기 좋은 날짜 띠 — 선택된 날은 브랜드 블루로 채운다 */
+/**
+ * 날짜 띠 — 여행 전체 날짜를 가로로 넘겨 본다(한 화면에 4칸). 선택된 날만 브랜드 블루로 채우고,
+ * 일정이 있는 날엔 작은 점을 찍는다. 달력 버튼은 띠 밖 오른쪽에 고정해 언제나 닿게 둔다.
+ * 선택된 칸이 보이도록 가운데로 옮기는 건 render()의 `centerActiveDate`가 한다.
+ */
 function dateStripHtml(): string {
   if (!days.length) return '';
-  // 활성 DAY를 가운데 두되 양 끝에서는 밀어 넣어 항상 4칸이 차게 한다
-  const WINDOW = 4;
-  let from = Math.max(0, activeDayIndex - 1);
-  if (from + WINDOW > days.length) from = Math.max(0, days.length - WINDOW);
-  const shown = days.slice(from, from + WINDOW);
   const t = todayISO();
-  // 창 안이 아니라 **여행 전체**가 기준이다 — 창을 밀 때 칸 높이가 들썩이지 않게
+  // 여행지가 여럿일 때만 칸 아래에 여행지 이름 — 바뀌는 날은 같은 날짜가 두 칸이라 이게 없으면
+  // "29 수"가 두 번 나와 구분이 안 된다. 기준은 **여행 전체**라 칸 높이가 들썩이지 않는다.
   const multi = isMultiDest();
+
+  const cells = days
+    .map((d, idx) => {
+      const active = idx === activeDayIndex;
+      const dd = d.date ? new Date(d.date + 'T00:00:00') : null;
+      const num = dd ? String(dd.getDate()) : String(idx + 1);
+      const wd = dd ? WEEKDAY[dd.getDay()] : 'DAY';
+      const label = (dd ? dateShort(d.date) : d.label) + (d.stops.length ? ', 일정 ' + d.stops.length + '곳' : ', 일정 없음');
+      return (
+        '<button class="mb-date-cell' + (active ? ' active' : '') + (d.date === t ? ' is-today' : '') + (multi ? ' has-dest' : '') + '" data-day="' + idx + '" aria-label="' + escapeHtml(label) + '"' + (active ? ' aria-current="date"' : '') + '>' +
+        '<span class="mb-date-num">' + escapeHtml(num) + '</span>' +
+        '<span class="mb-date-wd">' + escapeHtml(wd) + '</span>' +
+        (multi && d.destName ? '<span class="mb-date-dest">' + escapeHtml(d.destName) + '</span>' : '') +
+        '<span class="mb-date-dot' + (d.stops.length ? '' : ' is-empty') + '" aria-hidden="true"></span>' +
+        '</button>'
+      );
+    })
+    .join('');
 
   return [
     '<div class="mb-dates">',
-    shown
-      .map((d, i) => {
-        const idx = from + i;
-        const active = idx === activeDayIndex;
-        const dd = d.date ? new Date(d.date + 'T00:00:00') : null;
-        const num = dd ? String(dd.getDate()) : String(idx + 1);
-        const wd = dd ? WEEKDAY[dd.getDay()] : 'DAY';
-        return (
-          '<button class="mb-date-cell' + (active ? ' active' : '') + (d.date === t ? ' is-today' : '') + (multi ? ' has-dest' : '') + '" data-day="' + idx + '">' +
-          '<span class="mb-date-num">' + escapeHtml(num) + '</span>' +
-          '<span class="mb-date-wd">' + escapeHtml(wd) + '</span>' +
-          // 여행지가 여럿일 때만 어느 여행지인지 적는다. 바뀌는 날은 같은 날짜가 두 칸이라
-          // 이게 없으면 "29 수"가 두 번 나와 구분이 안 된다.
-          (multi && d.destName ? '<span class="mb-date-dest">' + escapeHtml(d.destName) + '</span>' : '') +
-          '</button>'
-        );
-      })
-      .join(''),
-    '  <button class="mb-date-cal" id="mb-daypick" aria-label="날짜 선택">' + IC.calendar + '</button>',
+    '  <div class="mb-dates-scroll" id="mb-dates-scroll">' + cells + '</div>',
+    '  <button class="mb-date-cal" id="mb-daypick" aria-label="날짜 목록 열기">' + IC.calendar + '</button>',
     '</div>',
   ].join('');
 }
@@ -1063,7 +1135,18 @@ function dateStripHtml(): string {
 function todayTabHtml(): string {
   const day = activeDay();
   if (!day) return emptyHtml('일정이 아직 없어요', 'PC에서 ROUTE로 동선을 먼저 만들어 주세요.');
-  if (!day.stops.length) return emptyHtml('이 날은 비어 있어요', '다른 DAY를 보거나, PC에서 일정을 채워 주세요.');
+  // 빈 날에도 날짜 띠는 남긴다 — 예전엔 빈 날을 고르면 띠까지 사라져서 다른 날로 돌아갈 길이
+  // 이 화면에서 없어졌다(여행 탭으로 우회해야 했다)
+  if (!day.stops.length) {
+    return [
+      dateStripHtml(),
+      '<div class="mb-sec-head"><h3 class="mb-sec-title">' + escapeHtml((dateMonthDay(day.date) || day.label) + ' 일정') + '</h3></div>',
+      '<div class="mb-day-empty">',
+      '  <p class="mb-day-empty-title">이 날은 아직 일정이 없어요</p>',
+      '  <p class="mb-day-empty-sub">PC의 ROUTE에서 일정을 채우면 여기에 나타나요.</p>',
+      '</div>',
+    ].join('');
+  }
 
   const s = scheduleFor(day, realLegs, progress);
   const isToday = day.date === todayISO();
@@ -1078,14 +1161,31 @@ function todayTabHtml(): string {
     nowIdx = arrivedIdx >= 0 ? arrivedIdx : day.stops.findIndex((_, i) => now >= s.arriveMin[i] && now < s.departMin[i]);
   }
 
+  // 도착/건너뛰기 버튼은 **지금 다룰 한 곳**에만 단다. 모든 줄에 같은 버튼을 반복하면
+  // 장소 정보보다 버튼이 먼저 보인다. 이미 기록이 있는 줄(도착함·다녀옴·건너뜀)은 상태와
+  // 되돌리기를 그대로 보여준다.
+  //   · 도착한 곳이 있으면 → 그 줄의 [출발]만
+  //   · 없으면 → 마지막으로 끝낸 곳 다음의 첫 '대기' 정류지에 [도착][건너뛰기]
+  const status = (i: number) => progress.get(day.stops[i].key)?.status ?? 'pending';
+  let focusIdx = -1;
+  if (isToday && !day.stops.some((_, i) => status(i) === 'arrived')) {
+    let lastDone = -1;
+    day.stops.forEach((_, i) => { if (status(i) === 'departed' || status(i) === 'skipped') lastDone = i; });
+    for (let i = lastDone + 1; i < day.stops.length; i++) {
+      if (status(i) === 'pending') { focusIdx = i; break; }
+    }
+  }
+
   const rows: string[] = [];
   day.stops.forEach((stop, i) => {
-    rows.push(stopRowHtml(stop, i, s, day.date, i === nowIdx, isToday, progress.get(stop.key)));
-    // 구간 이동은 행과 행 **사이**에 작게 — 실측이 있으면 실측, 없으면 "추정"을 달고 보여준다
+    const showTrack = isToday && (status(i) !== 'pending' || i === focusIdx);
+    rows.push(stopRowHtml(stop, i, s, day.date, i === nowIdx, showTrack, progress.get(stop.key)));
+    // 구간 이동은 두 장소 **사이**에 — 앞 장소와 다음 장소를 잇는 요소다
     if (i < day.stops.length - 1) rows.push(legRowHtml(s.legs[i]));
   });
 
   const nowState = computeNowState(day, s);
+  const title = (dateMonthDay(day.date) || day.label) + ' 일정';
 
   return [
     daySummaryCardHtml(day),
@@ -1093,17 +1193,30 @@ function todayTabHtml(): string {
     geoBarHtml(day),
     isToday ? driftLineHtml(day) : '',
     '<div class="mb-sec-head">',
-    '  <h3 class="mb-sec-title">' + (isToday ? '오늘의 일정' : escapeHtml(day.label) + ' 일정') + '</h3>',
-    '  <span class="mb-sec-meta">' + minToHHMM(s.spanStartMin) + ' – ' + minToHHMM(s.spanEndMin) + '</span>',
+    '  <h3 class="mb-sec-title">' + escapeHtml(title) + '</h3>',
+    '  <span class="mb-sec-meta">' + clockHtml(s.spanStartMin) + ' – ' + clockHtml(s.spanEndMin) + '</span>',
     '</div>',
     '<div class="mb-thread">' + rows.join('') + '</div>',
-    // 원칙 3-1 — 개별 구간마다 "추정"을 반복하는 대신 하루 단위로 한 번 밝힌다
-    s.legCount > s.realLegCount
-      ? '<p class="mb-estimate-note">* 이동·체류 시간은 추정치예요.</p>'
-      : '',
-    // 레퍼런스의 하단 "다음 일정까지" 바 — 지금 상태를 알 때만 뜬다
+    sourceNoteHtml(day, s),
+    // 하단 "다음 일정까지" 바 — 지금 상태를 알 때만 뜬다
     nowState ? nextUpBarHtml(nowState, s) : '',
   ].join('');
+}
+
+/**
+ * 숫자가 어디서 왔는지 — 이동과 체류는 출처가 달라서 따로 밝힌다(원칙 3-1).
+ *   · 이동: 지도 경로(Routes API, 실시간 교통 미반영) 또는 직선거리 기반 추정
+ *   · 체류: 사용자가 정한 값 / 실제 도착·출발 기록 / 장소 유형별 기본값
+ * 해당하는 줄만 나온다 — 전부 실측이면 아무 말도 하지 않는다.
+ */
+function sourceNoteHtml(day: TlDay, s: DaySchedule): string {
+  const lines: string[] = [];
+  if (s.realLegCount > 0) lines.push('이동 시간·거리는 지도 경로 기준이에요. 실시간 교통은 반영하지 않아요.');
+  if (s.legCount > s.realLegCount) lines.push('“약”이 붙은 이동 정보 중 일부는 직선거리로 계산한 추정치예요.');
+  const defaultDwell = day.stops.some((st) => st.customDwellMin == null && progress.get(st.key)?.status !== 'departed');
+  if (defaultDwell) lines.push('정하지 않은 체류 시간은 장소 유형별 기본값으로 잡았어요.');
+  if (!lines.length) return '';
+  return '<ul class="mb-estimate-note">' + lines.map((l) => '<li>' + escapeHtml(l) + '</li>').join('') + '</ul>';
 }
 
 /* ── GPS 자동 체크인 ────────────────────────────────────────
@@ -1173,25 +1286,32 @@ function evaluateGeo(): void {
 }
 
 /** 상단의 위치 토글 + 지금 어디인지 한 줄 */
+/**
+ * 위치 기반 체크인 — **설정**이다(실행 버튼이 아니다). 그래서 이름 + 켜짐/꺼짐 스위치로 그리고,
+ * 아래 한 줄에 지금 상태를 쓴다. 일정 확인을 방해하지 않게 한 줄짜리 보조 요소로 둔다.
+ */
 function geoBarHtml(day: TlDay): string {
   if (!isGeoSupported()) return '';
 
   const atStop = geoAtKey ? day.stops.find((st) => st.key === geoAtKey) : null;
-  const label = !geoOn
-    ? '위치로 자동 체크인'
+  const status = !geoOn
+    ? '켜 두면 일정 장소에 도착할 때 자동으로 기록해요'
     : geoError
       ? geoError
       : atStop
         ? '지금 여기 · ' + atStop.name
         : geoFix
-          ? '일정 중인 장소 근처가 아니에요'
+          ? '일정 장소 근처가 아니에요'
           : '위치 확인 중…';
 
   return [
-    '<button class="mb-geo' + (geoOn ? ' is-on' : '') + (geoError ? ' is-err' : '') + '" id="mb-geo">',
+    '<button class="mb-geo' + (geoOn ? ' is-on' : '') + (geoError ? ' is-err' : '') + '" id="mb-geo" role="switch" aria-checked="' + (geoOn ? 'true' : 'false') + '">',
     '  <span class="mb-geo-ic">' + IC.pin + '</span>',
-    '  <span class="mb-geo-text">' + escapeHtml(label) + '</span>',
-    '  <span class="mb-geo-sw">' + (geoOn ? '끄기' : '켜기') + '</span>',
+    '  <span class="mb-geo-body">',
+    '    <span class="mb-geo-title">위치 기반 체크인</span>',
+    '    <span class="mb-geo-text">' + escapeHtml(status) + '</span>',
+    '  </span>',
+    '  <span class="mb-switch" aria-hidden="true"><span class="mb-switch-knob"></span></span>',
     '</button>',
   ].join('');
 }
@@ -1239,14 +1359,15 @@ function stopRowHtml(
   const done = prog?.status === 'departed' || prog?.status === 'skipped';
   const skipped = prog?.status === 'skipped';
   const warn = hoursWarning(place ?? null, dateISO, s.arriveMin[i], s.departMin[i]);
-  // 지역 한 줄 — 저장된 주소에서 앞쪽만. 없으면 카테고리, 그것도 없으면 줄을 지운다(원칙 3-1)
-  const sub = place?.address ? place.address.split(',').slice(0, 2).join(', ') : place?.category ?? '';
+  // 주소 한 줄 — 저장된 원문 그대로(번역·가공하지 않는다). 길면 한 줄에서 자르고, 전체는 상세에서
+  // 본다. 없으면 공항·숙소처럼 유형만, 그것도 없으면 줄을 지운다(빈 자리를 남기지 않는다).
+  const sub = place?.address || (stop.cat === 'AIRPORT' || stop.cat === 'STAY' ? CAT_LABEL[stop.cat] : '');
 
   return [
     '<div class="mb-row' + (isNow ? ' is-now' : '') + (done ? ' is-done' : '') + (skipped ? ' is-skipped' : '') + '">',
     '  <div class="mb-row-time">',
-    '    <span class="mb-row-clock">' + minToHHMM(s.arriveMin[i]) + '</span>',
-    isNow ? '    <span class="mb-row-nowtag">NOW</span>' : '',
+    '    <span class="mb-row-clock">' + clockHtml(s.arriveMin[i], true) + '</span>',
+    isNow ? '    <span class="mb-row-nowtag">지금</span>' : '',
     '  </div>',
     '  <span class="mb-row-node" aria-hidden="true"></span>',
     '  <div class="mb-row-card" data-stop="' + escapeHtml(stop.key) + '" role="button" tabindex="0">',
@@ -1260,7 +1381,7 @@ function stopRowHtml(
     '    </div>',
     '    <div class="mb-row-acts">',
     '      <a class="mb-row-nav" href="' + directionsHref(stop) + '" target="_blank" rel="noopener" data-nav="' + escapeHtml(stop.key) + '">' + IC.navigate + ' 길찾기</a>',
-    '      <span class="mb-row-detail">' + IC.doc + ' 상세</span>',
+    '      <span class="mb-row-detail">상세' + IC.chevRight + '</span>',
     '    </div>',
     '  </div>',
     showTrack ? '  <div class="mb-row-track">' + trackHtml(stop, prog) + '</div>' : '',
@@ -1272,11 +1393,13 @@ function stopRowHtml(
 function legRowHtml(leg: ReturnType<typeof scheduleFor>['legs'][number]): string {
   if (!leg) return '<div class="mb-leglite is-gap"></div>';
   const cls = leg.mode === 'WALK' ? 'walk' : leg.mode === 'TRANSIT' ? 'transit' : 'taxi';
+  // "택시 · 약 21분 · 8.5km". 지도 경로 값도 실시간 교통을 반영하지 않으므로 "약"을 붙인다 —
+  // 어디서 온 숫자인지는 일정 아래 출처 줄이 밝힌다(sourceNoteHtml)
   return [
-    '<div class="mb-leglite">',
+    '<div class="mb-leglite' + (leg.real ? ' is-real' : '') + '">',
     '  <span class="mb-leglite-ic ' + cls + '">' + MODE_ICON[leg.mode] + '</span>',
-    '  <span>' + escapeHtml(modeLabel(leg.mode)) + ' ' + fmtMin(leg.min) + ' · ' + fmtKm(leg.km) + '</span>',
-    leg.real ? '' : '  <span class="mb-leglite-est">추정</span>',
+    '  <span class="mb-leglite-mode">' + escapeHtml(modeLabel(leg.mode)) + '</span>',
+    '  <span class="mb-leglite-val">약 ' + escapeHtml(fmtMin(leg.min)) + ' · ' + escapeHtml(fmtKm(leg.km)) + '</span>',
     '</div>',
   ].join('');
 }
@@ -1557,6 +1680,23 @@ function bindPager(root: HTMLElement): void {
  * 있으면 어디를 보고 있는지 알 수 없다 — 활성 칩을 가운데로 가져온다.
  * `scrollIntoView`는 바깥 세로 스크롤까지 건드릴 수 있어서 칩 줄의 scrollLeft만 직접 맞춘다.
  */
+/**
+ * 날짜 띠 위치. 고른 날이 바뀌었을 때만 그 칸을 가운데로 옮기고, 그 외의 다시 그리기
+ * (1분 타이머·위치 갱신 등)에서는 사용자가 넘겨 둔 위치를 그대로 둔다 — 안 그러면 띠를 넘겨
+ * 보는 도중에 계속 제자리로 튕긴다.
+ */
+function centerActiveDate(): void {
+  const strip = container?.querySelector('#mb-dates-scroll') as HTMLElement | null;
+  if (!strip) return;
+  if (datesCenteredFor !== activeDayIndex) {
+    const cell = strip.querySelector('.mb-date-cell.active') as HTMLElement | null;
+    if (cell) strip.scrollLeft = cell.offsetLeft - (strip.clientWidth - cell.offsetWidth) / 2;
+    datesCenteredFor = activeDayIndex;
+  } else {
+    strip.scrollLeft = datesScrollLeft;
+  }
+}
+
 function centerActiveChip(): void {
   const strip = container?.querySelector('#mb-tl-chips') as HTMLElement | null;
   const chip = strip?.querySelector('.mb-tl-chip.active') as HTMLElement | null;
@@ -3039,10 +3179,39 @@ function pdReviewsHtml(stop: TlStop): string {
 /* ══════════════ 사진 주입 ══════════════ */
 
 /** 사진 주소를 style 속성에 직접 끼워 넣지 않는다 — 따옴표·괄호가 섞이면 CSS가 깨진다(5-3) */
+/** 불러오지 못한 사진 URL — 다시 그릴 때 깨진 사진 대신 처음부터 대체 화면을 보여준다 */
+const brokenPhotos = new Set<string>();
+/** 이미 한 번 확인 중이거나 확인한 URL(같은 사진을 렌더마다 다시 확인하지 않게) */
+const probedPhotos = new Set<string>();
+
+function markPhotoBroken(el: HTMLElement): void {
+  el.style.backgroundImage = '';
+  el.classList.add('photo-failed');
+  // 썸네일은 핀 아이콘으로, 대표 사진은 배경만 남긴다(CSS)
+  if (el.classList.contains('mb-row-thumb')) {
+    el.classList.add('is-blank');
+    el.innerHTML = IC.pin;
+  }
+}
+
 function applyPhotos(): void {
-  container?.querySelectorAll('[data-photo]').forEach((el) => {
-    const url = (el as HTMLElement).dataset.photo;
-    if (url) (el as HTMLElement).style.backgroundImage = 'url("' + url + '")';
+  container?.querySelectorAll('[data-photo]').forEach((node) => {
+    const el = node as HTMLElement;
+    const url = el.dataset.photo;
+    if (!url) return;
+    if (brokenPhotos.has(url)) { markPhotoBroken(el); return; }
+    el.style.backgroundImage = 'url("' + url + '")';
+    if (probedPhotos.has(url)) return;
+    probedPhotos.add(url);
+    // 배경 이미지는 실패해도 이벤트가 없다 — 같은 URL을 Image로 한 번 확인해 실패를 잡는다
+    const probe = new Image();
+    probe.onerror = () => {
+      brokenPhotos.add(url);
+      container?.querySelectorAll('[data-photo]').forEach((n) => {
+        if ((n as HTMLElement).dataset.photo === url) markPhotoBroken(n as HTMLElement);
+      });
+    };
+    probe.src = url;
   });
 }
 
