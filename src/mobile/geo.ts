@@ -123,7 +123,7 @@ export function startWatch(
     (err) => {
       onError(
         err.code === err.PERMISSION_DENIED
-          ? '위치 권한이 꺼져 있어요'
+          ? '위치 권한이 꺼져 있어요 · 브라우저 설정에서 허용해 주세요'
           : err.code === err.POSITION_UNAVAILABLE
             ? '지금은 위치를 못 찾았어요'
             : '위치 확인이 오래 걸려요'

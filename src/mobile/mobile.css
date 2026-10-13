@@ -59,6 +59,8 @@
 
   /* 파랑 — 몽실이 대표 블루. 주요 액션·선택 상태·링크 */
   --mb-sky: #2F86D6;
+  /* 파랑으로 채운 자리 위의 글자 — Light는 흰색, Dark는 파랑이 밝아서 짙은 남색 */
+  --mb-on-sky: #FFFFFF;
   --mb-sky-wash: #EAF2FC;
   --mb-navy: #0B2A5C;
 
@@ -183,6 +185,7 @@
     --mb-brass-wash: rgba(199, 170, 116, 0.13);
 
     --mb-sky: #7FC2E4;
+    --mb-on-sky: #0B1A2C;
     --mb-sky-wash: rgba(127, 194, 228, 0.14);
     --mb-navy: #8FD8F8;
 
@@ -275,17 +278,19 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(14px + env(safe-area-inset-top)) 18px 6px;
+  padding: calc(8px + env(safe-area-inset-top)) 10px 0 18px;
   flex: none;
 }
 
+/* 브랜드는 조용하게 — 본문보다 눈에 띄지 않는 크기와 색 */
 .mb-brand {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 17px;
+  gap: 7px;
+  font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.01em;
+  color: var(--mb-ink);
 }
 .mb-brand-mark {
   display: grid;
@@ -294,44 +299,49 @@
   height: 26px;
   border-radius: 8px;
   background: var(--mb-sky-wash);
-  border: 1px solid var(--mb-line);
   color: var(--mb-sky);
 }
-.mb-brand-mark svg { width: 15px; height: 15px; }
+.mb-brand-mark svg { width: 16px; height: 16px; }
 
-.mb-top-actions { display: flex; gap: 4px; }
+.mb-top-actions { display: flex; gap: 2px; }
+/* 터치 영역 44px — 아이콘은 20px이지만 누르는 자리는 손가락 크기 */
 .mb-icon-btn {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 11px;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
   color: var(--mb-ink-2);
   transition: background var(--mb-ease) 160ms, color var(--mb-ease) 160ms;
 }
 .mb-icon-btn:hover { background: var(--mb-fill-subtle); color: var(--mb-ink); }
 .mb-icon-btn svg { width: 20px; height: 20px; }
 
-/* DAY 선택 */
+/* 화면 제목 줄 */
 .mb-daybar { padding: 2px 18px 0; flex: none; }
 
+/* 제목 아래 한 줄: 여행지 │ 날짜 │ 날씨. 칸 사이는 얇은 세로선으로만 나눈다(캡슐 배지 없음) */
 .mb-daymeta {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 18px 12px;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  padding: 4px 18px 12px;
   flex: none;
+  font-size: 13px;
+  color: var(--mb-muted);
+  font-variant-numeric: tabular-nums;
 }
-.mb-today-chip {
-  font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  padding: 4px 10px;
-  border-radius: 999px;
-  color: var(--mb-live-soft);
-  background: rgba(217, 109, 12, 0.1);
-  border: 1px solid rgba(217, 109, 12, 0.28);
+.mb-meta-item { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.mb-meta-item + .mb-meta-item::before {
+  content: '';
+  width: 1px;
+  height: 11px;
+  margin: 0 9px;
+  background: var(--mb-line);
 }
+.mb-meta-dest { color: var(--mb-ink-2); font-weight: 600; }
+.mb-meta-dest svg { width: 14px; height: 14px; color: var(--mb-muted); }
 .mb-date { font-size: 13px; color: var(--mb-muted); font-variant-numeric: tabular-nums; }
 
 /* ══════════════ 스크롤 본문 ══════════════ */
@@ -349,12 +359,14 @@
 .mb-scroll::-webkit-scrollbar { display: none; }
 
 .mb-estimate-note {
+  list-style: none;
+  margin: 0;
+  padding: 6px 2px 12px;
   font-size: 11.5px;
-  line-height: 1.6;
+  line-height: 1.55;
   color: var(--mb-muted);
-  padding: 0 2px 12px;
-  opacity: 0.85;
 }
+.mb-estimate-note li + li { margin-top: 2px; }
 
 /* ══════════════ 시간축 — 화면 한가운데를 지나는 선 ══════════════ */
 
@@ -668,20 +680,10 @@
 .mb-tl-open svg { width: 13px; height: 13px; }
 .mb-tl-open:hover { border-color: var(--mb-sky); color: var(--mb-sky); }
 
-/* 날씨 — 받았을 때만 뜬다. 자리를 미리 비워 두지 않는다(없으면 줄이 짧아질 뿐) */
-.mb-wx {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: var(--mb-sky-wash);
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--mb-sky);
-  font-variant-numeric: tabular-nums;
-}
-.mb-wx svg { width: 13px; height: 13px; }
+/* 날씨 — 받았을 때만 뜬다. 자리를 미리 비워 두지 않는다(없으면 줄이 짧아질 뿐).
+   메타 줄의 한 칸이라 배경 없이 아이콘 + 글자만 */
+.mb-wx { color: var(--mb-ink-2); font-weight: 600; }
+.mb-wx svg { width: 15px; height: 15px; color: var(--mb-sky); }
 
 /* ══════════════ 오늘 화면 — 요약 카드 · 날짜 띠 · 일정 줄 ══════════════
  *
@@ -689,53 +691,90 @@
  * 하루가 한 화면에 더 많이 들어온다 — 여행 중엔 "몇 개 남았나"를 스크롤 없이 보는 게 중요하다.
  */
 
-/* ── 오늘 요약 카드 ── */
+/* ── 대표 사진 ──
+   이 날의 분위기를 맡는 자리라 사진이 주인공이다 — 높이를 충분히 주고 그림자·테두리는 뺀다.
+   글자는 아래쪽에만 앉히고, 그 부분만 눌러주는 절제된 스크림을 깐다. */
 .mb-sum {
   position: relative;
-  height: 118px;
-  border-radius: var(--mb-radius);
+  height: 184px;
+  border-radius: 16px;
   overflow: hidden;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
   background: var(--mb-nophoto-bg);
-  box-shadow: var(--mb-shadow-card);
 }
-.mb-sum-photo { position: absolute; inset: 0; background-size: cover; background-position: center; }
-/* 사진 위 스크림 — 중성 먹색(두 테마 공통). 글자가 앉는 아래쪽만 눌러준다 */
+/* 사진이 없으면 높이를 줄인다 — 빈 색 덩어리가 화면을 차지하지 않게 */
+.mb-sum.no-photo { height: 132px; }
+.mb-sum-photo { position: absolute; inset: 0; background-size: cover; background-position: center 42%; }
+.mb-sum-photo.photo-failed { display: none; }
 .mb-sum-scrim {
   position: absolute;
   inset: 0;
   background: linear-gradient(
     180deg,
-    rgba(var(--mb-scrim), 0.12) 0%,
-    rgba(var(--mb-scrim), 0.4) 55%,
-    rgba(var(--mb-scrim), 0.74) 100%
+    rgba(var(--mb-scrim), 0) 22%,
+    rgba(var(--mb-scrim), 0.42) 58%,
+    rgba(var(--mb-scrim), 0.76) 100%
   );
 }
-.mb-sum-body { position: absolute; left: 16px; right: 16px; bottom: 14px; }
+.mb-sum.no-photo .mb-sum-scrim { display: none; }
+.mb-sum-body { position: absolute; left: 18px; right: 18px; bottom: 16px; }
 /* 사진 위 글자는 두 테마 모두 흰색 고정 (mobile.css 상단 원칙 2) */
-.mb-sum-title { font-size: 18px; font-weight: 700; color: #FFFFFF; letter-spacing: -0.01em; }
-.mb-sum-meta { margin-top: 3px; font-size: 12.5px; color: rgba(255, 255, 255, 0.86); }
+.mb-sum-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 750;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  color: #FFFFFF;
+}
+.mb-sum-date { margin: 4px 0 0; font-size: 13.5px; color: rgba(255, 255, 255, 0.92); font-variant-numeric: tabular-nums; }
+.mb-sum-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+.mb-sum-meta svg { width: 14px; height: 14px; flex: none; }
 
-/* ── 날짜 띠 ── */
-.mb-dates { display: flex; gap: 8px; margin-bottom: 18px; }
-.mb-date-cell {
+/* ── 날짜 띠 ──
+   여행 전체 날짜가 가로로 흐르고(한 화면에 4칸), 달력 버튼은 띠 밖 오른쪽에 고정된다 */
+.mb-dates { display: flex; gap: 8px; margin-bottom: 12px; }
+.mb-dates-scroll {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.mb-dates-scroll::-webkit-scrollbar { display: none; }
+.mb-date-cell {
+  flex: 0 0 calc((100% - 24px) / 4);
   min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: 10px 4px;
-  min-height: 56px;
+  gap: 1px;
+  padding: 9px 4px 7px;
+  min-height: 60px;
   border-radius: var(--mb-radius-sm);
   background: var(--mb-surface);
   border: 1px solid var(--mb-line);
+  scroll-snap-align: start;
   transition: background var(--mb-ease) 160ms, border-color var(--mb-ease) 160ms;
 }
-.mb-date-num { font-size: 16px; font-weight: 700; color: var(--mb-ink); font-variant-numeric: tabular-nums; }
-.mb-date-wd { font-size: 11px; color: var(--mb-muted); }
+.mb-date-num { font-size: 17px; font-weight: 700; line-height: 1.2; color: var(--mb-ink); font-variant-numeric: tabular-nums; }
+.mb-date-wd { font-size: 11.5px; color: var(--mb-muted); }
+/* 일정이 있는 날 — 작은 점 하나. 없는 날은 자리만 지켜 칸 높이를 맞춘다 */
+.mb-date-dot { width: 4px; height: 4px; margin-top: 4px; border-radius: 50%; background: var(--mb-sky); opacity: 0.6; }
+.mb-date-dot.is-empty { visibility: hidden; }
 /* 여행지가 여럿일 때만 칸 아래에 여행지 이름이 붙는다 */
-.mb-date-cell.has-dest { min-height: 66px; }
+.mb-date-cell.has-dest { min-height: 72px; }
 .mb-date-dest {
   max-width: 100%;
   margin-top: 1px;
@@ -747,11 +786,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.mb-date-cell.active .mb-date-dest { color: rgba(255, 255, 255, 0.9); }
-/* 선택된 날짜 — 화면에서 파랑을 가장 크게 쓰는 자리 중 하나 */
+/* 선택된 날짜 — 화면에서 파랑을 가장 크게 쓰는 자리 */
 .mb-date-cell.active { background: var(--mb-sky); border-color: transparent; }
 .mb-date-cell.active .mb-date-num,
-.mb-date-cell.active .mb-date-wd { color: #FFFFFF; }
+.mb-date-cell.active .mb-date-wd,
+.mb-date-cell.active .mb-date-dest { color: var(--mb-on-sky); }
+.mb-date-cell.active .mb-date-dot { background: var(--mb-on-sky); opacity: 0.9; }
 /* 오늘은 선택이 아니어도 표시가 남아야 한다 */
 .mb-date-cell.is-today:not(.active) { border-color: var(--mb-sky); }
 .mb-date-cell.is-today:not(.active) .mb-date-num { color: var(--mb-sky); }
@@ -765,43 +805,67 @@
   border: 1px solid var(--mb-line);
   color: var(--mb-ink-2);
 }
-.mb-date-cal svg { width: 19px; height: 19px; }
+.mb-date-cal svg { width: 20px; height: 20px; }
 
-/* ── GPS 자동 체크인 ──
-   꺼져 있을 땐 조용한 회색, 켜지면 파랑, 오류면 붉은 쪽. 상태가 색으로 바로 읽혀야
-   "켰는데 안 되는 중"인지 "꺼둔 것"인지 헷갈리지 않는다. */
+/* ── 위치 기반 체크인 ──
+   **설정**이라 이름 + 스위치로 그린다(실행 버튼처럼 보이면 눌러서 "체크인"하는 줄 안다).
+   보조 기능이라 배경은 조용히 두고, 켜짐은 스위치 색으로만 말한다. */
 .mb-geo {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  margin-bottom: 14px;
-  padding: 11px 13px;
-  min-height: 44px;
+  margin-bottom: 4px;
+  padding: 10px 12px;
+  min-height: 52px;
   border-radius: var(--mb-radius-sm);
   background: var(--mb-surface);
   border: 1px solid var(--mb-line);
   text-align: left;
-  transition: border-color var(--mb-ease) 160ms, background var(--mb-ease) 160ms;
 }
 .mb-geo-ic { display: grid; place-items: center; color: var(--mb-muted); flex: none; }
-.mb-geo-ic svg { width: 16px; height: 16px; }
-.mb-geo-text { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--mb-ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mb-geo-sw { flex: none; font-size: 11.5px; font-weight: 700; color: var(--mb-muted); }
-
-.mb-geo.is-on { background: var(--mb-sky-wash); border-color: transparent; }
-.mb-geo.is-on .mb-geo-ic,
-.mb-geo.is-on .mb-geo-text,
-.mb-geo.is-on .mb-geo-sw { color: var(--mb-sky); }
-
-.mb-geo.is-err { background: var(--mb-danger-wash); border-color: transparent; }
+.mb-geo-ic svg { width: 18px; height: 18px; }
+.mb-geo-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.mb-geo-title { font-size: 13.5px; font-weight: 650; color: var(--mb-ink); }
+.mb-geo-text { font-size: 12px; line-height: 1.4; color: var(--mb-muted); overflow-wrap: anywhere; }
+.mb-switch {
+  position: relative;
+  flex: none;
+  width: 42px;
+  height: 26px;
+  border-radius: 13px;
+  background: var(--mb-disabled);
+  transition: background var(--mb-ease) 180ms;
+}
+.mb-switch-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform var(--mb-ease) 180ms;
+}
+.mb-geo.is-on .mb-switch { background: var(--mb-sky); }
+.mb-geo.is-on .mb-switch-knob { transform: translateX(16px); }
+.mb-geo.is-on .mb-geo-ic { color: var(--mb-sky); }
+.mb-geo.is-on .mb-geo-text { color: var(--mb-ink-2); }
 .mb-geo.is-err .mb-geo-ic,
 .mb-geo.is-err .mb-geo-text { color: var(--mb-danger); }
 
-/* ── 섹션 머리 ── */
-.mb-sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
-.mb-sec-title { font-size: 17px; font-weight: 700; color: var(--mb-ink); }
-.mb-sec-meta { font-size: 12px; color: var(--mb-muted); font-variant-numeric: tabular-nums; }
+/* ── 섹션 머리: 제목(왼쪽) + 하루 시간대(오른쪽, 보조) ── */
+.mb-sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 20px 0 12px; }
+.mb-sec-title { margin: 0; font-size: 18px; font-weight: 750; letter-spacing: -0.01em; color: var(--mb-ink); }
+.mb-sec-meta { flex: none; font-size: 12.5px; color: var(--mb-muted); font-variant-numeric: tabular-nums; }
+/* 자정을 넘긴 시각 — 범위에서는 "00:54+1", 일정 줄에서는 시각 아래 "다음 날" */
+.mb-plus1 { margin-left: 1px; font-size: 9.5px; font-weight: 700; vertical-align: super; color: var(--mb-muted); }
+/* 일정이 없는 날 — 날짜 띠는 그대로 두고 아래만 비운다 */
+.mb-day-empty { padding: 28px 8px; text-align: center; border: 1px dashed var(--mb-line); border-radius: 14px; }
+.mb-day-empty-title { margin: 0; font-size: 14.5px; font-weight: 650; color: var(--mb-ink); }
+.mb-day-empty-sub { margin: 6px 0 0; font-size: 12.5px; color: var(--mb-muted); }
+.mb-nextday { display: block; margin-top: 1px; font-size: 10px; font-weight: 600; color: var(--mb-muted); }
 
 /* ── 일정 줄 ──
    왼쪽에 시각 + 세로선이 흐르고, 오른쪽에 흰 카드가 붙는다. 세로선은 .mb-row-node의
@@ -809,12 +873,12 @@
 /* 세로선은 줄마다 긋지 않고 **타래 전체에 하나**로 긋는다. 줄마다 그으면 카드 높이를
    미리 알아야 해서(긴 이름·경고·도착 버튼이 붙으면 늘어난다) 어딘가에서 끊긴다.
    마디(.mb-row-node)가 표면색 배경을 갖고 그 위에 올라앉아 선을 끊어 보이게 한다.
-   left 값은 시각 칸(44px) + gap(10px) + 마디 절반(5px) − 선 절반(1px) = 58px. */
+   left 값은 시각 칸(42px) + gap(10px) + 마디 절반(5px) − 선 절반(1px) = 56px. */
 .mb-thread { position: relative; display: flex; flex-direction: column; }
 .mb-thread::before {
   content: '';
   position: absolute;
-  left: 58px;
+  left: 56px;
   top: 22px;
   bottom: 22px;
   width: 2px;
@@ -822,31 +886,29 @@
 }
 
 .mb-row { position: relative; display: flex; flex-wrap: wrap; gap: 0 10px; }
-.mb-row-time { flex: none; width: 44px; padding-top: 13px; text-align: right; }
+.mb-row-time { flex: none; width: 42px; padding-top: 14px; text-align: right; }
 .mb-row-clock {
   display: block;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--mb-ink-2);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
+/* "지금" — 배지 대신 글자 하나. 주황은 "지금"에만 쓴다 */
 .mb-row-nowtag {
-  display: inline-block;
-  margin-top: 3px;
-  padding: 1px 5px;
-  border-radius: 999px;
-  font-size: 9px;
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
   font-weight: 800;
-  letter-spacing: 0.06em;
-  background: var(--mb-live-grad);
-  color: var(--mb-live-fg);
+  color: var(--mb-live);
 }
 /* 마디 + 그 아래로 흐르는 세로선 */
 .mb-row-node {
   position: relative;
   flex: none;
   width: 10px;
-  margin-top: 17px;
+  margin-top: 18px;
   height: 10px;
   border-radius: 50%;
   background: var(--mb-surface);
@@ -862,12 +924,12 @@
   align-items: center;
   gap: 10px;
   margin-bottom: 8px;
-  padding: 10px;
-  border-radius: var(--mb-radius-sm);
+  padding: 11px;
+  border-radius: 14px;
   background: var(--mb-surface);
   border: 1px solid var(--mb-line);
-  box-shadow: var(--mb-shadow-card);
   text-align: left;
+  cursor: pointer;
   transition: border-color var(--mb-ease) 160ms;
 }
 .mb-row-card:hover { border-color: var(--mb-sky); }
@@ -876,82 +938,108 @@
 .mb-row.is-done .mb-row-card { opacity: 0.62; }
 .mb-row.is-skipped .mb-row-name { text-decoration: line-through; color: var(--mb-muted); }
 
+/* 썸네일은 장소를 알아보게 돕는 정도 — 이름보다 커지지 않게 52px */
 .mb-row-thumb {
   flex: none;
-  width: 46px;
-  height: 46px;
-  border-radius: var(--mb-radius-xs);
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
   background-size: cover;
   background-position: center;
   background-color: var(--mb-surface-3);
 }
 .mb-row-thumb.is-blank { display: grid; place-items: center; color: var(--mb-muted); }
-.mb-row-thumb.is-blank svg { width: 18px; height: 18px; }
+.mb-row-thumb.is-blank svg { width: 20px; height: 20px; }
 
-.mb-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mb-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+/* 카드에서 가장 중요한 글자 — 두 줄까지 보여주고 그 뒤만 자른다(현지 상호는 원문 그대로) */
 .mb-row-name {
-  font-size: 14.5px;
-  font-weight: 650;
-  color: var(--mb-ink);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.32;
+  color: var(--mb-ink);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 .mb-row-sub {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--mb-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.mb-row-warn { font-size: 11px; font-weight: 600; color: var(--mb-danger); }
+.mb-row-warn { font-size: 11.5px; font-weight: 600; color: var(--mb-danger); }
 
-.mb-row-acts { flex: none; display: flex; flex-direction: column; gap: 5px; }
-.mb-row-nav,
+/* 버튼 위계: 길찾기(주 행동, 채움) > 상세(보조, 글자만). 카드 전체가 상세로 가므로
+   "상세 ›"는 누를 자리를 알려주는 표시에 가깝다 — 그래서 테두리도 없이 조용하게 둔다.
+   이 열이 좁을수록 장소 이름이 넓어진다 */
+.mb-row-acts { flex: none; display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+.mb-row-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 36px;
+  padding: 0 9px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+  text-decoration: none;
+  background: var(--mb-sky);
+  color: var(--mb-on-sky);
+}
+.mb-row-nav svg { width: 13px; height: 13px; flex: none; }
 .mb-row-detail {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  min-width: 74px;
-  padding: 7px 9px;
-  min-height: 32px;
-  border-radius: var(--mb-radius-xs);
+  gap: 1px;
+  min-height: 26px;
   font-size: 11.5px;
   font-weight: 600;
-  text-decoration: none;
+  color: var(--mb-muted);
+  white-space: nowrap;
 }
-.mb-row-nav svg,
-.mb-row-detail svg { width: 13px; height: 13px; flex: none; }
-/* 길찾기가 이 화면에서 가장 자주 눌리는 버튼이라 유일하게 채운다 */
-.mb-row-nav { background: var(--mb-sky); color: #FFFFFF; }
-.mb-row-detail { background: var(--mb-sky-wash); color: var(--mb-sky); }
+.mb-row-detail svg { width: 12px; height: 12px; }
+
+/* 아주 좁은 폰(≤360px) — 버튼 열이 이름을 짓누르지 않게 버튼을 카드 아래 줄로 내린다 */
+@media (max-width: 360px) {
+  .mb-row-card { flex-wrap: wrap; }
+  .mb-row-main { flex: 1 1 0; }
+  .mb-row-acts { flex: 1 0 100%; flex-direction: row; justify-content: flex-end; align-items: center; gap: 10px; }
+}
 
 /* 카드 **아래** 한 줄 — 카드에 겹쳐 그리면 주소·영업시간 경고를 가린다(실제로 가렸던 버그).
-   시간 열 44 + 간격 10 + 마디 10 + 간격 10 = 74px만큼 들여 카드와 왼쪽을 맞춘다 */
-.mb-row-track { flex: 0 0 100%; box-sizing: border-box; padding: 0 0 8px 74px; margin-top: -2px; }
+   시간 열 42 + 간격 10 + 마디 10 + 간격 10 = 72px만큼 들여 카드와 왼쪽을 맞춘다 */
+.mb-row-track { flex: 0 0 100%; box-sizing: border-box; padding: 0 0 8px 72px; margin-top: -2px; }
 
-/* ── 구간 이동 (얇은 줄) ── */
+/* ── 구간 이동 ──
+   앞 장소와 다음 장소를 잇는 줄 — 카드가 아니라 시간축 옆의 글줄로 둔다.
+   이름보다 작지만 걸으면서도 읽히는 크기(12.5px). */
 .mb-leglite {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 0 0 8px 74px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  align-self: flex-start;
-  font-size: 11px;
+  margin: 0 0 8px 72px;
+  padding: 2px 2px 4px;
+  font-size: 12.5px;
   color: var(--mb-muted);
-  background: var(--mb-fill-faint);
   font-variant-numeric: tabular-nums;
 }
 .mb-leglite.is-gap { display: none; }
 .mb-leglite-ic { display: grid; place-items: center; }
-.mb-leglite-ic svg { width: 12px; height: 12px; }
+.mb-leglite-ic svg { width: 15px; height: 15px; }
 .mb-leglite-ic.walk { color: var(--mb-walk); }
 .mb-leglite-ic.transit { color: var(--mb-transit); }
 .mb-leglite-ic.taxi { color: var(--mb-taxi); }
-.mb-leglite-est { opacity: 0.75; }
+.mb-leglite-mode { font-weight: 650; color: var(--mb-ink-2); }
+.mb-leglite-mode::after { content: '·'; margin-left: 6px; color: var(--mb-muted); font-weight: 400; }
 
 /* ── 하단 "다음 일정" 바 ── */
 .mb-nextup {
