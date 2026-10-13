@@ -247,10 +247,18 @@ let padRate: { rate: number | null; source: string } | null = null;
 
 /* ── GPS 현재 위치 ── */
 /**
- * 위치 자동 확인은 **기본 꺼짐**이다. 권한을 묻는 건 사용자 제스처 안에서만 해야 하고
- * (자동으로 물으면 대부분 거절당하고 그 뒤로는 다시 못 묻는다), 위치 구독은 배터리를 쓴다.
- * 여행 중 배터리는 생명줄이라 사용자가 켤 때만 켠다.
+ * 위치 자동 확인은 **여행 중(오늘이 여행 DAY일 때)에는 기본 켜짐**이다. 집에서 계획만 볼 때는
+ * 켜지 않는다 — 쓸모 없이 권한을 묻고 배터리를 쓰기 때문이다. 사용자가 한 번 끄면 그 선택을
+ * 이 기기에 기억하고 다시 자동으로 켜지 않는다(`GEO_OFF_KEY`).
+ * 저정밀(`enableHighAccuracy: false`)로 구독해 배터리 부담을 줄였다.
  */
+const GEO_OFF_KEY = 'mb-geo-off';
+function geoPrefOff(): boolean {
+  try { return localStorage.getItem(GEO_OFF_KEY) === '1'; } catch { return false; }
+}
+function setGeoPrefOff(off: boolean): void {
+  try { if (off) localStorage.setItem(GEO_OFF_KEY, '1'); else localStorage.removeItem(GEO_OFF_KEY); } catch { /* 저장 불가면 이번 방문에만 적용 */ }
+}
 let geoOn = false;
 let geoFix: GeoFix | null = null;
 let geoError = '';
@@ -508,7 +516,8 @@ export async function renderMobileContent(host: HTMLElement, tripId: string): Pr
   subscribeRoutePlan(tripId, () => { void reloadFromRemote(); });
   subscribeStopProgress(tripId, () => { void loadProgressForActiveDay(); });
   void loadRealLegsForActiveDay();
-  void loadProgressForActiveDay();
+  // 도착 자동 기록이 사람이 이미 남긴 기록을 덮어쓰지 않도록, 진행 기록을 읽은 뒤에 위치를 켠다
+  void loadProgressForActiveDay().finally(autoStartGeo);
   void loadWeatherForActiveDay();
   // 요약 카드의 "예약 서류 N건"이 이 값을 쓴다 — 지갑 탭과 같은 데이터를 한 번만 받는다
   void ensureWalletDocs();
@@ -1107,6 +1116,7 @@ function todayTabHtml(): string {
  */
 function toggleGeo(): void {
   if (geoOn) {
+    setGeoPrefOff(true); // 사용자가 끈 것 — 다음에 열어도 자동으로 켜지 않는다
     stopWatch();
     geoOn = false;
     geoFix = null;
@@ -1115,6 +1125,11 @@ function toggleGeo(): void {
     render();
     return;
   }
+  setGeoPrefOff(false);
+  startGeo();
+}
+
+function startGeo(): void {
   geoError = '';
   const ok = startWatch(
     (fix) => { geoFix = fix; geoError = ''; evaluateGeo(); },
@@ -1122,6 +1137,13 @@ function toggleGeo(): void {
   );
   geoOn = ok && isWatching();
   render();
+}
+
+/** 여행 중이고 사용자가 끈 적이 없으면 자동으로 켠다. 진행 기록을 읽은 **뒤에** 불러야 한다. */
+function autoStartGeo(): void {
+  if (geoOn || geoPrefOff() || !isGeoSupported() || !currentTripId) return;
+  if (todayDayIndex() < 0) return;
+  startGeo();
 }
 
 /** 새 위치가 올 때마다: 어느 정류지인지 가리고, 오늘이면 도착을 기록한다. */
