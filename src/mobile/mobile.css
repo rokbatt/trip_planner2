@@ -397,31 +397,32 @@
 /* 지금 이 순간에 관한 동작이라 NOW 배지와 같은 주황 채움을 쓴다 */
 .mb-track-btn.primary { color: var(--mb-live-fg); background: var(--mb-live-grad); }
 .mb-track-btn.ghost {
-  color: rgba(255, 255, 255, 0.85);
-  background: rgba(13, 12, 11, 0.5);
-  border-color: rgba(255, 255, 255, 0.18);
+  color: var(--mb-muted);
+  background: var(--mb-fill-subtle);
+  border-color: var(--mb-line);
 }
+/* 이 줄은 사진 위가 아니라 흰 카드 아래에 놓인다 — 글자색은 테마 변수여야 Light/Dark 둘 다 읽힌다 */
 .mb-track-status {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   font-size: 12px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--mb-ink-2);
   font-variant-numeric: tabular-nums;
 }
 .mb-track-status svg { width: 12px; height: 12px; color: var(--mb-live); }
-.mb-track-status.done { color: rgba(255, 255, 255, 0.72); }
-.mb-track-status.muted { color: rgba(255, 255, 255, 0.55); }
+.mb-track-status.done { color: var(--mb-muted); }
+.mb-track-status.muted { color: var(--mb-disabled); }
 .mb-track-undo {
   font-size: 11px;
   font-weight: 600;
   padding: 4px 4px;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--mb-muted);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.mb-track-undo:hover { color: rgba(255, 255, 255, 0.85); }
+.mb-track-undo:hover { color: var(--mb-ink); }
 
 /* ══════════════ TIMELINE — 옆으로 넘겨 보는 DAY ══════════════
  *
@@ -820,7 +821,7 @@
   background: var(--mb-line);
 }
 
-.mb-row { position: relative; display: flex; gap: 10px; }
+.mb-row { position: relative; display: flex; flex-wrap: wrap; gap: 0 10px; }
 .mb-row-time { flex: none; width: 44px; padding-top: 13px; text-align: right; }
 .mb-row-clock {
   display: block;
@@ -926,7 +927,9 @@
 .mb-row-nav { background: var(--mb-sky); color: #FFFFFF; }
 .mb-row-detail { background: var(--mb-sky-wash); color: var(--mb-sky); }
 
-.mb-row-track { position: absolute; left: 74px; right: 0; bottom: 8px; }
+/* 카드 **아래** 한 줄 — 카드에 겹쳐 그리면 주소·영업시간 경고를 가린다(실제로 가렸던 버그).
+   시간 열 44 + 간격 10 + 마디 10 + 간격 10 = 74px만큼 들여 카드와 왼쪽을 맞춘다 */
+.mb-row-track { flex: 0 0 100%; box-sizing: border-box; padding: 0 0 8px 74px; margin-top: -2px; }
 
 /* ── 구간 이동 (얇은 줄) ── */
 .mb-leglite {
