@@ -20,7 +20,9 @@ import {
   loadStaySegments,
   isSyntheticDestination,
   dayNumberOffsetFor,
+  destinationDayCount,
 } from '../trips/destinations';
+import { planSpans } from './tripSpans';
 import { loadRoutePlan, isRouteStorageReady } from '../route/routeStore';
 import type { StoredStop } from '../route/routeStore';
 import {
@@ -72,7 +74,15 @@ export interface TlStop {
 }
 
 export interface TlDay {
+  /** **그 여행지 안에서의** 순번(0부터) — route_days.day_index와 trip_stop_progress가 이 값으로 저장된다 */
   dayIndex: number;
+  /** 이 DAY가 속한 여행지. 합성 여행지(아직 destination 행이 없는 트립)면 null.
+   *  여러 여행지를 이어 붙인 모델에서는 이 값으로 "어느 여행지의 DAY인지"를 되짚는다 —
+   *  도착 기록이 (destination_id, day_index)로 저장되기 때문이다. */
+  destId: string | null;
+  destName: string | null;
+  /** **여행 전체 기준** DAY 번호(1부터) — 라벨 "DAY n"의 n이고, 서류의 day_start/day_end와 같은 기준이다 */
+  dayNumber: number;
   label: string;
   /** 이 DAY의 실제 캘린더 날짜 (YYYY-MM-DD). 시작일을 모르면 null */
   date: string | null;
@@ -422,17 +432,19 @@ async function loadPlaces(tripId: string): Promise<Place[]> {
 }
 
 /**
- * 저장된 동선(route_days/route_stops)을 하루 모델로 변환한다.
- * ROUTE가 숙소·공항 앵커까지 전부 순서대로 저장해 두므로, 여기서 앵커를 다시 계산하지 않고
- * 저장된 순서를 그대로 신뢰한다 — 그래야 화면끼리 일정이 어긋날 여지가 없다.
+ * 여행지 **하나**를 하루 모델로 만든다. 활성 여행지만 보는 PC(`loadDayModel`)와 모든 여행지를
+ * 이어 보여주는 모바일(`loadTripDayModel`)이 **이 함수 하나를 공유한다** — 같은 DAY인데 두 화면의
+ * 정류지·시각이 다르면 그 자체가 버그이기 때문이다(파일 머리말).
+ *
+ * `offset`은 이 여행지 앞에 이미 지나간 DAY 수다. DAY 라벨·번호가 여행 전체 기준으로 이어진다.
  */
-export async function loadDayModel(trip: Trip): Promise<DayModel> {
-  const places = await loadPlaces(trip.id);
-  const placeById = new Map(places.map((p) => [p.id, p]));
-
-  const destinations = await loadDestinations(trip);
-  const dest: TripDestination | null = resolveActiveDestination(trip.id, destinations) ?? null;
-  const activeDestId = dest && !isSyntheticDestination(dest.id) ? dest.id : null;
+async function buildDestinationDays(
+  trip: Trip,
+  dest: TripDestination | null,
+  placeById: Map<string, Place>,
+  offset: number
+): Promise<{ days: TlDay[]; ctx: DayModelContext; staySegments: StaySegment[]; destId: string | null; storageReady: boolean }> {
+  const destId = dest && !isSyntheticDestination(dest.id) ? dest.id : null;
 
   const segments = dest ? await loadStaySegments(trip, dest) : [];
   const staySegments = [...segments].sort((a, b) => (a.start_date ?? '').localeCompare(b.start_date ?? ''));
@@ -447,30 +459,21 @@ export async function loadDayModel(trip: Trip): Promise<DayModel> {
 
   // DAY 개수 = 숙박 일수 + 1 (ROUTE와 같은 계산 — 마지막 출국일도 하나의 DAY다)
   const start = dest?.start_date ?? trip.start_date;
-  const end = dest?.end_date ?? trip.end_date;
-  let nights = 1;
-  if (start && end) {
-    const diff = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000);
-    nights = Math.max(1, diff);
-  }
-  const dayCount = Math.max(2, Math.min(nights, 10) + 1);
-
-  // ROUTE와 같은 계산 — 이 여행지 앞에 다른 여행지가 있으면 그만큼 DAY 번호를 밀어서
-  // 여행 전체 기준으로 이어지는 번호를 보여준다(예: 방콕 DAY1~3 다음 푸켓은 DAY4부터).
-  const dayOffset = activeDestId ? dayNumberOffsetFor(destinations, activeDestId, trip) : 0;
+  const dayCount = destinationDayCount(dest, trip);
 
   const days: TlDay[] = Array.from({ length: dayCount }, (_, i) => ({
     dayIndex: i,
-    label: 'DAY ' + (dayOffset + i + 1),
+    destId,
+    destName: dest?.name ?? null,
+    dayNumber: offset + i + 1,
+    label: 'DAY ' + (offset + i + 1),
     date: start ? shiftDate(start, i) : null,
     stops: [] as TlStop[],
   }));
 
-  if (!activeDestId) {
-    return { days, ctx, activeDestId: null, destinations, staySegments, storageReady: false };
-  }
+  if (!destId) return { days, ctx, staySegments, destId: null, storageReady: false };
 
-  const stored = await loadRoutePlan(activeDestId);
+  const stored = await loadRoutePlan(destId);
   const storageReady = isRouteStorageReady();
   if (stored) {
     stored.forEach((sd) => {
@@ -480,5 +483,83 @@ export async function loadDayModel(trip: Trip): Promise<DayModel> {
     });
   }
 
-  return { days, ctx, activeDestId, destinations, staySegments, storageReady };
+  return { days, ctx, staySegments, destId, storageReady };
+}
+
+/** 활성 여행지 하나만 — 지금까지의 동작 그대로. 이미 불러온 places/destinations를 받는다. */
+async function loadActiveOnly(
+  trip: Trip,
+  placeById: Map<string, Place>,
+  destinations: TripDestination[]
+): Promise<DayModel> {
+  const dest: TripDestination | null = resolveActiveDestination(trip.id, destinations) ?? null;
+  const activeId = dest && !isSyntheticDestination(dest.id) ? dest.id : null;
+
+  // ROUTE와 같은 계산 — 이 여행지 앞에 다른 여행지가 있으면 그만큼 DAY 번호를 밀어서
+  // 여행 전체 기준으로 이어지는 번호를 보여준다(예: 방콕 DAY1~3 다음 푸켓은 DAY4부터).
+  const offset = activeId ? dayNumberOffsetFor(destinations, activeId, trip) : 0;
+  const built = await buildDestinationDays(trip, dest, placeById, offset);
+
+  return {
+    days: built.days,
+    ctx: built.ctx,
+    activeDestId: activeId,
+    destinations,
+    staySegments: built.staySegments,
+    storageReady: built.storageReady,
+  };
+}
+
+/**
+ * 저장된 동선(route_days/route_stops)을 하루 모델로 변환한다 — **활성 여행지 하나만.**
+ * ROUTE가 숙소·공항 앵커까지 전부 순서대로 저장해 두므로, 여기서 앵커를 다시 계산하지 않고
+ * 저장된 순서를 그대로 신뢰한다 — 그래야 화면끼리 일정이 어긋날 여지가 없다.
+ */
+export async function loadDayModel(trip: Trip): Promise<DayModel> {
+  const places = await loadPlaces(trip.id);
+  const placeById = new Map(places.map((p) => [p.id, p]));
+  const destinations = await loadDestinations(trip);
+  return loadActiveOnly(trip, placeById, destinations);
+}
+
+/**
+ * **모든 여행지를 날짜순으로 이어 붙인** 하루 모델 — 모바일 Companion용.
+ *
+ * 폰에서는 여행지를 고르는 일이 곧 불편이다. 방콕 DAY 1~4 다음에 푸켓 DAY 5~가 선택 없이
+ * 쭉 이어져야 한다. 각 날은 `destId`/`dayNumber`로 자기 여행지와 여행 전체 번호를 기억한다.
+ *
+ * 비용(원칙 3-2): 여행지마다 route_plan을 한 번씩 더 읽는다(여행지 N개면 N번, 병렬).
+ * 정류지 좌표·진행 기록·실측 경로는 **여전히 활성 DAY 것만** 불러온다.
+ * 여행지가 하나 이하면 `loadDayModel`과 완전히 같은 결과다.
+ */
+export async function loadTripDayModel(trip: Trip): Promise<DayModel> {
+  const places = await loadPlaces(trip.id);
+  const placeById = new Map(places.map((p) => [p.id, p]));
+  const destinations = await loadDestinations(trip);
+
+  const spans = planSpans(destinations, trip);
+  if (spans.length <= 1) return loadActiveOnly(trip, placeById, destinations);
+
+  const built = await Promise.all(
+    spans.map((span) => buildDestinationDays(trip, span.dest, placeById, span.offset))
+  );
+
+  const basecampIds = new Set<string>();
+  const airportPlaceByName = new Map<string, Place>();
+  built.forEach((b) => {
+    b.ctx.basecampIds.forEach((id) => basecampIds.add(id));
+    b.ctx.airportPlaceByName.forEach((place, name) => airportPlaceByName.set(name, place));
+  });
+
+  const active = resolveActiveDestination(trip.id, destinations);
+  return {
+    days: built.flatMap((b) => b.days),
+    ctx: { placeById, basecampIds, airportPlaceByName },
+    activeDestId: active && !isSyntheticDestination(active.id) ? active.id : null,
+    destinations,
+    staySegments: built
+      .flatMap((b) => b.staySegments)
+      .sort((a, b) => (a.start_date ?? '').localeCompare(b.start_date ?? '')),
+    storageReady: built.every((b) => b.storageReady),
+  };
 }
