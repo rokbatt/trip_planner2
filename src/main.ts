@@ -4,7 +4,10 @@
 
 import './styles/global.css';
 
-import { supabase } from './supabase';
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase';
+import { offlineFallbackUser } from './offline/auth';
+import { clearOfflineRest } from './offline/restCache';
+import { clearOfflineDocs } from './offline/docs';
 import { store } from './store';
 import { addRoute, setNotFound, startRouter, navigate, rerender, currentPath } from './router';
 
@@ -122,14 +125,33 @@ const originalHandleRoute = () => {
 let lastKnownUserId: string | null = null;
 
 supabase.auth.onAuthStateChange((event, session) => {
+  // 콜백 안에서 다른 Supabase 호출을 기다리면 교착될 수 있어(공식 문서 경고) 바깥으로 미룬다
+  setTimeout(() => { void handleAuthChange(event, session); }, 0);
+});
+
+async function handleAuthChange(event: string, session: { user: import('@supabase/supabase-js').User } | null): Promise<void> {
   console.log('[Auth]', event, session?.user?.email ?? '(no user)');
 
-  const newUserId = session?.user?.id ?? null;
+  // 로그아웃 — 이 기기에 저장해 둔 여행 데이터·서류를 지운다
+  if (event === 'SIGNED_OUT') {
+    void clearOfflineRest();
+    void clearOfflineDocs();
+  }
+
+  // 오프라인에서 열었는데 토큰 갱신을 못 해 세션이 비었으면, 남은 로그인 기록으로 연다
+  // (offline/auth.ts — 그대로 두면 비행기에서 내려 항공권을 꺼내려는 순간 로그인 화면으로 튕긴다)
+  let user = session?.user ?? null;
+  if (!user && event === 'INITIAL_SESSION') {
+    user = await offlineFallbackUser(SUPABASE_URL, SUPABASE_ANON_KEY);
+    if (user) console.log('[Auth] 오프라인 — 저장된 로그인 기록으로 엽니다');
+  }
+
+  const newUserId = user?.id ?? null;
   const userChanged = newUserId !== lastKnownUserId;
   const wasFirstCheck = !store.get('authChecked');
   lastKnownUserId = newUserId;
 
-  store.set('user', session?.user ?? null);
+  store.set('user', user);
   store.set('authChecked', true);
 
   if (!userChanged && !wasFirstCheck) {
@@ -138,7 +160,7 @@ supabase.auth.onAuthStateChange((event, session) => {
   }
 
   // 로그인 직후, 초대 링크를 통해 들어왔던 거라면 그 초대 페이지로 되돌아감
-  if (session?.user) {
+  if (user) {
     const pendingCode = consumePendingInvite();
     if (pendingCode) {
       navigate('join/' + pendingCode);
@@ -149,7 +171,7 @@ supabase.auth.onAuthStateChange((event, session) => {
   if (originalHandleRoute()) {
     rerender();
   }
-});
+}
 
 // ─── 라우터 시작 ───
 window.addEventListener('hashchange', () => {
@@ -160,9 +182,25 @@ if (originalHandleRoute()) {
   startRouter();
 }
 
-// ─── 서비스워커 등록 (홈 화면 추가용) ───
-// public/sw.js는 캐싱을 하지 않는다 — 등록의 목적은 설치 가능 상태를 만드는 것뿐이고,
-// 오프라인 팩은 docs/MOBILE_STRATEGY.md M2에서 별도로 설계한다.
+// ─── 오프라인에서 열었을 때 ───
+// 평소엔 세션 확인이 1초 안에 끝난다. 1.5초가 지나도 안 끝났으면 오프라인일 수 있으니
+// 서버에 닿는지 확인하고, 닿지 않으면 이 기기의 로그인 기록으로 먼저 연다(offline/auth.ts).
+// 평소(온라인)에는 이 확인 요청 자체가 나가지 않는다.
+setTimeout(() => {
+  if (store.get('authChecked')) return;
+  void offlineFallbackUser(SUPABASE_URL, SUPABASE_ANON_KEY).then((user) => {
+    if (!user || store.get('authChecked')) return;
+    console.log('[Auth] 오프라인 — 저장된 로그인 기록으로 먼저 엽니다');
+    lastKnownUserId = user.id;
+    store.set('user', user);
+    store.set('authChecked', true);
+    if (originalHandleRoute()) rerender();
+  });
+}, 1500);
+
+// ─── 서비스워커 등록 (홈 화면 추가 + 오프라인) ───
+// sw.js는 빌드 때 만들어진다(vite.config.ts의 swPlugin, 원본 src/pwa/sw-template.js) —
+// 앱 화면(HTML/JS/CSS)을 저장해 오프라인에서도 열리게 하고, 장소 사진을 저장한다.
 // dev에서는 등록하지 않는다(HMR과 섞이면 "왜 안 바뀌지"로 시간을 태운다).
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -172,7 +210,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   });
 }
 
-// ─── 안전장치: 5초 타임아웃 ───
+// ─── 안전장치: 10초 타임아웃 (오프라인 판정이 최대 4초 걸린다) ───
 setTimeout(() => {
   if (!store.get('authChecked')) {
     console.warn('[Auth] 세션 확인 타임아웃');
@@ -180,4 +218,4 @@ setTimeout(() => {
     store.set('user', null);
     if (originalHandleRoute()) rerender();
   }
-}, 5000);
+}, 10000);

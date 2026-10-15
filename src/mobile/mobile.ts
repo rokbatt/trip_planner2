@@ -104,6 +104,9 @@ import { matchStop, startWatch, stopWatch, isWatching, isGeoSupported } from './
 import type { GeoFix } from './geo';
 import { pickTodayIndex, tripDestinationLabel } from '../timeline/tripSpans';
 import { attachRevisitPlaces } from './revisit';
+import { offlineState, subscribeOffline, onReconnect } from '../offline/status';
+import { idbGet, idbSet } from '../offline/idb';
+import { savedDocPaths, saveDocOffline, loadOfflineDoc, removeOfflineDoc, type OfflineDocFile } from '../offline/docs';
 import { fetchWeather, resetWeatherCache } from './weather';
 import type { Weather } from './weather';
 import { loadGoogleMapsScript } from '../utils/googleMaps';
@@ -156,6 +159,8 @@ const IC = {
   lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
   calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  // 오프라인/저장 — 구름에 사선
+  cloud: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 19a4.5 4.5 0 0 1-.4-8.98A6 6 0 0 1 18 9.5a4.7 4.7 0 0 1 .5 9.5z"/><path d="M4 4l16 16"/></svg>',
   swap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4 3 8l4 4"/><path d="M3 8h13a4 4 0 0 1 0 8h-1"/><path d="m17 20 4-4-4-4"/></svg>',
 };
 
@@ -281,6 +286,19 @@ let walletDocsLoading = false;
 let walletDocsLoaded = false;
 /** 이 기기에서 개인 문서 잠금을 푼 적이 있는지 */
 let walletPersonalUnlocked = false;
+/** 이 기기에 받아 둔 서류 — id → 받을 당시 file_path (파일이 바뀌면 저장 안 된 것으로 본다) */
+let savedDocs = new Map<string, string>();
+/** 서류 오프라인 저장 진행 — 저장 중이면 { done, total } */
+let docSaving: { done: number; total: number } | null = null;
+/** 지갑 안내 한 줄(오프라인이라 못 연 서류 등) */
+let walletNotice = '';
+/** 앱 안 서류 보기 — 오프라인 저장본을 여는 화면 */
+let docViewer: { url: string; type: string; title: string; file: OfflineDocFile } | null = null;
+
+/* ── 오프라인 ── */
+let offlineUnsubs: Array<() => void> = [];
+/** 사진 미리 받기는 여행마다 한 번 */
+let photosWarmedFor = '';
 
 /* ── MORE ── */
 /** 체크리스트·공유 링크. WALLET과 같은 규칙으로 **MORE를 처음 열 때만** 불러온다(원칙 3-2). */
@@ -296,6 +314,11 @@ let tripLinks: TripLink[] = [];
 let linksChannel: ReturnType<typeof supabase.channel> | null = null;
 
 export function teardownMobile(): void {
+  offlineUnsubs.forEach((fn) => fn());
+  offlineUnsubs = [];
+  closeDocViewer();
+  walletNotice = '';
+  docSaving = null;
   unsubscribeRoutePlan();
   resetRouteStorageProbe();
   unsubscribeStopProgress();
@@ -551,6 +574,10 @@ export async function renderMobileContent(host: HTMLElement, tripId: string): Pr
   staySegments = model.staySegments;
   placeById = model.ctx.placeById;
 
+  // 지난번에 받아 둔 실측 이동시간 — 오프라인에서도 추정치 대신 지도 경로 값을 보여준다
+  const savedLegs = await idbGet<Record<string, Record<string, RealLeg>>>('kv', 'legs:' + tripId);
+  if (savedLegs && currentTripId === tripId) Object.entries(savedLegs).forEach(([k, v]) => { if (!realLegs.has(k)) realLegs.set(k, v); });
+
   // 여행 중이면 오늘 DAY로, 아니면 일정이 처음 들어 있는 DAY로 연다
   const today = todayDayIndex();
   const firstFilled = days.findIndex((d) => d.stops.length > 0);
@@ -569,6 +596,42 @@ export async function renderMobileContent(host: HTMLElement, tripId: string): Pr
 
   // "지금" 표시는 분 단위로만 움직이면 충분하다
   nowTimer = setInterval(() => { if (todayDayIndex() >= 0 && !detailKey) render(); }, 60_000);
+
+  // 오프라인 표시줄은 상태가 바뀔 때마다 다시 그리고, 다시 연결되면 서버 기준으로 다시 읽는다
+  offlineUnsubs.push(subscribeOffline(() => { if (container) render(); }));
+  offlineUnsubs.push(onReconnect(() => { void refreshAfterReconnect(); }));
+  warmTripPhotos();
+}
+
+/** 다시 연결됐을 때(또는 대기열을 다 보냈을 때) — 지금 화면에 걸린 것만 다시 읽는다(원칙 3-2) */
+async function refreshAfterReconnect(): Promise<void> {
+  if (!currentTripId) return;
+  await reloadFromRemote();
+  void loadProgressForActiveDay();
+  void loadRealLegsForActiveDay();
+  void loadWeatherForActiveDay();
+  if (expenseCtx) void reloadExpenses();
+  if (walletDocsLoaded) { walletDocsLoaded = false; void ensureWalletDocs(); }
+  if (moreLoaded) { moreLoaded = false; void ensureMoreCtx(); }
+}
+
+/**
+ * 여행 사진 미리 받기 — 한 번이라도 받은 사진은 서비스워커가 저장해 두므로(sw-template.js),
+ * 온라인일 때 이 여행의 장소 사진을 미리 한 번씩 받아 두면 오프라인에서도 사진이 보인다.
+ * 여행마다 한 번, 최대 80장, 화면이 다 그려진 뒤 한 장씩 천천히 받는다.
+ */
+function warmTripPhotos(): void {
+  if (photosWarmedFor === currentTripId || offlineState().offline) return;
+  photosWarmedFor = currentTripId;
+  const urls = [...new Set(days.flatMap((d) => d.stops.map((st) => st.place?.photo_url).filter((u): u is string => !!u)))].slice(0, 80);
+  let i = 0;
+  const next = () => {
+    if (i >= urls.length || photosWarmedFor !== currentTripId) return;
+    const img = new Image();
+    img.onload = img.onerror = () => setTimeout(next, 120);
+    img.src = urls[i++];
+  };
+  setTimeout(next, 2500);
 }
 
 async function reloadFromRemote(): Promise<void> {
@@ -663,7 +726,10 @@ async function loadRealLegsForActiveDay(): Promise<void> {
         got = true;
       }
     });
-    if (got) render();
+    if (got) {
+      render();
+      if (currentTripId) void idbSet('kv', 'legs:' + currentTripId, Object.fromEntries(realLegs));
+    }
   } catch (e) {
     console.error('[Mobile] /api/route-matrix 요청 실패:', e);
   } finally {
@@ -709,11 +775,38 @@ function appHtml(): string {
   const scrollCls = 'mb-scroll' + (activeTab === 'trip' && tripSub === 'days' && days.some((d) => d.stops.length) ? ' is-pager' : '');
   return [
     topBarHtml(),
+    offlineBarHtml(),
     '<main class="' + scrollCls + '">' + tabBodyHtml() + '</main>',
     tabBarHtml(),
+    docViewer ? docViewerHtml() : '',
     daySheetOpen ? daySheetHtml() : '',
     padOpen ? padSheetHtml() : '',
   ].join('');
+}
+
+/**
+ * 오프라인 표시줄 — 지금 보이는 내용이 **언제 기준**인지, 못 보낸 기록이 몇 건인지 밝힌다.
+ * 저장본을 최신인 척 보여주면 그게 곧 거짓이 된다(원칙 3-1). 온라인이고 다 보냈으면 안 뜬다.
+ */
+function offlineBarHtml(): string {
+  const st = offlineState();
+  if (!st.offline && !st.pending) return '';
+  const parts: string[] = [];
+  if (st.offline) {
+    parts.push(st.cachedAt ? '오프라인 · ' + fmtSavedAt(st.cachedAt) + ' 기준 저장된 내용이에요' : '오프라인 · 저장된 내용을 보여주고 있어요');
+  }
+  if (st.pending) {
+    parts.push(st.offline ? '기록 ' + st.pending + '건은 연결되면 자동으로 저장돼요' : '기록 ' + st.pending + '건 보내는 중…');
+  }
+  return '<div class="mb-offline' + (st.offline ? ' is-off' : '') + '" role="status">' + IC.cloud + '<span>' + escapeHtml(parts.join(' · ')) + '</span></div>';
+}
+
+/** 저장 시각 — 오늘이면 "14:05", 아니면 "10월 26일 14:05" */
+function fmtSavedAt(ms: number): string {
+  const d = new Date(ms);
+  const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  const sameDay = d.toDateString() === new Date().toDateString();
+  return sameDay ? hm : (d.getMonth() + 1) + '월 ' + d.getDate() + '일 ' + hm;
 }
 
 function tabBodyHtml(): string {
@@ -1821,7 +1914,9 @@ async function mountMap(): Promise<void> {
   } catch (e) {
     // 지도를 못 띄워도 아래 목록과 길찾기는 그대로 쓸 수 있다 — 그래서 탭 전체를 죽이지 않는다
     console.error('[Mobile] 지도 로드 실패:', e);
-    mapError = '지도를 불러오지 못했어요. 아래 목록에서 길찾기는 그대로 쓸 수 있어요.';
+    mapError = offlineState().offline
+      ? '오프라인이라 지도를 불러올 수 없어요. 길찾기는 Google 지도 앱으로 열려요 — 앱에 오프라인 지도를 받아 두면 인터넷 없이도 길을 찾아요.'
+      : '지도를 불러오지 못했어요. 아래 목록에서 길찾기는 그대로 쓸 수 있어요.';
     mapInstance = null;
     mapEl = null;
     render();
@@ -1920,7 +2015,7 @@ async function reloadExpenses(): Promise<void> {
  * 지키는 선 세 가지:
  *   · **바코드·QR을 그리지 않는다.** 우리에겐 탑승권 이미지가 있을 수도, 없을 수도 있다.
  *     있으면 그 파일을 열어 주고, 없으면 없다고 말한다 — 가짜 바코드는 공항에서 안 찍힌다.
- *   · **"오프라인 저장 완료"를 표시하지 않는다.** `sw.js`가 캐싱을 안 하므로 사실이 아니다.
+ *   · **"저장됨"은 실제로 받아 둔 서류에만** 붙인다(offline/docs.ts의 Cache Storage에 있을 때).
  *   · **개인 문서(여권 등)는 잠금을 존중한다.** 이 기기에서 PIN을 푼 적이 있을 때만 보이고,
  *     아니면 잠긴 상태로 두고 PC Documents로 안내한다.
  *
@@ -1950,6 +2045,7 @@ async function ensureWalletDocs(): Promise<void> {
     walletDocs = [...shared, ...personal];
     walletPersonalUnlocked = unlocked != null;
     walletDocsLoaded = true;
+    savedDocs = await savedDocPaths();
   } catch (e) {
     console.error('[Mobile] 문서 로드 실패:', e);
   } finally {
@@ -1971,6 +2067,17 @@ async function openDoc(docId: string): Promise<void> {
   const doc = walletDocs.find((d) => d.id === docId);
   if (!doc) return;
   if (!doc.file_path) { gotoGate('docs'); return; }
+
+  // 이 기기에 받아 둔 파일이 있으면 그걸 연다 — 오프라인에서도, 온라인에서도 더 빠르다
+  if (savedDocs.get(doc.id) === doc.file_path) {
+    const file = await loadOfflineDoc(doc.id, doc.file_path);
+    if (file) { openDocViewer(file, doc.title); return; }
+  }
+  if (offlineState().offline) {
+    walletNotice = '오프라인이라 "' + doc.title + '"을(를) 열 수 없어요. 온라인일 때 위의 "오프라인 저장"을 눌러 두면 인터넷 없이도 열려요.';
+    render();
+    return;
+  }
 
   // 팝업 차단을 피하려면 탭을 **사용자 제스처 안에서** 먼저 열고 나중에 주소를 채워야 한다
   const tab = window.open('', '_blank');
@@ -2004,6 +2111,7 @@ function docRowHtml(doc: TripDocument, icon: string): string {
     sub.length ? '    <div class="mb-wd-sub">' + escapeHtml(sub.join(' · ')) + '</div>' : '',
     hasFile ? '' : '    <div class="mb-wd-nofile">첨부 파일 없음 · 예약 정보만</div>',
     '  </div>',
+    hasFile && savedDocs.get(doc.id) === doc.file_path ? '  <span class="mb-wd-saved">' + IC.check + '저장됨</span>' : '',
     '  <span class="mb-wd-chev">' + IC.chevRight + '</span>',
     '</button>',
   ].join('');
@@ -2074,12 +2182,134 @@ function walletTabHtml(): string {
   return [
     '<section class="mb-wd-head">',
     '  <h2 class="mb-wd-h1">여행 지갑</h2>',
-    // 레퍼런스엔 "오프라인 저장 완료" 배지가 있지만 우리는 아직 캐싱을 안 한다 — 쓰지 않는다
     '  <p class="mb-wd-h2">예약 서류와 지출을 한곳에</p>',
     '</section>',
+    walletNotice ? '<p class="mb-wd-notice" role="alert">' + escapeHtml(walletNotice) + '</p>' : '',
+    offlineDocsHtml(),
     walletDocsHtml(),
     walletMoneyHtml(),
   ].join('');
+}
+
+/* ── 서류 오프라인 저장 ──
+ * 공유 서류의 파일을 이 기기에 받아 둔다(offline/docs.ts). 사용자가 눌러야 받는다 — PDF는 크고
+ * 로밍 데이터일 수 있다. 개인 문서(PIN 잠금)는 받지 않는다 — 기기에 파일이 남으면 잠금의 의미가 없다.
+ */
+function savableDocs(): TripDocument[] {
+  return walletDocs.filter((d) => !!d.file_path && d.visibility !== 'PERSONAL');
+}
+
+function offlineDocsHtml(): string {
+  if (!walletDocsLoaded) return '';
+  const list = savableDocs();
+  if (!list.length) return '';
+  const saved = list.filter((d) => savedDocs.get(d.id) === d.file_path).length;
+  const all = saved === list.length;
+  const offline = offlineState().offline;
+
+  const text = docSaving
+    ? '서류 받는 중 ' + docSaving.done + '/' + docSaving.total
+    : all
+      ? '서류 ' + list.length + '건이 이 기기에 저장돼 있어요 · 인터넷 없이 열려요'
+      : saved
+        ? '서류 ' + list.length + '건 중 ' + saved + '건 저장됨'
+        : '공항·숙소에서 인터넷이 없어도 열 수 있게 서류를 저장해 두세요';
+  const btn = docSaving || offline || all
+    ? ''
+    : '<button class="mb-wd-save" id="mb-wd-save">' + (saved ? '나머지 저장' : '오프라인 저장') + '</button>';
+  const clear = !docSaving && saved ? '<button class="mb-wd-clear" id="mb-wd-clear">저장본 지우기</button>' : '';
+
+  return [
+    '<section class="mb-wd-offline' + (all ? ' is-done' : '') + '">',
+    '  <div class="mb-wd-offline-row">',
+    '    <span class="mb-wd-offline-ic">' + (all ? IC.check : IC.cloud) + '</span>',
+    '    <span class="mb-wd-offline-text">' + escapeHtml(text) + '</span>',
+    btn ? '    ' + btn : '',
+    '  </div>',
+    '  <div class="mb-wd-offline-sub">개인 문서(여권 등)는 잠금 보호를 위해 저장하지 않아요' + (clear ? ' · ' + clear : '') + '</div>',
+    '</section>',
+  ].join('');
+}
+
+async function saveDocsOffline(): Promise<void> {
+  if (docSaving) return;
+  const todo = savableDocs().filter((d) => savedDocs.get(d.id) !== d.file_path);
+  if (!todo.length) return;
+  walletNotice = '';
+  docSaving = { done: 0, total: todo.length };
+  render();
+  let failed = 0;
+  for (const doc of todo) {
+    try {
+      const url = await signedUrlFor(doc.file_path!, 600);
+      const ok = url ? await saveDocOffline({ id: doc.id, filePath: doc.file_path!, fileName: doc.file_name, fileType: doc.file_type }, url) : false;
+      if (!ok) failed += 1;
+    } catch {
+      failed += 1;
+    }
+    docSaving = { done: docSaving!.done + 1, total: todo.length };
+    render();
+  }
+  savedDocs = await savedDocPaths();
+  docSaving = null;
+  if (failed) walletNotice = '서류 ' + failed + '건은 저장하지 못했어요. 연결이 안정적일 때 다시 눌러 주세요.';
+  render();
+}
+
+async function clearSavedDocs(): Promise<void> {
+  await Promise.all([...savedDocs.keys()].map((id) => removeOfflineDoc(id)));
+  savedDocs = await savedDocPaths();
+  render();
+}
+
+/** 앱 안 서류 보기 — 이미지는 그대로, PDF는 내장 뷰어로. 그 밖의 형식은 파일로 넘긴다 */
+function openDocViewer(file: OfflineDocFile, title: string): void {
+  closeDocViewer();
+  docViewer = { url: URL.createObjectURL(file.blob), type: file.type, title, file };
+  render();
+}
+
+function closeDocViewer(): void {
+  if (docViewer) URL.revokeObjectURL(docViewer.url);
+  docViewer = null;
+}
+
+function docViewerHtml(): string {
+  const v = docViewer!;
+  const isImage = v.type.startsWith('image/');
+  const isPdf = v.type === 'application/pdf';
+  const body = isImage
+    ? '<img class="mb-dv-img" src="' + escapeHtml(v.url) + '" alt="' + escapeHtml(v.title) + '" />'
+    : isPdf
+      ? '<iframe class="mb-dv-frame" src="' + escapeHtml(v.url) + '" title="' + escapeHtml(v.title) + '"></iframe>'
+      : '<p class="mb-dv-msg">이 형식은 앱 안에서 보여줄 수 없어요. 아래 "파일로 열기"를 눌러 주세요.</p>';
+  return [
+    '<div class="mb-dv" role="dialog" aria-modal="true" aria-label="' + escapeHtml(v.title) + '">',
+    '  <header class="mb-dv-head">',
+    '    <button class="mb-icon-btn" id="mb-dv-close" aria-label="닫기">' + IC.close + '</button>',
+    '    <span class="mb-dv-title">' + escapeHtml(v.title) + '</span>',
+    '    <span class="mb-dv-badge">' + IC.check + '저장본</span>',
+    '  </header>',
+    '  <div class="mb-dv-body">' + body + '</div>',
+    '  <footer class="mb-dv-foot">',
+    '    <a class="mb-ghost-btn" href="' + escapeHtml(v.url) + '" download="' + escapeHtml(v.file.name || v.title) + '" target="_blank" rel="noopener">파일로 열기</a>',
+    typeof navigator !== 'undefined' && 'share' in navigator ? '    <button class="mb-ghost-btn" id="mb-dv-share">공유</button>' : '',
+    '  </footer>',
+    '</div>',
+  ].join('');
+}
+
+async function shareViewerFile(): Promise<void> {
+  const v = docViewer;
+  if (!v) return;
+  try {
+    const f = new File([v.file.blob], v.file.name || v.title, { type: v.type });
+    const nav = navigator as Navigator & { canShare?: (d: unknown) => boolean };
+    if (nav.canShare && !nav.canShare({ files: [f] })) return;
+    await navigator.share({ files: [f], title: v.title });
+  } catch {
+    /* 사용자가 닫음 */
+  }
 }
 
 /** 기존 "지출 지갑" — 탭이 문서 중심으로 바뀌어도 돈은 그대로 여기 남는다 */
@@ -3437,6 +3667,10 @@ function bind(): void {
     btn.addEventListener('click', () => { void openDoc((btn as HTMLElement).dataset.doc!); });
   });
   root.querySelector('#mb-wd-unlock')?.addEventListener('click', () => gotoGate('docs'));
+  root.querySelector('#mb-wd-save')?.addEventListener('click', () => { void saveDocsOffline(); });
+  root.querySelector('#mb-wd-clear')?.addEventListener('click', () => { void clearSavedDocs(); });
+  root.querySelector('#mb-dv-close')?.addEventListener('click', () => { closeDocViewer(); render(); });
+  root.querySelector('#mb-dv-share')?.addEventListener('click', () => { void shareViewerFile(); });
   root.querySelector('#mb-wd-add')?.addEventListener('click', () => gotoGate('docs'));
 
   // ── 지도 ──

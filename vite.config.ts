@@ -1,5 +1,7 @@
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { resolve } from 'path';
+import { readFileSync } from 'fs';
+import { createHash } from 'crypto';
 
 /**
  * index.html의 `%SITE_URL%`을 실제 배포 주소로 치환한다.
@@ -40,8 +42,37 @@ function siteUrlPlugin(mode: string): Plugin {
   };
 }
 
+/**
+ * 서비스워커를 빌드 때 만든다 — 원본은 src/pwa/sw-template.js.
+ *
+ * 앱 화면을 오프라인에서도 열려면 이번 빌드의 JS/CSS 파일 이름(해시 포함)을 SW가 알아야 한다.
+ * public/에 둔 고정 파일로는 알 수 없어서, 번들이 다 만들어진 뒤 목록과 버전을 채워 내보낸다.
+ * 버전은 파일 목록의 해시라 배포가 바뀌면 sw.js 내용도 바뀌고, 브라우저가 새 SW를 설치한다.
+ */
+function swPlugin(): Plugin {
+  const PUBLIC_FILES = ['/manifest.webmanifest', '/favicon.svg', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
+  return {
+    name: 'mongsil-sw',
+    apply: 'build',
+    generateBundle(_opts, bundle) {
+      const files = Object.keys(bundle)
+        .filter((f) => /\.(js|css|woff2?|svg|png|webp|jpg)$/.test(f) && f !== 'sw.js')
+        .map((f) => '/' + f)
+        .sort();
+      const version = createHash('sha1').update(files.join('|')).digest('hex').slice(0, 12);
+      const precache = ['/', ...files, ...PUBLIC_FILES];
+      const template = readFileSync(resolve(__dirname, 'src/pwa/sw-template.js'), 'utf8');
+      this.emitFile({
+        type: 'asset',
+        fileName: 'sw.js',
+        source: template.replace('__SW_VERSION__', version).replace('__PRECACHE__', JSON.stringify(precache)),
+      });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => ({
-  plugins: [siteUrlPlugin(mode)],
+  plugins: [siteUrlPlugin(mode), swPlugin()],
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
