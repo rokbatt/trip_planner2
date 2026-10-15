@@ -344,6 +344,24 @@
 .mb-meta-dest svg { width: 14px; height: 14px; color: var(--mb-muted); }
 .mb-date { font-size: 13px; color: var(--mb-muted); font-variant-numeric: tabular-nums; }
 
+/* 오프라인 표시줄 — 지금 내용이 언제 기준인지. 경고처럼 빨갛게 하지 않는다(고장이 아니다) */
+.mb-offline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 16px 10px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--mb-ink-2);
+  background: var(--mb-fill-subtle);
+}
+.mb-offline.is-off { color: var(--mb-live-soft); background: color-mix(in srgb, var(--mb-live) 10%, transparent); }
+.mb-offline svg { width: 15px; height: 15px; flex: none; }
+
 /* ══════════════ 스크롤 본문 ══════════════ */
 
 /* 스크롤 컨테이너는 명확히 하나로 통일한다 (중첩 스크롤 금지 — Claude.md 알려진 버그 패턴) */
@@ -1454,6 +1472,86 @@
 .mb-wd-nofile { font-size: 11px; color: var(--mb-disabled); }
 .mb-wd-chev { display: grid; place-items: center; color: var(--mb-muted); flex: none; }
 .mb-wd-chev svg { width: 15px; height: 15px; }
+
+/* ── 서류 오프라인 저장 ── */
+.mb-wd-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--mb-ok);
+}
+.mb-wd-saved svg { width: 12px; height: 12px; }
+.mb-wd-offline {
+  margin-bottom: 16px;
+  padding: 12px 13px;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line);
+}
+.mb-wd-offline.is-done { border-color: color-mix(in srgb, var(--mb-ok) 35%, transparent); }
+.mb-wd-offline-row { display: flex; align-items: center; gap: 9px; }
+.mb-wd-offline-ic { display: grid; place-items: center; flex: none; color: var(--mb-muted); }
+.mb-wd-offline.is-done .mb-wd-offline-ic { color: var(--mb-ok); }
+.mb-wd-offline-ic svg { width: 17px; height: 17px; }
+.mb-wd-offline-text { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; line-height: 1.45; color: var(--mb-ink); }
+.mb-wd-save {
+  flex: none;
+  min-height: 36px;
+  padding: 0 13px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 650;
+  background: var(--mb-sky);
+  color: var(--mb-on-sky);
+}
+.mb-wd-offline-sub { margin-top: 6px; padding-left: 26px; font-size: 11.5px; line-height: 1.5; color: var(--mb-muted); }
+.mb-wd-clear { padding: 0; font-size: 11.5px; color: var(--mb-muted); text-decoration: underline; text-underline-offset: 2px; }
+.mb-wd-notice {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: var(--mb-radius-sm);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--mb-danger);
+  background: var(--mb-danger-wash);
+}
+
+/* ── 앱 안 서류 보기(저장본) ── */
+.mb-dv {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: var(--mb-bg);
+}
+.mb-dv-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: calc(6px + env(safe-area-inset-top)) 12px 6px 6px;
+  border-bottom: 1px solid var(--mb-line);
+  flex: none;
+}
+.mb-dv-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 650; color: var(--mb-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mb-dv-badge { display: inline-flex; align-items: center; gap: 3px; flex: none; font-size: 11px; font-weight: 650; color: var(--mb-ok); }
+.mb-dv-badge svg { width: 12px; height: 12px; }
+.mb-dv-body { flex: 1; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: center; background: var(--mb-surface-3); }
+.mb-dv-img { display: block; max-width: 100%; height: auto; }
+.mb-dv-frame { width: 100%; height: 100%; border: 0; background: #FFFFFF; }
+.mb-dv-msg { margin: 40px 20px; font-size: 13px; color: var(--mb-muted); text-align: center; }
+.mb-dv-foot {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--mb-line);
+  flex: none;
+}
+.mb-dv-foot .mb-ghost-btn { margin-top: 0; text-decoration: none; display: inline-flex; align-items: center; }
 
 .mb-wd-empty {
   padding: 26px 18px;
