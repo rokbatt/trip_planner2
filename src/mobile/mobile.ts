@@ -103,6 +103,7 @@ import type { DocCategory } from '../docs/docsStore';
 import { matchStop, startWatch, stopWatch, isWatching, isGeoSupported } from './geo';
 import type { GeoFix } from './geo';
 import { pickTodayIndex, tripDestinationLabel } from '../timeline/tripSpans';
+import { attachRevisitPlaces } from './revisit';
 import { fetchWeather, resetWeatherCache } from './weather';
 import type { Weather } from './weather';
 import { loadGoogleMapsScript } from '../utils/googleMaps';
@@ -543,7 +544,8 @@ export async function renderMobileContent(host: HTMLElement, tripId: string): Pr
 
   // 여행지를 고르지 않아도 모든 여행지가 DAY로 이어져 보인다(방콕 DAY 1~4 다음 푸켓 DAY 5~)
   const model = await loadTripDayModel(trip);
-  days = model.days;
+  // "숙소 들르기"는 이름·좌표만 저장된 합성 지점이라 사진·주소가 비어 있다 — 그 숙소의 실제 장소를 붙인다
+  days = attachRevisitPlaces(model.days, model.ctx.placeById, model.ctx.basecampIds);
   allDestinations = model.destinations;
   activeDestId = model.activeDestId;
   staySegments = model.staySegments;
@@ -572,7 +574,7 @@ export async function renderMobileContent(host: HTMLElement, tripId: string): Pr
 async function reloadFromRemote(): Promise<void> {
   if (!currentTrip) return;
   const model = await loadTripDayModel(currentTrip);
-  days = model.days;
+  days = attachRevisitPlaces(model.days, model.ctx.placeById, model.ctx.basecampIds);
   allDestinations = model.destinations;
   activeDestId = model.activeDestId;
   staySegments = model.staySegments;
@@ -1070,7 +1072,7 @@ function daySummaryCardHtml(day: TlDay): string {
   const dest = day.destName ?? tripDestName();
   const photoOf = (st: TlStop) => st.place?.photo_url ?? null;
   const photo =
-    photoOf(day.stops.find((st) => (st.cat === 'VISIT' || st.cat === 'ACTIVITY') && photoOf(st)) ?? ({} as TlStop)) ??
+    photoOf(day.stops.find((st) => !st.purpose && (st.cat === 'VISIT' || st.cat === 'ACTIVITY') && photoOf(st)) ?? ({} as TlStop)) ??
     day.stops.map(photoOf).find(Boolean) ??
     null;
   const docs = docCountForDay(day.dayNumber);
@@ -1362,6 +1364,8 @@ function stopRowHtml(
   // 주소 한 줄 — 저장된 원문 그대로(번역·가공하지 않는다). 길면 한 줄에서 자르고, 전체는 상세에서
   // 본다. 없으면 공항·숙소처럼 유형만, 그것도 없으면 줄을 지운다(빈 자리를 남기지 않는다).
   const sub = place?.address || (stop.cat === 'AIRPORT' || stop.cat === 'STAY' ? CAT_LABEL[stop.cat] : '');
+  // "숙소 들르기"(짐 두기 등)는 일반 방문과 구분되게 목적을 한 줄로 — 주소는 상세에서 본다
+  const revisit = stop.purpose ? '숙소 들르기' + (stop.purpose.trim() ? ' · ' + stop.purpose.trim() : '') : '';
 
   return [
     '<div class="mb-row' + (isNow ? ' is-now' : '') + (done ? ' is-done' : '') + (skipped ? ' is-skipped' : '') + '">',
@@ -1373,10 +1377,10 @@ function stopRowHtml(
     '  <div class="mb-row-card" data-stop="' + escapeHtml(stop.key) + '" role="button" tabindex="0">',
     photo
       ? '    <span class="mb-row-thumb" data-photo="' + escapeHtml(photo) + '"></span>'
-      : '    <span class="mb-row-thumb is-blank">' + IC.pin + '</span>',
+      : '    <span class="mb-row-thumb is-blank">' + (stop.purpose || stop.cat === 'STAY' ? IC.bed : IC.pin) + '</span>',
     '    <div class="mb-row-main">',
     '      <div class="mb-row-name">' + escapeHtml(stop.name) + '</div>',
-    sub ? '      <div class="mb-row-sub">' + escapeHtml(sub) + '</div>' : '',
+    revisit ? '      <div class="mb-row-revisit">' + IC.bed + escapeHtml(revisit) + '</div>' : sub ? '      <div class="mb-row-sub">' + escapeHtml(sub) + '</div>' : '',
     warn ? '      <div class="mb-row-warn">' + escapeHtml(hoursWarnText(warn)) + '</div>' : '',
     '    </div>',
     '    <div class="mb-row-acts">',
