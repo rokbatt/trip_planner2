@@ -73,6 +73,7 @@ import {
 import type { ChecklistPlace } from '../mobile/checklist';
 import type { TripChecklistItem } from '../types/database';
 import type { Database, StaySegment, TripDestination } from '../types/database';
+import { isLegCoolingDown, markLegsFailed, reportRouteError } from '../utils/legCooldown';
 import './timeline.css';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -343,7 +344,8 @@ async function loadRealLegsForActiveDay(): Promise<void> {
   const pending: Array<{ id: string; from: { lat: number; lng: number }; to: { lat: number; lng: number } }> = [];
   for (let i = 0; i < stops.length - 1; i++) {
     const key = stopLegKey(stops[i], stops[i + 1]);
-    if (realLegs.has(key) || pending.some((p) => p.id === key)) continue;
+    // 최근에 실패한 구간은 다시 묻지 않는다(utils/legCooldown.ts)
+    if (realLegs.has(key) || isLegCoolingDown(key) || pending.some((p) => p.id === key)) continue;
     pending.push({
       id: key,
       from: { lat: stops[i].lat!, lng: stops[i].lng! },
@@ -361,10 +363,12 @@ async function loadRealLegsForActiveDay(): Promise<void> {
       body: JSON.stringify({ legs: pending, modes: ['WALK', 'TRANSIT', 'DRIVE'] }),
     });
     if (!res.ok) {
+      markLegsFailed(pending.map((p) => p.id));
       console.error('[Timeline] /api/route-matrix 실패:', res.status, await res.text().catch(() => ''));
       return;
     }
     const json = await res.json();
+    reportRouteError('Timeline', json);
     const results: Array<{ id: string; modes: Record<string, RealLeg> }> = json?.results ?? [];
     let got = false;
     results.forEach((r) => {
@@ -373,9 +377,11 @@ async function loadRealLegsForActiveDay(): Promise<void> {
         got = true;
       }
     });
+    markLegsFailed(pending.filter((p) => !realLegs.has(p.id)).map((p) => p.id));
     // 실패해도 화면은 조용히 추정치를 유지한다 (구간마다 "추정"으로 이미 표기됨)
     if (got) render();
   } catch (e) {
+    markLegsFailed(pending.map((p) => p.id));
     console.error('[Timeline] /api/route-matrix 요청 실패:', e);
   } finally {
     realLegPending = false;

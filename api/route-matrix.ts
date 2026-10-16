@@ -158,8 +158,17 @@ function isFinitePt(p: any): p is Pt {
   return !!p && isFiniteNum(p.lat) && isFiniteNum(p.lng);
 }
 
+/** 이 상태 코드면 "이 요청이 틀렸다"가 아니라 "키·권한·한도가 문제"라서 나머지 호출도 전부 실패한다 */
+const FATAL_STATUSES = new Set([401, 403, 429]);
+
+interface LegFetch {
+  result: LegResult | null;
+  /** 키·권한·한도 문제 — 같은 요청 안의 나머지 호출은 보내지 않는다 */
+  fatal?: { status: number; message: string };
+}
+
 /** Routes API 단일 구간 조회 */
-async function fetchLeg(key: string, from: Pt, to: Pt, mode: Mode): Promise<LegResult | null> {
+async function fetchLeg(key: string, from: Pt, to: Pt, mode: Mode): Promise<LegFetch> {
   const body: any = {
     origin: { location: { latLng: { latitude: from.lat, longitude: from.lng } } },
     destination: { location: { latLng: { latitude: to.lat, longitude: to.lng } } },
@@ -193,27 +202,30 @@ async function fetchLeg(key: string, from: Pt, to: Pt, mode: Mode): Promise<LegR
     });
   } catch (e) {
     console.error('[route-matrix:legs] fetch 실패:', e);
-    return null;
+    return { result: null };
   }
 
   if (!apiRes.ok) {
-    console.error('[route-matrix:legs] Routes API 실패:', mode, apiRes.status, await apiRes.text());
-    return null;
+    const text = await apiRes.text();
+    console.error('[route-matrix:legs] Routes API 실패:', mode, apiRes.status, text);
+    let message = text.slice(0, 300);
+    try { message = JSON.parse(text)?.error?.message ?? message; } catch { /* 본문이 JSON이 아니면 그대로 */ }
+    return { result: null, fatal: FATAL_STATUSES.has(apiRes.status) ? { status: apiRes.status, message } : undefined };
   }
 
   let json: any;
   try {
     json = await apiRes.json();
   } catch {
-    return null;
+    return { result: null };
   }
 
   const route = json?.routes?.[0];
-  if (!route) return null; // 해당 모드로 갈 수 있는 경로가 없음(예: 강 건너 도보)
+  if (!route) return { result: null }; // 해당 모드로 갈 수 있는 경로가 없음(예: 강 건너 도보)
 
   const meters = typeof route.distanceMeters === 'number' ? route.distanceMeters : null;
   const seconds = typeof route.duration === 'string' ? parseInt(route.duration, 10) : null;
-  if (meters == null || seconds == null || Number.isNaN(seconds)) return null;
+  if (meters == null || seconds == null || Number.isNaN(seconds)) return { result: null };
 
   const out: LegResult = { meters, seconds };
 
@@ -229,7 +241,7 @@ async function fetchLeg(key: string, from: Pt, to: Pt, mode: Mode): Promise<LegR
   const encoded = route?.polyline?.encodedPolyline;
   if (typeof encoded === 'string' && encoded) out.polyline = encoded;
 
-  return out;
+  return { result: out };
 }
 
 async function handleLegCompare(req: VercelRequest, res: VercelResponse) {
@@ -290,12 +302,27 @@ async function handleLegCompare(req: VercelRequest, res: VercelResponse) {
   missing.forEach((m) => { if (!uniqueMissing.has(m.key)) uniqueMissing.set(m.key, m); });
 
   const fetchedRows: any[] = [];
-  const fetchedEntries = await Promise.all(
-    [...uniqueMissing.values()].map(async (w) => {
-      const r = await fetchLeg(routesKey, w.from, w.to, w.mode);
-      return { key: w.key, mode: w.mode, result: r };
-    })
-  );
+  const todo = [...uniqueMissing.values()];
+  // **첫 호출 하나로 먼저 확인한다.** 키·권한·한도 문제(401/403/429)면 나머지도 전부 실패하는데,
+  // 예전엔 구간 × 모드(최대 25×3=75건)를 한꺼번에 쏴서 실패 75건이 한 번에 나갔다 — 대시보드에
+  // "Routes API 요청 671건, 오류 100%"로 찍힌 원인. 이제 첫 호출이 치명적으로 실패하면 거기서 멈춘다.
+  let fatal: { status: number; message: string } | undefined;
+  const fetchedEntries: Array<{ key: string; mode: Mode; result: LegResult | null }> = [];
+  if (todo.length) {
+    const first = await fetchLeg(routesKey, todo[0].from, todo[0].to, todo[0].mode);
+    fetchedEntries.push({ key: todo[0].key, mode: todo[0].mode, result: first.result });
+    fatal = first.fatal;
+    if (!fatal) {
+      const rest = await Promise.all(
+        todo.slice(1).map(async (w) => {
+          const r = await fetchLeg(routesKey, w.from, w.to, w.mode);
+          if (r.fatal) fatal = r.fatal;
+          return { key: w.key, mode: w.mode, result: r.result };
+        })
+      );
+      fetchedEntries.push(...rest);
+    }
+  }
   fetchedEntries.forEach((e) => {
     if (!e.result) return;
     cache.set(e.key, e.result);
@@ -330,5 +357,7 @@ async function handleLegCompare(req: VercelRequest, res: VercelResponse) {
     results: legs.map((l) => ({ id: l.id, modes: byLeg.get(l.id) ?? {} })),
     cached: wanted.length - uniqueMissing.size,
     fetched: fetchedEntries.filter((e) => e.result).length,
+    // 키·권한·한도 문제면 원인을 그대로 알린다 — 브라우저 콘솔에서 바로 보이게(Vercel 로그를 안 봐도)
+    ...(fatal ? { error: { status: fatal.status, message: fatal.message } } : {}),
   });
 }
