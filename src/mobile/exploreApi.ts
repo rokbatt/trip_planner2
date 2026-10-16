@@ -14,6 +14,7 @@
  */
 
 import { loadGoogleMapsScript } from '../utils/googleMaps';
+import { reportRouteError } from '../utils/legCooldown';
 import {
   catDef,
   catOfTypes,
@@ -254,21 +255,53 @@ export async function fetchDetail(id: string): Promise<ExploreDetail> {
   return detail;
 }
 
-/** 실제 도보·차량 시간 — 기존 /api/route-matrix(Routes API, 실시간 교통 미반영)를 쓴다. 상세에서 한 번 */
+export type TravelTimes = { walk: { meters: number; seconds: number } | null; drive: { meters: number; seconds: number } | null };
+
+const travelCache = new Map<string, { at: number; value: TravelTimes }>();
+const travelFailedAt = new Map<string, number>();
+const TRAVEL_TTL_MS = 30 * 60_000;
+const TRAVEL_RETRY_MS = 10 * 60_000;
+
+/**
+ * 실제 도보·차량 시간 — 기존 /api/route-matrix(Routes API, 실시간 교통 미반영)를 쓴다. 상세에서 한 번.
+ *
+ * 호출량 줄이기: ① 출발 좌표를 소수 4자리(약 11m)로 반올림해 보낸다 — GPS 좌표를 그대로 보내면
+ * 서버의 전역 캐시(좌표 5자리 키)가 사실상 절대 맞지 않는다. ② 같은 장소·같은 자리는 30분간 기기에서
+ * 다시 쓴다. ③ 실패하면 10분간 다시 묻지 않는다. 호출은 도보·차량 2건이다(대중교통은 안 묻는다).
+ */
 export async function fetchTravelTimes(
+  placeId: string,
   from: { lat: number; lng: number },
   to: { lat: number; lng: number }
-): Promise<{ walk: { meters: number; seconds: number } | null; drive: { meters: number; seconds: number } | null }> {
-  const res = await fetch('/api/route-matrix', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ legs: [{ id: 'explore', from, to }], modes: ['WALK', 'DRIVE'] }),
-  });
-  if (!res.ok) throw new Error('route-matrix ' + res.status);
-  const json = await res.json();
-  const modes = json?.results?.[0]?.modes ?? {};
-  const pick = (m: any) => (m && typeof m.seconds === 'number' && typeof m.meters === 'number' ? { meters: m.meters, seconds: m.seconds } : null);
-  return { walk: pick(modes.WALK), drive: pick(modes.DRIVE) };
+): Promise<TravelTimes> {
+  const r4 = (n: number) => Math.round(n * 1e4) / 1e4;
+  const f = { lat: r4(from.lat), lng: r4(from.lng) };
+  const key = placeId + '@' + f.lat + ',' + f.lng;
+  const now = Date.now();
+  const hit = travelCache.get(key);
+  if (hit && now - hit.at < TRAVEL_TTL_MS) return hit.value;
+  const failed = travelFailedAt.get(key);
+  if (failed != null && now - failed < TRAVEL_RETRY_MS) throw new Error('route-matrix 최근에 실패 — 잠시 뒤 다시');
+
+  try {
+    const res = await fetch('/api/route-matrix', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ legs: [{ id: 'explore', from: f, to }], modes: ['WALK', 'DRIVE'] }),
+    });
+    if (!res.ok) throw new Error('route-matrix ' + res.status);
+    const json = await res.json();
+    reportRouteError('Explore', json);
+    const modes = json?.results?.[0]?.modes ?? {};
+    const pick = (m: any) => (m && typeof m.seconds === 'number' && typeof m.meters === 'number' ? { meters: m.meters, seconds: m.seconds } : null);
+    const value: TravelTimes = { walk: pick(modes.WALK), drive: pick(modes.DRIVE) };
+    if (!value.walk && !value.drive) { travelFailedAt.set(key, now); return value; }
+    travelCache.set(key, { at: now, value });
+    return value;
+  } catch (e) {
+    travelFailedAt.set(key, now);
+    throw e;
+  }
 }
 
 /** 저장·일정 추가용 — 기존 `insertGooglePlace`가 받는 모양으로 */

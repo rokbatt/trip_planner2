@@ -67,6 +67,7 @@ import {
 } from '../utils/travelEstimate';
 import type { Leg, RealLeg, CatKey } from '../utils/travelEstimate';
 import type { Database, StaySegment, TripDestination } from '../types/database';
+import { isLegCoolingDown, markLegsFailed, clearLegFailures, reportRouteError } from '../utils/legCooldown';
 import './route.css';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -962,7 +963,7 @@ async function buildFromShortlist(trip: Trip, places: Place[]): Promise<void> {
  * 현재 DAY의 구간들을 실제 경로 데이터로 채운다(모드 3종 동시 조회 — 교통편 비교에도 그대로 사용).
  * 실패하거나 키가 없으면 조용히 추정치를 유지한다(원칙 3-1대로 화면에 "추정"으로 표기됨).
  */
-async function loadRealLegsForActiveDay(container: HTMLElement): Promise<void> {
+async function loadRealLegsForActiveDay(container: HTMLElement, force = false): Promise<void> {
   const day = activeDay();
   if (!day) return;
   const stops = orderedStops(day).filter((p) => p.lat != null && p.lng != null);
@@ -972,6 +973,9 @@ async function loadRealLegsForActiveDay(container: HTMLElement): Promise<void> {
   for (let i = 0; i < stops.length - 1; i++) {
     const key = legKey(stops[i].id, stops[i + 1].id);
     if (realLegs.has(key)) continue; // 이미 받아온 구간은 다시 묻지 않음
+    // 최근에 실패한 구간도 다시 묻지 않는다. 단 사용자가 버튼으로 직접 부른 경우(force)는 다시 시도한다
+    if (force) clearLegFailures([key]);
+    else if (isLegCoolingDown(key)) continue;
     pending.push({
       id: key,
       from: { lat: stops[i].lat!, lng: stops[i].lng! },
@@ -991,6 +995,7 @@ async function loadRealLegsForActiveDay(container: HTMLElement): Promise<void> {
       body: JSON.stringify({ legs: pending, modes: ['WALK', 'TRANSIT', 'DRIVE'] }),
     });
     if (!res.ok) {
+      markLegsFailed(pending.map((p) => p.id));
       // 실패해도 화면은 조용히 추정치를 유지하지만(원칙), 원인 진단을 위해 콘솔에는 남긴다 —
       // 서버 함수 로그(Vercel)는 사용자가 못 보므로, 흔한 원인(키 미설정/Routes API 미활성화)을
       // 여기서 바로 확인할 수 있게 응답 본문까지 찍는다.
@@ -998,6 +1003,7 @@ async function loadRealLegsForActiveDay(container: HTMLElement): Promise<void> {
       return;
     }
     const json = await res.json();
+    reportRouteError('Route', json);
     const results: Array<{ id: string; modes: Record<string, RealLeg> }> = json?.results ?? [];
     let got = false;
     results.forEach((r) => {
@@ -1006,6 +1012,7 @@ async function loadRealLegsForActiveDay(container: HTMLElement): Promise<void> {
         got = true;
       }
     });
+    markLegsFailed(pending.filter((p) => !realLegs.has(p.id)).map((p) => p.id));
     if (!got) {
       console.warn('[Route] /api/route-matrix가 응답은 했지만 실측 구간이 0개 — 키/Routes API 활성화/요금제를 확인하세요.', json);
     }
@@ -1014,6 +1021,7 @@ async function loadRealLegsForActiveDay(container: HTMLElement): Promise<void> {
       drawRouteOnMap(false);
     }
   } catch (e) {
+    markLegsFailed(pending.map((p) => p.id));
     console.error('[Route] /api/route-matrix 요청 자체가 실패(네트워크/CORS 등):', e);
   } finally {
     realLegPending = false;
@@ -2902,7 +2910,7 @@ function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
   el.querySelector('#rt-ai-plan')?.addEventListener('click', () => openAiPlanNotesModal(container));
   el.querySelector('#rt-legs-real-btn')?.addEventListener('click', (e) => {
     e.stopPropagation();
-    void loadRealLegsForActiveDay(container);
+    void loadRealLegsForActiveDay(container, true);
   });
   el.querySelectorAll('.rt-panel-remove').forEach((btn) => {
     btn.addEventListener('click', (e) => {

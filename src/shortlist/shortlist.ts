@@ -5141,6 +5141,15 @@ function formatDurationMin(min: number): string {
  * Google Distance Matrix(Legacy)는 지원 종료 예정이자 레거시 API 미활성화 프로젝트에서
  * REQUEST_DENIED를 반환하므로, api/nearby-infra.ts와 동일하게 서버에서 Routes API로 조회한다.
  */
+/**
+ * 이 화면은 투표·실시간 갱신으로 **자주 다시 그려지고**, 그때마다 이 함수가 불렸다 — 같은 숙소·같은
+ * 장소·같은 이동수단을 매번 다시 물어 Routes API가 불필요하게 반복 호출됐다. 받은 값(과 실패)을
+ * 화면이 열려 있는 동안 기억해 같은 걸 두 번 묻지 않는다. 실패는 10분간 다시 묻지 않는다.
+ */
+const realTravelCache = new Map<string, RealTravelResult>();
+const realTravelFailedAt = new Map<string, number>();
+const REAL_TRAVEL_RETRY_MS = 10 * 60_000;
+
 async function loadRealTravelTimes(
   basecamp: Place,
   items: { place: Place; km: number }[]
@@ -5148,11 +5157,20 @@ async function loadRealTravelTimes(
   if (basecamp.lat == null || basecamp.lng == null) return null;
 
   const results = new Map<string, RealTravelResult>();
+  const ck = (placeId: string, mode: 'WALKING' | 'DRIVING') => basecamp.id + '|' + placeId + '|' + mode;
 
   const closeItems = items.filter((i) => i.km <= 2 && i.place.lat != null && i.place.lng != null);
   const farItems = items.filter((i) => i.km > 2 && i.place.lat != null && i.place.lng != null);
 
-  async function runBatch(batchItems: { place: Place; km: number }[], mode: 'WALKING' | 'DRIVING'): Promise<void> {
+  async function runBatch(allItems: { place: Place; km: number }[], mode: 'WALKING' | 'DRIVING'): Promise<void> {
+    // 이미 받은 건 그대로 쓰고, 최근에 실패한 건 건너뛰고, 정말 모르는 것만 묻는다
+    const now = Date.now();
+    const batchItems = allItems.filter((i) => {
+      const hit = realTravelCache.get(ck(i.place.id, mode));
+      if (hit) { results.set(i.place.id, hit); return false; }
+      const failed = realTravelFailedAt.get(ck(i.place.id, mode));
+      return !(failed != null && now - failed < REAL_TRAVEL_RETRY_MS);
+    });
     if (batchItems.length === 0) return;
     try {
       const resp = await fetch('/api/route-matrix', {
@@ -5166,15 +5184,20 @@ async function loadRealTravelTimes(
       });
       if (!resp.ok) {
         console.error('[Shortlist] Route Matrix 조회 실패(' + mode + '):', resp.status);
+        batchItems.forEach((i) => realTravelFailedAt.set(ck(i.place.id, mode), Date.now()));
         return;
       }
       const data = await resp.json();
       (data?.results ?? []).forEach((r: { id: string; meters: number; seconds: number }) => {
         const durationMin = Math.max(1, Math.round(r.seconds / 60));
-        results.set(r.id, { mode, durationText: formatDurationMin(durationMin), durationMin });
+        const v: RealTravelResult = { mode, durationText: formatDurationMin(durationMin), durationMin };
+        results.set(r.id, v);
+        realTravelCache.set(ck(r.id, mode), v);
       });
+      batchItems.forEach((i) => { if (!results.has(i.place.id)) realTravelFailedAt.set(ck(i.place.id, mode), Date.now()); });
     } catch (e) {
       console.error('[Shortlist] Route Matrix 조회 실패(' + mode + '):', e);
+      batchItems.forEach((i) => realTravelFailedAt.set(ck(i.place.id, mode), Date.now()));
     }
   }
 

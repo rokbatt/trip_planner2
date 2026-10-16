@@ -105,6 +105,7 @@ import { matchStop, startWatch, stopWatch, isWatching, isGeoSupported } from './
 import type { GeoFix } from './geo';
 import { pickTodayIndex, tripDestinationLabel } from '../timeline/tripSpans';
 import { attachRevisitPlaces } from './revisit';
+import { isLegCoolingDown, markLegsFailed, reportRouteError } from '../utils/legCooldown';
 import { offlineState, subscribeOffline, onReconnect } from '../offline/status';
 import { idbGet, idbSet } from '../offline/idb';
 import { savedDocPaths, saveDocOffline, loadOfflineDoc, removeOfflineDoc, type OfflineDocFile } from '../offline/docs';
@@ -645,7 +646,10 @@ async function refreshAfterReconnect(): Promise<void> {
 function warmTripPhotos(): void {
   if (photosWarmedFor === currentTripId || offlineState().offline) return;
   photosWarmedFor = currentTripId;
-  const urls = [...new Set(days.flatMap((d) => d.stops.map((st) => st.place?.photo_url).filter((u): u is string => !!u)))].slice(0, 80);
+  // **우리 Storage에 재호스팅된 사진만** 미리 받는다. 예전에 저장된 장소는 photo_url이 Google 원본
+  // (places.googleapis.com …/media)일 수 있는데, 그걸 앱을 열 때마다 80장씩 미리 받으면 요청마다
+  // Places API 과금이 된다. Google 주소는 화면에 실제로 보일 때만 받는다.
+  const urls = [...new Set(days.flatMap((d) => d.stops.map((st) => st.place?.photo_url).filter((u): u is string => !!u && u.includes('/storage/v1/object/public/'))))].slice(0, 80);
   let i = 0;
   const next = () => {
     if (i >= urls.length || photosWarmedFor !== currentTripId) return;
@@ -722,7 +726,8 @@ async function loadRealLegsForActiveDay(): Promise<void> {
   const pending: Array<{ id: string; from: { lat: number; lng: number }; to: { lat: number; lng: number } }> = [];
   for (let i = 0; i < stops.length - 1; i++) {
     const key = stopLegKey(stops[i], stops[i + 1]);
-    if (realLegs.has(key) || pending.some((p) => p.id === key)) continue;
+    // 최근에 실패한 구간은 다시 묻지 않는다 — 안 그러면 화면을 열 때마다 같은 실패를 되풀이한다
+    if (realLegs.has(key) || isLegCoolingDown(key) || pending.some((p) => p.id === key)) continue;
     pending.push({
       id: key,
       from: { lat: stops[i].lat!, lng: stops[i].lng! },
@@ -738,8 +743,9 @@ async function loadRealLegsForActiveDay(): Promise<void> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ legs: pending, modes: ['WALK', 'TRANSIT', 'DRIVE'] }),
     });
-    if (!res.ok) return;
+    if (!res.ok) { markLegsFailed(pending.map((p) => p.id)); return; }
     const json = await res.json();
+    reportRouteError('Mobile', json);
     const results: Array<{ id: string; modes: Record<string, RealLeg> }> = json?.results ?? [];
     let got = false;
     results.forEach((r) => {
@@ -748,11 +754,13 @@ async function loadRealLegsForActiveDay(): Promise<void> {
         got = true;
       }
     });
+    markLegsFailed(pending.filter((p) => !realLegs.has(p.id)).map((p) => p.id));
     if (got) {
       render();
       if (currentTripId) void idbSet('kv', 'legs:' + currentTripId, Object.fromEntries(realLegs));
     }
   } catch (e) {
+    markLegsFailed(pending.map((p) => p.id));
     console.error('[Mobile] /api/route-matrix 요청 실패:', e);
   } finally {
     realLegPending = false;
@@ -2333,7 +2341,7 @@ function openExDetail(id: string): void {
   const from = distanceOrigin();
   if (p && from) {
     exTravelState = 'loading';
-    void fetchTravelTimes(from, p)
+    void fetchTravelTimes(p.id, from, p)
       .then((t) => { if (exDetailId === id) { exTravel = t; exTravelState = 'idle'; render(); } })
       .catch(() => { if (exDetailId === id) { exTravelState = 'error'; render(); } });
   }
@@ -4097,24 +4105,56 @@ function markPhotoBroken(el: HTMLElement): void {
   }
 }
 
+/**
+ * 화면에 **실제로 보일 때만** 받는 사진 — Google 장소 사진(주변 탐색 목록·상세)이 대상이다.
+ * Google 사진은 이미지 한 장 = 요청 한 건 = 과금이라, 목록 20장·상세 5장을 렌더 즉시 전부 받으면
+ * 화면 밖 카드의 사진까지 돈이 나간다(Places API(New) 요청 수가 예상보다 많았던 주된 원인).
+ * 이미 받은 URL(`loadedPhotos`)은 브라우저 캐시에 있으니 다시 그릴 때 바로 쓴다.
+ */
+const loadedPhotos = new Set<string>();
+let photoObserver: IntersectionObserver | null = null;
+
+function isLazyPhoto(el: HTMLElement): boolean {
+  return el.classList.contains('mb-ex-thumb') || el.classList.contains('mb-exd-photo');
+}
+
+function paintPhoto(el: HTMLElement, url: string): void {
+  el.style.backgroundImage = 'url("' + url + '")';
+  loadedPhotos.add(url);
+  if (probedPhotos.has(url)) return;
+  probedPhotos.add(url);
+  // 배경 이미지는 실패해도 이벤트가 없다 — 같은 URL을 Image로 한 번 확인해 실패를 잡는다
+  const probe = new Image();
+  probe.onerror = () => {
+    brokenPhotos.add(url);
+    container?.querySelectorAll('[data-photo]').forEach((n) => {
+      if ((n as HTMLElement).dataset.photo === url) markPhotoBroken(n as HTMLElement);
+    });
+  };
+  probe.src = url;
+}
+
 function applyPhotos(): void {
+  photoObserver?.disconnect();
+  photoObserver = null;
   container?.querySelectorAll('[data-photo]').forEach((node) => {
     const el = node as HTMLElement;
     const url = el.dataset.photo;
     if (!url) return;
     if (brokenPhotos.has(url)) { markPhotoBroken(el); return; }
-    el.style.backgroundImage = 'url("' + url + '")';
-    if (probedPhotos.has(url)) return;
-    probedPhotos.add(url);
-    // 배경 이미지는 실패해도 이벤트가 없다 — 같은 URL을 Image로 한 번 확인해 실패를 잡는다
-    const probe = new Image();
-    probe.onerror = () => {
-      brokenPhotos.add(url);
-      container?.querySelectorAll('[data-photo]').forEach((n) => {
-        if ((n as HTMLElement).dataset.photo === url) markPhotoBroken(n as HTMLElement);
-      });
-    };
-    probe.src = url;
+    if (isLazyPhoto(el) && !loadedPhotos.has(url) && typeof IntersectionObserver !== 'undefined') {
+      photoObserver ??= new IntersectionObserver((entries) => {
+        entries.forEach((en) => {
+          if (!en.isIntersecting) return;
+          const t = en.target as HTMLElement;
+          photoObserver?.unobserve(t);
+          if (t.dataset.photo) paintPhoto(t, t.dataset.photo);
+        });
+      }, { rootMargin: '120px 0px', threshold: 0.25 });
+      photoObserver.observe(el);
+      return;
+    }
+    paintPhoto(el, url);
   });
 }
 
