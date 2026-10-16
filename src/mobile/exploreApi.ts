@@ -65,13 +65,43 @@ export interface ExploreDetail {
 
 const LIST_FIELDS = [
   'id', 'displayName', 'location', 'types', 'primaryType', 'primaryTypeDisplayName', 'formattedAddress',
-  'rating', 'userRatingCount', 'priceLevel', 'regularOpeningHours', 'utcOffsetMinutes', 'photos', 'reservable',
+  'rating', 'userRatingCount', 'priceLevel', 'regularOpeningHours', 'utcOffsetMinutes', 'photos', 'isReservable',
 ];
 const DETAIL_FIELDS = [
   'nationalPhoneNumber', 'internationalPhoneNumber', 'websiteURI', 'googleMapsURI', 'editorialSummary',
-  'reviews', 'photos', 'regularOpeningHours', 'utcOffsetMinutes', 'reservable',
+  'reviews', 'photos', 'regularOpeningHours', 'utcOffsetMinutes', 'isReservable',
 ];
+/*
+ * 필드 이름 주의: Maps JS의 Place 클래스는 REST(Places API New)와 이름이 다른 게 있다.
+ *   REST `reservable` → JS `isReservable`, REST `websiteUri` → JS `websiteURI` …
+ * 모르는 필드를 하나라도 넣으면 요청 전체가 InvalidValueError로 실패한다(실제로 났던 버그:
+ * `reservable`을 넣어서 주변 검색이 통째로 안 됐다). 그래서 이름이 틀린 필드는 빼고 한 번 더
+ * 요청한다(`withFieldRetry`) — 그 정보 한 줄만 비고 나머지는 보인다.
+ */
 const MAX_RESULTS = 20;
+
+function reservableOf(p: any): boolean | null {
+  const v = p?.isReservable ?? p?.reservable;
+  return typeof v === 'boolean' ? v : null;
+}
+
+/** "Unknown fields requested: a, b" → 그 필드들을 빼고 다시(최대 3번) */
+export async function withFieldRetry<T>(fields: string[], run: (fields: string[]) => Promise<T>): Promise<T> {
+  let current = [...fields];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await run(current);
+    } catch (e) {
+      const m = String((e as Error)?.message ?? e).match(/Unknown fields requested:\s*([^\n]+)/i);
+      if (!m || attempt >= 3) throw e;
+      const bad = m[1].split(',').map((x) => x.trim().replace(/[.\s]+$/, '')).filter(Boolean);
+      const next = current.filter((f) => !bad.includes(f));
+      if (next.length === current.length) throw e;
+      console.warn('[Explore] Google이 모르는 필드를 빼고 다시 요청:', bad.join(', '));
+      current = next;
+    }
+  }
+}
 const CACHE_MS = 30 * 60_000;
 
 /** Google Place 객체 — 상세를 열 때 같은 객체에 필드를 더 받는다 */
@@ -127,7 +157,7 @@ function toExplorePlace(p: any, nowMs: number): ExplorePlace | null {
     openNow: isOpenAt(periods, offset, nowMs),
     todayHours: todayHoursLine(weekday, offset, nowMs),
     weekdayHours: weekday,
-    reservable: typeof p.reservable === 'boolean' ? p.reservable : null,
+    reservable: reservableOf(p),
     meters: null,
   };
 }
@@ -158,12 +188,14 @@ export async function searchNearbyCat(key: string, cat: ExploreCat, center: { la
   const cached = fromCache(key);
   if (cached) return cached;
   const Place = await placeClass();
-  const { places } = await Place.searchNearby({
-    fields: LIST_FIELDS,
-    locationRestriction: { center, radius },
-    includedTypes: catDef(cat).includedTypes,
-    maxResultCount: MAX_RESULTS,
-  });
+  const { places } = await withFieldRetry<{ places: any[] }>(LIST_FIELDS, (fields) =>
+    Place.searchNearby({
+      fields,
+      locationRestriction: { center, radius },
+      includedTypes: catDef(cat).includedTypes,
+      maxResultCount: MAX_RESULTS,
+    })
+  );
   return remember(key, places ?? []);
 }
 
@@ -172,12 +204,14 @@ export async function searchText(key: string, query: string, center: { lat: numb
   const cached = fromCache(key);
   if (cached) return cached;
   const Place = await placeClass();
-  const { places } = await Place.searchByText({
-    textQuery: query,
-    fields: LIST_FIELDS,
-    locationBias: { center, radius },
-    maxResultCount: MAX_RESULTS,
-  });
+  const { places } = await withFieldRetry<{ places: any[] }>(LIST_FIELDS, (fields) =>
+    Place.searchByText({
+      textQuery: query,
+      fields,
+      locationBias: { center, radius },
+      maxResultCount: MAX_RESULTS,
+    })
+  );
   return remember(key, places ?? []);
 }
 
@@ -191,7 +225,7 @@ export async function fetchDetail(id: string): Promise<ExploreDetail> {
     p = new Place({ id });
     rawById.set(id, p);
   }
-  await p.fetchFields({ fields: DETAIL_FIELDS });
+  await withFieldRetry(DETAIL_FIELDS, (fields) => p.fetchFields({ fields }));
   const photos = (Array.isArray(p.photos) ? p.photos : [])
     .slice(0, 5)
     .map((ph: any) => photoUrl(ph, 900))
@@ -213,7 +247,7 @@ export async function fetchDetail(id: string): Promise<ExploreDetail> {
     summary: str(p.editorialSummary),
     photos,
     reviews,
-    reservable: typeof p.reservable === 'boolean' ? p.reservable : null,
+    reservable: reservableOf(p),
     weekdayHours: Array.isArray(p.regularOpeningHours?.weekdayDescriptions) ? p.regularOpeningHours.weekdayDescriptions : null,
   };
   detailCache.set(id, detail);
