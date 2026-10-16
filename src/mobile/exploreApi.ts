@@ -1,0 +1,258 @@
+/**
+ * 지도 "주변 탐색"의 Google 호출 — 기존 `utils/googleMaps.ts`가 띄운 Maps JS(Places API New)를 쓴다.
+ * 새 서버 함수를 만들지 않는다(api/*.ts 12개 상한, 3-7).
+ *
+ * 비용 원칙(3-2)
+ *   · 사용자가 **명시적으로** 검색할 때만 부른다(칩 선택·검색어 제출·"이 지역에서 다시 검색").
+ *     지도를 움직인다고 부르지 않는다.
+ *   · 같은 조건(약 110m 격자 + 반경)의 검색은 **이 기기에서 30분** 다시 쓴다(메모리, 새로고침하면 사라짐).
+ *   · 목록은 목록에 필요한 필드만, 전화·웹사이트·리뷰·사진 여러 장은 상세를 열 때만 받는다.
+ *   · 사진은 URL만 받고, 실제 이미지는 화면에 보일 때 브라우저가 받는다(lazy).
+ *
+ * Supabase에 저장하지 않는 이유: Google Places 약관상 서버에 오래 둘 수 있는 건 장소 ID(무기한)와
+ * 좌표(30일)뿐이다. 이름·평점·사진·리뷰를 DB에 쌓으면 약관 위반이라, 기기 메모리에만 잠깐 둔다.
+ */
+
+import { loadGoogleMapsScript } from '../utils/googleMaps';
+import {
+  catDef,
+  catOfTypes,
+  normalizePrice,
+  isOpenAt,
+  todayHoursLine,
+  type ExploreCat,
+  type FilterablePlace,
+  type HoursPeriod,
+  type PriceLevel,
+} from './explore';
+
+export interface ExplorePlace extends FilterablePlace {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  address: string | null;
+  types: string[];
+  /** Google이 준 한국어 유형 이름(예: "태국 음식점"). 없으면 null */
+  typeLabel: string | null;
+  cat: Exclude<ExploreCat, 'all'>;
+  photo: string | null;
+  photoBy: string | null;
+  priceLevel: PriceLevel | null;
+  todayHours: string | null;
+  weekdayHours: string[] | null;
+}
+
+export interface ExploreReview {
+  author: string;
+  authorUrl: string | null;
+  rating: number | null;
+  text: string;
+  when: string | null;
+}
+
+export interface ExploreDetail {
+  phone: string | null;
+  phoneIntl: string | null;
+  website: string | null;
+  mapsUrl: string | null;
+  summary: string | null;
+  photos: Array<{ url: string; by: string | null }>;
+  reviews: ExploreReview[];
+  reservable: boolean | null;
+  weekdayHours: string[] | null;
+}
+
+const LIST_FIELDS = [
+  'id', 'displayName', 'location', 'types', 'primaryType', 'primaryTypeDisplayName', 'formattedAddress',
+  'rating', 'userRatingCount', 'priceLevel', 'regularOpeningHours', 'utcOffsetMinutes', 'photos', 'reservable',
+];
+const DETAIL_FIELDS = [
+  'nationalPhoneNumber', 'internationalPhoneNumber', 'websiteURI', 'googleMapsURI', 'editorialSummary',
+  'reviews', 'photos', 'regularOpeningHours', 'utcOffsetMinutes', 'reservable',
+];
+const MAX_RESULTS = 20;
+const CACHE_MS = 30 * 60_000;
+
+/** Google Place 객체 — 상세를 열 때 같은 객체에 필드를 더 받는다 */
+const rawById = new Map<string, any>();
+const searchCache = new Map<string, { at: number; places: ExplorePlace[] }>();
+const detailCache = new Map<string, ExploreDetail>();
+
+function str(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() ? v : null;
+}
+
+function photoOf(p: any, maxWidth: number): { url: string; by: string | null } | null {
+  const ph = Array.isArray(p?.photos) ? p.photos[0] : null;
+  return photoUrl(ph, maxWidth);
+}
+
+function photoUrl(ph: any, maxWidth: number): { url: string; by: string | null } | null {
+  if (!ph || typeof ph.getURI !== 'function') return null;
+  try {
+    const url = ph.getURI({ maxWidth });
+    const by = Array.isArray(ph.authorAttributions) ? str(ph.authorAttributions[0]?.displayName) : null;
+    return url ? { url, by } : null;
+  } catch {
+    return null;
+  }
+}
+
+function toExplorePlace(p: any, nowMs: number): ExplorePlace | null {
+  const loc = p?.location;
+  const lat = typeof loc?.lat === 'function' ? loc.lat() : loc?.lat;
+  const lng = typeof loc?.lng === 'function' ? loc.lng() : loc?.lng;
+  if (!p?.id || typeof lat !== 'number' || typeof lng !== 'number') return null;
+  const types: string[] = Array.isArray(p.types) ? p.types : [];
+  const hours = p.regularOpeningHours;
+  const periods: HoursPeriod[] | null = Array.isArray(hours?.periods) ? hours.periods : null;
+  const weekday: string[] | null = Array.isArray(hours?.weekdayDescriptions) ? hours.weekdayDescriptions : null;
+  const offset = typeof p.utcOffsetMinutes === 'number' ? p.utcOffsetMinutes : null;
+  const photo = photoOf(p, 400);
+  return {
+    id: p.id,
+    name: str(p.displayName) ?? '이름 없음',
+    lat,
+    lng,
+    address: str(p.formattedAddress),
+    types,
+    typeLabel: str(p.primaryTypeDisplayName),
+    cat: catOfTypes(p.primaryType ? [p.primaryType, ...types] : types),
+    photo: photo?.url ?? null,
+    photoBy: photo?.by ?? null,
+    rating: typeof p.rating === 'number' ? p.rating : null,
+    ratingCount: typeof p.userRatingCount === 'number' ? p.userRatingCount : null,
+    priceLevel: normalizePrice(p.priceLevel),
+    openNow: isOpenAt(periods, offset, nowMs),
+    todayHours: todayHoursLine(weekday, offset, nowMs),
+    weekdayHours: weekday,
+    reservable: typeof p.reservable === 'boolean' ? p.reservable : null,
+    meters: null,
+  };
+}
+
+async function placeClass(): Promise<any> {
+  await loadGoogleMapsScript();
+  const g = (window as unknown as { google?: any }).google;
+  const lib = await g.maps.importLibrary('places');
+  return lib.Place;
+}
+
+function fromCache(key: string): ExplorePlace[] | null {
+  const hit = searchCache.get(key);
+  if (!hit || Date.now() - hit.at > CACHE_MS) return null;
+  return hit.places;
+}
+
+function remember(key: string, raw: any[]): ExplorePlace[] {
+  const now = Date.now();
+  const places = raw.map((p) => toExplorePlace(p, now)).filter((p): p is ExplorePlace => !!p);
+  raw.forEach((p) => { if (p?.id) rawById.set(p.id, p); });
+  searchCache.set(key, { at: now, places });
+  return places;
+}
+
+/** 카테고리 주변 검색 (Nearby Search). 실패하면 예외 — 화면이 "못 불러왔어요"를 띄운다 */
+export async function searchNearbyCat(key: string, cat: ExploreCat, center: { lat: number; lng: number }, radius: number): Promise<ExplorePlace[]> {
+  const cached = fromCache(key);
+  if (cached) return cached;
+  const Place = await placeClass();
+  const { places } = await Place.searchNearby({
+    fields: LIST_FIELDS,
+    locationRestriction: { center, radius },
+    includedTypes: catDef(cat).includedTypes,
+    maxResultCount: MAX_RESULTS,
+  });
+  return remember(key, places ?? []);
+}
+
+/** 검색어 검색 (Text Search) — 지금 기준 위치 근처를 우선한다 */
+export async function searchText(key: string, query: string, center: { lat: number; lng: number }, radius: number): Promise<ExplorePlace[]> {
+  const cached = fromCache(key);
+  if (cached) return cached;
+  const Place = await placeClass();
+  const { places } = await Place.searchByText({
+    textQuery: query,
+    fields: LIST_FIELDS,
+    locationBias: { center, radius },
+    maxResultCount: MAX_RESULTS,
+  });
+  return remember(key, places ?? []);
+}
+
+/** 상세 — 같은 장소는 이 기기에서 한 번만 받는다 */
+export async function fetchDetail(id: string): Promise<ExploreDetail> {
+  const hit = detailCache.get(id);
+  if (hit) return hit;
+  let p = rawById.get(id);
+  if (!p) {
+    const Place = await placeClass();
+    p = new Place({ id });
+    rawById.set(id, p);
+  }
+  await p.fetchFields({ fields: DETAIL_FIELDS });
+  const photos = (Array.isArray(p.photos) ? p.photos : [])
+    .slice(0, 5)
+    .map((ph: any) => photoUrl(ph, 900))
+    .filter((x: unknown): x is { url: string; by: string | null } => !!x);
+  const reviews: ExploreReview[] = (Array.isArray(p.reviews) ? p.reviews : [])
+    .map((r: any) => ({
+      author: str(r?.authorAttribution?.displayName) ?? 'Google 사용자',
+      authorUrl: str(r?.authorAttribution?.uri),
+      rating: typeof r?.rating === 'number' ? r.rating : null,
+      text: str(r?.text) ?? '',
+      when: str(r?.relativePublishTimeDescription),
+    }))
+    .filter((r: ExploreReview) => r.text);
+  const detail: ExploreDetail = {
+    phone: str(p.nationalPhoneNumber),
+    phoneIntl: str(p.internationalPhoneNumber),
+    website: str(p.websiteURI),
+    mapsUrl: str(p.googleMapsURI),
+    summary: str(p.editorialSummary),
+    photos,
+    reviews,
+    reservable: typeof p.reservable === 'boolean' ? p.reservable : null,
+    weekdayHours: Array.isArray(p.regularOpeningHours?.weekdayDescriptions) ? p.regularOpeningHours.weekdayDescriptions : null,
+  };
+  detailCache.set(id, detail);
+  return detail;
+}
+
+/** 실제 도보·차량 시간 — 기존 /api/route-matrix(Routes API, 실시간 교통 미반영)를 쓴다. 상세에서 한 번 */
+export async function fetchTravelTimes(
+  from: { lat: number; lng: number },
+  to: { lat: number; lng: number }
+): Promise<{ walk: { meters: number; seconds: number } | null; drive: { meters: number; seconds: number } | null }> {
+  const res = await fetch('/api/route-matrix', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ legs: [{ id: 'explore', from, to }], modes: ['WALK', 'DRIVE'] }),
+  });
+  if (!res.ok) throw new Error('route-matrix ' + res.status);
+  const json = await res.json();
+  const modes = json?.results?.[0]?.modes ?? {};
+  const pick = (m: any) => (m && typeof m.seconds === 'number' && typeof m.meters === 'number' ? { meters: m.meters, seconds: m.seconds } : null);
+  return { walk: pick(modes.WALK), drive: pick(modes.DRIVE) };
+}
+
+/** 저장·일정 추가용 — 기존 `insertGooglePlace`가 받는 모양으로 */
+export function toGooglePlaceResult(p: ExplorePlace): {
+  place_id: string; name: string; address: string | null; lat: number; lng: number; rating: number | null;
+  userRatingCount: number | null; category: string | null; photoUrl: string | null; openingHours: string[] | null;
+} {
+  const CATEGORY: Record<ExplorePlace['cat'], string> = { food: '음식점', cafe: '카페', sight: '관광명소', stay: '숙소', amenity: '편의점' };
+  return {
+    place_id: p.id,
+    name: p.name,
+    address: p.address,
+    lat: p.lat,
+    lng: p.lng,
+    rating: p.rating,
+    userRatingCount: p.ratingCount,
+    category: CATEGORY[p.cat],
+    photoUrl: p.photo,
+    openingHours: p.weekdayHours,
+  };
+}

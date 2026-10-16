@@ -40,7 +40,8 @@
 import { supabase } from '../supabase';
 import { store } from '../store';
 import { navigate } from '../router';
-import { subscribeRoutePlan, unsubscribeRoutePlan, resetRouteStorageProbe } from '../route/routeStore';
+import { subscribeRoutePlan, unsubscribeRoutePlan, resetRouteStorageProbe, loadRoutePlan, saveRouteDay } from '../route/routeStore';
+import type { StoredStop } from '../route/routeStore';
 import { loadTripDayModel, scheduleFor, stopLegKey, todaysHoursLine, hoursWarning } from '../timeline/dayModel';
 import type { TlDay, TlStop, DaySchedule, RealLegMap, ProgressMap, StopProgress, HoursWarning } from '../timeline/dayModel';
 import {
@@ -109,7 +110,14 @@ import { idbGet, idbSet } from '../offline/idb';
 import { savedDocPaths, saveDocOffline, loadOfflineDoc, removeOfflineDoc, type OfflineDocFile } from '../offline/docs';
 import { fetchWeather, resetWeatherCache } from './weather';
 import type { Weather } from './weather';
-import { loadGoogleMapsScript } from '../utils/googleMaps';
+import { loadGoogleMapsScript, suggestGateFromCategory } from '../utils/googleMaps';
+import { insertGooglePlace, rehostPhoto } from '../trips/addGooglePlace';
+import {
+  EXPLORE_CATS, CAT_SHORT, DEFAULT_FILTERS, RADIUS_OPTIONS, catDef, priceLabel, straightMeters, straightLabel, fmtMeters,
+  applyFilters, sortPlaces, activeFilterCount, searchKey, movedFar,
+  type ExploreCat, type ExploreFilters, type ExploreSort, type PriceLevel,
+} from './explore';
+import { searchNearbyCat, searchText, fetchDetail, fetchTravelTimes, toGooglePlaceResult, type ExplorePlace, type ExploreDetail } from './exploreApi';
 import { requestPlaceBrief, placeBriefKey } from '../timeline/placeBrief';
 import type { PlaceBrief, PlaceBriefRequest } from '../timeline/placeBrief';
 import type { Database, TripDestination, StaySegment, TripChecklistItem, TripLink, TripDocument } from '../types/database';
@@ -159,10 +167,24 @@ const IC = {
   lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
   calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>',
+  sliders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>',
+  locate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="7.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22"/></svg>',
+  heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.4 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z"/></svg>',
+  heartFill: '<svg viewBox="0 0 24 24" fill="#E2574C" stroke="#E2574C" stroke-width="1.8" stroke-linejoin="round"><path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.4 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z"/></svg>',
+  phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3.5h3l1.5 4-2 1.3a10 10 0 0 0 6.2 6.2l1.3-2 4 1.5v3a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4.5 5.7a2 2 0 0 1 2-2.2z"/></svg>',
+  food: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 3v8m-2.5-8v4.5a2.5 2.5 0 0 0 5 0V3M7 11v10M16.5 3c-1.7 0-2.8 2.2-2.8 5s1.1 4.5 2.8 4.5V21"/></svg>',
+  coffee: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 9h11v5a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5zM15.5 10.5h1.8a2.4 2.4 0 0 1 0 4.8h-1.8M8 3.5v2M11 3.5v2"/></svg>',
+  landmark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 9.5 12 4l8.5 5.5zM6 9.5v8M10 9.5v8M14 9.5v8M18 9.5v8M3.5 20h17"/></svg>',
+  shop: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14l-1 12H6zM9 8V6.5a3 3 0 0 1 6 0V8"/></svg>',
+  grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg>',
   // 오프라인/저장 — 구름에 사선
   cloud: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 19a4.5 4.5 0 0 1-.4-8.98A6 6 0 0 1 18 9.5a4.7 4.7 0 0 1 .5 9.5z"/><path d="M4 4l16 16"/></svg>',
   swap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4 3 8l4 4"/><path d="M3 8h13a4 4 0 0 1 0 8h-1"/><path d="m17 20 4-4-4-4"/></svg>',
 };
+
+/** 주변 탐색 카테고리 아이콘 */
+const EX_ICON: Record<ExploreCat, string> = { all: IC.grid, food: IC.food, cafe: IC.coffee, sight: IC.landmark, stay: IC.bed, amenity: IC.shop };
 
 /** 날씨 아이콘 — weather.ts의 WeatherIcon과 1:1. 이모지를 쓰지 않는다(Claude.md 5-3). */
 const WX_ICON: Record<Weather['icon'], string> = {
@@ -748,6 +770,11 @@ function render(): void {
   const scrollTop = (container.querySelector('.mb-scroll') as HTMLElement | null)?.scrollTop ?? 0;
   const datesEl = container.querySelector('#mb-dates-scroll') as HTMLElement | null;
   if (datesEl) datesScrollLeft = datesEl.scrollLeft;
+  // 위치 갱신·1분 타이머로 다시 그려도 입력 중이던 검색어와 커서를 잃지 않게
+  const typing = document.activeElement instanceof HTMLInputElement && document.activeElement.id === 'mb-ex-q'
+    ? { value: document.activeElement.value, pos: document.activeElement.selectionStart } : null;
+  const exList = container.querySelector('#mb-ex-list');
+  const exScroll = (container.querySelector('.mb-exd-scroll') as HTMLElement | null)?.scrollTop ?? 0;
 
   container.innerHTML = '<div class="mb-app">' + appHtml() + '</div>';
   applyPhotos();
@@ -756,6 +783,13 @@ function render(): void {
   // 목록으로 돌아왔을 때 보던 위치를 잃지 않게(상세를 열고 닫으면 위로 튀는 걸 막음)
   const scroller = container.querySelector('.mb-scroll') as HTMLElement | null;
   if (scroller && !detailKey) scroller.scrollTop = scrollTop;
+  if (typing) {
+    const q = container.querySelector('#mb-ex-q') as HTMLInputElement | null;
+    if (q) { q.value = typing.value; q.focus(); if (typing.pos != null) q.setSelectionRange(typing.pos, typing.pos); }
+  }
+  void exList;
+  const exd = container.querySelector('.mb-exd-scroll') as HTMLElement | null;
+  if (exd) exd.scrollTop = exScroll;
 
   // TIMELINE 페이저는 innerHTML을 새로 그리면 첫 페이지로 돌아간다 — 상태(activeDayIndex)가
   // 곧 페이지 위치이므로 매 렌더마다 거기로 되돌려 놓는다(애니메이션 없이: 이미 그 자리다).
@@ -779,6 +813,8 @@ function appHtml(): string {
     '<main class="' + scrollCls + '">' + tabBodyHtml() + '</main>',
     tabBarHtml(),
     docViewer ? docViewerHtml() : '',
+    activeTab === 'map' && exDetailId ? exDetailHtml() : '',
+    activeTab === 'map' && exDraft ? exFilterHtml() : '',
     daySheetOpen ? daySheetHtml() : '',
     padOpen ? padSheetHtml() : '',
   ].join('');
@@ -1822,12 +1858,16 @@ function onPagerSettle(pager: HTMLElement): void {
 
 /* ══════════════════════ 지도 탭 ══════════════════════
  *
- * 오늘(활성 DAY)의 정류지를 실제 지도 위에 찍어 보여준다. **자체 내비게이션은 만들지 않는다** —
- * 길을 안내하는 건 여전히 Google Maps 딥링크의 몫이고, 여기는 "오늘 동선이 대충 어떻게 생겼나"를
- * 한눈에 보는 자리다.
+ * 두 가지 보기가 같은 지도를 쓴다.
+ *   · 일정 — 활성 DAY의 정류지를 찍어 "오늘 동선이 대충 어떻게 생겼나"를 본다(예전 그대로).
+ *   · 주변 탐색 — 현재 위치(없으면 일정 장소) 주변의 맛집·카페·관광지·숙소·편의시설을
+ *     Google Places로 찾아 지도와 목록에 띄운다. 상세에서 저장·일정 추가·예약 페이지로 이어진다.
  *
- * Maps JS는 **이 탭을 처음 열 때만** 받는다(원칙 3-2). index.html에서 동기 로드를 걷어낸 이유와
- * 같은 맥락이라, 여기서 미리 불러오면 그 작업이 무의미해진다.
+ * 지도 노드는 **한 번 만들고 다시 쓴다.** 이 화면은 상태가 바뀔 때마다 innerHTML을 통째로 다시
+ * 그리는데, 예전엔 그때마다 지도를 새로 만들었다(1분 타이머·위치 갱신마다 Maps 로드 = 비용).
+ * 이제 지도 div를 따로 들고 있다가 다시 그린 자리(#mb-map)에 옮겨 붙인다.
+ *
+ * Maps JS는 **이 탭을 처음 열 때만** 받는다(원칙 3-2).
  */
 
 let mapEl: HTMLElement | null = null;
@@ -1835,27 +1875,196 @@ let mapInstance: any = null;
 let mapMarkers: Array<{ setMap: (m: unknown) => void }> = [];
 let mapLoading = false;
 let mapError = '';
+/** 지금 지도에 찍힌 마커가 무엇인지 — 같으면 마커를 다시 만들지 않는다 */
+let markerSig = '';
+let userDot: any = null;
+let exMarkerById = new Map<string, any>();
+
+/* ── 주변 탐색 상태 ── */
+type MapView = 'plan' | 'explore';
+let mapView: MapView = 'plan';
+let exCat: ExploreCat = 'food';
+/** 검색어 검색 중이면 그 검색어(카테고리 대신) */
+let exQuery = '';
+let exResults: ExplorePlace[] = [];
+let exLoading = false;
+let exError = '';
+let exSearchedAt: { lat: number; lng: number } | null = null;
+let exCenterLabel = '';
+let exMoved = false;
+let exSelected: string | null = null;
+let exFilters: ExploreFilters = { ...DEFAULT_FILTERS };
+let exDraft: ExploreFilters | null = null;
+let exSort: ExploreSort = 'relevance';
+let exDetailId: string | null = null;
+let exDetail: ExploreDetail | null = null;
+let exDetailState: 'idle' | 'loading' | 'error' = 'idle';
+let exTravel: { walk: { meters: number; seconds: number } | null; drive: { meters: number; seconds: number } | null } | null = null;
+let exTravelState: 'idle' | 'loading' | 'error' = 'idle';
+let exDayPicker = false;
+let exNotice = '';
+let exSaving = false;
+/** 이번에 일정에 추가한 DAY — "DAY 2에 추가됨" 표시용(장소 id → DAY 번호들) */
+const exAddedDays = new Map<string, number[]>();
+
+/** 현재 위치 — GPS 자동 체크인이 켜져 있으면 그 값을 같이 쓴다 */
+let userLoc: { lat: number; lng: number } | null = null;
+let userLocState: 'idle' | 'asking' | 'ok' | 'denied' | 'unavailable' = 'idle';
+
+function currentUserLoc(): { lat: number; lng: number } | null {
+  if (geoFix) return { lat: geoFix.lat, lng: geoFix.lng };
+  return userLoc;
+}
+
+/** 위치를 한 번 묻는다(사용자가 탐색을 고르거나 내 위치 버튼을 눌렀을 때만) */
+function requestUserLoc(): Promise<{ lat: number; lng: number } | null> {
+  const known = currentUserLoc();
+  if (known) return Promise.resolve(known);
+  if (!isGeoSupported()) { userLocState = 'unavailable'; return Promise.resolve(null); }
+  userLocState = 'asking';
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        userLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        userLocState = 'ok';
+        resolve(userLoc);
+      },
+      (err) => {
+        userLocState = err.code === err.PERMISSION_DENIED ? 'denied' : 'unavailable';
+        resolve(null);
+      },
+      { enableHighAccuracy: false, maximumAge: 60_000, timeout: 12_000 }
+    );
+  });
+}
+
+/** 위치를 못 쓸 때 기준점 — 활성 DAY의 첫 정류지, 없으면 여행 아무 정류지 */
+function fallbackCenter(): { lat: number; lng: number } | null {
+  const pick = (d: TlDay | null | undefined) => d?.stops.find((s) => s.lat != null && s.lng != null);
+  const st = pick(activeDay()) ?? days.map(pick).find(Boolean);
+  return st ? { lat: st.lat!, lng: st.lng! } : null;
+}
+
+/** 거리 기준점 — 현재 위치가 있으면 그것, 없으면 검색한 자리 */
+function distanceOrigin(): { lat: number; lng: number } | null {
+  return currentUserLoc() ?? exSearchedAt;
+}
+
+function withMeters(list: ExplorePlace[]): ExplorePlace[] {
+  const o = distanceOrigin();
+  return list.map((p) => ({ ...p, meters: o ? straightMeters(o, p) : null }));
+}
+
+function visibleResults(): ExplorePlace[] {
+  return sortPlaces(applyFilters(withMeters(exResults), exFilters), exSort);
+}
+
+/**
+ * 검색 — 칩·검색어·"이 지역에서 다시 검색"을 눌렀을 때만 부른다(지도를 움직였다고 부르지 않는다).
+ * `where`가 없으면 현재 위치 → 실패하면 일정 장소 기준으로 찾는다.
+ */
+async function runExploreSearch(where?: { lat: number; lng: number }, label?: string): Promise<void> {
+  exLoading = true;
+  exError = '';
+  exNotice = '';
+  render();
+
+  let center = where ?? null;
+  let centerLabel = label ?? '';
+  if (!center) {
+    const loc = await requestUserLoc();
+    if (loc) { center = loc; centerLabel = '현재 위치'; }
+    else {
+      center = fallbackCenter();
+      centerLabel = '일정 장소';
+      exNotice = userLocState === 'denied'
+        ? '현재 위치를 사용할 수 없어요 — 위치 권한이 꺼져 있어 일정 장소 기준으로 찾았어요.'
+        : '현재 위치를 확인하지 못해 일정 장소 기준으로 찾았어요.';
+    }
+  }
+  if (!center) {
+    exLoading = false;
+    exError = '찾을 기준 위치가 없어요. 위치 권한을 켜거나, 일정에 장소를 먼저 넣어 주세요.';
+    render();
+    return;
+  }
+
+  const radius = exFilters.radius;
+  try {
+    const key = exQuery ? searchKey('text', exQuery, center, radius) : searchKey('cat', exCat, center, radius);
+    exResults = exQuery ? await searchText(key, exQuery, center, radius) : await searchNearbyCat(key, exCat, center, radius);
+    exSearchedAt = center;
+    exCenterLabel = centerLabel;
+    exMoved = false;
+    exSelected = null;
+    markerSig = '';
+  } catch (e) {
+    console.error('[Explore] 검색 실패:', e);
+    exError = offlineState().offline ? '오프라인이라 주변 장소를 찾을 수 없어요.' : '주변 장소를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.';
+  } finally {
+    exLoading = false;
+    render();
+    fitExploreBounds(center);
+  }
+}
+
+function fitExploreBounds(center: { lat: number; lng: number } | null): void {
+  const g = (window as unknown as { google?: any }).google;
+  if (!g?.maps || !mapInstance || mapView !== 'explore') return;
+  const list = visibleResults();
+  if (!list.length) { if (center) mapInstance.panTo(center); return; }
+  const b = new g.maps.LatLngBounds();
+  list.forEach((p) => b.extend({ lat: p.lat, lng: p.lng }));
+  const me = currentUserLoc();
+  if (me) b.extend(me);
+  mapInstance.fitBounds(b, 40);
+}
+
+/* ── 화면 ── */
 
 function mapTabHtml(): string {
-  const day = activeDay();
-  const pins = (day?.stops ?? []).filter((s) => s.lat != null && s.lng != null);
-
-  if (!day || !day.stops.length) {
-    return emptyHtml('이 날은 일정이 없어요', 'PC에서 ROUTE로 동선을 먼저 만들어 주세요.');
-  }
-  if (!pins.length) {
-    return emptyHtml('지도에 찍을 좌표가 없어요', '정류지에 좌표가 저장되어 있어야 지도에 표시할 수 있어요.');
-  }
-
   return [
     '<div class="mb-map-wrap">',
+    mapChipsHtml(),
+    mapView === 'plan' ? planMapHtml() : exploreHtml(),
+    '</div>',
+  ].join('');
+}
+
+/** 보기 고르기 — 일정 | 맛집 | 카페 | 관광지 | 숙소 | 편의시설 | 전체 (가로 스크롤) */
+function mapChipsHtml(): string {
+  const chip = (key: string, label: string, icon: string, active: boolean) =>
+    '<button class="mb-ex-chip' + (active ? ' active' : '') + '" data-mapview="' + key + '">' + icon + '<span>' + label + '</span></button>';
+  return [
+    '<div class="mb-ex-chips" role="tablist">',
+    chip('plan', '일정', IC.route, mapView === 'plan'),
+    EXPLORE_CATS.map((c) => chip(c.key, c.label, EX_ICON[c.key], mapView === 'explore' && !exQuery && exCat === c.key)).join(''),
+    '</div>',
+  ].join('');
+}
+
+function mapBoxHtml(extra = ''): string {
+  return mapError
+    ? '<div class="mb-map-err">' + escapeHtml(mapError) + '</div>'
+    : '<div class="mb-map-box"><div class="mb-map" id="mb-map">' + (mapLoading && !mapInstance ? '<span class="mb-spinner"></span>' : '') + '</div>' + extra + '</div>';
+}
+
+/** 일정 보기 — 예전 지도 탭 그대로(활성 DAY 핀 + 목록) */
+function planMapHtml(): string {
+  const day = activeDay();
+  const pins = (day?.stops ?? []).filter((s) => s.lat != null && s.lng != null);
+  if (!day || !day.stops.length) {
+    return '<div class="mb-day-empty"><p class="mb-day-empty-title">이 날은 일정이 없어요</p><p class="mb-day-empty-sub">위의 맛집·카페로 주변을 찾아보거나, PC에서 일정을 채워 주세요.</p></div>';
+  }
+  if (!pins.length) {
+    return '<div class="mb-day-empty"><p class="mb-day-empty-title">지도에 찍을 좌표가 없어요</p><p class="mb-day-empty-sub">정류지에 좌표가 저장되어 있어야 지도에 표시할 수 있어요.</p></div>';
+  }
+  return [
     '  <div class="mb-map-head">',
     '    <span class="mb-map-day">' + escapeHtml(day.label) + '</span>',
     '    <span class="mb-map-count">' + pins.length + '곳</span>',
     '  </div>',
-    mapError
-      ? '  <div class="mb-map-err">' + escapeHtml(mapError) + '</div>'
-      : '  <div class="mb-map" id="mb-map">' + (mapLoading ? '<span class="mb-spinner"></span>' : '') + '</div>',
+    mapBoxHtml(),
     '  <div class="mb-map-list">',
     pins
       .map(
@@ -1868,23 +2077,372 @@ function mapTabHtml(): string {
       )
       .join(''),
     '  </div>',
+  ].join('');
+}
+
+/** 주변 탐색 보기 — 지도(검색창·다시 검색·내 위치) + 기준 줄 + 장소 카드 */
+function exploreHtml(): string {
+  const list = visibleResults();
+  const nFilter = activeFilterCount(exFilters);
+  const overlay = [
+    '<form class="mb-ex-search" id="mb-ex-form" role="search">',
+    '  <span class="mb-ex-search-ic">' + IC.search + '</span>',
+    '  <input id="mb-ex-q" type="search" enterkeyhint="search" autocomplete="off" placeholder="' + (exCenterLabel === '현재 위치' || !exCenterLabel ? '현재 위치에서 검색하기' : '이 근처에서 검색하기') + '" value="' + escapeHtml(exQuery) + '" />',
+    exQuery ? '  <button type="button" class="mb-ex-clear" id="mb-ex-clear" aria-label="검색어 지우기">' + IC.close + '</button>' : '',
+    '</form>',
+    '<button class="mb-ex-filter-btn' + (nFilter ? ' on' : '') + '" id="mb-ex-filter" aria-label="필터">' + IC.sliders + (nFilter ? '<b>' + nFilter + '</b>' : '<span>필터</span>') + '</button>',
+    exMoved && !exLoading ? '<button class="mb-ex-again" id="mb-ex-again">' + IC.refresh + '이 지역에서 다시 검색</button>' : '',
+    '<button class="mb-ex-me" id="mb-ex-me" aria-label="내 위치로">' + IC.locate + '</button>',
+  ].join('');
+
+  const status = exLoading
+    ? '<span class="mb-spinner"></span>찾는 중…'
+    : exSearchedAt
+      ? escapeHtml(exCenterLabel) + ' 기준 · ' + (exQuery ? '"' + escapeHtml(exQuery) + '" ' : escapeHtml(catDef(exCat).label) + ' ') + list.length + '곳' + (list.length !== exResults.length ? ' (필터 ' + (exResults.length - list.length) + '곳 숨김)' : '')
+      : '';
+
+  return [
+    mapBoxHtml(overlay),
+    exNotice ? '<p class="mb-ex-notice">' + escapeHtml(exNotice) + '</p>' : '',
+    '<div class="mb-ex-bar">',
+    '  <span class="mb-ex-status">' + status + '</span>',
+    exResults.length ? '  <div class="mb-ex-sort">' + (['relevance', 'distance', 'rating'] as ExploreSort[]).map((k) => '<button class="mb-ex-sortbtn' + (exSort === k ? ' active' : '') + '" data-exsort="' + k + '">' + ({ relevance: '추천순', distance: '거리순', rating: '평점순' } as const)[k] + '</button>').join('') + '</div>' : '',
+    '</div>',
+    exError ? '<div class="mb-map-err">' + escapeHtml(exError) + '</div>' : '',
+    !exLoading && exSearchedAt && !exError && !list.length
+      ? '<div class="mb-day-empty"><p class="mb-day-empty-title">' + (exResults.length ? '필터에 맞는 곳이 없어요' : '주변에서 찾지 못했어요') + '</p><p class="mb-day-empty-sub">' + (exResults.length ? '필터를 줄여 보세요.' : '반경을 넓히거나 다른 검색어로 찾아보세요.') + '</p></div>'
+      : '',
+    '<div class="mb-ex-list" id="mb-ex-list">' + list.map(exCardHtml).join('') + '</div>',
+    list.length ? '<p class="mb-ex-src">장소 정보 · 사진: Google. 거리는 직선거리예요 — 실제 도보·차량 시간은 상세에서 확인할 수 있어요.</p>' : '',
+  ].join('');
+}
+
+function isSavedPlace(googleId: string): boolean {
+  for (const p of placeById.values()) if (p.google_place_id === googleId) return true;
+  return false;
+}
+
+function exCardHtml(p: ExplorePlace): string {
+  const meta: string[] = [];
+  if (p.typeLabel) meta.push(escapeHtml(p.typeLabel));
+  if (p.meters != null) meta.push(escapeHtml(straightLabel(p.meters)));
+  const meta2: string[] = [];
+  const price = priceLabel(p.priceLevel);
+  if (price) meta2.push('가격대 ' + escapeHtml(price));
+  if (p.openNow === true) meta2.push('<span class="mb-ex-open">영업 중</span>');
+  else if (p.openNow === false) meta2.push('<span class="mb-ex-closed">영업 종료</span>');
+  if (p.todayHours) meta2.push(escapeHtml(p.todayHours));
+  return [
+    '<button class="mb-ex-card' + (exSelected === p.id ? ' is-selected' : '') + '" data-explace="' + escapeHtml(p.id) + '">',
+    p.photo
+      ? '  <span class="mb-ex-thumb" data-photo="' + escapeHtml(p.photo) + '"></span>'
+      : '  <span class="mb-ex-thumb is-blank">' + EX_ICON[p.cat] + '</span>',
+    '  <span class="mb-ex-main">',
+    '    <span class="mb-ex-name-row"><span class="mb-ex-name">' + escapeHtml(p.name) + '</span><span class="mb-ex-tag cat-' + p.cat + '">' + CAT_SHORT[p.cat] + '</span></span>',
+    p.rating != null
+      ? '    <span class="mb-ex-rating">' + IC.star + '<b>' + p.rating.toFixed(1) + '</b>' + (p.ratingCount != null ? '<span>(' + p.ratingCount.toLocaleString('ko-KR') + ')</span>' : '') + '</span>'
+      : '',
+    meta.length ? '    <span class="mb-ex-meta">' + meta.join(' · ') + '</span>' : '',
+    meta2.length ? '    <span class="mb-ex-meta">' + meta2.join(' · ') + '</span>' : '',
+    p.reservable === true ? '    <span class="mb-ex-resv">' + IC.calendar + '예약 가능 (Google 정보)</span>' : '',
+    '  </span>',
+    isSavedPlace(p.id) ? '  <span class="mb-ex-saved" aria-label="저장됨">' + IC.heartFill + '</span>' : '',
+    '</button>',
+  ].join('');
+}
+
+/* ── 상세 시트 ── */
+
+function exPlaceById(id: string | null): ExplorePlace | null {
+  if (!id) return null;
+  return withMeters(exResults).find((p) => p.id === id) ?? null;
+}
+
+function fmtTravel(t: { meters: number; seconds: number }): string {
+  return '약 ' + fmtMin(Math.max(1, Math.round(t.seconds / 60))) + ' · ' + fmtMeters(t.meters);
+}
+
+function exDetailHtml(): string {
+  const p = exPlaceById(exDetailId);
+  if (!p) return '';
+  const d = exDetail;
+  const photos = d?.photos.length ? d.photos : p.photo ? [{ url: p.photo, by: p.photoBy }] : [];
+  const saved = isSavedPlace(p.id);
+  const phone = d?.phoneIntl ?? d?.phone ?? null;
+  const resvLink = d?.website ?? d?.mapsUrl ?? null;
+  const reservable = (d?.reservable ?? p.reservable) === true;
+  const price = priceLabel(p.priceLevel);
+  const hours = d?.weekdayHours ?? p.weekdayHours;
+  const added = exAddedDays.get(p.id) ?? [];
+
+  const travel = exTravelState === 'loading'
+    ? '<span class="mb-spinner"></span>실제 경로 시간 확인 중…'
+    : exTravel && (exTravel.walk || exTravel.drive)
+      ? [exTravel.walk ? '도보 ' + fmtTravel(exTravel.walk) : '', exTravel.drive ? '차량 ' + fmtTravel(exTravel.drive) : ''].filter(Boolean).join('  ·  ')
+      : p.meters != null ? straightLabel(p.meters) + ' (경로 시간은 확인하지 못했어요)' : '';
+
+  return [
+    '<div class="mb-sheet-back" id="mb-exd-back"></div>',
+    '<section class="mb-exd" role="dialog" aria-modal="true" aria-label="' + escapeHtml(p.name) + '">',
+    '  <div class="mb-sheet-grip"></div>',
+    '  <header class="mb-exd-nav">',
+    '    <button class="mb-icon-btn" id="mb-exd-close" aria-label="닫기">' + IC.close + '</button>',
+    '    <span class="mb-exd-navgap"></span>',
+    '    <button class="mb-icon-btn' + (saved ? ' is-on' : '') + '" id="mb-exd-save" aria-pressed="' + saved + '" aria-label="' + (saved ? '저장됨' : '저장') + '">' + (saved ? IC.heartFill : IC.heart) + '</button>',
+    '    <button class="mb-icon-btn" id="mb-exd-share" aria-label="공유">' + IC.share + '</button>',
+    '  </header>',
+    '  <div class="mb-exd-scroll">',
+    photos.length
+      ? '    <div class="mb-exd-photos" id="mb-exd-photos">' + photos.map((ph, i) =>
+          '<figure class="mb-exd-photo" data-photo="' + escapeHtml(ph.url) + '">' +
+          '<span class="mb-exd-count">' + (i + 1) + ' / ' + photos.length + '</span>' +
+          (ph.by ? '<figcaption>사진: ' + escapeHtml(ph.by) + '</figcaption>' : '') +
+          '</figure>').join('') + '</div>'
+      : '',
+    '    <div class="mb-exd-body">',
+    '      <div class="mb-exd-title-row"><h2 class="mb-exd-title">' + escapeHtml(p.name) + '</h2><span class="mb-ex-tag cat-' + p.cat + '">' + CAT_SHORT[p.cat] + '</span></div>',
+    p.rating != null || p.typeLabel
+      ? '      <p class="mb-exd-line">' + (p.rating != null ? '<span class="mb-ex-rating">' + IC.star + '<b>' + p.rating.toFixed(1) + '</b>' + (p.ratingCount != null ? '<span>(' + p.ratingCount.toLocaleString('ko-KR') + '개 리뷰)</span>' : '') + '</span>' : '') + (p.typeLabel ? '<span class="mb-exd-dot">·</span>' + escapeHtml(p.typeLabel) : '') + '</p>'
+      : '',
+    price || p.openNow != null || p.todayHours
+      ? '      <p class="mb-exd-line">' + [price ? '가격대 ' + escapeHtml(price) : '', p.openNow === true ? '<span class="mb-ex-open">영업 중</span>' : p.openNow === false ? '<span class="mb-ex-closed">영업 종료</span>' : '', p.todayHours ? '오늘 ' + escapeHtml(p.todayHours) : ''].filter(Boolean).join('<span class="mb-exd-dot">·</span>') + '</p>'
+      : '',
+    travel ? '      <p class="mb-exd-line mb-exd-travel">' + IC.walk + '<span>' + travel + '</span></p>' : '',
+    p.address ? '      <p class="mb-exd-line mb-exd-addr">' + IC.pin + '<span>' + escapeHtml(p.address) + '</span></p>' : '',
+    '      <div class="mb-exd-actions">',
+    phone ? '        <a class="mb-exd-act" href="tel:' + escapeHtml(phone.replace(/[^+\d]/g, '')) + '">' + IC.phone + '<span>전화</span></a>' : '',
+    '        <a class="mb-exd-act" href="' + escapeHtml(d?.mapsUrl ?? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(p.name) + '&query_place_id=' + encodeURIComponent(p.id)) + '" target="_blank" rel="noopener">' + IC.map + '<span>Google 지도</span></a>',
+    '        <a class="mb-exd-act" href="https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(p.lat + ',' + p.lng) + '&destination_place_id=' + encodeURIComponent(p.id) + '" target="_blank" rel="noopener">' + IC.navigate + '<span>길찾기</span></a>',
+    d?.website ? '        <a class="mb-exd-act" href="' + escapeHtml(d.website) + '" target="_blank" rel="noopener">' + IC.ext + '<span>웹사이트</span></a>' : '',
+    '      </div>',
+    exNotice ? '      <p class="mb-ex-notice">' + escapeHtml(exNotice) + '</p>' : '',
+    // 예약 — Google은 "예약을 받는 곳인지"만 알려준다. 예약 가능 시간은 없으니 만들지 않는다.
+    reservable
+      ? [
+          '      <div class="mb-exd-resv">',
+          '        <div class="mb-exd-resv-head">' + IC.calendar + '<b>예약을 받는 곳이에요</b></div>',
+          '        <p>Google 정보 기준이에요. 예약 가능한 시간은 예약 페이지에서 확인해 주세요.</p>',
+          '        <div class="mb-exd-resv-acts">',
+          resvLink ? '          <a class="mb-exd-resv-btn" href="' + escapeHtml(resvLink) + '" target="_blank" rel="noopener">예약 페이지 열기</a>' : '',
+          phone ? '          <a class="mb-exd-resv-ghost" href="tel:' + escapeHtml(phone.replace(/[^+\d]/g, '')) + '">전화로 예약</a>' : '',
+          '        </div>',
+          '      </div>',
+        ].join('')
+      : '',
+    exDetailState === 'loading' ? '      <p class="mb-exd-loading"><span class="mb-spinner"></span>상세 정보 불러오는 중…</p>' : '',
+    exDetailState === 'error' ? '      <p class="mb-ex-notice">상세 정보를 불러오지 못했어요. 기본 정보만 보여드려요.</p>' : '',
+    d?.summary ? '      <section class="mb-exd-sec"><h3>장소 소개 <small>Google</small></h3><p class="mb-exd-text">' + escapeHtml(d.summary) + '</p></section>' : '',
+    hours && hours.length
+      ? '      <section class="mb-exd-sec"><h3>영업시간</h3><ul class="mb-exd-hours">' + hours.map((h) => '<li>' + escapeHtml(h) + '</li>').join('') + '</ul></section>'
+      : '',
+    d?.reviews.length
+      ? '      <section class="mb-exd-sec"><h3>리뷰 <small>Google · ' + (p.ratingCount != null ? p.ratingCount.toLocaleString('ko-KR') + '개 중 ' : '') + d.reviews.length + '개</small></h3>' +
+        d.reviews.map((r) =>
+          '<article class="mb-exd-review"><div class="mb-exd-review-head">' +
+          (r.authorUrl ? '<a href="' + escapeHtml(r.authorUrl) + '" target="_blank" rel="noopener">' + escapeHtml(r.author) + '</a>' : '<b>' + escapeHtml(r.author) + '</b>') +
+          (r.rating != null ? '<span class="mb-exd-stars" aria-label="' + r.rating + '점">' + '★'.repeat(Math.round(r.rating)) + '<i>' + '★'.repeat(5 - Math.round(r.rating)) + '</i></span>' : '') +
+          (r.when ? '<span class="mb-exd-when">' + escapeHtml(r.when) + '</span>' : '') +
+          '</div><p class="mb-exd-text">' + escapeHtml(r.text) + '</p></article>'
+        ).join('') + '</section>'
+      : '',
+    '    </div>',
+    '  </div>',
+    '  <footer class="mb-exd-cta">',
+    '    <button class="mb-exd-add" id="mb-exd-add"' + (exSaving ? ' disabled' : '') + '>' + IC.plus + (added.length ? 'DAY ' + added.join(', ') + '에 추가됨 · 다른 날에도' : '여행 일정에 추가') + '</button>',
+    reservable && resvLink ? '    <a class="mb-exd-cta-resv" href="' + escapeHtml(resvLink) + '" target="_blank" rel="noopener" aria-label="예약 페이지 열기">' + IC.calendar + '</a>' : '',
+    '  </footer>',
+    '</section>',
+    exDayPicker ? exDayPickerHtml(p) : '',
+  ].join('');
+}
+
+/** 일정에 추가 — 기존 DAY 목록(여행지별)에서 고른다 */
+function exDayPickerHtml(p: ExplorePlace): string {
+  const added = exAddedDays.get(p.id) ?? [];
+  return [
+    '<div class="mb-sheet-back mb-exd-pick-back" id="mb-exd-pick-back"></div>',
+    '<div class="mb-sheet mb-exd-pick" role="dialog" aria-label="일정에 추가">',
+    '  <div class="mb-sheet-grip"></div>',
+    '  <div class="mb-sheet-title">어느 날에 넣을까요 · ' + escapeHtml(p.name) + '</div>',
+    '  <div class="mb-sheet-list">',
+    days
+      .map((d, i) =>
+        (isMultiDest() && (i === 0 || days[i - 1].destId !== d.destId) && d.destName ? '<div class="mb-sheet-dest">' + escapeHtml(d.destName) + '</div>' : '') +
+        '<button class="mb-sheet-item' + (added.includes(d.dayNumber) ? ' active' : '') + '" data-exaddday="' + i + '"' + (!d.destId || exSaving ? ' disabled' : '') + '>' +
+        '<span class="mb-sheet-day">' + escapeHtml(d.label) + '</span>' +
+        '<span class="mb-sheet-date">' + escapeHtml(dateLabel(d.date)) + '</span>' +
+        '<span class="mb-sheet-count">' + (added.includes(d.dayNumber) ? '추가됨' : d.stops.length ? d.stops.length + '곳 · 맨 뒤에' : '첫 일정으로') + '</span>' +
+        '</button>'
+      )
+      .join(''),
+    '  </div>',
     '</div>',
   ].join('');
 }
 
-/** 지도를 실제로 띄운다 — 렌더 직후 호출된다(마크업이 DOM에 있어야 Map을 붙일 수 있다). */
+/** 필터 시트 — 거리(반경)는 새로 검색, 나머지는 받은 결과 안에서 거른다 */
+function exFilterHtml(): string {
+  const f = exDraft ?? exFilters;
+  const seg = (name: string, opts: Array<[string, string]>, cur: string) =>
+    '<div class="mb-exf-seg">' + opts.map(([v, l]) => '<button class="mb-exf-opt' + (v === cur ? ' active' : '') + '" data-exf="' + name + '" data-v="' + v + '">' + l + '</button>').join('') + '</div>';
+  const prices: Array<[PriceLevel, string]> = [['INEXPENSIVE', '저렴'], ['MODERATE', '보통'], ['EXPENSIVE', '비쌈'], ['VERY_EXPENSIVE', '매우 비쌈']];
+  return [
+    '<div class="mb-sheet-back" id="mb-exf-back"></div>',
+    '<div class="mb-sheet mb-exf" role="dialog" aria-label="필터">',
+    '  <div class="mb-sheet-grip"></div>',
+    '  <div class="mb-sheet-title">필터</div>',
+    '  <div class="mb-exf-body">',
+    '    <h4>거리 (검색 반경)</h4>',
+    seg('radius', RADIUS_OPTIONS.map((r) => [String(r), fmtMeters(r)]), String(f.radius)),
+    '    <h4>평점</h4>',
+    seg('minRating', [['0', '전체'], ['4', '4.0 이상'], ['4.5', '4.5 이상']], String(f.minRating)),
+    '    <h4>가격대 <small>Google 등급</small></h4>',
+    '<div class="mb-exf-seg">' + prices.map(([v, l]) => '<button class="mb-exf-opt' + (f.prices.includes(v) ? ' active' : '') + '" data-exf="price" data-v="' + v + '">' + l + '</button>').join('') + '</div>',
+    '    <h4>그 밖에</h4>',
+    '<div class="mb-exf-seg">',
+    '<button class="mb-exf-opt' + (f.openNow ? ' active' : '') + '" data-exf="openNow" data-v="1">지금 영업 중</button>',
+    '<button class="mb-exf-opt' + (f.reservable ? ' active' : '') + '" data-exf="reservable" data-v="1">예약 받는 곳</button>',
+    '</div>',
+    '    <p class="mb-exf-note">영업 여부·가격대·예약 정보가 없는 곳은 그 조건을 켜면 목록에서 빠져요.</p>',
+    '  </div>',
+    '  <div class="mb-exf-foot">',
+    '    <button class="mb-ghost-btn" id="mb-exf-reset">초기화</button>',
+    '    <button class="mb-exf-apply" id="mb-exf-apply">적용</button>',
+    '  </div>',
+    '</div>',
+  ].join('');
+}
+
+/* ── 상세 열기·저장·일정 추가 ── */
+
+function openExDetail(id: string): void {
+  exDetailId = id;
+  exSelected = id;
+  exDetail = null;
+  exDetailState = 'loading';
+  exTravel = null;
+  exTravelState = 'idle';
+  exNotice = '';
+  exDayPicker = false;
+  render();
+  focusExMarker(id);
+  void fetchDetail(id)
+    .then((d) => { if (exDetailId === id) { exDetail = d; exDetailState = 'idle'; render(); } })
+    .catch((e) => { console.error('[Explore] 상세 실패:', e); if (exDetailId === id) { exDetailState = 'error'; render(); } });
+  const p = exPlaceById(id);
+  const from = distanceOrigin();
+  if (p && from) {
+    exTravelState = 'loading';
+    void fetchTravelTimes(from, p)
+      .then((t) => { if (exDetailId === id) { exTravel = t; exTravelState = 'idle'; render(); } })
+      .catch(() => { if (exDetailId === id) { exTravelState = 'error'; render(); } });
+  }
+}
+
+function closeExDetail(): void {
+  exDetailId = null;
+  exDetail = null;
+  exDayPicker = false;
+  exNotice = '';
+  render();
+}
+
+/** 저장 = 이 여행의 장소 목록(places, 아이디어 보드와 같은 곳)에 담기. 기존 저장 경로를 그대로 쓴다 */
+async function ensureExSaved(p: ExplorePlace, destinationId: string | null): Promise<Place | null> {
+  for (const pl of placeById.values()) if (pl.google_place_id === p.id) return pl;
+  if (!currentTripId) return null;
+  const g = toGooglePlaceResult(p);
+  const photoUrl = g.photoUrl ? await rehostPhoto(g.photoUrl, p.id) : null;
+  const res = await insertGooglePlace(currentTripId, destinationId ?? activeDay()?.destId ?? undefined, suggestGateFromCategory(g.category) ?? '가고싶어', { ...g, photoUrl }, 'mobile_explore');
+  if (!res) return null;
+  placeById.set(res.place.id, res.place);
+  return res.place;
+}
+
+async function toggleExSave(): Promise<void> {
+  const p = exPlaceById(exDetailId);
+  if (!p || exSaving) return;
+  const existing = [...placeById.values()].find((pl) => pl.google_place_id === p.id);
+  exSaving = true;
+  exNotice = '';
+  render();
+  try {
+    if (!existing) {
+      const saved = await ensureExSaved(p, null);
+      exNotice = saved ? '이 여행의 장소 목록에 저장했어요 (PC 아이디어 보드에서도 보여요).' : '저장하지 못했어요. 잠시 뒤 다시 시도해 주세요.';
+    } else if (days.some((d) => d.stops.some((s) => s.placeId === existing.id))) {
+      exNotice = '일정에 들어 있는 장소라 저장을 풀 수 없어요. 일정에서 먼저 빼 주세요.';
+    } else {
+      const { error } = await supabase.from('places').delete().eq('id', existing.id);
+      if (error) exNotice = '저장을 풀지 못했어요.';
+      else placeById.delete(existing.id);
+    }
+  } finally {
+    exSaving = false;
+    render();
+  }
+}
+
+/** 일정에 추가 — 기존 ROUTE 저장 경로(loadRoutePlan → saveRouteDay)로 그 DAY 맨 뒤에 넣는다 */
+async function addExToDay(dayIdx: number): Promise<void> {
+  const p = exPlaceById(exDetailId);
+  const day = days[dayIdx];
+  if (!p || !day?.destId || !currentTripId || exSaving) return;
+  exSaving = true;
+  exNotice = '';
+  render();
+  try {
+    const place = await ensureExSaved(p, day.destId);
+    if (!place) { exNotice = '일정에 넣지 못했어요(장소 저장 실패).'; return; }
+    // 다른 사람이 방금 고쳤을 수 있으니 DB의 최신 상태에 붙인다
+    const plan = (await loadRoutePlan(day.destId)) ?? [];
+    const stored = plan.find((d) => d.dayIndex === day.dayIndex)?.stops ?? [];
+    const stops: StoredStop[] = [
+      ...stored,
+      { placeId: place.id, customName: null, customLat: null, customLng: null, arriveTime: null, memo: null, travelMode: null, purpose: null, customDwellMin: null },
+    ];
+    const result = await saveRouteDay(currentTripId, day.destId, day.dayIndex, stops);
+    if (result !== 'ok') { exNotice = result === 'partial' ? '저장 중 문제가 생겼어요. PC ROUTE에서 그 날을 확인해 주세요.' : '일정에 넣지 못했어요. 잠시 뒤 다시 시도해 주세요.'; return; }
+    exAddedDays.set(p.id, [...(exAddedDays.get(p.id) ?? []), day.dayNumber].sort((a, b) => a - b));
+    exDayPicker = false;
+    exNotice = day.label + ' 맨 뒤에 추가했어요. 시간·순서는 PC ROUTE나 타임라인에서 조정할 수 있어요.';
+    void reloadFromRemote();
+  } catch (e) {
+    console.error('[Explore] 일정 추가 실패:', e);
+    exNotice = '일정에 넣지 못했어요.';
+  } finally {
+    exSaving = false;
+    render();
+  }
+}
+
+async function shareExPlace(): Promise<void> {
+  const p = exPlaceById(exDetailId);
+  if (!p) return;
+  const url = exDetail?.mapsUrl ?? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(p.name) + '&query_place_id=' + encodeURIComponent(p.id);
+  try {
+    if (navigator.share) { await navigator.share({ title: p.name, url }); return; }
+    await navigator.clipboard.writeText(url);
+    exNotice = 'Google 지도 링크를 복사했어요.';
+    render();
+  } catch {
+    /* 닫음 */
+  }
+}
+
+/* ── 지도 ── */
+
+/** 지도를 띄우거나(처음) 다시 그린 자리에 옮겨 붙인다 — 렌더 직후 호출된다 */
 async function mountMap(): Promise<void> {
-  if (activeTab !== 'map' || !container) return;
-  const host = container.querySelector('#mb-map') as HTMLElement | null;
-  if (!host) return;
+  if (activeTab !== 'map' || !container || detailKey) return;
+  const slot = container.querySelector('#mb-map') as HTMLElement | null;
+  if (!slot) return;
 
-  const day = activeDay();
-  const pins = (day?.stops ?? []).filter((s) => s.lat != null && s.lng != null);
-  if (!pins.length) return;
-
-  // 같은 DOM 노드에 이미 지도가 붙어 있으면 마커만 다시 그린다
-  if (mapInstance && mapEl === host) { drawMapMarkers(pins); return; }
-
+  if (mapInstance && mapEl) {
+    if (slot !== mapEl) slot.replaceWith(mapEl);
+    syncMapMarkers();
+    return;
+  }
   if (mapLoading) return;
   mapLoading = true;
   mapError = '';
@@ -1893,15 +2451,18 @@ async function mountMap(): Promise<void> {
     if (activeTab !== 'map' || !container) return;
     const live = container.querySelector('#mb-map') as HTMLElement | null;
     if (!live) return;
-
     const g = (window as unknown as { google?: any }).google;
     if (!g?.maps) throw new Error('지도를 불러오지 못했어요');
 
-    live.innerHTML = '';
-    mapEl = live;
-    mapInstance = new g.maps.Map(live, {
-      center: { lat: pins[0].lat!, lng: pins[0].lng! },
-      zoom: 13,
+    const node = document.createElement('div');
+    node.id = 'mb-map';
+    node.className = 'mb-map';
+    live.replaceWith(node);
+    mapEl = node;
+    const start = fallbackCenter() ?? currentUserLoc() ?? { lat: 13.7563, lng: 100.5018 };
+    mapInstance = new g.maps.Map(node, {
+      center: start,
+      zoom: 14,
       gestureHandling: 'greedy',
       clickableIcons: false,
       zoomControl: false,
@@ -1910,13 +2471,21 @@ async function mountMap(): Promise<void> {
       fullscreenControl: false,
       rotateControl: false,
     });
-    drawMapMarkers(pins);
+    // 지도를 움직이면 "이 지역에서 다시 검색"만 띄운다 — 자동으로 검색하지 않는다(비용)
+    mapInstance.addListener('idle', () => {
+      if (mapView !== 'explore' || !exSearchedAt || exLoading) return;
+      const c = mapInstance.getCenter();
+      const moved = movedFar(exSearchedAt, { lat: c.lat(), lng: c.lng() }, exFilters.radius);
+      if (moved !== exMoved) { exMoved = moved; render(); }
+    });
+    markerSig = '';
+    syncMapMarkers();
   } catch (e) {
     // 지도를 못 띄워도 아래 목록과 길찾기는 그대로 쓸 수 있다 — 그래서 탭 전체를 죽이지 않는다
     console.error('[Mobile] 지도 로드 실패:', e);
     mapError = offlineState().offline
       ? '오프라인이라 지도를 불러올 수 없어요. 길찾기는 Google 지도 앱으로 열려요 — 앱에 오프라인 지도를 받아 두면 인터넷 없이도 길을 찾아요.'
-      : '지도를 불러오지 못했어요. 아래 목록에서 길찾기는 그대로 쓸 수 있어요.';
+      : '지도를 불러오지 못했어요. 아래 목록과 길찾기는 그대로 쓸 수 있어요.';
     mapInstance = null;
     mapEl = null;
     render();
@@ -1925,12 +2494,106 @@ async function mountMap(): Promise<void> {
   }
 }
 
+/** 마커를 지금 보기에 맞춘다. 같은 마커면 다시 만들지 않고 선택 강조만 바꾼다 */
+function syncMapMarkers(): void {
+  const g = (window as unknown as { google?: any }).google;
+  if (!g?.maps || !mapInstance) return;
+  syncUserDot(g);
+
+  if (mapView === 'plan') {
+    const day = activeDay();
+    const pins = (day?.stops ?? []).filter((s) => s.lat != null && s.lng != null);
+    const sig = 'plan:' + (day?.destId ?? '') + ':' + (day?.dayIndex ?? '') + ':' + pins.map((p) => p.key).join('|');
+    if (sig !== markerSig) { markerSig = sig; drawMapMarkers(pins); }
+    return;
+  }
+
+  const list = visibleResults();
+  const sig = 'ex:' + list.map((p) => p.id).join('|');
+  if (sig !== markerSig) {
+    markerSig = sig;
+    clearMarkers();
+    list.forEach((p) => {
+      const marker: any = new g.maps.Marker({ position: { lat: p.lat, lng: p.lng }, map: mapInstance, title: p.name, icon: exMarkerIcon(g, p, false), zIndex: 10 });
+      marker.addListener('click', () => selectExPlace(p.id, true));
+      exMarkerById.set(p.id, marker);
+      mapMarkers.push(marker);
+    });
+  }
+  // 선택 강조 — 더 크고 파란 테두리, 맨 위로
+  list.forEach((p) => {
+    const m = exMarkerById.get(p.id);
+    if (!m) return;
+    const sel = p.id === exSelected;
+    m.setIcon(exMarkerIcon(g, p, sel));
+    m.setZIndex(sel ? 100 : 10);
+  });
+}
+
+function clearMarkers(): void {
+  mapMarkers.forEach((m) => m.setMap(null));
+  mapMarkers = [];
+  exMarkerById = new Map();
+}
+
+/** 현재 위치 — 파란 점(테두리 흰색)만. 너무 튀지 않게 작게 */
+function syncUserDot(g: any): void {
+  const me = currentUserLoc();
+  if (!me) { userDot?.setMap(null); userDot = null; return; }
+  if (!userDot) {
+    userDot = new g.maps.Marker({
+      map: mapInstance,
+      position: me,
+      clickable: false,
+      zIndex: 5,
+      icon: { url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26"><circle cx="13" cy="13" r="12" fill="#2F86D6" fill-opacity="0.16"/><circle cx="13" cy="13" r="6.5" fill="#2F86D6" stroke="#fff" stroke-width="2.5"/></svg>'), anchor: new g.maps.Point(13, 13) },
+    });
+  } else {
+    userDot.setPosition(me);
+    userDot.setMap(mapInstance);
+  }
+}
+
+const EX_MARKER_COLOR: Record<ExplorePlace['cat'], string> = { food: '#E2574C', cafe: '#9A6B3F', sight: '#7F77DD', stay: '#0B2A5C', amenity: '#15966D' };
+const EX_MARKER_GLYPH: Record<ExplorePlace['cat'], string> = {
+  food: '<path d="M10 6v6m-2-6v3.5a2 2 0 0 0 4 0V6M10 12v6M15.5 6c-1.2 0-2 1.6-2 3.5S14.3 13 15.5 13V18" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/>',
+  cafe: '<path d="M8 10h7v3.2a3 3 0 0 1-3 3h-1a3 3 0 0 1-3-3zM15 11h1.2a1.6 1.6 0 0 1 0 3.2H15" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/>',
+  sight: '<path d="M8.2 10.4h7.6l-1.2-2.4H9.4zM9.5 10.4v5M14.5 10.4v5M7.8 15.8h8.4" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/>',
+  stay: '<path d="M7.5 16V9M7.5 13.5h9V16M10.5 13.5V11h4.5a1.5 1.5 0 0 1 1.5 1.5v1" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/>',
+  amenity: '<path d="M8.5 10h7l-.7 6.5H9.2zM10 10V9a2 2 0 0 1 4 0v1" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/>',
+};
+
+function exMarkerIcon(g: any, p: ExplorePlace, selected: boolean): any {
+  const s = selected ? 44 : 32;
+  const ring = selected ? '<circle cx="12" cy="12" r="11" fill="none" stroke="#2F86D6" stroke-width="2.2"/>' : '';
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + s + '" height="' + Math.round(s * 1.25) + '" viewBox="0 0 24 30">' +
+    '<path d="M12 29s9-8.4 9-16A9 9 0 0 0 3 13c0 7.6 9 16 9 16z" fill="' + EX_MARKER_COLOR[p.cat] + '" stroke="#fff" stroke-width="1.4"/>' +
+    ring + '<g transform="translate(0 0.5)">' + EX_MARKER_GLYPH[p.cat] + '</g></svg>';
+  return { url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg), scaledSize: new g.maps.Size(s, Math.round(s * 1.25)), anchor: new g.maps.Point(s / 2, Math.round(s * 1.25)) };
+}
+
+/** 마커를 누르면 → 목록에서 그 카드를 강조하고 보이게. 카드를 누르면 → 상세(지도는 그 장소로) */
+function selectExPlace(id: string, fromMarker: boolean): void {
+  exSelected = id;
+  render();
+  if (fromMarker) {
+    const card = container?.querySelector('[data-explace="' + CSS.escape(id) + '"]') as HTMLElement | null;
+    card?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  focusExMarker(id);
+}
+
+function focusExMarker(id: string): void {
+  const p = exPlaceById(id);
+  if (p && mapInstance) mapInstance.panTo({ lat: p.lat, lng: p.lng });
+}
+
 function drawMapMarkers(pins: TlStop[]): void {
   const g = (window as unknown as { google?: any }).google;
   if (!g?.maps || !mapInstance) return;
 
-  mapMarkers.forEach((m) => m.setMap(null));
-  mapMarkers = [];
+  clearMarkers();
 
   const bounds = new g.maps.LatLngBounds();
   pins.forEach((s, i) => {
@@ -1951,15 +2614,21 @@ function drawMapMarkers(pins: TlStop[]): void {
   });
 
   if (pins.length > 1) (mapInstance as any).fitBounds(bounds, 48);
+  else if (pins.length === 1) mapInstance.panTo(pins[0]);
 }
 
 function teardownMap(): void {
-  mapMarkers.forEach((m) => m.setMap(null));
-  mapMarkers = [];
+  clearMarkers();
+  userDot?.setMap(null);
+  userDot = null;
   mapInstance = null;
   mapEl = null;
   mapLoading = false;
   mapError = '';
+  markerSig = '';
+  exDetailId = null;
+  exDayPicker = false;
+  exDraft = null;
 }
 
 /* ══════════════════════ WALLET 탭 ══════════════════════ */
@@ -3673,7 +4342,90 @@ function bind(): void {
   root.querySelector('#mb-dv-share')?.addEventListener('click', () => { void shareViewerFile(); });
   root.querySelector('#mb-wd-add')?.addEventListener('click', () => gotoGate('docs'));
 
-  // ── 지도 ──
+  // ── 지도: 보기 전환·주변 탐색 ──
+  root.querySelectorAll('[data-mapview]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const v = (btn as HTMLElement).dataset.mapview!;
+      if (v === 'plan') { mapView = 'plan'; exDetailId = null; render(); return; }
+      mapView = 'explore';
+      exCat = v as ExploreCat;
+      exQuery = '';
+      void runExploreSearch(exSearchedAt && !exMoved ? exSearchedAt : undefined, exSearchedAt && !exMoved ? exCenterLabel : undefined);
+    });
+  });
+  root.querySelector('#mb-ex-form')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const q = ((root.querySelector('#mb-ex-q') as HTMLInputElement | null)?.value ?? '').trim();
+    (root.querySelector('#mb-ex-q') as HTMLInputElement | null)?.blur();
+    if (!q) return;
+    exQuery = q.slice(0, 60);
+    const c = mapInstance?.getCenter?.();
+    void runExploreSearch(exMoved && c ? { lat: c.lat(), lng: c.lng() } : exSearchedAt ?? undefined, exMoved ? '지도 중심' : exSearchedAt ? exCenterLabel : undefined);
+  });
+  root.querySelector('#mb-ex-clear')?.addEventListener('click', () => {
+    exQuery = '';
+    void runExploreSearch(exSearchedAt ?? undefined, exSearchedAt ? exCenterLabel : undefined);
+  });
+  root.querySelector('#mb-ex-again')?.addEventListener('click', () => {
+    const c = mapInstance?.getCenter?.();
+    if (c) void runExploreSearch({ lat: c.lat(), lng: c.lng() }, '지도 중심');
+  });
+  root.querySelector('#mb-ex-me')?.addEventListener('click', () => {
+    void requestUserLoc().then((loc) => {
+      if (loc) {
+        mapInstance?.panTo(loc);
+        if (mapView === 'explore') void runExploreSearch(loc, '현재 위치');
+        else syncMapMarkers();
+      } else {
+        exNotice = userLocState === 'denied' ? '현재 위치를 사용할 수 없어요 — 브라우저 설정에서 위치 권한을 허용해 주세요.' : '현재 위치를 확인하지 못했어요.';
+        render();
+      }
+    });
+  });
+  root.querySelectorAll('[data-exsort]').forEach((btn) => {
+    btn.addEventListener('click', () => { exSort = (btn as HTMLElement).dataset.exsort as ExploreSort; render(); });
+  });
+  root.querySelectorAll('[data-explace]').forEach((btn) => {
+    btn.addEventListener('click', () => openExDetail((btn as HTMLElement).dataset.explace!));
+  });
+  root.querySelector('#mb-exd-close')?.addEventListener('click', closeExDetail);
+  root.querySelector('#mb-exd-back')?.addEventListener('click', closeExDetail);
+  root.querySelector('#mb-exd-save')?.addEventListener('click', () => { void toggleExSave(); });
+  root.querySelector('#mb-exd-share')?.addEventListener('click', () => { void shareExPlace(); });
+  root.querySelector('#mb-exd-add')?.addEventListener('click', () => { exDayPicker = true; render(); });
+  root.querySelector('#mb-exd-pick-back')?.addEventListener('click', () => { exDayPicker = false; render(); });
+  root.querySelectorAll('[data-exaddday]').forEach((btn) => {
+    btn.addEventListener('click', () => { void addExToDay(Number((btn as HTMLElement).dataset.exaddday)); });
+  });
+  root.querySelector('#mb-ex-filter')?.addEventListener('click', () => { exDraft = { ...exFilters, prices: [...exFilters.prices] }; render(); });
+  root.querySelector('#mb-exf-back')?.addEventListener('click', () => { exDraft = null; render(); });
+  root.querySelector('#mb-exf-reset')?.addEventListener('click', () => { exDraft = { ...DEFAULT_FILTERS, prices: [] }; render(); });
+  root.querySelectorAll('[data-exf]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!exDraft) return;
+      const { exf, v } = (btn as HTMLElement).dataset;
+      if (exf === 'radius') exDraft.radius = Number(v);
+      else if (exf === 'minRating') exDraft.minRating = Number(v);
+      else if (exf === 'openNow') exDraft.openNow = !exDraft.openNow;
+      else if (exf === 'reservable') exDraft.reservable = !exDraft.reservable;
+      else if (exf === 'price') {
+        const pv = v as PriceLevel;
+        exDraft.prices = exDraft.prices.includes(pv) ? exDraft.prices.filter((x) => x !== pv) : [...exDraft.prices, pv];
+      }
+      render();
+    });
+  });
+  root.querySelector('#mb-exf-apply')?.addEventListener('click', () => {
+    if (!exDraft) return;
+    const radiusChanged = exDraft.radius !== exFilters.radius;
+    exFilters = exDraft;
+    exDraft = null;
+    // 반경은 검색 조건이라 새로 찾는다. 나머지는 받은 결과 안에서 거르기만 한다(호출 없음)
+    if (radiusChanged && exSearchedAt) void runExploreSearch(exSearchedAt, exCenterLabel);
+    else { markerSig = ''; render(); }
+  });
+
+  // ── 지도: 일정 보기 ──
   root.querySelectorAll('[data-mapgo]').forEach((btn) => {
     btn.addEventListener('click', () => {
       detailKey = (btn as HTMLElement).dataset.mapgo!;
