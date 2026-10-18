@@ -139,6 +139,7 @@
   transition: border-color var(--al-duration) var(--al-ease), color var(--al-duration) var(--al-ease), background var(--al-duration) var(--al-ease);
 }
 .dn-btn-ghost:hover { border-color: #8FD8F8; color: #0B2A5C; }
+.dn-btn-ghost.is-active { border-color: var(--al-action); color: #0B2A5C; background: rgba(47,134,214,0.06); }
 .dn-btn-ghost svg { width: 14px; height: 14px; }
 .dn-btn-danger { color: #B4483C; }
 .dn-btn-danger:hover { border-color: rgba(180,72,60,0.4); color: #A03A2F; background: #FDF4F2; }
@@ -456,6 +457,19 @@
   line-height: 1.6;
   color: var(--al-text-secondary);
   white-space: pre-wrap;
+}
+
+/* 메모 상세 — 문서 설명과 달리 본문이 메모의 핵심이라 더 크고 읽기 좋게 */
+.dn-detail-note-body {
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(130,150,170,0.14);
+  background: #F8FBFE;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--al-text);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .dn-detail-rows { display: flex; flex-direction: column; gap: 0; }
@@ -795,6 +809,8 @@
 .dn-note-row.is-checked { background: #FBFCFE; }
 .dn-note-row.is-checked .dn-row-title { color: var(--al-text-tertiary); text-decoration: line-through; text-decoration-color: rgba(130,150,170,0.5); }
 .dn-note-row.is-checked .dn-row-desc { color: var(--al-text-tertiary); }
+.dn-note-row.is-selected,
+.dn-pin-card.is-selected { border-color: var(--al-action); background: rgba(47,134,214,0.04); }
 
 .dn-check {
   flex-shrink: 0;

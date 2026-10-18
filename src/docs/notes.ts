@@ -48,6 +48,7 @@ let activeCategory: NoteCategory | 'ALL' = 'ALL';
 let activeRegion: string | 'ALL' = 'ALL';
 let sortMode: NoteSort = 'recent';
 let editingId: string | null = null;
+let selectedNoteId: string | null = null;
 let sheetOpen = false;
 
 /* ══════════════ 데이터 ══════════════ */
@@ -94,6 +95,7 @@ export function teardownNotes(): void {
   activeRegion = 'ALL';
   sortMode = 'recent';
   editingId = null;
+  selectedNoteId = null;
   sheetOpen = false;
 }
 
@@ -158,7 +160,10 @@ export function mountNotes(container: HTMLElement): void {
     '    </label>',
     '  </div>',
     '  <div class="dn-chips" id="dn-note-region-chips"></div>',
-    '  <div class="dn-note-body" id="dn-note-body"></div>',
+    '  <div class="dn-doc-layout" id="dn-note-layout">',
+    '    <div class="dn-doc-main"><div class="dn-note-body" id="dn-note-body"></div></div>',
+    '    <aside class="dn-detail" id="dn-note-detail" aria-live="polite"></aside>',
+    '  </div>',
     '</div>',
   ].join('\n');
 
@@ -190,6 +195,7 @@ function render(): void {
   renderChips();
   renderRegionChips();
   renderList();
+  renderNoteDetail();
 }
 
 function renderChips(): void {
@@ -328,7 +334,7 @@ function metaLine(note: TripNote): string {
 function pinnedCardHtml(note: TripNote): string {
   const body = (note.body || '').trim();
   return [
-    '<div class="dn-pin-card" data-note-id="' + note.id + '">',
+    '<div class="dn-pin-card' + (note.id === selectedNoteId ? ' is-selected' : '') + '" data-note-id="' + note.id + '">',
     '  <div class="dn-pin-card-head">',
     '    <span class="dn-pin-card-title">' + escapeHtml(note.title) + '</span>',
     '    <button type="button" class="dn-pin-btn is-on" data-pin="' + note.id + '" aria-label="고정 해제">' + IC.pin + '</button>',
@@ -344,7 +350,7 @@ function noteRowHtml(note: TripNote): string {
   const body = (note.body || '').trim();
   const category = normalizeNoteCategory(note.category);
   return [
-    '<div class="dn-note-row' + (checked ? ' is-checked' : '') + '" data-note-id="' + note.id + '">',
+    '<div class="dn-note-row' + (checked ? ' is-checked' : '') + (note.id === selectedNoteId ? ' is-selected' : '') + '" data-note-id="' + note.id + '">',
     '  <button type="button" class="dn-check" data-check="' + note.id + '" role="checkbox" aria-checked="' + checked + '"',
     '          aria-label="' + (checked ? '확인 완료 해제' : '확인 완료로 표시') + '">' + IC.check + '</button>',
     '  <span class="dn-row-icon">' + NOTE_CATEGORY_ICON[category] + '</span>',
@@ -388,8 +394,76 @@ function bindRows(scope: HTMLElement): void {
     });
   });
   scope.querySelectorAll('.dn-note-row, .dn-pin-card').forEach((el) => {
-    el.addEventListener('click', () => openNoteEditor((el as HTMLElement).dataset.noteId!));
+    el.addEventListener('click', () => openNoteDetail((el as HTMLElement).dataset.noteId!));
   });
+}
+
+/** 카드를 클릭하면 내용을 읽기 좋은 큰 패널로 보여준다 — 예전처럼 클릭 한 번에 바로
+ *  편집 시트가 뜨면 저장해둔 내용을 확인하기 전에 입력 모드부터 시작돼 불편했다.
+ *  편집은 이 패널 안의 "편집" 버튼으로만 들어간다(행의 연필 아이콘은 빠른 진입용으로 남겨둠) */
+function openNoteDetail(id: string): void {
+  selectedNoteId = selectedNoteId === id ? null : id;
+  render();
+}
+
+function renderNoteDetail(): void {
+  const detailEl = rootEl?.querySelector('#dn-note-detail') as HTMLElement | null;
+  const layoutEl = rootEl?.querySelector('#dn-note-layout') as HTMLElement | null;
+  if (!detailEl || !layoutEl) return;
+
+  const note = notes.find((n) => n.id === selectedNoteId) ?? null;
+  layoutEl.classList.toggle('has-detail', !!note);
+  if (!note) {
+    detailEl.innerHTML = '';
+    return;
+  }
+
+  const category = normalizeNoteCategory(note.category);
+  const checked = !!note.checked_at;
+  const pinned = !!note.pinned_at;
+  const day = dayRangeLabel(note.day_start, note.day_end);
+  const body = (note.body || '').trim();
+
+  const rows: Array<[string, string]> = [];
+  rows.push(['카테고리', NOTE_CATEGORY_LABEL[category]]);
+  if (day) rows.push(['관련 DAY', day]);
+  if (note.region) rows.push(['지역', note.region]);
+  rows.push(['작성', (note.created_by_name ? note.created_by_name + ' · ' : '') + formatDay(note.created_at)]);
+
+  detailEl.innerHTML = [
+    '<div class="dn-detail-inner">',
+    '  <div class="dn-detail-head">',
+    '    <span class="dn-detail-icon">' + NOTE_CATEGORY_ICON[category] + '</span>',
+    '    <span class="dn-detail-title">' + escapeHtml(note.title) + '</span>',
+    '    <button type="button" class="dn-icon-btn" id="dn-note-detail-close" aria-label="닫기">' + IC.close + '</button>',
+    '  </div>',
+    '  <div class="dn-detail-body">',
+    body
+      ? '    <div class="dn-detail-note-body">' + escapeHtml(body) + '</div>'
+      : '    <div class="dn-empty-hint">내용 없이 제목만 저장된 메모예요</div>',
+    '    <dl class="dn-detail-rows">',
+    rows.map(([k, v]) => '<div class="dn-detail-row"><dt>' + escapeHtml(k) + '</dt><dd>' + escapeHtml(v) + '</dd></div>').join(''),
+    '    </dl>',
+    '  </div>',
+    '  <div class="dn-detail-foot">',
+    '    <button type="button" class="dn-btn-ghost' + (checked ? ' is-active' : '') + '" id="dn-note-detail-check">' +
+      IC.check + (checked ? '확인 해제' : '확인 완료로 표시') + '</button>',
+    '    <button type="button" class="dn-btn-ghost' + (pinned ? ' is-active' : '') + '" id="dn-note-detail-pin">' +
+      IC.pin + (pinned ? '고정 해제' : '상단 고정') + '</button>',
+    '    <button type="button" class="dn-btn-primary" id="dn-note-detail-edit">' + IC.edit + '편집</button>',
+    '    <button type="button" class="dn-btn-ghost dn-btn-danger" id="dn-note-detail-delete">' + IC.trash + '삭제</button>',
+    '  </div>',
+    '</div>',
+  ].join('\n');
+
+  detailEl.querySelector('#dn-note-detail-close')?.addEventListener('click', () => {
+    selectedNoteId = null;
+    render();
+  });
+  detailEl.querySelector('#dn-note-detail-check')?.addEventListener('click', () => void toggleChecked(note.id));
+  detailEl.querySelector('#dn-note-detail-pin')?.addEventListener('click', () => void togglePinned(note.id));
+  detailEl.querySelector('#dn-note-detail-edit')?.addEventListener('click', () => openNoteEditor(note.id));
+  detailEl.querySelector('#dn-note-detail-delete')?.addEventListener('click', () => void removeNote(note.id));
 }
 
 /* ══════════════ 변경 ══════════════ */
@@ -426,6 +500,7 @@ async function removeNote(id: string): Promise<void> {
   if (!note) return;
   if (!window.confirm('"' + note.title + '" 메모를 삭제할까요?')) return;
   notes = notes.filter((n) => n.id !== id);
+  if (selectedNoteId === id) selectedNoteId = null;
   host?.onDataChange();
   render();
   await deleteNote(id);
