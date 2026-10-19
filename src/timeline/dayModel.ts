@@ -13,6 +13,7 @@
  * 만들지 않고(null), 영업시간은 저장된 값이 있을 때만 고른다. 없는 값을 지어내지 않는다.
  */
 
+import { makeStopKey } from '../route/progressRemap';
 import { supabase } from '../supabase';
 import {
   loadDestinations,
@@ -252,7 +253,7 @@ export function toStop(ctx: DayModelContext, s: StoredStop, dayIndex: number, or
   const isAirport = !!airportPlace;
   const mode = s.travelMode && (MODES as string[]).includes(s.travelMode) ? (s.travelMode as TravelMode) : null;
   return {
-    key: 'd' + dayIndex + '-' + order + '-' + (s.placeId ?? s.customName ?? 'x'),
+    key: makeStopKey(dayIndex, order, s.placeId, s.customName),
     placeId: s.placeId,
     customName: s.customName,
     purpose: s.purpose,

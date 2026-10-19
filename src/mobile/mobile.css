@@ -921,6 +921,74 @@
   font-weight: 800;
   color: var(--mb-live);
 }
+.mb-reorder-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -4px 0 10px;
+  font-size: 12px;
+  color: var(--mb-muted);
+}
+.mb-reorder-hint svg { width: 13px; height: 13px; flex: none; opacity: 0.8; }
+
+/* 길게 눌러 끌기 — 카드가 떠오르고, 놓을 자리에 파란 줄이 뜬다 */
+.mb-row { -webkit-touch-callout: none; }
+.mb-row-card { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.mb-thread.is-reordering { cursor: grabbing; -webkit-user-select: none; user-select: none; }
+.mb-row.is-lifted {
+  position: relative;
+  z-index: 20;
+  transition: none;
+  will-change: transform;
+  filter: drop-shadow(0 10px 18px rgba(20, 38, 74, 0.28));
+}
+.mb-row.is-lifted .mb-row-card { border-color: var(--mb-sky); background: var(--mb-surface); opacity: 1; }
+/* 끄는 동안 다른 카드는 살짝 물러나 있다 */
+.mb-thread.is-reordering .mb-row:not(.is-lifted) { opacity: 0.72; }
+.mb-drop-line {
+  position: absolute;
+  left: 60px;
+  right: 0;
+  top: 0;
+  height: 3px;
+  margin-top: -1px;
+  border-radius: 3px;
+  background: var(--mb-sky);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mb-sky) 22%, transparent);
+  pointer-events: none;
+  z-index: 19;
+  transition: transform 80ms var(--mb-ease);
+}
+.mb-drop-line::before {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: -3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--mb-sky);
+}
+
+/* 한 줄 안내 */
+.mb-toast {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: calc(76px + env(safe-area-inset-bottom));
+  z-index: 70;
+  padding: 11px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-align: center;
+  color: #FFFFFF;
+  background: rgba(20, 38, 74, 0.94);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  animation: mb-fade 160ms var(--mb-ease);
+}
+
 /* 마디 + 그 아래로 흐르는 세로선 */
 .mb-row-node {
   position: relative;

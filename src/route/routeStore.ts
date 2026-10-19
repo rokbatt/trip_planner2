@@ -20,6 +20,7 @@
 import { supabase } from '../supabase';
 import type { Database } from '../types/database';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { mapStopKeys, hasKeyChanges } from './progressRemap';
 
 type RouteDayRow = Database['public']['Tables']['route_days']['Row'];
 type RouteStopRow = Database['public']['Tables']['route_stops']['Row'];
@@ -200,6 +201,9 @@ async function replaceRouteDay(
   const dayId = await ensureDayRow(tripId, destinationId, dayIndex);
   if (!dayId) return 'failed';
 
+  // 지우기 전의 순서 — 도착·출발 기록을 새 순서로 옮기려고 필요하다(저장 뒤 remapProgress)
+  const before = await readStoredOrder(dayId);
+
   const { error: delErr } = await supabase.from('route_stops').delete().eq('route_day_id', dayId);
   if (delErr) {
     if (isMissingTable(delErr)) { storageAvailable = false; return 'failed'; }
@@ -207,7 +211,10 @@ async function replaceRouteDay(
     return 'failed';
   }
 
-  if (stops.length === 0) return 'ok';
+  if (stops.length === 0) {
+    await remapProgress(destinationId, dayIndex, before, []);
+    return 'ok';
+  }
 
   const rows = stops.map((s, i) => ({
     route_day_id: dayId,
@@ -235,7 +242,10 @@ async function replaceRouteDay(
     // 컬럼을 동적으로 빼고 넣는 재시도라 정확한 Insert 모양과 맞는지는 타입으로 보장할 수 없다
     // (뺄 컬럼 이름을 실행 중에야 알게 되므로) — 이 호출 하나만 any로 좁혀서 나머지는 그대로 둔다.
     const { error: insErr } = await supabase.from('route_stops').insert(attemptRows as any);
-    if (!insErr) return 'ok';
+    if (!insErr) {
+      await remapProgress(destinationId, dayIndex, before, stops);
+      return 'ok';
+    }
     const missing = missingColumnName(insErr);
     if (!missing) {
       console.error('[Route] route_stops 저장 실패:', insErr.message);
@@ -251,6 +261,55 @@ async function replaceRouteDay(
     });
   }
   return 'partial';
+}
+
+/** 지금 DB에 저장된 그 DAY의 정류지 순서(식별 값만). 못 읽으면 null — 그땐 기록을 건드리지 않는다 */
+async function readStoredOrder(dayId: string): Promise<Array<{ placeId: string | null; customName: string | null }> | null> {
+  const { data, error } = await supabase
+    .from('route_stops')
+    .select('place_id, custom_name, sort_order')
+    .eq('route_day_id', dayId)
+    .order('sort_order', { ascending: true });
+  if (error) return null;
+  return (data ?? []).map((r) => ({ placeId: r.place_id, customName: r.custom_name }));
+}
+
+/**
+ * 순서가 바뀐 DAY의 도착·출발 기록(trip_stop_progress)을 새 정류지 키로 옮긴다.
+ * 키에 "그 DAY 안의 순서"가 들어 있어서, 그냥 두면 순서를 바꾼 뒤 기록이 엉뚱한 장소에 붙는다
+ * (route/progressRemap.ts). 모바일·ROUTE·TIMELINE 어디서 저장하든 여기를 지나므로 한 곳에서 처리한다.
+ * 기록 테이블이 없거나(마이그레이션 전) 읽기에 실패하면 조용히 넘어간다 — 동선 저장이 우선이다.
+ */
+async function remapProgress(
+  destinationId: string,
+  dayIndex: number,
+  before: Array<{ placeId: string | null; customName: string | null }> | null,
+  after: ReadonlyArray<{ placeId: string | null; customName: string | null }>
+): Promise<void> {
+  if (!before || before.length === 0) return;
+  const mapping = mapStopKeys(dayIndex, before, after.map((s) => ({ placeId: s.placeId, customName: s.placeId ? null : s.customName })));
+  if (!hasKeyChanges(mapping)) return;
+
+  const { data: rows, error } = await supabase
+    .from('trip_stop_progress')
+    .select('*')
+    .eq('destination_id', destinationId)
+    .eq('day_index', dayIndex);
+  if (error || !rows?.length) return;
+
+  const moved = rows.filter((r) => mapping.has(r.stop_key) && mapping.get(r.stop_key) !== r.stop_key);
+  if (!moved.length) return;
+
+  // 한꺼번에 지우고 새 키로 다시 넣는다 — 하나씩 키를 바꾸면 맞바꾼 두 칸이 서로의 키에 부딪힌다
+  const { error: delErr } = await supabase.from('trip_stop_progress').delete().in('id', moved.map((r) => r.id));
+  if (delErr) { console.warn('[Route] 진행 기록 정리 실패:', delErr.message); return; }
+
+  const inserts = moved
+    .filter((r) => mapping.get(r.stop_key) != null)
+    .map(({ id: _id, ...r }) => ({ ...r, stop_key: mapping.get(r.stop_key)! }));
+  if (!inserts.length) return;
+  const { error: insErr } = await supabase.from('trip_stop_progress').insert(inserts);
+  if (insErr) console.warn('[Route] 진행 기록 이동 실패:', insErr.message);
 }
 
 /** 이 여행지의 모든 DAY 삭제 (동선 전체 초기화) */

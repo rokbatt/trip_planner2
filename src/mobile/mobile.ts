@@ -42,7 +42,7 @@ import { store } from '../store';
 import { navigate } from '../router';
 import { subscribeRoutePlan, unsubscribeRoutePlan, resetRouteStorageProbe, loadRoutePlan, saveRouteDay } from '../route/routeStore';
 import type { StoredStop } from '../route/routeStore';
-import { loadTripDayModel, scheduleFor, stopLegKey, todaysHoursLine, hoursWarning } from '../timeline/dayModel';
+import { loadTripDayModel, scheduleFor, stopLegKey, todaysHoursLine, hoursWarning, toStoredStops } from '../timeline/dayModel';
 import type { TlDay, TlStop, DaySchedule, RealLegMap, ProgressMap, StopProgress, HoursWarning } from '../timeline/dayModel';
 import {
   loadStopProgress,
@@ -106,6 +106,9 @@ import type { GeoFix } from './geo';
 import { pickTodayIndex, tripDestinationLabel } from '../timeline/tripSpans';
 import { attachRevisitPlaces } from './revisit';
 import { isLegCoolingDown, markLegsFailed, reportRouteError } from '../utils/legCooldown';
+import { bindLongPressReorder, moveItem } from './reorder';
+import { makeStopKey, mapStopKeys } from '../route/progressRemap';
+import { sameStops } from '../route/routeMerge';
 import { offlineState, subscribeOffline, onReconnect } from '../offline/status';
 import { idbGet, idbSet } from '../offline/idb';
 import { savedDocPaths, saveDocOffline, loadOfflineDoc, removeOfflineDoc, type OfflineDocFile } from '../offline/docs';
@@ -179,6 +182,7 @@ const IC = {
   landmark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 9.5 12 4l8.5 5.5zM6 9.5v8M10 9.5v8M14 9.5v8M18 9.5v8M3.5 20h17"/></svg>',
   shop: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14l-1 12H6zM9 8V6.5a3 3 0 0 1 6 0V8"/></svg>',
   grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg>',
+  grip: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>',
   // 오프라인/저장 — 구름에 사선
   cloud: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 19a4.5 4.5 0 0 1-.4-8.98A6 6 0 0 1 18 9.5a4.7 4.7 0 0 1 .5 9.5z"/><path d="M4 4l16 16"/></svg>',
   swap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4 3 8l4 4"/><path d="M3 8h13a4 4 0 0 1 0 8h-1"/><path d="m17 20 4-4-4-4"/></svg>',
@@ -247,6 +251,23 @@ let progress: ProgressMap = new Map();
 
 let daySheetOpen = false;
 let nowTimer: ReturnType<typeof setInterval> | null = null;
+
+/* ── 일정 순서 바꾸기(길게 눌러 끌기) ── */
+/** 순서를 저장하는 동안 true — 이 사이엔 다른 화면 갱신(원격 변경 반영)을 미룬다 */
+let reorderBusy = false;
+/** 손가락으로 카드를 끌고 있는 동안 true — 이때 화면을 다시 그리면 끌던 카드가 사라진다 */
+let reorderDragging = false;
+let renderDeferred = false;
+let reorderUnbind: (() => void) | null = null;
+/** 아래 안내("꾹 눌러 끌면…")는 한 번 성공하면 다시 보여주지 않는다 */
+const REORDER_HINT_KEY = 'mb-reorder-hint-done';
+/** 잠깐 떴다 사라지는 한 줄 안내 */
+let toastText = '';
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+/** 원격 변경 반영: 연속 이벤트를 하나로 묶고(디바운스), 늦게 도착한 옛 응답은 버린다 */
+let remoteReloadTimer: ReturnType<typeof setTimeout> | null = null;
+let remoteReloadSeq = 0;
+let remoteReloadPending = false;
 
 /** TIMELINE 가로 페이저 — 스와이프가 "멈춘 뒤"에만 상태를 반영하고, 조회는 거기서 더 미룬다 */
 let pagerSettleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -339,6 +360,16 @@ let linksChannel: ReturnType<typeof supabase.channel> | null = null;
 export function teardownMobile(): void {
   offlineUnsubs.forEach((fn) => fn());
   offlineUnsubs = [];
+  reorderUnbind?.();
+  reorderUnbind = null;
+  reorderBusy = false;
+  reorderDragging = false;
+  renderDeferred = false;
+  toastText = '';
+  if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+  if (remoteReloadTimer) { clearTimeout(remoteReloadTimer); remoteReloadTimer = null; }
+  remoteReloadPending = false;
+  remoteReloadSeq += 1;
   closeDocViewer();
   walletNotice = '';
   docSaving = null;
@@ -608,7 +639,7 @@ export async function renderMobileContent(host: HTMLElement, tripId: string): Pr
 
   render();
 
-  subscribeRoutePlan(tripId, () => { void reloadFromRemote(); });
+  subscribeRoutePlan(tripId, scheduleRemoteReload);
   subscribeStopProgress(tripId, () => { void loadProgressForActiveDay(); });
   void loadRealLegsForActiveDay();
   // 도착 자동 기록이 사람이 이미 남긴 기록을 덮어쓰지 않도록, 진행 기록을 읽은 뒤에 위치를 켠다
@@ -660,9 +691,30 @@ function warmTripPhotos(): void {
   setTimeout(next, 2500);
 }
 
+/**
+ * 일정이 바뀌었다는 신호(realtime)가 오면 잠깐 모아서 한 번만 다시 읽는다.
+ * 한 DAY를 저장하면 "정류지를 전부 지우고 다시 넣기"라 지울 때마다·넣을 때마다 이벤트가 쏟아진다 —
+ * 그때마다 읽으면 (1) 일정이 잠깐 비어 보이고 (2) 읽기 요청이 수십 번 나가고 (3) 늦게 온 옛 응답이
+ * 최신을 덮어쓸 수 있다. 저장 중이거나 카드를 끄는 중이면 끝난 뒤로 미룬다.
+ */
+function scheduleRemoteReload(): void {
+  if (reorderBusy || reorderDragging) { remoteReloadPending = true; return; }
+  if (remoteReloadTimer) clearTimeout(remoteReloadTimer);
+  remoteReloadTimer = setTimeout(() => {
+    remoteReloadTimer = null;
+    void reloadFromRemote();
+  }, 500);
+}
+
 async function reloadFromRemote(): Promise<void> {
   if (!currentTrip) return;
+  const seq = ++remoteReloadSeq;
   const model = await loadTripDayModel(currentTrip);
+  // 기다리는 사이 더 새 요청이 나갔거나, 순서를 저장 중이면 이 응답은 낡았다
+  if (seq !== remoteReloadSeq || reorderBusy || reorderDragging || !container) {
+    if (reorderBusy || reorderDragging) remoteReloadPending = true;
+    return;
+  }
   days = attachRevisitPlaces(model.days, model.ctx.placeById, model.ctx.basecampIds);
   allDestinations = model.destinations;
   activeDestId = model.activeDestId;
@@ -670,6 +722,7 @@ async function reloadFromRemote(): Promise<void> {
   placeById = model.ctx.placeById;
   if (activeDayIndex >= days.length) activeDayIndex = Math.max(0, days.length - 1);
   render();
+  void loadProgressForActiveDay();
 }
 
 /**
@@ -775,6 +828,9 @@ let datesScrollLeft = 0;
 
 function render(): void {
   if (!container) return;
+  // 카드를 끌고 있는 동안엔 그리지 않는다 — 다시 그리면 손가락 밑의 카드가 사라진다. 놓은 뒤에 한 번 그린다.
+  if (reorderDragging) { renderDeferred = true; return; }
+  renderDeferred = false;
   const scrollTop = (container.querySelector('.mb-scroll') as HTMLElement | null)?.scrollTop ?? 0;
   const datesEl = container.querySelector('#mb-dates-scroll') as HTMLElement | null;
   if (datesEl) datesScrollLeft = datesEl.scrollLeft;
@@ -821,6 +877,7 @@ function appHtml(): string {
     '<main class="' + scrollCls + '">' + tabBodyHtml() + '</main>',
     tabBarHtml(),
     docViewer ? docViewerHtml() : '',
+    toastText ? '<div class="mb-toast" role="status">' + escapeHtml(toastText) + '</div>' : '',
     activeTab === 'map' && exDetailId ? exDetailHtml() : '',
     activeTab === 'map' && exDraft ? exFilterHtml() : '',
     daySheetOpen ? daySheetHtml() : '',
@@ -1335,6 +1392,7 @@ function todayTabHtml(): string {
     '  <h3 class="mb-sec-title">' + escapeHtml(title) + '</h3>',
     '  <span class="mb-sec-meta">' + clockHtml(s.spanStartMin) + ' – ' + clockHtml(s.spanEndMin) + '</span>',
     '</div>',
+    reorderHintHtml(day),
     '<div class="mb-thread">' + rows.join('') + '</div>',
     sourceNoteHtml(day, s),
     // 하단 "다음 일정까지" 바 — 지금 상태를 알 때만 뜬다
@@ -1477,6 +1535,123 @@ function nextUpBarHtml(st: NowState, s: DaySchedule): string {
       '<span class="mb-nextup-chev">' + IC.chevRight + '</span></button>';
   }
   return '';
+}
+
+/* ── 일정 순서 바꾸기 ──────────────────────────────────────
+ *
+ * 카드를 꾹 눌러 끌면 그 DAY의 순서가 바뀐다(제스처는 reorder.ts). 저장은 **PC ROUTE·TIMELINE이 쓰는 같은
+ * 경로**(`saveRouteDay`)라서 두 화면에도 그대로 반영된다 — 새 저장 방식을 만들지 않았다.
+ *
+ * 지켜야 하는 것
+ *   · **여행지가 여럿이어도 맞는 DAY에 저장한다.** 저장 대상은 `day.destId`·`day.dayIndex`(그 여행지 안의
+ *     순번)다. 이어붙인 전체 번호(`dayNumber`)를 쓰면 다른 여행지의 날을 덮어쓴다.
+ *   · **친구가 같은 DAY를 방금 바꿨다면 덮어쓰지 않는다.** 저장 직전에 DB의 그 DAY를 읽어 내가 불러온 때와
+ *     같을 때만 저장하고, 다르면 최신으로 다시 불러온 뒤 다시 옮겨 달라고 알린다.
+ *   · **도착·출발 기록이 정류지를 따라간다.** 기록의 키에 순서가 들어 있어서(route/progressRemap.ts),
+ *     화면 상태는 여기서 바로 옮기고 DB 기록은 저장 지점(routeStore)이 옮긴다.
+ *   · 저장 중에는 다른 갱신(원격 변경)을 미루고, 실패하면 DB 기준으로 되돌린다.
+ */
+
+function showToast(msg: string): void {
+  toastText = msg;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toastText = ''; toastTimer = null; render(); }, 2600);
+  render();
+}
+
+/** 지금 이 DAY의 순서를 바꿀 수 있나. 못 바꾸면 왜 못 바꾸는지 알린다 */
+function canReorderNow(): boolean {
+  const day = activeDay();
+  if (!day || day.stops.length < 2) return false;
+  if (!day.destId) { showToast('아직 저장된 일정이 아니라 순서를 바꿀 수 없어요.'); return false; }
+  if (reorderBusy) { showToast('저장 중이에요. 잠시만요.'); return false; }
+  if (offlineState().offline) { showToast('오프라인에서는 순서를 바꿀 수 없어요. 연결되면 다시 해 주세요.'); return false; }
+  return true;
+}
+
+function reorderHintHtml(day: TlDay): string {
+  if (day.stops.length < 2 || !day.destId) return '';
+  let done = false;
+  try { done = localStorage.getItem(REORDER_HINT_KEY) === '1'; } catch { /* 저장 불가면 계속 보여준다 */ }
+  if (done) return '';
+  return '<p class="mb-reorder-hint">' + IC.grip + '<span>카드를 꾹 눌러 끌면 순서를 바꿀 수 있어요</span></p>';
+}
+
+async function reorderActiveDay(from: number, to: number): Promise<void> {
+  const day = activeDay();
+  if (!day?.destId || !currentTripId || reorderBusy || from === to) return;
+  if (from < 0 || to < 0 || from >= day.stops.length || to >= day.stops.length) return;
+
+  const tripId = currentTripId;
+  const destId = day.destId;
+  const dayIndex = day.dayIndex;
+  // 비교할 때 "없음"의 표현 차이(null · undefined · 빈 문자열)로 충돌이라고 오해하지 않게 맞춘다
+  const normalize = (l: ReturnType<typeof toStoredStops>) =>
+    l.map((st) => ({ ...st, memo: st.memo || null, arriveTime: st.arriveTime ?? null, travelMode: st.travelMode ?? null, customDwellMin: st.customDwellMin ?? null }));
+
+  // 옮기기 전 모습 — 저장 직전에 DB와 같은지 확인하는 기준이자, 기록의 키를 옮기는 기준
+  const base = normalize(toStoredStops(day));
+  const beforeIds = day.stops.map((st) => ({ placeId: st.placeId, customName: st.customName }));
+
+  // ① 화면에 바로 반영(낙관적) — 키도 새 순서로 다시 붙인다
+  day.stops = moveItem(day.stops, from, to);
+  day.stops.forEach((st, i) => { st.key = makeStopKey(dayIndex, i, st.placeId, st.customName); });
+  remapLocalProgress(dayIndex, beforeIds, day.stops.map((st) => ({ placeId: st.placeId, customName: st.customName })));
+  try { localStorage.setItem(REORDER_HINT_KEY, '1'); } catch { /* 무시 */ }
+  reorderBusy = true;
+  render();
+  void loadRealLegsForActiveDay(); // 이웃이 바뀐 구간만 새로 묻는다(이미 받은 건 그대로)
+
+  // ② 저장
+  let result: 'ok' | 'conflict' | 'failed' | 'partial' = 'failed';
+  try {
+    const remote = await loadRoutePlan(destId);
+    const remoteDay = remote?.find((d) => d.dayIndex === dayIndex)?.stops ?? null;
+    if (remote == null || remoteDay == null) result = 'failed';
+    else if (!sameStops(normalize(remoteDay), base)) result = 'conflict';
+    else result = await saveRouteDay(tripId, destId, dayIndex, toStoredStops(day));
+  } catch (e) {
+    console.error('[Mobile] 순서 저장 실패:', e);
+    result = 'failed';
+  } finally {
+    reorderBusy = false;
+  }
+
+  if (currentTripId !== tripId) return; // 그새 다른 여행으로 나갔다
+  if (result === 'ok') {
+    showToast('순서를 바꿨어요');
+  } else {
+    // 저장이 안 됐다 — 내 화면을 DB 기준으로 되돌려 PC·친구 화면과 어긋나지 않게 한다
+    remoteReloadSeq += 1;
+    await reloadFromRemote();
+    showToast(
+      result === 'conflict' ? '다른 사람이 이 날 일정을 방금 바꿨어요. 최신으로 다시 불러왔으니 다시 옮겨 주세요.'
+      : result === 'partial' ? '저장 중 문제가 생겼어요. PC의 ROUTE에서 이 날을 확인해 주세요.'
+      : '순서를 저장하지 못했어요. 연결을 확인하고 다시 해 주세요.'
+    );
+  }
+  // 저장 중에 미뤄 둔 원격 변경이 있으면 이제 반영한다
+  if (remoteReloadPending) { remoteReloadPending = false; scheduleRemoteReload(); }
+}
+
+/** 화면에 들고 있는 기록(진행·GPS 자동 도착)을 새 키로 옮긴다 — DB 쪽은 저장 지점이 옮긴다 */
+function remapLocalProgress(
+  dayIndex: number,
+  before: Array<{ placeId: string | null; customName: string | null }>,
+  after: Array<{ placeId: string | null; customName: string | null }>
+): void {
+  const mapping = mapStopKeys(dayIndex, before, after);
+  const next: ProgressMap = new Map();
+  progress.forEach((v, k) => {
+    if (!mapping.has(k)) { next.set(k, v); return; } // 다른 DAY의 기록(이 화면엔 없지만 안전하게)
+    const to = mapping.get(k);
+    if (to) next.set(to, v);
+  });
+  progress = next;
+  const recorded = [...geoRecorded].map((k) => (mapping.has(k) ? mapping.get(k) : k)).filter((k): k is string => !!k);
+  geoRecorded.clear();
+  recorded.forEach((k) => geoRecorded.add(k));
+  geoAtKey = null; // 다음 위치 갱신에서 새 키로 다시 판정된다
 }
 
 /**
@@ -4464,6 +4639,28 @@ function bind(): void {
     if (radiusChanged && exSearchedAt) void runExploreSearch(exSearchedAt, exCenterLabel);
     else { markerSig = ''; render(); }
   });
+
+  // ── 일정 순서 바꾸기 (길게 눌러 끌기) ──
+  reorderUnbind?.();
+  reorderUnbind = null;
+  const thread = root.querySelector('.mb-thread') as HTMLElement | null;
+  const scroller = root.querySelector('.mb-scroll') as HTMLElement | null;
+  if (thread && scroller && activeTab === 'today' && !detailKey) {
+    reorderUnbind = bindLongPressReorder({
+      thread,
+      scroller,
+      rowSelector: '.mb-row',
+      ignoreSelector: 'a, button, input, textarea, select',
+      canStart: canReorderNow,
+      onStart: () => { reorderDragging = true; },
+      onEnd: () => {
+        reorderDragging = false;
+        // 놓았지만 순서가 안 바뀐 경우(제자리·취소)에도 미뤄 둔 갱신은 해 준다
+        queueMicrotask(() => { if (renderDeferred && !reorderBusy) render(); });
+      },
+      onDrop: (from, to) => { void reorderActiveDay(from, to); },
+    });
+  }
 
   // ── 지도: 일정 보기 ──
   root.querySelectorAll('[data-mapgo]').forEach((btn) => {

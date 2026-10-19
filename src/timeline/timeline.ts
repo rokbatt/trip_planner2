@@ -212,6 +212,8 @@ let mapOpen = true;
 
 export function teardownTimeline(): void {
   dayAttachments = new Map();
+  if (remoteReloadTimer) { clearTimeout(remoteReloadTimer); remoteReloadTimer = null; }
+  remoteReloadSeq += 1; // 화면을 떠난 뒤 늦게 도착한 응답은 버린다
   // 화면을 떠날 때 대기 중인 저장은 버리지 않고 커밋한다 (Claude.md 알려진 버그 패턴)
   if (saveTimer) {
     clearTimeout(saveTimer);
@@ -315,8 +317,10 @@ async function loadTrip(tripId: string): Promise<Trip | null> {
  * 변환·시각 계산 규칙은 dayModel이 단일 기준이고(5-3), 여기서는 그 결과를 화면 상태에
  * 옮겨 담기만 한다 — MOBILE 화면도 같은 loadDayModel을 쓰므로 두 화면의 일정이 어긋나지 않는다.
  */
-async function buildDays(trip: Trip): Promise<void> {
+async function buildDays(trip: Trip, isStale?: () => boolean): Promise<boolean> {
   const model = await loadDayModel(trip);
+  // 기다리는 사이 더 새 요청이 나갔으면 이 응답은 낡았다 — 최신 화면을 덮어쓰지 않는다
+  if (isStale?.()) return false;
   days = model.days;
   dayCtx = model.ctx;
   placeById = model.ctx.placeById;
@@ -326,6 +330,7 @@ async function buildDays(trip: Trip): Promise<void> {
   staySegments = model.staySegments;
   activeDestId = model.activeDestId;
   storageReady = model.storageReady;
+  return true;
 }
 
 /* ══════════════ 실측 경로 (활성 DAY만) ══════════════ */
@@ -461,7 +466,7 @@ export async function renderTimelineContent(host: HTMLElement, tripId: string): 
   render();
   bindShell();
 
-  subscribeRoutePlan(tripId, () => { void reloadFromRemote(); });
+  subscribeRoutePlan(tripId, scheduleRemoteReload);
   void loadRealLegsForActiveDay();
   void initMap();
   void loadDayAttachments(tripId);
@@ -573,11 +578,28 @@ function firstFilledDay(): number {
   return i >= 0 ? i : 0;
 }
 
+/**
+ * 일정이 바뀌었다는 신호(realtime)를 잠깐 모아 한 번만 처리한다. 한 DAY를 저장하면 "정류지를 전부 지우고
+ * 다시 넣기"라 지울 때마다·넣을 때마다 이벤트가 쏟아진다 — 그때마다 읽으면 일정이 잠깐 비어 보이고, 늦게 온
+ * 옛 응답이 최신을 덮어쓸 수 있다(모바일에서 순서를 바꿨을 때 PC 화면이 흔들리던 이유).
+ */
+let remoteReloadTimer: ReturnType<typeof setTimeout> | null = null;
+let remoteReloadSeq = 0;
+function scheduleRemoteReload(): void {
+  if (remoteReloadTimer) clearTimeout(remoteReloadTimer);
+  remoteReloadTimer = setTimeout(() => {
+    remoteReloadTimer = null;
+    void reloadFromRemote();
+  }, 500);
+}
+
 async function reloadFromRemote(): Promise<void> {
   if (!currentTrip || !container) return;
+  const seq = ++remoteReloadSeq;
   // 내가 편집 중이던 값을 남의 변경으로 덮어쓰기 전에, 대기 중인 저장을 먼저 커밋한다
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; await flushSave(); }
-  await buildDays(currentTrip);
+  const applied = await buildDays(currentTrip, () => seq !== remoteReloadSeq);
+  if (!applied || !container) return;
   if (activeDayIndex >= days.length) activeDayIndex = Math.max(0, days.length - 1);
   render();
 }
