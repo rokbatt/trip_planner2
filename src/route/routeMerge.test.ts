@@ -255,3 +255,30 @@ describe('두 사람이 번갈아 편집·저장해도 (무작위 시뮬레이�
     expect(db.rows).toBe(snapshot); // 같은 배열 그대로 = 한 번도 다시 쓰지 않았다
   });
 });
+
+describe('모바일에서 순서만 바꿨을 때 ROUTE·TIMELINE에 반영되는가', () => {
+  const base = [p('A'), p('B'), p('C')];
+  const reordered = [p('C'), p('A'), p('B')];
+
+  it('ROUTE가 건드린 게 없으면 바뀐 순서를 그대로 받는다 (화면 갱신 필요, 다시 저장은 불필요)', () => {
+    const plan = planDaySync(base, base, reordered);
+    expect(ids(plan.merged)).toEqual(['C', 'A', 'B']);
+    expect(plan.applyNeeded).toBe(true);
+    expect(plan.saveNeeded).toBe(false);
+  });
+
+  it('ROUTE가 그사이 장소를 새로 담았어도 — 모바일이 바꾼 순서 위에 얹는다(둘 다 살아남는다)', () => {
+    const local = [p('A'), p('B'), p('C'), p('D')];
+    const plan = planDaySync(base, local, reordered);
+    expect([...ids(plan.merged)].sort()).toEqual(['A', 'B', 'C', 'D']);
+    // 모바일이 정한 A·B·C의 상대 순서(C, A, B)는 그대로이고, D는 내 화면에서 앞이던 C 뒤에 끼워진다
+    expect(ids(plan.merged).filter((x) => x !== 'D')).toEqual(['C', 'A', 'B']);
+    expect(plan.saveNeeded).toBe(true);
+  });
+
+  it('순서만 바꾸는 저장은 장소를 잃지도 늘리지도 않는다', () => {
+    const plan = planDaySync(base, reordered, base);
+    expect(ids(plan.merged).sort()).toEqual(['A', 'B', 'C']);
+    expect(ids(plan.merged)).toEqual(['C', 'A', 'B']);
+  });
+});
