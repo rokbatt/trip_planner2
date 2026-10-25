@@ -1342,6 +1342,128 @@
 }
 .mb-pd-chip svg { width: 14px; height: 14px; opacity: 0.75; }
 
+/* ── 이 근처 둘러보기 — 일정 장소 기준 주변 검색 ── */
+.mb-near {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 14px 13px;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+  border: 1px solid var(--mb-line);
+}
+.mb-near-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mb-near-title { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 14px; font-weight: 700; color: var(--mb-ink); }
+.mb-near-title svg { width: 16px; height: 16px; color: var(--mb-sky); flex: none; }
+.mb-near-radius { display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--mb-fill-subtle); }
+.mb-near-r { min-height: 28px; padding: 0 9px; border-radius: 7px; font-size: 12px; font-weight: 600; color: var(--mb-muted); font-variant-numeric: tabular-nums; }
+.mb-near-r.active { background: var(--mb-surface); color: var(--mb-ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+/* 칩이 많아도 줄이 넘치지 않게 가로 스크롤 — 한 손으로 밀어서 고른다 */
+.mb-near-chips {
+  display: flex;
+  gap: 6px;
+  margin: 0 -13px;
+  padding: 0 13px 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.mb-near-chips::-webkit-scrollbar { display: none; }
+.mb-near-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--mb-line);
+  background: var(--mb-surface);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mb-ink-2);
+}
+.mb-near-chip svg { width: 15px; height: 15px; flex: none; }
+.mb-near-chip.active { background: var(--mb-sky); border-color: transparent; color: var(--mb-on-sky); }
+.mb-near-hint, .mb-near-sum, .mb-near-err {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--mb-muted);
+}
+.mb-near-hint .mb-spinner { width: 14px; height: 14px; }
+.mb-near-sum b { color: var(--mb-ink); font-weight: 700; }
+.mb-near-err { color: var(--mb-danger); }
+.mb-near-list { display: flex; flex-direction: column; }
+.mb-near-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 9px 0;
+  border-top: 1px solid var(--mb-line-soft);
+  text-align: left;
+}
+.mb-near-row:first-child { border-top: 0; }
+.mb-ex-thumb.mb-near-thumb { width: 48px; height: 48px; border-radius: 9px; }
+.mb-ex-thumb.mb-near-thumb.is-blank svg { width: 18px; height: 18px; }
+.mb-near-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mb-near-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; font-weight: 650; color: var(--mb-ink); }
+.mb-near-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 0 2px; font-size: 12px; color: var(--mb-muted); }
+.mb-near-meta .mb-ex-rating { font-size: 12px; }
+.mb-near-dist { flex: none; font-size: 12px; font-weight: 600; color: var(--mb-ink-2); font-variant-numeric: tabular-nums; }
+.mb-near-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 11px;
+  background: var(--mb-fill-subtle);
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--mb-ink-2);
+}
+.mb-near-more svg { width: 16px; height: 16px; }
+.mb-near-more.is-primary { background: var(--mb-sky-wash); color: var(--mb-sky); }
+.mb-near-src { margin: 0; font-size: 11px; color: var(--mb-muted); }
+
+/* 지도 탐색: 일정 장소 기준으로 넘어왔을 때 — 기준과 돌아가기 */
+.mb-ex-anchor {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 7px 7px 11px;
+  border-radius: 10px;
+  background: var(--mb-sky-wash);
+  font-size: 12px;
+  color: var(--mb-ink-2);
+}
+.mb-ex-anchor > span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.mb-ex-anchor > span svg { width: 14px; height: 14px; flex: none; color: var(--mb-sky); }
+.mb-ex-anchor-txt { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.mb-ex-anchor b { color: var(--mb-ink); font-weight: 700; }
+.mb-ex-anchor-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  min-height: 32px;
+  padding: 0 10px 0 6px;
+  border-radius: 8px;
+  background: var(--mb-surface);
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--mb-sky);
+}
+.mb-ex-anchor-back svg { width: 15px; height: 15px; }
+
 .mb-pd-rows {
   display: flex;
   flex-direction: column;

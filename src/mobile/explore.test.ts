@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   catOfTypes, normalizePrice, priceLabel, isOpenAt, todayHoursLine, straightMeters, straightLabel,
-  applyFilters, sortPlaces, DEFAULT_FILTERS, searchKey, movedFar, activeFilterCount, type HoursPeriod,
+  applyFilters, sortPlaces, DEFAULT_FILTERS, searchKey, movedFar, activeFilterCount, boundsAround, withinRadius, nearbyDef, NEARBY_CATS, type HoursPeriod,
 } from './explore';
 
 const BKK = 420; // 방콕 UTC+7
@@ -125,5 +125,36 @@ describe('검색 재사용', () => {
     const a = { lat: 13.7465, lng: 100.4927 };
     expect(movedFar(a, { lat: 13.7475, lng: 100.4927 }, 1500)).toBe(false); // 약 110m
     expect(movedFar(a, { lat: 13.7565, lng: 100.4927 }, 1500)).toBe(true); // 약 1.1km
+  });
+});
+
+describe('일정 장소 근처', () => {
+  const c = { lat: 13.7465, lng: 100.4927 };
+  it('사각형이 반경을 덮는다 (경도 폭은 위도에 맞춰 넓어진다)', () => {
+    const b = boundsAround(c, 500);
+    expect(straightMeters(c, { lat: b.north, lng: c.lng })).toBeCloseTo(500, -1);
+    expect(straightMeters(c, { lat: c.lat, lng: b.east })).toBeCloseTo(500, -1);
+    expect(b.south).toBeLessThan(c.lat);
+    expect(b.west).toBeLessThan(c.lng);
+  });
+  it('반경 밖(사각형 모서리)은 버리고 가까운 순', () => {
+    const b = boundsAround(c, 500);
+    const list = [
+      { id: 'corner', lat: b.north - 0.0001, lng: b.east - 0.0001 }, // 약 700m
+      { id: 'far', lat: c.lat + 0.004, lng: c.lng }, // 약 445m
+      { id: 'near', lat: c.lat + 0.001, lng: c.lng }, // 약 110m
+    ];
+    const r = withinRadius(list, c, 500);
+    expect(r.map((p) => p.id)).toEqual(['near', 'far']);
+    expect(r[0].meters).toBeGreaterThan(100);
+    expect(r[0].meters).toBeLessThan(120);
+  });
+  it('환전소는 타입이 없어 검색어로, 나머지는 타입으로', () => {
+    expect(nearbyDef('exchange').query).toBeTruthy();
+    expect(nearbyDef('exchange').types).toBeUndefined();
+    expect(NEARBY_CATS.filter((d) => d.key !== 'exchange').every((d) => d.types?.length && !d.query)).toBe(true);
+  });
+  it('은행·금융 타입은 편의시설로 (관광으로 잘못 칠하지 않는다)', () => {
+    expect(catOfTypes(['finance', 'point_of_interest'])).toBe('amenity');
   });
 });

@@ -18,10 +18,15 @@ import { reportRouteError } from '../utils/legCooldown';
 import {
   catDef,
   catOfTypes,
+  nearbyDef,
+  boundsAround,
+  withinRadius,
+  searchKey,
   normalizePrice,
   isOpenAt,
   todayHoursLine,
   type ExploreCat,
+  type NearbyKey,
   type FilterablePlace,
   type HoursPeriod,
   type PriceLevel,
@@ -185,7 +190,11 @@ function remember(key: string, raw: any[]): ExplorePlace[] {
 }
 
 /** 카테고리 주변 검색 (Nearby Search). 실패하면 예외 — 화면이 "못 불러왔어요"를 띄운다 */
-export async function searchNearbyCat(key: string, cat: ExploreCat, center: { lat: number; lng: number }, radius: number): Promise<ExplorePlace[]> {
+export function searchNearbyCat(key: string, cat: ExploreCat, center: { lat: number; lng: number }, radius: number): Promise<ExplorePlace[]> {
+  return searchNearbyTypes(key, catDef(cat).includedTypes, center, radius);
+}
+
+async function searchNearbyTypes(key: string, includedTypes: string[], center: { lat: number; lng: number }, radius: number): Promise<ExplorePlace[]> {
   const cached = fromCache(key);
   if (cached) return cached;
   const Place = await placeClass();
@@ -193,11 +202,40 @@ export async function searchNearbyCat(key: string, cat: ExploreCat, center: { la
     Place.searchNearby({
       fields,
       locationRestriction: { center, radius },
-      includedTypes: catDef(cat).includedTypes,
+      includedTypes,
       maxResultCount: MAX_RESULTS,
     })
   );
   return remember(key, places ?? []);
+}
+
+/** 검색어 검색인데 **반경 밖은 받지 않는다**(locationRestriction 사각형) — 환전소처럼 타입이 없는 것용 */
+async function searchTextWithin(key: string, query: string, center: { lat: number; lng: number }, radius: number): Promise<ExplorePlace[]> {
+  const cached = fromCache(key);
+  if (cached) return cached;
+  const Place = await placeClass();
+  const { places } = await withFieldRetry<{ places: any[] }>(LIST_FIELDS, (fields) =>
+    Place.searchByText({
+      textQuery: query,
+      fields,
+      locationRestriction: boundsAround(center, radius),
+      maxResultCount: MAX_RESULTS,
+    })
+  );
+  return remember(key, places ?? []);
+}
+
+/**
+ * 일정 장소 근처 검색("이 근처 둘러보기"와, 거기서 넘어간 지도 탐색) — 반경 안만, 가까운 순.
+ * 지도 탐색의 카테고리 검색과 캐시 키가 겹치지 않게 `near-` 접두어를 붙인다(타입 구성이 다르다).
+ */
+export async function searchNearbyKind(key: NearbyKey, center: { lat: number; lng: number }, radius: number): Promise<ExplorePlace[]> {
+  const def = nearbyDef(key);
+  const cacheKey = searchKey(def.query ? 'text' : 'cat', 'near-' + key, center, radius);
+  const list = def.query
+    ? (await searchTextWithin(cacheKey, def.query, center, radius)).map((p) => ({ ...p, cat: def.cat }))
+    : await searchNearbyTypes(cacheKey, def.types ?? [], center, radius);
+  return withinRadius(list, center, radius);
 }
 
 /** 검색어 검색 (Text Search) — 지금 기준 위치 근처를 우선한다 */
