@@ -118,10 +118,10 @@ import { loadGoogleMapsScript, suggestGateFromCategory } from '../utils/googleMa
 import { insertGooglePlace, rehostPhoto } from '../trips/addGooglePlace';
 import {
   EXPLORE_CATS, CAT_SHORT, DEFAULT_FILTERS, RADIUS_OPTIONS, catDef, priceLabel, straightMeters, straightLabel, fmtMeters,
-  applyFilters, sortPlaces, activeFilterCount, searchKey, movedFar,
-  type ExploreCat, type ExploreFilters, type ExploreSort, type PriceLevel,
+  applyFilters, sortPlaces, activeFilterCount, searchKey, movedFar, NEARBY_CATS, NEARBY_RADII, nearbyDef,
+  type ExploreCat, type ExploreFilters, type ExploreSort, type PriceLevel, type NearbyKey,
 } from './explore';
-import { searchNearbyCat, searchText, fetchDetail, fetchTravelTimes, toGooglePlaceResult, type ExplorePlace, type ExploreDetail } from './exploreApi';
+import { searchNearbyCat, searchNearbyKind, searchText, fetchDetail, fetchTravelTimes, toGooglePlaceResult, type ExplorePlace, type ExploreDetail } from './exploreApi';
 import { requestPlaceBrief, placeBriefKey } from '../timeline/placeBrief';
 import type { PlaceBrief, PlaceBriefRequest } from '../timeline/placeBrief';
 import type { Database, TripDestination, StaySegment, TripChecklistItem, TripLink, TripDocument } from '../types/database';
@@ -185,11 +185,17 @@ const IC = {
   grip: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>',
   // 오프라인/저장 — 구름에 사선
   cloud: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 19a4.5 4.5 0 0 1-.4-8.98A6 6 0 0 1 18 9.5a4.7 4.7 0 0 1 .5 9.5z"/><path d="M4 4l16 16"/></svg>',
+  // 이 근처 둘러보기 — 환전(지폐와 화살표)·ATM(카드)·약국(십자)
+  exchange: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="2"/><circle cx="12" cy="12" r="2.2"/><path d="M6.5 10v4M17.5 10v4"/></svg>',
+  card: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M3 10h18M7 15h4"/></svg>',
+  cross: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M12 8v8M8 12h8"/></svg>',
   swap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4 3 8l4 4"/><path d="M3 8h13a4 4 0 0 1 0 8h-1"/><path d="m17 20 4-4-4-4"/></svg>',
 };
 
 /** 주변 탐색 카테고리 아이콘 */
 const EX_ICON: Record<ExploreCat, string> = { all: IC.grid, food: IC.food, cafe: IC.coffee, sight: IC.landmark, stay: IC.bed, amenity: IC.shop };
+/** 일정 장소 상세 "이 근처 둘러보기" 칩 아이콘 */
+const NEAR_ICON: Record<NearbyKey, string> = { cafe: IC.coffee, exchange: IC.exchange, food: IC.food, convenience: IC.shop, atm: IC.card, pharmacy: IC.cross };
 
 /** 날씨 아이콘 — weather.ts의 WeatherIcon과 1:1. 이모지를 쓰지 않는다(Claude.md 5-3). */
 const WX_ICON: Record<Weather['icon'], string> = {
@@ -237,6 +243,9 @@ let placeById = new Map<string, Place>();
 /** 열려 있는 장소 상세의 stop key (null이면 목록 화면) */
 let detailKey: string | null = null;
 let detailTab: PdTab = 'overview';
+/** 상세 스크롤 위치 — 화면을 다시 그려도 돌려놓는다(닫으면 잊는다) */
+let pdShownKey: string | null = null;
+let pdScrollKeep: { key: string; top: number } | null = null;
 
 let placeBriefs = new Map<string, PlaceBrief>();
 let placeBriefLoading = new Set<string>();
@@ -839,6 +848,9 @@ function render(): void {
     ? { value: document.activeElement.value, pos: document.activeElement.selectionStart } : null;
   const exList = container.querySelector('#mb-ex-list');
   const exScroll = (container.querySelector('.mb-exd-scroll') as HTMLElement | null)?.scrollTop ?? 0;
+  // 상세 안에서 다시 그려도(이 근처 칩·AI 브리핑) 보던 자리를 지킨다. 지도로 갔다 "상세로" 돌아와도 같은 자리
+  const pdScrollEl = container.querySelector('.mb-pdscroll') as HTMLElement | null;
+  if (pdScrollEl && pdShownKey) pdScrollKeep = { key: pdShownKey, top: pdScrollEl.scrollTop };
 
   container.innerHTML = '<div class="mb-app">' + appHtml() + '</div>';
   applyPhotos();
@@ -854,6 +866,9 @@ function render(): void {
   void exList;
   const exd = container.querySelector('.mb-exd-scroll') as HTMLElement | null;
   if (exd) exd.scrollTop = exScroll;
+  pdShownKey = detailKey;
+  const pdScroll = container.querySelector('.mb-pdscroll') as HTMLElement | null;
+  if (pdScroll && pdScrollKeep && pdScrollKeep.key === detailKey) pdScroll.scrollTop = pdScrollKeep.top;
 
   // TIMELINE 페이저는 innerHTML을 새로 그리면 첫 페이지로 돌아간다 — 상태(activeDayIndex)가
   // 곧 페이지 위치이므로 매 렌더마다 거기로 되돌려 놓는다(애니메이션 없이: 이미 그 자리다).
@@ -2087,6 +2102,19 @@ let exTravelState: 'idle' | 'loading' | 'error' = 'idle';
 let exDayPicker = false;
 let exNotice = '';
 let exSaving = false;
+/**
+ * 일정 장소 상세의 "이 근처 둘러보기"에서 지도로 넘어왔을 때 그 장소. 이게 있으면 거리를 **내 위치가
+ * 아니라 이 장소에서** 잰다 — 여행 전에 한국에서 미리 볼 때 "직선 3,700km"가 뜨면 쓸모가 없다.
+ * 다른 곳을 기준으로 다시 검색하면(내 위치·지도 중심) 풀린다.
+ */
+let exAnchor: { stopKey: string; name: string; lat: number; lng: number } | null = null;
+/** 지도 탐색이 "이 근처" 칩(환전소·ATM…)으로 열렸으면 그 칩 — 반경을 바꿔 다시 찾아도 같은 조건으로 */
+let exNear: NearbyKey | null = null;
+let anchorMarker: any = null;
+
+/** 일정 장소 상세의 "이 근처 둘러보기" — 마지막으로 누른 칩의 결과(목록은 exploreApi가 30분 캐시) */
+let pdNear: { stopKey: string; cat: NearbyKey; radius: number; state: 'loading' | 'ok' | 'error'; results: ExplorePlace[]; error: string } | null = null;
+let pdNearSeq = 0;
 /** 이번에 일정에 추가한 DAY — "DAY 2에 추가됨" 표시용(장소 id → DAY 번호들) */
 const exAddedDays = new Map<string, number[]>();
 
@@ -2130,7 +2158,7 @@ function fallbackCenter(): { lat: number; lng: number } | null {
 
 /** 거리 기준점 — 현재 위치가 있으면 그것, 없으면 검색한 자리 */
 function distanceOrigin(): { lat: number; lng: number } | null {
-  return currentUserLoc() ?? exSearchedAt;
+  return exAnchor ?? currentUserLoc() ?? exSearchedAt;
 }
 
 function withMeters(list: ExplorePlace[]): ExplorePlace[] {
@@ -2174,8 +2202,11 @@ async function runExploreSearch(where?: { lat: number; lng: number }, label?: st
 
   const radius = exFilters.radius;
   try {
-    const key = exQuery ? searchKey('text', exQuery, center, radius) : searchKey('cat', exCat, center, radius);
-    exResults = exQuery ? await searchText(key, exQuery, center, radius) : await searchNearbyCat(key, exCat, center, radius);
+    if (exQuery) exResults = await searchText(searchKey('text', exQuery, center, radius), exQuery, center, radius);
+    else if (exNear) exResults = await searchNearbyKind(exNear, center, radius);
+    else exResults = await searchNearbyCat(searchKey('cat', exCat, center, radius), exCat, center, radius);
+    // 일정 장소가 아닌 곳을 기준으로 찾았으면 "그 장소 기준"을 푼다(거리도 다시 내 위치에서)
+    if (exAnchor && (exAnchor.lat !== center.lat || exAnchor.lng !== center.lng)) exAnchor = null;
     exSearchedAt = center;
     exCenterLabel = centerLabel;
     exMoved = false;
@@ -2198,7 +2229,7 @@ function fitExploreBounds(center: { lat: number; lng: number } | null): void {
   if (!list.length) { if (center) mapInstance.panTo(center); return; }
   const b = new g.maps.LatLngBounds();
   list.forEach((p) => b.extend({ lat: p.lat, lng: p.lng }));
-  const me = currentUserLoc();
+  const me = exAnchor ?? currentUserLoc();
   if (me) b.extend(me);
   mapInstance.fitBounds(b, 40);
 }
@@ -2221,7 +2252,8 @@ function mapChipsHtml(): string {
   return [
     '<div class="mb-ex-chips" role="tablist">',
     chip('plan', '일정', IC.route, mapView === 'plan'),
-    EXPLORE_CATS.map((c) => chip(c.key, c.label, EX_ICON[c.key], mapView === 'explore' && !exQuery && exCat === c.key)).join(''),
+    // "이 근처" 칩(환전소 등)으로 넘어온 검색이면 위 칩은 아무것도 켜지 않는다 — 그 칩의 검색이 아니다
+    EXPLORE_CATS.map((c) => chip(c.key, c.label, EX_ICON[c.key], mapView === 'explore' && !exQuery && !exNear && exCat === c.key)).join(''),
     '</div>',
   ].join('');
 }
@@ -2281,11 +2313,15 @@ function exploreHtml(): string {
   const status = exLoading
     ? '<span class="mb-spinner"></span>찾는 중…'
     : exSearchedAt
-      ? escapeHtml(exCenterLabel) + ' 기준 · ' + (exQuery ? '"' + escapeHtml(exQuery) + '" ' : escapeHtml(catDef(exCat).label) + ' ') + list.length + '곳' + (list.length !== exResults.length ? ' (필터 ' + (exResults.length - list.length) + '곳 숨김)' : '')
+      ? escapeHtml(exCenterLabel) + ' 기준 · ' + (exQuery ? '"' + escapeHtml(exQuery) + '" ' : escapeHtml(exNear ? nearbyDef(exNear).label : catDef(exCat).label) + ' ') + list.length + '곳' + (list.length !== exResults.length ? ' (필터 ' + (exResults.length - list.length) + '곳 숨김)' : '')
       : '';
 
   return [
     mapBoxHtml(overlay),
+    exAnchor
+      ? '<div class="mb-ex-anchor"><span>' + IC.pin + '<span class="mb-ex-anchor-txt">일정 장소 <b>' + escapeHtml(exAnchor.name) + '</b>에서 잰 거리예요</span></span>' +
+        '<button class="mb-ex-anchor-back" id="mb-ex-anchor-back">' + IC.back + '상세로</button></div>'
+      : '',
     exNotice ? '<p class="mb-ex-notice">' + escapeHtml(exNotice) + '</p>' : '',
     '<div class="mb-ex-bar">',
     '  <span class="mb-ex-status">' + status + '</span>',
@@ -2390,7 +2426,7 @@ function exDetailHtml(): string {
     price || p.openNow != null || p.todayHours
       ? '      <p class="mb-exd-line">' + [price ? '가격대 ' + escapeHtml(price) : '', p.openNow === true ? '<span class="mb-ex-open">영업 중</span>' : p.openNow === false ? '<span class="mb-ex-closed">영업 종료</span>' : '', p.todayHours ? '오늘 ' + escapeHtml(p.todayHours) : ''].filter(Boolean).join('<span class="mb-exd-dot">·</span>') + '</p>'
       : '',
-    travel ? '      <p class="mb-exd-line mb-exd-travel">' + IC.walk + '<span>' + travel + '</span></p>' : '',
+    travel ? '      <p class="mb-exd-line mb-exd-travel">' + IC.walk + '<span>' + (exAnchor && exTravelState !== 'loading' ? escapeHtml(exAnchor.name) + '에서 ' : '') + travel + '</span></p>' : '',
     p.address ? '      <p class="mb-exd-line mb-exd-addr">' + IC.pin + '<span>' + escapeHtml(p.address) + '</span></p>' : '',
     '      <div class="mb-exd-actions">',
     phone ? '        <a class="mb-exd-act" href="tel:' + escapeHtml(phone.replace(/[^+\d]/g, '')) + '">' + IC.phone + '<span>전화</span></a>' : '',
@@ -2663,6 +2699,8 @@ async function mountMap(): Promise<void> {
     });
     markerSig = '';
     syncMapMarkers();
+    // 일정 장소 상세에서 "지도에서 보기"로 처음 지도를 띄운 경우 — 결과가 보이게 맞춘다
+    if (mapView === 'explore' && exSearchedAt) fitExploreBounds(exSearchedAt);
   } catch (e) {
     // 지도를 못 띄워도 아래 목록과 길찾기는 그대로 쓸 수 있다 — 그래서 탭 전체를 죽이지 않는다
     console.error('[Mobile] 지도 로드 실패:', e);
@@ -2691,6 +2729,7 @@ function syncMapMarkers(): void {
     return;
   }
 
+  syncAnchorMarker(g);
   const list = visibleResults();
   const sig = 'ex:' + list.map((p) => p.id).join('|');
   if (sig !== markerSig) {
@@ -2711,6 +2750,24 @@ function syncMapMarkers(): void {
     m.setIcon(exMarkerIcon(g, p, sel));
     m.setZIndex(sel ? 100 : 10);
   });
+}
+
+/** "이 근처"의 기준 일정 장소 — 남색 원 핀. 누르면 그 장소 상세로 돌아간다 */
+function syncAnchorMarker(g: any): void {
+  if (mapView !== 'explore' || !exAnchor) { anchorMarker?.setMap(null); anchorMarker = null; return; }
+  const a = exAnchor;
+  if (anchorMarker?.__key === a.stopKey) { anchorMarker.setMap(mapInstance); return; }
+  anchorMarker?.setMap(null);
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30"><circle cx="15" cy="15" r="13" fill="#0B2A5C" stroke="#fff" stroke-width="3"/><circle cx="15" cy="15" r="4.5" fill="#fff"/></svg>';
+  anchorMarker = new g.maps.Marker({
+    map: mapInstance,
+    position: { lat: a.lat, lng: a.lng },
+    title: a.name + ' (일정)',
+    zIndex: 200,
+    icon: { url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg), anchor: new g.maps.Point(15, 15) },
+  });
+  anchorMarker.__key = a.stopKey;
+  anchorMarker.addListener('click', backToAnchorStop);
 }
 
 function clearMarkers(): void {
@@ -4005,6 +4062,7 @@ function detailHtml(): string {
     // ── 정보 행 ──
     '      <div class="mb-pd-rows">' + rows.join('') + '</div>',
     '      <div class="mb-pd-chip">' + IC.clock + '예상 체류 ' + fmtMin(dwell) + ' <span class="mb-tag-est">추정</span></div>',
+    pdNearHtml(stop),
     // ── 기존 AI 브리핑 탭 (유지) ──
     '      <div class="mb-pd-tabs">',
     (['overview', 'guide', 'reviews'] as PdTab[])
@@ -4060,6 +4118,147 @@ function infoRowHtml(
       : '',
     '</div>',
   ].join('');
+}
+
+/* ── 이 근처 둘러보기 ──
+ *
+ * Google 지도에서 장소를 누르고 "주변 검색"을 하듯, 일정 장소를 기준으로 카페·환전소·편의점 등을
+ * 미리 본다. 지도 탭의 주변 탐색과 같은 Places 검색을 쓰고, 기준점만 **내 위치가 아니라 이 장소**다.
+ *   · 칩을 누를 때만 검색한다(상세를 연다고 부르지 않는다, 3-2). 같은 장소·같은 칩은 30분간 다시 안 부른다.
+ *   · 거리는 이 장소에서 잰 직선거리다(걷는 시간이 아니다 — 이름에 밝힌다, 3-1).
+ *   · 결과를 누르면 지도 탭으로 넘어가 그 장소 상세(사진·리뷰·저장·일정 추가)를 연다.
+ */
+const PD_NEAR_SHOWN = 5;
+
+function pdNearHtml(stop: TlStop): string {
+  if (stop.lat == null || stop.lng == null) return '';
+  const near = pdNear && pdNear.stopKey === stop.key ? pdNear : null;
+  const radius = near?.radius ?? NEARBY_RADII[0];
+
+  const chips =
+    '<div class="mb-near-chips">' +
+    NEARBY_CATS.map((c) =>
+      '<button class="mb-near-chip' + (near?.cat === c.key ? ' active' : '') + '" data-near="' + c.key + '" aria-pressed="' + (near?.cat === c.key) + '">' +
+      NEAR_ICON[c.key] + '<span>' + escapeHtml(c.label) + '</span></button>'
+    ).join('') +
+    '</div>';
+
+  let body: string;
+  if (!near) {
+    body = '<p class="mb-near-hint">칩을 누르면 이 장소 반경 ' + fmtMeters(radius) + ' 안을 찾아요.</p>';
+  } else if (near.state === 'loading') {
+    body = '<p class="mb-near-hint"><span class="mb-spinner"></span>' + escapeHtml(nearbyDef(near.cat).label) + ' 찾는 중…</p>';
+  } else if (near.state === 'error') {
+    body = '<p class="mb-near-err">' + escapeHtml(near.error) + '</p><button class="mb-near-more" data-near="' + near.cat + '">' + IC.refresh + '다시 시도</button>';
+  } else if (!near.results.length) {
+    const wider = NEARBY_RADII.find((r) => r > near.radius);
+    body =
+      '<p class="mb-near-hint">반경 ' + fmtMeters(near.radius) + ' 안에서 찾지 못했어요' + (wider ? '.' : ' — Google 지도에 등록된 곳만 보여요.') + '</p>' +
+      (wider ? '<button class="mb-near-more" data-nearr="' + wider + '">' + IC.search + fmtMeters(wider) + '로 넓혀 보기</button>' : '');
+  } else {
+    const n = near.results.length;
+    body = [
+      '<p class="mb-near-sum">반경 ' + fmtMeters(near.radius) + ' 안 ' + escapeHtml(nearbyDef(near.cat).label) + ' <b>' + n + (n >= 20 ? '곳+' : '곳') + '</b> · 가까운 순</p>',
+      '<div class="mb-near-list">' + near.results.slice(0, PD_NEAR_SHOWN).map(nearRowHtml).join('') + '</div>',
+      '<button class="mb-near-more is-primary" id="mb-near-map">' + IC.map + '지도에서 ' + (n > PD_NEAR_SHOWN ? n + '곳 모두 ' : '') + '보기</button>',
+    ].join('');
+  }
+
+  const radiusSeg = near
+    ? '<div class="mb-near-radius" role="group" aria-label="반경">' +
+      NEARBY_RADII.map((r) => '<button class="mb-near-r' + (r === near.radius ? ' active' : '') + '" data-nearr="' + r + '">' + fmtMeters(r) + '</button>').join('') +
+      '</div>'
+    : '';
+
+  return [
+    '<section class="mb-near" aria-label="이 근처 둘러보기">',
+    '  <div class="mb-near-head"><h3 class="mb-near-title">' + IC.search + '이 근처 둘러보기</h3>' + radiusSeg + '</div>',
+    chips,
+    body,
+    near?.state === 'ok' && near.results.length ? '<p class="mb-near-src">장소 정보·사진: Google · 거리는 이 장소에서 잰 직선거리예요</p>' : '',
+    '</section>',
+  ].join('');
+}
+
+function nearRowHtml(p: ExplorePlace): string {
+  const meta: string[] = [];
+  if (p.rating != null) meta.push('<span class="mb-ex-rating">' + IC.star + '<b>' + p.rating.toFixed(1) + '</b>' + (p.ratingCount != null ? '<span>(' + p.ratingCount.toLocaleString('ko-KR') + ')</span>' : '') + '</span>');
+  if (p.openNow === true) meta.push('<span class="mb-ex-open">영업 중</span>');
+  else if (p.openNow === false) meta.push('<span class="mb-ex-closed">영업 종료</span>');
+  else if (p.typeLabel) meta.push(escapeHtml(p.typeLabel));
+  return [
+    '<button class="mb-near-row" data-nearplace="' + escapeHtml(p.id) + '">',
+    p.photo
+      ? '<span class="mb-ex-thumb mb-near-thumb" data-photo="' + escapeHtml(p.photo) + '"></span>'
+      : '<span class="mb-ex-thumb mb-near-thumb is-blank">' + EX_ICON[p.cat] + '</span>',
+    '<span class="mb-near-main"><span class="mb-near-name">' + escapeHtml(p.name) + '</span>' +
+      (meta.length ? '<span class="mb-near-meta">' + meta.join('<span class="mb-exd-dot">·</span>') + '</span>' : '') + '</span>',
+    p.meters != null ? '<span class="mb-near-dist">' + escapeHtml(straightLabel(p.meters)) + '</span>' : '',
+    '</button>',
+  ].join('');
+}
+
+/** 칩·반경을 눌렀을 때만 부른다. 늦게 온 이전 응답은 버린다(다른 칩을 눌렀거나 다른 장소로 갔으면) */
+async function runPdNear(cat: NearbyKey, radius: number): Promise<void> {
+  const found = detailKey ? findStop(detailKey) : null;
+  const st = found?.stop;
+  if (!st || st.lat == null || st.lng == null) return;
+  const seq = ++pdNearSeq;
+  pdNear = { stopKey: st.key, cat, radius, state: 'loading', results: [], error: '' };
+  render();
+  try {
+    const results = await searchNearbyKind(cat, { lat: st.lat, lng: st.lng }, radius);
+    if (seq !== pdNearSeq) return;
+    pdNear = { stopKey: st.key, cat, radius, state: 'ok', results, error: '' };
+  } catch (e) {
+    if (seq !== pdNearSeq) return;
+    console.error('[Nearby] 검색 실패:', e);
+    const error = offlineState().offline ? '오프라인이라 주변 장소를 찾을 수 없어요.' : '주변 장소를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.';
+    pdNear = { stopKey: st.key, cat, radius, state: 'error', results: [], error };
+  }
+  render();
+}
+
+/**
+ * "지도에서 보기" / 결과 하나 누르기 → 지도 탭 주변 탐색으로 넘긴다. **다시 검색하지 않는다** —
+ * 방금 받은 결과를 그대로 넘기고, 반경·기준점·칩 조건도 같이 넘겨서 지도에서 반경을 바꿔도 같은 검색이 된다.
+ */
+function openNearInMap(placeId?: string): void {
+  const found = detailKey ? findStop(detailKey) : null;
+  const st = found?.stop;
+  if (!st || st.lat == null || st.lng == null || !pdNear || pdNear.stopKey !== st.key || pdNear.state !== 'ok') return;
+  const center = { lat: st.lat, lng: st.lng };
+  exAnchor = { stopKey: st.key, name: st.name, ...center };
+  exNear = pdNear.cat;
+  exQuery = '';
+  exResults = pdNear.results;
+  exSearchedAt = center;
+  exCenterLabel = st.name;
+  exFilters = { ...exFilters, radius: pdNear.radius };
+  exSort = 'distance';
+  exMoved = false;
+  exSelected = placeId ?? null;
+  exError = '';
+  exNotice = '';
+  exDetailId = null;
+  markerSig = '';
+  mapView = 'explore';
+  activeTab = 'map';
+  detailKey = null;
+  render();
+  // 지도가 이미 떠 있었으면 render 안에서 바로 다시 붙었다 — 결과에 맞춰 화면을 옮긴다(처음이면 mountMap이 한다)
+  if (mapInstance) fitExploreBounds(center);
+  if (placeId) openExDetail(placeId);
+}
+
+/** 지도에서 "상세로" — 넘어오기 전의 일정 장소 상세로 돌아간다 */
+function backToAnchorStop(): void {
+  if (!exAnchor || !findStop(exAnchor.stopKey)) { exAnchor = null; render(); return; }
+  detailKey = exAnchor.stopKey;
+  detailTab = 'overview';
+  exDetailId = null;
+  exDayPicker = false;
+  render();
 }
 
 function pdBodyHtml(stop: TlStop, index: number, s: DaySchedule, day: TlDay): string {
@@ -4430,8 +4629,29 @@ function bind(): void {
   // ── 상세 닫기 · 탭 ──
   root.querySelector('#mb-pd-close')?.addEventListener('click', () => {
     detailKey = null;
+    pdScrollKeep = null;
     render();
   });
+  // ── 상세: 이 근처 둘러보기 ──
+  root.querySelectorAll('[data-near]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const cat = (btn as HTMLElement).dataset.near as NearbyKey;
+      const keep = pdNear && pdNear.stopKey === detailKey ? pdNear.radius : NEARBY_RADII[0];
+      void runPdNear(cat, keep);
+    });
+  });
+  root.querySelectorAll('[data-nearr]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!pdNear || pdNear.stopKey !== detailKey) return;
+      const r = Number((btn as HTMLElement).dataset.nearr);
+      if (r !== pdNear.radius || pdNear.state !== 'ok') void runPdNear(pdNear.cat, r);
+    });
+  });
+  root.querySelectorAll('[data-nearplace]').forEach((btn) => {
+    btn.addEventListener('click', () => openNearInMap((btn as HTMLElement).dataset.nearplace!));
+  });
+  root.querySelector('#mb-near-map')?.addEventListener('click', () => openNearInMap());
+  root.querySelector('#mb-ex-anchor-back')?.addEventListener('click', backToAnchorStop);
   root.querySelectorAll('[data-pdtab]').forEach((btn) => {
     btn.addEventListener('click', () => {
       detailTab = (btn as HTMLElement).dataset.pdtab as PdTab;
@@ -4564,6 +4784,7 @@ function bind(): void {
       if (v === 'plan') { mapView = 'plan'; exDetailId = null; render(); return; }
       mapView = 'explore';
       exCat = v as ExploreCat;
+      exNear = null;
       exQuery = '';
       void runExploreSearch(exSearchedAt && !exMoved ? exSearchedAt : undefined, exSearchedAt && !exMoved ? exCenterLabel : undefined);
     });

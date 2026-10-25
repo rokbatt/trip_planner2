@@ -36,8 +36,63 @@ export function catOfTypes(types: readonly string[]): Exclude<ExploreCat, 'all'>
   if (has('cafe', 'coffee_shop', 'bakery', 'tea_house')) return 'cafe';
   if (has('restaurant', 'food', 'meal_takeaway', 'bar')) return 'food';
   if (has('lodging', 'hotel', 'hostel', 'resort_hotel', 'guest_house')) return 'stay';
-  if (has('convenience_store', 'pharmacy', 'drugstore', 'supermarket', 'atm', 'grocery_store')) return 'amenity';
+  if (has('convenience_store', 'pharmacy', 'drugstore', 'supermarket', 'atm', 'grocery_store', 'bank', 'finance')) return 'amenity';
   return 'sight';
+}
+
+/* ── 일정 장소 근처 ("이 근처 둘러보기") ── */
+
+/**
+ * 일정 장소 상세에서 "그 근처에 카페·환전소가 있나"를 미리 보는 칩. 여행 중에 실제로 찾게 되는
+ * 것 위주로 골랐다.
+ *
+ * 환전소는 Places API(New)에 타입이 없다(Table A에 `atm`·`bank`는 있지만 환전소는 없다) — 그래서
+ * 검색어 검색(Text Search)으로 찾고, 반경 밖 결과는 버린다. `cat`은 그때 마커·태그 색을 정할 표시
+ * 카테고리다(검색어 결과는 타입이 제각각이라 "관광"으로 잘못 분류되기 쉽다).
+ */
+export type NearbyKey = 'cafe' | 'exchange' | 'food' | 'convenience' | 'atm' | 'pharmacy';
+
+export interface NearbyDef {
+  key: NearbyKey;
+  label: string;
+  cat: Exclude<ExploreCat, 'all'>;
+  /** Nearby Search 타입 — 이게 있으면 타입 검색 */
+  types?: string[];
+  /** Text Search 검색어 — 타입이 없는 것(환전소) */
+  query?: string;
+}
+
+export const NEARBY_CATS: NearbyDef[] = [
+  { key: 'cafe', label: '카페', cat: 'cafe', types: ['cafe', 'coffee_shop'] },
+  { key: 'exchange', label: '환전소', cat: 'amenity', query: 'currency exchange' },
+  { key: 'food', label: '맛집', cat: 'food', types: ['restaurant'] },
+  { key: 'convenience', label: '편의점', cat: 'amenity', types: ['convenience_store'] },
+  { key: 'atm', label: 'ATM', cat: 'amenity', types: ['atm'] },
+  { key: 'pharmacy', label: '약국', cat: 'amenity', types: ['pharmacy'] },
+];
+
+export const NEARBY_RADII = [500, 1000];
+
+export function nearbyDef(key: NearbyKey): NearbyDef {
+  return NEARBY_CATS.find((c) => c.key === key) ?? NEARBY_CATS[0];
+}
+
+/**
+ * 중심 ± 반경을 덮는 사각형 — Text Search의 `locationRestriction`은 사각형만 받는다.
+ * 모서리는 반경보다 멀어서(약 1.41배) 결과를 받은 뒤 `withinRadius`로 한 번 더 거른다.
+ */
+export function boundsAround(center: { lat: number; lng: number }, radius: number): { north: number; south: number; east: number; west: number } {
+  const dLat = radius / 111_320;
+  const dLng = radius / (111_320 * Math.max(0.01, Math.cos((center.lat * Math.PI) / 180)));
+  return { north: center.lat + dLat, south: center.lat - dLat, east: center.lng + dLng, west: center.lng - dLng };
+}
+
+/** 반경 안만 남기고 가까운 순으로 — `meters`는 그 중심에서 잰 직선거리 */
+export function withinRadius<T extends { lat: number; lng: number }>(list: readonly T[], center: { lat: number; lng: number }, radius: number): Array<T & { meters: number }> {
+  return list
+    .map((p) => ({ ...p, meters: straightMeters(center, p) }))
+    .filter((p) => p.meters <= radius)
+    .sort((a, b) => a.meters - b.meters);
 }
 
 export const CAT_SHORT: Record<Exclude<ExploreCat, 'all'>, string> = {
