@@ -402,38 +402,6 @@ function buildPanelShell(): string {
   ].join('\n');
 }
 
-function buildAiDemoContent(): string {
-  return [
-    '<div class="ws-ai-demo">',
-    '  <div class="ws-ai-demo-badge">DEMO</div>',
-    '  <div class="ws-ai-msg">',
-    '    <div class="ws-ai-msg-icon">' + IC.sparkle + '</div>',
-    '    <div class="ws-ai-msg-text">현재 보드 기준으로 최적 동선을 제안할게요.</div>',
-    '  </div>',
-    '  <div class="ws-ai-card">',
-    '    <div class="ws-ai-card-title">11/03 (Day 2) 추천 코스</div>',
-    '    <div class="ws-ai-card-route">',
-    '      ' + IC.mapPin + '<span>이치란 → Central Park → MoMA → Chelsea Market → 브루클린 브릿지</span>',
-    '    </div>',
-    '    <div class="ws-ai-card-stats">',
-    '      <div class="ws-ai-stat"><span class="ws-ai-stat-label">예상 이동시간</span><span class="ws-ai-stat-value">42분</span></div>',
-    '      <div class="ws-ai-stat"><span class="ws-ai-stat-label">예상 비용</span><span class="ws-ai-stat-value">$85</span></div>',
-    '      <div class="ws-ai-stat"><span class="ws-ai-stat-label">혼잡도</span><span class="ws-ai-stat-value">보통</span></div>',
-    '    </div>',
-    '    <button class="ws-ai-map-btn" id="ws-ai-map-btn">지도에서 보기</button>',
-    '  </div>',
-    '  <div class="ws-ai-prompts">',
-    '    <button class="ws-ai-prompt-chip">3일차 일정 다시 짜줘</button>',
-    '    <button class="ws-ai-prompt-chip">비오면 대체 일정 추천</button>',
-    '    <button class="ws-ai-prompt-chip">예산 줄여줘</button>',
-    '    <button class="ws-ai-prompt-chip">웨이팅 적은 순으로 정렬</button>',
-    '    <button class="ws-ai-prompt-chip">동선 최적화</button>',
-    '  </div>',
-    '  <div class="ws-ai-demo-hint">실제 AI 연동(Gemini/Claude)은 다음 단계에서 진행돼요</div>',
-    '</div>',
-  ].join('\n');
-}
-
 /** 'ideas' 게이트를 벗어날 때 realtime 채널을 정리하기 위한 참조 */
 let boardModuleRef: { teardownBoard: () => void } | null = null;
 let shortlistModuleRef: { teardownShortlist: () => void } | null = null;
@@ -660,6 +628,7 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
   let activeTab: PanelTab = 'chat';
   let lastNonDetailTab: PanelTab = 'chat';
   let chatUnsub: (() => void) | null = null;
+  let aiModuleRef: { teardownAssistantPanel: () => void } | null = null;
 
   function updateBadge(count: number): void {
     badgeEl.textContent = String(count);
@@ -675,10 +644,12 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
       chatUnsub();
       chatUnsub = null;
     }
+    aiModuleRef?.teardownAssistantPanel();
+    aiModuleRef = null;
     teardownComments();
   }
 
-  function renderPanelBody(): void {
+  async function renderPanelBody(): Promise<void> {
     const bodyEl = panelEl.querySelector('#ws-panel-body') as HTMLElement;
     if (!bodyEl) return;
 
@@ -686,21 +657,17 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
       chatUnsub();
       chatUnsub = null;
     }
+    aiModuleRef?.teardownAssistantPanel();
+    aiModuleRef = null;
 
     if (activeTab === 'chat') {
       chatUnsub = renderChatPanelUI(bodyEl, tripId);
       markAsRead(tripId);
       updateBadge(0);
     } else {
-      bodyEl.innerHTML = buildAiDemoContent();
-      bodyEl.querySelector('#ws-ai-map-btn')?.addEventListener('click', () => {
-        alert('지도 연동은 다음 단계에서 구현 예정이에요 (데모)');
-      });
-      bodyEl.querySelectorAll('.ws-ai-prompt-chip').forEach((chip) => {
-        chip.addEventListener('click', () => {
-          alert('AI 어시스턴트 연동은 다음 단계에서 구현 예정이에요 (데모)');
-        });
-      });
+      const mod = await import('../assistant/assistant');
+      aiModuleRef = mod;
+      mod.renderAssistantPanel(bodyEl, tripId);
     }
   }
 
@@ -720,12 +687,12 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
         lastNonDetailTab = t;
         panelEl.querySelectorAll('.ws-segment').forEach((b) => b.classList.remove('active'));
         btn.classList.add('active');
-        renderPanelBody();
+        void renderPanelBody();
       });
     });
     panelEl.querySelector('#ws-panel-close')?.addEventListener('click', closeDrawer);
 
-    renderPanelBody();
+    void renderPanelBody();
   }
 
   /** 카드 클릭 시 우측 Drawer에 상세 정보 표시 */
@@ -739,6 +706,8 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
       chatUnsub();
       chatUnsub = null;
     }
+    aiModuleRef?.teardownAssistantPanel();
+    aiModuleRef = null;
     teardownComments(); // 이전에 열려있던 다른 장소의 댓글 구독 정리
 
     panelEl.innerHTML = buildDetailPanelShell(place);

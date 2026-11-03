@@ -1111,6 +1111,52 @@ PC의 LINKS로 넘긴다.
 
 ---
 
+## 5-6. Assistant 아키텍처 (신규)
+
+워크스페이스 우측 Drawer의 **Assistant** 탭(모든 게이트에서 열 수 있음) — DOCUMENTS에 올린
+문서(항공권·숙소 예약증 등)와 NOTES에 적은 메모를 바탕으로 사용자 질문에 답한다. 예전엔 이
+탭이 동선 추천 하드코딩 데모였는데, 이 기능이 그 자리를 대체했다(`workspace.ts`의
+`buildAiDemoContent` 자리 — 지금은 `src/assistant/assistant.ts`를 동적 import).
+
+### 두 단계로 나뉜 이유 (place-brief/route-plan과 같은 이유)
+- **doc-digest**(`api/ai.ts`) — 문서 파일(PDF/이미지) 하나를 Gemini 멀티모달로 읽어 "질문에
+  답할 때 쓸 핵심 사실" 3~8줄만 뽑는다. **문서당 세션 중 1회**만 호출되고 `ai_plan_cache`에
+  캐싱된다(키: `documentId + updated_at` — 문서를 수정하면 재생성). 파일 없이 메타데이터만
+  있는 문서(제목/설명/예약번호만 저장)는 이 호출 자체를 생략하고 그 필드를 그대로 사실로
+  쓴다 — Gemini를 부를 이유가 없다.
+- **doc-qa**(`api/ai.ts`) — 이미 뽑아둔 사실들(문서 digest + 메모 본문 전체)을 질문과 함께
+  **텍스트로만** 보내 답을 받는다. 파일을 다시 읽지 않으므로 질문마다 비용이 거의 들지
+  않는다. 같은 질문+자료 조합은 캐싱된다.
+
+이렇게 나누지 않고 질문마다 파일을 통째로 다시 보내면, 질문 하나에 멀티모달 호출을 몇 번씩
+반복하게 된다(문서가 여러 개면 특히).
+
+### 개인 문서 범위 (원칙 3-1과 별개의 프라이버시 규칙)
+공용(SHARED) 문서 전부 + **"지금 이 브라우저에서 PIN으로 잠금을 푼" 개인 문서만** 포함한다
+(`docsStore.getUnlockedUserId`). 다른 멤버의 개인 문서는 애초에 조회하지 않는다 — DOCUMENTS의
+PERSONAL 잠금 원칙(5-5)과 동일한 경계를 Assistant도 그대로 지킨다.
+
+### 원칙 3-1 적용 (가장 중요)
+항공권/숙소 정보는 틀리면 실제로 여행을 망치는 값이라 가장 보수적으로 다룬다.
+- 두 프롬프트 모두 "주어진 사실 안에서만 답하고, 없으면 모른다고 답하라"를 명시한다.
+- 답변 아래에 실제로 참고한 자료 제목(`usedTitles`)을 칩으로 보여준다 — 사용자가 원본
+  문서/메모로 바로 다시 확인할 수 있게.
+- 패널 하단에 "AI가 문서·메모 내용을 바탕으로 정리한 답변이에요. 중요한 내용은 원본으로
+  다시 확인하세요" 고정 안내문(첫 질문 이후 표시).
+- doc-digest가 파일을 못 읽거나(`readable: false`) 뽑을 내용이 없으면 그 문서는 조용히
+  제외한다 — 억지로 채우지 않는다. 실패한 문서가 있으면 "N개 문서는 읽지 못했어요"만 짧게
+  알린다.
+
+### 파일 구성
+- `src/assistant/assistant.ts` — 패널 UI(대화 목록·입력창·빈 상태·프롬프트 칩), 자료 수집
+  오케스트레이션. 모듈 전역 상태 1개짜리 싱글턴(docs.ts/notes.ts와 같은 패턴) — 트립이 바뀌면
+  리셋하고, 같은 트립이면 Drawer를 닫았다 열어도 대화 기록과 자료 캐시를 유지한다.
+- `src/assistant/assistantClient.ts` — `/api/ai`(`doc-digest`/`doc-qa`)와 주고받는 형태만
+  담당(placeBrief.ts와 같은 역할 분리). 로컬 캐시를 두지 않는다 — 캐싱은 전부 서버가 한다
+  (3-2). 로컬에 두면 다른 멤버가 이미 만들어둔 결과를 못 받고 상태가 갈라진다.
+
+---
+
 ## 6. 파일 구조
 
 ```
@@ -1155,6 +1201,8 @@ supabase/
   docs/notes.ts                      ← NOTES 탭 (메모 CRUD·고정·확인, 5-5 참고)
   docs/docsStore.ts                  ← 문서·메모·PIN·Storage I/O의 단일 창구 (5-5 참고)
   docs/docsIcons.ts                  ← DOCUMENTS/NOTES 공용 아이콘·포맷 유틸
+  assistant/assistant.ts, assistant.css  ← Assistant 패널(Drawer) — 문서/메모 기반 질의응답 (5-6 참고)
+  assistant/assistantClient.ts       ← `/api/ai`(doc-digest/doc-qa) 클라이언트 (5-6 참고)
   workspace/workspace.ts             ← 게이트 라우팅, 사이드바
   utils/googleMaps.ts                ← Google Maps 로더, GooglePlaceResult 추출/카테고리 매핑 (공유 유틸)
   utils/travelEstimate.ts            ← 이동시간·거리·요금·체류시간 계산의 단일 기준 (Route/Timeline 공용, 5-3 참고)
@@ -1174,6 +1222,9 @@ api/                                  ← Vercel 서버리스 함수 (각각 완
                                         kind 생략|'hotel-review' → AI 리뷰 요약 (Google Search 그라운딩)
                                         kind 'route-plan'        → ROUTE의 DAY별 일정 자동 배분
                                         kind 'day-detail'        → 특정 DAY의 세부 일정·예산(참고용, 추후 프리미엄)
+                                        kind 'place-brief'       → TIMELINE 장소 상세 AI 브리핑
+                                        kind 'doc-digest'        → DOCUMENTS 파일 하나에서 핵심 사실 추출 (5-6 참고)
+                                        kind 'doc-qa'            → Assistant 질의응답 (5-6 참고)
 ```
 
 > **Gemini 기능을 새로 추가할 땐 `api/ai.ts`에 `kind`를 하나 더 만든다.** 새 파일을 만들면

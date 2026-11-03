@@ -39,6 +39,9 @@ import { createClient } from '@supabase/supabase-js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 declare const process: { env: Record<string, string | undefined> };
+/** doc-digest가 Storage에서 받은 파일을 base64로 바꿀 때만 쓴다 — @types/node 없이도
+ *  타입이 깨지지 않도록 필요한 모양만 선언(이 파일 전체의 기존 관례와 동일) */
+declare const Buffer: { from(data: ArrayBuffer | Uint8Array): { toString(encoding: string): string } };
 
 interface VercelRequest {
   method?: string;
@@ -99,19 +102,29 @@ async function writePlanCache(
 }
 
 /** Gemini 호출 + JSON 응답 파싱. 실패 사유는 문자열로 돌려 호출부가 상태코드를 정한다 */
+/** doc-digest가 PDF/이미지를 함께 보낼 때 쓰는 추가 파트 */
+interface GeminiFilePart {
+  mimeType: string;
+  base64: string;
+}
+
 async function callGeminiJson(
   model: string,
   geminiKey: string,
   prompt: string,
-  responseSchema: any
+  responseSchema: any,
+  file?: GeminiFilePart | null
 ): Promise<{ data?: any; error?: string }> {
+  const parts: any[] = [{ text: prompt }];
+  if (file) parts.push({ inlineData: { mimeType: file.mimeType, data: file.base64 } });
+
   let geminiRes: Response;
   try {
     geminiRes = await fetch(GEMINI_ENDPOINT + model + ':generateContent?key=' + geminiKey, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+        contents: [{ parts }],
         generationConfig: { responseMimeType: 'application/json', responseSchema, temperature: 0.4 },
       }),
     });
@@ -184,6 +197,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (kind === 'route-plan-day') return handleRoutePlanDay(req, res);
   if (kind === 'day-detail') return handleDayDetail(req, res);
   if (kind === 'place-brief') return handlePlaceBrief(req, res);
+  if (kind === 'doc-digest') return handleDocDigest(req, res);
+  if (kind === 'doc-qa') return handleDocQA(req, res);
   return handleHotelReview(req, res);
 }
 
@@ -1064,5 +1079,202 @@ async function handlePlaceBrief(req: VercelRequest, res: VercelResponse) {
   };
 
   await writePlanCache(supabase, cacheKey, 'place-brief', result);
+  res.status(200).json({ ...result, cached: false });
+}
+
+/* ══════════════════ 6. DOCUMENTS 기반 AI 어시스턴트 ══════════════════ */
+/**
+ * 두 단계로 나뉜다 — place-brief/route-plan과 같은 이유다(한쪽은 파일 이해가 필요하고
+ * 비싼 반면, 다른 한쪽은 텍스트만으로 충분하고 싸다. 섞으면 질문마다 파일을 다시 읽게 된다).
+ *
+ * 1) doc-digest — 문서 파일(PDF/이미지) 하나를 읽어 "질문에 답할 때 쓸 핵심 사실"만
+ *    몇 줄로 뽑아 캐싱한다(문서당 1회, updated_at이 바뀌면 재생성). 파일이 없는 문서(제목/
+ *    설명/예약번호만 있는 경우)는 클라이언트가 이 엔드포인트를 아예 부르지 않고 그 필드들을
+ *    그대로 사실로 쓴다 — Gemini 호출이 필요 없다.
+ * 2) doc-qa — 이미 뽑아둔 사실들(문서 digest + 메모 본문)을 질문과 함께 텍스트로만 보내
+ *    답을 받는다. 파일을 다시 읽지 않으므로 질문마다 비용이 거의 들지 않는다.
+ *
+ * 원칙 3-1 — 두 프롬프트 모두 "주어진 사실 안에서만 답하고, 없으면 모른다고 답하라"를
+ * 강하게 명시한다. 항공권/숙소 정보는 틀리면 실제로 여행을 망치는 값이라 가장 보수적으로
+ * 다뤄야 한다.
+ */
+
+const DOC_DIGEST_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    readable: { type: 'BOOLEAN' },
+    facts: { type: 'ARRAY', items: { type: 'STRING' } },
+  },
+  required: ['readable', 'facts'],
+};
+
+async function handleDocDigest(req: VercelRequest, res: VercelResponse) {
+  const body = (req.body ?? {}) as Record<string, any>;
+  const documentId = String(body.documentId ?? '').trim();
+  const title = String(body.title ?? '').trim();
+  const category = String(body.category ?? '').trim();
+  const filePath = String(body.filePath ?? '').trim();
+  const fileType = String(body.fileType ?? 'application/octet-stream').trim();
+  const updatedAt = String(body.updatedAt ?? '').trim();
+
+  if (!documentId || !filePath) {
+    res.status(400).json({ error: 'documentId와 filePath가 필요해요.' });
+    return;
+  }
+
+  const cacheKey = 'doc-digest:' + stableHash(documentId + ':' + updatedAt);
+  const supabase = makeSupabase();
+  const cached = await readPlanCache(supabase, cacheKey);
+  if (cached) {
+    res.status(200).json({ ...cached, cached: true });
+    return;
+  }
+
+  if (!supabase) {
+    // 서비스 롤 키가 없으면 비공개 버킷에서 파일을 받아올 방법이 없다
+    res.status(500).json({ error: '문서 저장소 접근 설정이 안 돼 있어요(SUPABASE_SERVICE_ROLE_KEY).' });
+    return;
+  }
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    res.status(500).json({ error: 'GEMINI_API_KEY가 설정되지 않았어요.' });
+    return;
+  }
+
+  const { data: fileBlob, error: downloadError } = await supabase.storage.from('trip-docs').download(filePath);
+  if (downloadError || !fileBlob) {
+    res.status(502).json({ error: '문서 파일을 불러오지 못했어요: ' + (downloadError?.message ?? '알 수 없는 오류') });
+    return;
+  }
+
+  let base64: string;
+  try {
+    const arrayBuffer = await fileBlob.arrayBuffer();
+    base64 = Buffer.from(arrayBuffer).toString('base64');
+  } catch (e) {
+    res.status(502).json({ error: '문서 파일을 읽지 못했어요: ' + (e as Error).message });
+    return;
+  }
+
+  const prompt = [
+    '너는 여행 문서에서 핵심 사실만 뽑아내는 도우미야.',
+    '첨부된 문서(제목: "' + title + '"' + (category ? ', 분류: ' + category : '') + ')를 보고,',
+    '나중에 여행자의 질문에 답할 때 참고할 수 있는 핵심 사실만 한국어 짧은 문장 3~8개로 정리해.',
+    '',
+    '규칙:',
+    '- 문서에 실제로 적혀 있는 내용만 써. 추측하거나 지어내지 마.',
+    '- 항공권이면: 항공사, 편명, 날짜, 출발/도착 시각, 출발/도착 공항(도시), 예약번호(PNR) 등.',
+    '- 숙소 예약이면: 숙소명, 체크인/체크아웃 날짜·시각, 주소, 예약번호 등.',
+    '- 보험/비자/티켓 등 다른 문서면 그 문서에서 실제로 중요한 값(보장 내용, 유효기간,',
+    '  입장 가능 시간대 등)을 뽑아.',
+    '- 한 문장에 한 가지 사실만. "체크인: 10월 26일 15:00"처럼 라벨을 붙이면 더 좋아.',
+    '- 첨부된 파일을 읽을 수 없거나(글자가 안 보이는 이미지 등) 이 문서에서 특별히 뽑을',
+    '  내용이 없으면 readable을 false로 하고 facts는 빈 배열로 둬. 억지로 채우지 마.',
+  ].join('\n');
+
+  const { data, error } = await callGeminiJson('gemini-2.5-flash-lite', geminiKey, prompt, DOC_DIGEST_SCHEMA, {
+    mimeType: fileType,
+    base64,
+  });
+  if (error) {
+    res.status(502).json({ error });
+    return;
+  }
+
+  const result = {
+    readable: data?.readable !== false,
+    facts: (Array.isArray(data?.facts) ? data.facts : []).map((f: any) => String(f ?? '').trim()).filter(Boolean).slice(0, 8),
+  };
+
+  await writePlanCache(supabase, cacheKey, 'doc-digest', result);
+  res.status(200).json({ ...result, cached: false });
+}
+
+const DOC_QA_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    answer: { type: 'STRING' },
+    usedTitles: { type: 'ARRAY', items: { type: 'STRING' } },
+  },
+  required: ['answer', 'usedTitles'],
+};
+
+async function handleDocQA(req: VercelRequest, res: VercelResponse) {
+  const body = (req.body ?? {}) as Record<string, any>;
+  const question = String(body.question ?? '').trim();
+  const sources: Array<{ title: string; category: string; kind: string; digest: string }> = Array.isArray(body.sources)
+    ? body.sources
+        .map((s: any) => ({
+          title: String(s?.title ?? '').trim(),
+          category: String(s?.category ?? '').trim(),
+          kind: String(s?.kind ?? 'document').trim(),
+          digest: String(s?.digest ?? '').trim(),
+        }))
+        .filter((s: any) => s.title && s.digest)
+    : [];
+
+  if (!question) {
+    res.status(400).json({ error: 'question이 필요해요.' });
+    return;
+  }
+  if (sources.length === 0) {
+    res.status(200).json({
+      answer: '아직 참고할 수 있는 문서나 메모가 없어요. DOCUMENTS에 항공권이나 예약증을 올려주시면 그 내용을 보고 답해드릴게요.',
+      usedTitles: [],
+      cached: false,
+    });
+    return;
+  }
+
+  const cacheKey = 'doc-qa:' + stableHash(question + '||' + sources.map((s) => s.title + ':' + s.digest).join('||'));
+  const supabase = makeSupabase();
+  const cached = await readPlanCache(supabase, cacheKey);
+  if (cached) {
+    res.status(200).json({ ...cached, cached: true });
+    return;
+  }
+
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    res.status(500).json({ error: 'GEMINI_API_KEY가 설정되지 않았어요.' });
+    return;
+  }
+
+  const sourceBlock = sources
+    .map((s, i) => (i + 1) + '. [' + (s.kind === 'note' ? '메모' : '문서') + '] ' + s.title + (s.category ? ' (' + s.category + ')' : '') + '\n' + s.digest)
+    .join('\n\n');
+
+  const prompt = [
+    '너는 여행자가 올려둔 문서와 메모를 바탕으로 질문에 답하는 여행 비서야.',
+    '아래 [참고 자료]에 적힌 내용 "안에서만" 답해. 자료에 없는 내용은 절대 지어내지 말고,',
+    '"문서나 메모에서 확인할 수 없어요"처럼 솔직하게 답해.',
+    '',
+    '[참고 자료]',
+    sourceBlock,
+    '',
+    '[질문]',
+    question,
+    '',
+    '한국어로 간결하게 답하고(1~4문장), 답변에 실제로 사용한 자료의 제목들을 usedTitles 배열에 담아.',
+    '사용한 자료가 없으면(모른다고 답한 경우) usedTitles는 빈 배열로 둬.',
+  ].join('\n');
+
+  const { data, error } = await callGeminiJson('gemini-2.5-flash-lite', geminiKey, prompt, DOC_QA_SCHEMA);
+  if (error) {
+    res.status(502).json({ error });
+    return;
+  }
+
+  const answer = String(data?.answer ?? '').trim();
+  if (!answer) {
+    res.status(502).json({ error: 'AI 응답을 해석하지 못했어요. 잠시 후 다시 시도해 주세요.' });
+    return;
+  }
+  const result = {
+    answer,
+    usedTitles: (Array.isArray(data?.usedTitles) ? data.usedTitles : []).map((t: any) => String(t ?? '').trim()).filter(Boolean),
+  };
+
+  await writePlanCache(supabase, cacheKey, 'doc-qa', result);
   res.status(200).json({ ...result, cached: false });
 }
