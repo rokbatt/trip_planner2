@@ -667,8 +667,8 @@ function renderDetail(): void {
     renderDocMain();
     renderDetail();
   });
-  detailEl.querySelector('#dn-open')?.addEventListener('click', () => openFile(doc, false));
-  detailEl.querySelector('#dn-download')?.addEventListener('click', () => openFile(doc, true));
+  detailEl.querySelector('#dn-open')?.addEventListener('click', () => openFile(doc));
+  detailEl.querySelector('#dn-download')?.addEventListener('click', () => downloadFile(doc));
   detailEl.querySelector('#dn-edit')?.addEventListener('click', () => openDocumentSheet(doc));
   detailEl.querySelector('#dn-delete')?.addEventListener('click', () => void removeDocument(doc));
 
@@ -704,30 +704,65 @@ async function loadPreview(doc: TripDocument): Promise<void> {
 }
 
 /**
- * 파일 열기/다운로드 — signedUrlFor가 네트워크 요청이라 await 뒤에 window.open을 부르면
- * "사용자 동작으로 열린 탭"이 아니게 돼 대부분의 브라우저가 팝업을 조용히 막아버린다
- * (에러도 안 뜨고 그냥 아무 일도 안 일어나는 것처럼 보임). 그래서 클릭 핸들러 안에서
- * 빈 탭을 먼저 동기적으로 열어 사용자 동작을 붙잡아두고, URL이 오면 그 탭을 이동시킨다.
+ * 파일 열기 — 새 탭에서 보여준다. signedUrlFor가 네트워크 요청이라 await 뒤에
+ * window.open을 부르면 "사용자 동작으로 열린 탭"이 아니게 돼 대부분의 브라우저가
+ * 팝업을 조용히 막아버린다(에러도 안 뜨고 아무 일도 안 일어나는 것처럼 보임). 그래서
+ * 클릭 핸들러 안에서 빈 탭을 먼저 동기적으로 열어 사용자 동작을 붙잡아두고, URL이
+ * 오면 그 탭을 이동시킨다.
+ *
+ * 그래도 안 열리는 환경이 있다 — 카카오톡/인스타그램 등 인앱 브라우저는 새 탭 자체를
+ * 아예 막거나 window.open이 빈 객체만 돌려주고 실제로는 아무 창도 안 띄우는 경우가
+ * 흔하다. 그런 경우 새 탭을 기다리지 말고 지금 보고 있는 화면에서 바로 연다 — 앱
+ * 상태를 잃더라도 "눌러도 아무것도 안 뜨는" 것보다는 훨씬 낫다.
  */
-function openFile(doc: TripDocument, download: boolean): void {
+function openFile(doc: TripDocument): void {
   if (!doc.file_path) return;
   const tab = window.open('', '_blank');
-  void resolveAndNavigate(doc, download, tab);
+  void resolveAndOpen(doc, tab);
 }
 
-async function resolveAndNavigate(doc: TripDocument, download: boolean, tab: Window | null): Promise<void> {
-  const url = await signedUrlFor(doc.file_path!, 600, download ? doc.file_name ?? undefined : undefined);
+async function resolveAndOpen(doc: TripDocument, tab: Window | null): Promise<void> {
+  const url = await signedUrlFor(doc.file_path!, 600);
   if (!url) {
     tab?.close();
     alert('파일을 여는 데 실패했어요. 잠시 후 다시 시도해주세요.');
     return;
   }
-  if (tab) {
+  if (tab && !tab.closed) {
     tab.location.href = url;
   } else {
-    // 빈 탭조차 막혔던 경우(팝업 전면 차단 설정 등) — 그래도 한 번 시도는 해본다
-    window.open(url, '_blank', 'noopener,noreferrer');
+    // 새 탭 자체가 막힌 환경 — 그래도 뭔가는 보여야 하니 지금 화면에서 바로 연다
+    window.location.href = url;
   }
+}
+
+/**
+ * 다운로드 — 새 탭/팝업을 아예 쓰지 않는다(위 openFile과 다른 접근). signedUrlFor에
+ * 넘긴 download 옵션 덕분에 서버가 이 URL 응답에 Content-Disposition: attachment를
+ * 붙여주므로, 지금 페이지에서 그대로 눌러도 페이지 이동 없이 파일만 내려받아진다 —
+ * 팝업 차단은 물론 인앱 브라우저의 window.open 제한에도 영향을 받지 않는다.
+ */
+function downloadFile(doc: TripDocument): void {
+  if (!doc.file_path) return;
+  void resolveAndDownload(doc);
+}
+
+async function resolveAndDownload(doc: TripDocument): Promise<void> {
+  const url = await signedUrlFor(doc.file_path!, 600, doc.file_name ?? undefined);
+  if (!url) {
+    alert('파일을 받아오지 못했어요. 잠시 후 다시 시도해주세요.');
+    return;
+  }
+  const a = document.createElement('a');
+  a.href = url;
+  // 크로스 오리진이라 브라우저가 무시할 수도 있지만(실제 다운로드는 서버의
+  // Content-Disposition 헤더가 결정한다), 힌트로 같이 달아둔다고 해될 건 없다
+  a.download = doc.file_name ?? '';
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 async function removeDocument(doc: TripDocument): Promise<void> {
