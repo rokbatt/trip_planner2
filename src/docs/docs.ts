@@ -667,8 +667,8 @@ function renderDetail(): void {
     renderDocMain();
     renderDetail();
   });
-  detailEl.querySelector('#dn-open')?.addEventListener('click', () => void openFile(doc, false));
-  detailEl.querySelector('#dn-download')?.addEventListener('click', () => void openFile(doc, true));
+  detailEl.querySelector('#dn-open')?.addEventListener('click', () => openFile(doc, false));
+  detailEl.querySelector('#dn-download')?.addEventListener('click', () => openFile(doc, true));
   detailEl.querySelector('#dn-edit')?.addEventListener('click', () => openDocumentSheet(doc));
   detailEl.querySelector('#dn-delete')?.addEventListener('click', () => void removeDocument(doc));
 
@@ -703,14 +703,31 @@ async function loadPreview(doc: TripDocument): Promise<void> {
     : '<iframe src="' + escapeHtml(url) + '#toolbar=0" title="' + escapeHtml(doc.title) + ' 미리보기"></iframe>';
 }
 
-async function openFile(doc: TripDocument, download: boolean): Promise<void> {
+/**
+ * 파일 열기/다운로드 — signedUrlFor가 네트워크 요청이라 await 뒤에 window.open을 부르면
+ * "사용자 동작으로 열린 탭"이 아니게 돼 대부분의 브라우저가 팝업을 조용히 막아버린다
+ * (에러도 안 뜨고 그냥 아무 일도 안 일어나는 것처럼 보임). 그래서 클릭 핸들러 안에서
+ * 빈 탭을 먼저 동기적으로 열어 사용자 동작을 붙잡아두고, URL이 오면 그 탭을 이동시킨다.
+ */
+function openFile(doc: TripDocument, download: boolean): void {
   if (!doc.file_path) return;
-  const url = await signedUrlFor(doc.file_path, 600, download ? doc.file_name ?? undefined : undefined);
+  const tab = window.open('', '_blank');
+  void resolveAndNavigate(doc, download, tab);
+}
+
+async function resolveAndNavigate(doc: TripDocument, download: boolean, tab: Window | null): Promise<void> {
+  const url = await signedUrlFor(doc.file_path!, 600, download ? doc.file_name ?? undefined : undefined);
   if (!url) {
+    tab?.close();
     alert('파일을 여는 데 실패했어요. 잠시 후 다시 시도해주세요.');
     return;
   }
-  window.open(url, '_blank', 'noopener,noreferrer');
+  if (tab) {
+    tab.location.href = url;
+  } else {
+    // 빈 탭조차 막혔던 경우(팝업 전면 차단 설정 등) — 그래도 한 번 시도는 해본다
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
 }
 
 async function removeDocument(doc: TripDocument): Promise<void> {
