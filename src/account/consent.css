@@ -33,13 +33,6 @@
 }
 .cs-overlay.open .cs-modal { transform: none; }
 
-.cs-eyebrow {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  color: #0B7CC4;
-  margin-bottom: 8px;
-}
 .cs-title {
   font-size: 21px;
   font-weight: 700;

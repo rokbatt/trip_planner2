@@ -216,7 +216,7 @@ function openWithdrawModal(userId: string, email: string): void {
     if (res.ok) {
       finish(
         `<h2 class="st-m-title">탈퇴가 끝났어요</h2>
-         <p class="st-m-lead">그동안 함께해서 고마웠어요.</p>
+         <p class="st-m-lead">이용해 주셔서 감사합니다.</p>
          ${res.filesFailed ? `<div class="st-warn">일부 문서 파일을 지우지 못했을 수 있어요. 마음에 걸리면 <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a>로 알려 주세요.</div>` : ''}`,
         { label: '처음으로', onClick: () => { close(); navigate('login'); } }
       );

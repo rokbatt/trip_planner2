@@ -38,13 +38,8 @@ export function openConsentModal(mode: Mode): Promise<boolean> {
     overlay.className = 'cs-overlay';
     overlay.innerHTML = `
       <div class="cs-modal" role="dialog" aria-modal="true" aria-labelledby="cs-title">
-        <p class="cs-eyebrow">BEFORE BOARDING</p>
-        <h2 class="cs-title" id="cs-title">${mode === 'signup' ? '시작하기 전에 확인해 주세요' : '이용 동의가 필요해요'}</h2>
-        ${
-          mode === 'regate'
-            ? '<p class="cs-lead">이용약관과 개인정보처리방침에 대한 동의 기록이 없어요. 동의하면 계속 쓸 수 있어요.</p>'
-            : ''
-        }
+        <h2 class="cs-title" id="cs-title">서비스 이용 동의</h2>
+        <p class="cs-lead">서비스 이용을 위해 아래 필수 항목에 동의해 주세요.</p>
 
         <label class="cs-row cs-all">
           <input type="checkbox" id="cs-all" />
@@ -59,7 +54,7 @@ export function openConsentModal(mode: Mode): Promise<boolean> {
               <label class="cs-row">
                 <input type="checkbox" data-key="${i.key}" />
                 <span class="cs-box" aria-hidden="true"></span>
-                <span class="cs-text"><em class="cs-req">${i.required ? '필수' : '선택'}</em>${i.label}</span>
+                <span class="cs-text"><em class="cs-req">${i.required ? '[필수]' : '[선택]'}</em>${i.label}</span>
               </label>
               ${i.href ? `<a class="cs-view" href="${i.href}" target="_blank" rel="noopener">보기</a>` : ''}
             </div>`
@@ -69,18 +64,18 @@ export function openConsentModal(mode: Mode): Promise<boolean> {
         <div class="cs-summary">
           <strong>개인정보 수집·이용 안내</strong>
           <dl>
-            <div><dt>수집 항목</dt><dd>이메일, 이름, 프로필 사진 (구글 계정에서 전달)</dd></div>
-            <div><dt>이용 목적</dt><dd>로그인, 여행 계획 작성과 멤버 간 공유</dd></div>
-            <div><dt>보유 기간</dt><dd>탈퇴할 때까지</dd></div>
+            <div><dt>수집 항목</dt><dd>이름, 이메일, 프로필 사진</dd></div>
+            <div><dt>이용 목적</dt><dd>로그인 및 여행 서비스 제공, 동행자와 정보 공유</dd></div>
+            <div><dt>보유 기간</dt><dd>회원 탈퇴 시까지</dd></div>
           </dl>
-          <p>동의를 거부할 수 있어요. 다만 거부하면 서비스를 이용할 수 없어요.</p>
+          <p>동의를 거부할 수 있으며, 거부하면 서비스를 이용할 수 없습니다.</p>
         </div>
 
         <div class="cs-actions">
           <button type="button" class="cs-btn cs-secondary" id="cs-cancel">
-            ${mode === 'signup' ? '취소' : '동의하지 않고 로그아웃'}
+            ${mode === 'signup' ? '취소' : '로그아웃'}
           </button>
-          <button type="button" class="cs-btn cs-primary" id="cs-agree" disabled>동의하고 계속하기</button>
+          <button type="button" class="cs-btn cs-primary" id="cs-agree" disabled>동의하고 계속</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
