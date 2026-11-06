@@ -122,7 +122,6 @@ let renderToken = 0;
 let sheetLayer: HTMLElement | null = null;
 let sheetKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
-const SUBTITLE = '여행의 시작부터 마지막 날까지, 준비할 일을 관리하세요.';
 const TICKETED_CATEGORIES = ['테마파크', '박물관', '미술관'];
 
 /* ══════════════ 진입 / 정리 ══════════════ */
@@ -394,47 +393,35 @@ function canReorder(): boolean {
 /* ══════════════ 셸 ══════════════ */
 
 function shellHtml(): string {
-  const t = trip;
-  const dests = facts?.destinationNames ?? [];
-  const range = t?.start_date && t?.end_date ? shortDate(t.start_date) + ' – ' + shortDate(t.end_date) : null;
-  const meta = [dests.join(' · '), range].filter(Boolean).join('  ·  ');
-
   return [
     '<div class="ck-wrap">',
-    '  <header class="ck-head">',
-    '    <div class="ck-head-text">',
-    '      <h1 class="ck-title">' + escapeHtml(t?.name || 'Checklist') + '</h1>',
-    '      <p class="ck-sub">' + SUBTITLE + '</p>',
-    meta ? '      <div class="ck-head-meta">' + IC.pin + '<span>' + escapeHtml(meta) + '</span></div>' : '',
-    '    </div>',
-    '    <div class="ck-head-stats" id="ck-head-stats"></div>',
-    '  </header>',
-    !isChecklistExtendedReady()
-      ? '  <div class="ck-notice">' + IC.info + '<span>분류·담당자·마감일 같은 추가 정보는 데이터베이스 업데이트(trip_checklist_v2) 후 저장돼요. 체크와 추가는 지금도 그대로 돼요.</span></div>'
-      : '',
     '  <div class="ck-grid">',
-    '    <section class="ck-card ck-main" aria-label="체크리스트">',
-    '      <div class="ck-cats" id="ck-cats" role="tablist"></div>',
-    '      <div class="ck-toolbar">',
-    '        <div class="ck-toolbar-left">',
-    '          <label class="ck-select-wrap"><span class="ck-select-label">담당</span><select class="ck-select" id="ck-assignee"></select></label>',
-    '          <label class="ck-select-wrap"><span class="ck-select-label">정렬</span><select class="ck-select" id="ck-sort">' +
+    '    <div class="ck-col ck-col-left">',
+    '      <section class="ck-card ck-main" aria-label="체크리스트">',
+    '        <div class="ck-cats" id="ck-cats" role="tablist"></div>',
+    '        <div class="ck-toolbar">',
+    '          <div class="ck-toolbar-left">',
+    '            <label class="ck-select-wrap"><span class="ck-select-label">담당</span><select class="ck-select" id="ck-assignee"></select></label>',
+    '            <label class="ck-select-wrap"><span class="ck-select-label">정렬</span><select class="ck-select" id="ck-sort">' +
       (Object.keys(SORT_LABEL) as SortMode[]).map((k) => '<option value="' + k + '">' + SORT_LABEL[k] + '</option>').join('') +
       '</select></label>',
+    '          </div>',
+    '          <button type="button" class="ck-btn-primary" id="ck-add">' + IC.plus + '<span>항목 추가</span></button>',
     '        </div>',
-    '        <button type="button" class="ck-btn-primary" id="ck-add">' + IC.plus + '<span>항목 추가</span></button>',
-    '      </div>',
-    '      <div class="ck-filter-note" id="ck-filter-note"></div>',
-    '      <div class="ck-list" id="ck-list" role="list"></div>',
-    '      <div class="ck-quick">',
-    '        <span class="ck-quick-icon">' + IC.plus + '</span>',
-    '        <input type="text" class="ck-quick-input" id="ck-quick" maxlength="80" autocomplete="off" placeholder="새 항목 이름을 적고 Enter" />',
-    '      </div>',
-    '    </section>',
-    '    <section class="ck-card ck-ready" id="ck-ready" aria-label="준비 현황"></section>',
-    '    <section class="ck-card ck-suggest" id="ck-suggest" aria-label="스마트 추천"></section>',
-    '    <section class="ck-card ck-done-card" id="ck-done" aria-label="완료한 항목"></section>',
-    '    <section class="ck-card ck-must" id="ck-must" aria-label="여행 전 꼭 확인하세요"></section>',
+    '        <div class="ck-filter-note" id="ck-filter-note"></div>',
+    '        <div class="ck-list" id="ck-list" role="list"></div>',
+    '        <div class="ck-quick">',
+    '          <span class="ck-quick-icon">' + IC.plus + '</span>',
+    '          <input type="text" class="ck-quick-input" id="ck-quick" maxlength="80" autocomplete="off" placeholder="새 항목 이름을 적고 Enter" />',
+    '        </div>',
+    '      </section>',
+    '      <section class="ck-card ck-done-card" id="ck-done" aria-label="완료한 항목"></section>',
+    '    </div>',
+    '    <div class="ck-col ck-col-right">',
+    '      <section class="ck-card ck-ready" id="ck-ready" aria-label="준비 현황"></section>',
+    '      <section class="ck-card ck-suggest" id="ck-suggest" aria-label="스마트 추천"></section>',
+    '      <section class="ck-card ck-must" id="ck-must" aria-label="여행 전 꼭 확인하세요"></section>',
+    '    </div>',
     '  </div>',
     '</div>',
   ].join('\n');
@@ -506,7 +493,6 @@ function bindShell(): void {
 /* ══════════════ 렌더 ══════════════ */
 
 function renderAll(): void {
-  renderHeadStats();
   renderCategories();
   renderAssigneeOptions();
   renderList();
@@ -514,19 +500,6 @@ function renderAll(): void {
   renderSuggestions();
   renderDone();
   renderMust();
-}
-
-function renderHeadStats(): void {
-  const el = rootEl?.querySelector('#ck-head-stats');
-  if (!el) return;
-  const p = progressOf(items);
-  const countdown = trip ? tripCountdown(trip.start_date, trip.end_date, todayIso()) : null;
-  el.innerHTML = [
-    countdown
-      ? '<div class="ck-stat"><span class="ck-stat-label">DEPARTURE</span><span class="ck-stat-value">' + escapeHtml(countdown) + '</span></div>'
-      : '',
-    '<div class="ck-stat"><span class="ck-stat-label">READINESS</span><span class="ck-stat-value">전체 준비 현황 <strong>' + p.pct + '%</strong></span></div>',
-  ].join('');
 }
 
 function renderCategories(): void {
@@ -721,16 +694,18 @@ function renderReady(): void {
   const byCat = progressByCategory(items);
   const today = todayIso();
   const overdue = items.filter((i) => !isDone(i) && i.due_date && dueInfo(i.due_date, today)?.tone === 'overdue').length;
+  const countdown = trip ? tripCountdown(trip.start_date, trip.end_date, todayIso()) : null;
   const r = 30;
   const circ = 2 * Math.PI * r;
   const summary = !p.total
-    ? '항목을 추가하면 준비 현황이 여기에 표시돼요.'
+    ? ''
     : p.done === p.total
       ? '모든 준비를 마쳤어요.'
       : '남은 항목 ' + (p.total - p.done) + '개' + (overdue ? ' · 마감 지난 항목 ' + overdue + '개' : '');
 
   el.innerHTML = [
-    '<div class="ck-card-eyebrow">TRIP READINESS</div>',
+    '<div class="ck-ready-eyebrow"><span class="ck-card-eyebrow">TRIP READINESS</span>' +
+      (countdown ? '<span class="ck-dday">' + escapeHtml(countdown) + '</span>' : '') + '</div>',
     '<div class="ck-ready-top">',
     '  <svg class="ck-ring" viewBox="0 0 72 72" aria-hidden="true">',
     '    <circle cx="36" cy="36" r="' + r + '" class="ck-ring-track"/>',
@@ -739,7 +714,7 @@ function renderReady(): void {
     '  <div class="ck-ready-text">',
     '    <div class="ck-ready-pct">' + p.pct + '<span>%</span></div>',
     '    <div class="ck-ready-count">' + p.total + '개 중 ' + p.done + '개 완료</div>',
-    '    <div class="ck-ready-summary' + (overdue ? ' is-warn' : '') + '">' + escapeHtml(summary) + '</div>',
+    summary ? '    <div class="ck-ready-summary' + (overdue ? ' is-warn' : '') + '">' + escapeHtml(summary) + '</div>' : '',
     '  </div>',
     '</div>',
     '<div class="ck-ready-cats">',
@@ -767,7 +742,11 @@ function renderReady(): void {
 
 /* ── 오른쪽: 스마트 추천 ── */
 
-const SUGGESTION_PREVIEW = 3;
+/** 기본으로 보여줄 추천 개수 — 화면이 클수록 오른쪽 아래가 비지 않게 더 보여준다 */
+function suggestionPreview(): number {
+  const h = window.innerHeight;
+  return h >= 980 ? 6 : h >= 840 ? 5 : 3;
+}
 
 function renderSuggestions(): void {
   const el = rootEl?.querySelector('#ck-suggest');
@@ -775,7 +754,7 @@ function renderSuggestions(): void {
   const all = smartSuggestions();
   const visible = all.filter((s) => !dismissed.has(s.key));
   const hiddenCount = all.length - visible.length;
-  const shown = showAllSuggestions ? visible : visible.slice(0, SUGGESTION_PREVIEW);
+  const shown = showAllSuggestions ? visible : visible.slice(0, suggestionPreview());
   const hasAnyFacts = !!facts && buildSmartSuggestions(facts).length > 0;
 
   let body: string;
@@ -787,20 +766,17 @@ function renderSuggestions(): void {
     body = '<div class="ck-sugg-list">' + shown.map(suggestionHtml).join('') + '</div>';
   }
 
-  const footer: string[] = [];
-  if (visible.length > SUGGESTION_PREVIEW) {
-    footer.push('<button type="button" class="ck-link-btn" id="ck-sugg-more">' + (showAllSuggestions ? '접기' : '전체 보기 (' + visible.length + ')') + '</button>');
-  }
-  if (hiddenCount && (showAllSuggestions || !visible.length)) {
-    footer.push('<button type="button" class="ck-link-btn is-muted" id="ck-sugg-restore">숨긴 추천 ' + hiddenCount + '개 다시 보기</button>');
-  }
+  const moreBtn = visible.length > suggestionPreview()
+    ? '<button type="button" class="ck-link-btn" id="ck-sugg-more">' + (showAllSuggestions ? '접기' : '전체 보기 (' + visible.length + ')') + '</button>'
+    : '';
+  const restoreBtn = hiddenCount && (showAllSuggestions || !visible.length)
+    ? '<div class="ck-card-foot"><button type="button" class="ck-link-btn is-muted" id="ck-sugg-restore">숨긴 추천 ' + hiddenCount + '개 다시 보기</button></div>'
+    : '';
 
   el.innerHTML = [
-    '<div class="ck-card-eyebrow">' + IC.sparkle + 'SMART SUGGESTIONS</div>',
-    '<div class="ck-card-title">스마트 추천</div>',
-    '<div class="ck-card-sub">이 여행에 저장된 정보로 찾은 준비 항목이에요.</div>',
+    '<div class="ck-sugg-head"><span class="ck-card-eyebrow">' + IC.sparkle + 'SMART SUGGESTIONS</span>' + moreBtn + '</div>',
     body,
-    footer.length ? '<div class="ck-card-foot">' + footer.join('') + '</div>' : '',
+    restoreBtn,
   ].join('');
 
   el.querySelectorAll<HTMLElement>('[data-sugg-add]').forEach((btn) => {
@@ -889,13 +865,12 @@ function renderMust(): void {
     list.map((s) => {
       const taken = isSuggestionTaken(s, items);
       return (
-        '<li class="ck-must-row' + (taken ? ' is-taken' : '') + '">' +
-        '<div class="ck-must-text"><div class="ck-must-title">' + escapeHtml(s.title) +
-        (s.officialCheck ? '<span class="ck-official" title="자주 바뀌는 정보라 공식 안내로 확인이 필요해요">공식 확인</span>' : '') +
-        '</div><div class="ck-must-reason">' + escapeHtml(s.reason) + '</div></div>' +
+        '<li class="ck-must-row' + (taken ? ' is-taken' : '') + '" title="' + escapeHtml(s.reason) + '">' +
+        '<span class="ck-must-title">' + escapeHtml(s.title) +
+        (s.officialCheck ? '<span class="ck-official">공식 확인</span>' : '') + '</span>' +
         (taken
-          ? '<span class="ck-must-state">' + IC.check + '담김</span>'
-          : '<button type="button" class="ck-btn-small" data-must-add="' + s.key + '">' + IC.plus + '추가</button>') +
+          ? '<span class="ck-must-state" aria-label="담김">' + IC.check + '</span>'
+          : '<button type="button" class="ck-must-add" data-must-add="' + s.key + '" aria-label="' + escapeHtml(s.title) + ' 추가">' + IC.plus + '</button>') +
         '</li>'
       );
     }).join(''),
@@ -1174,11 +1149,4 @@ function closeSheet(): void {
   if (!layer) return;
   layer.classList.remove('is-open');
   setTimeout(() => layer.remove(), 200);
-}
-
-/* ══════════════ 유틸 ══════════════ */
-
-function shortDate(iso: string): string {
-  const [, m, d] = iso.slice(0, 10).split('-').map(Number);
-  return m + '.' + String(d).padStart(2, '0');
 }
