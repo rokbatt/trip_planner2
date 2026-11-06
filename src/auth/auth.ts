@@ -5,6 +5,12 @@ import './auth.css';
 
 /* ── 인증 ── */
 export async function signInWithGoogle(): Promise<void> {
+  // 가입 동의가 먼저다 — 구글 로그인으로 넘어가는 순간 계정이 만들어지기 때문이다.
+  // 랜딩의 버튼 3곳과 초대 페이지(trip-join.ts)가 전부 이 함수를 거치므로 여기 한 곳에서 막는다.
+  // 동의 창은 로그인 때만 필요해서 별도 청크로 불러온다.
+  const { ensureConsentBeforeLogin } = await import('../account/consent');
+  if (!(await ensureConsentBeforeLogin())) return;
+
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: window.location.origin },
@@ -447,7 +453,7 @@ export function renderLogin(): void {
   }
 
   document.getElementById('dd-trips')?.addEventListener('click', () => navigate('trips'));
-  document.getElementById('dd-settings')?.addEventListener('click', () => alert('설정 페이지는 곧 구현 예정이에요!'));
+  document.getElementById('dd-settings')?.addEventListener('click', () => navigate('settings'));
   document.getElementById('dd-help')?.addEventListener('click', () => alert('문의하기 기능은 곧 구현 예정이에요!'));
   document.getElementById('dd-logout')?.addEventListener('click', signOut);
 

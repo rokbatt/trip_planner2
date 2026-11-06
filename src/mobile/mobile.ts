@@ -3867,6 +3867,8 @@ function moreLinksHtml(): string {
     { id: 'mb-more-chat', icon: IC.bell, label: '채팅 · 공유 링크', sub: '같이 가는 사람들과 나눈 이야기' },
     { id: 'mb-more-plan', icon: IC.route, label: '일정 편집', sub: '순서·이동수단 변경은 PC에서' },
     { id: 'mb-more-expense', icon: IC.wallet, label: '전체 지출 · 예산 설정', sub: '차트와 필터가 있는 대시보드' },
+    // 폰에서는 이 화면이 앱 전체라 여기 말고는 로그아웃·탈퇴로 갈 길이 없다 (스토어 심사에서도 앱 안 탈퇴 경로를 요구한다)
+    { id: 'mb-more-account', icon: IC.lock, label: '계정 · 개인정보 · 탈퇴', sub: '로그아웃, 약관, 회원 탈퇴' },
   ];
   return [
     '<section class="mb-more-sec">',
@@ -4703,6 +4705,7 @@ function bind(): void {
   root.querySelector('#mb-more-chat')?.addEventListener('click', () => gotoGate('links'));
   root.querySelector('#mb-more-plan')?.addEventListener('click', () => gotoGate('route'));
   root.querySelector('#mb-more-expense')?.addEventListener('click', () => gotoGate('expense'));
+  root.querySelector('#mb-more-account')?.addEventListener('click', () => navigate('settings'));
 
   root.querySelectorAll('[data-copy]').forEach((btn) => {
     btn.addEventListener('click', () => { void copyToClipboard((btn as HTMLElement).dataset.copy!, btn as HTMLElement); });

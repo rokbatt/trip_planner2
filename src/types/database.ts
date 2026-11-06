@@ -828,9 +828,36 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['places_db']['Insert']>;
         Relationships: [];
       };
+
+      /* 가입 동의 기록 — supabase/user_consents.sql (없어도 앱은 동작한다) */
+      user_consents: {
+        Row: {
+          id: string;
+          user_id: string;
+          terms_version: string;
+          privacy_version: string;
+          agreed_at: string;
+          user_agent: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          terms_version: string;
+          privacy_version: string;
+          agreed_at?: string;
+          user_agent?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['user_consents']['Insert']>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
+      /* 회원 탈퇴 — supabase/delete_my_account.sql */
+      delete_my_account: {
+        Args: Record<string, never>;
+        Returns: void;
+      };
       get_trip_by_invite_code: {
         Args: { p_invite_code: string };
         Returns: {

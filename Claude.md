@@ -1210,6 +1210,42 @@ MOBILE(MORE)·TIMELINE(장소 상세)이 쓰는 **트립 공유 목록 `trip_che
 
 ---
 
+## 5-8. 가입 동의 · 회원 탈퇴 · 약관 (신규)
+
+### 반드시 같이 켜야 하는 SQL 2개 (Supabase 대시보드에서 실행)
+- `supabase/user_consents.sql` — 동의 기록 테이블. **안 돌려도 앱은 동작한다**(동의 창은 뜨고 기록은 기기에만 남는다)
+- `supabase/delete_my_account.sql` — 탈퇴 함수. **안 돌리면 탈퇴 버튼이 "이메일로 요청"으로 바뀐다**
+  (스토어 심사는 앱 안에서 탈퇴되는 걸 요구하므로 출시 전 필수). 함수 본문에 세미콜론이 있어 대시보드가
+  잘라먹을 수 있다 — 실패하면 그 사실을 알려 방법을 바꾼다. `do $$`가 잘렸던 전례: 커밋 #213·#214
+
+### 동의
+- 로그인 버튼 전부(랜딩 3곳 + 초대 페이지)가 `signInWithGoogle()`을 거치고, 그 함수가 동의를 먼저 받는다.
+  구글로 넘어가는 순간 계정이 만들어지기 때문이다
+- 동의는 **계정 단위**다. 로그인 전에 받은 기록은 주인이 없다가 로그인 직후 그 사용자 것으로 확정된다.
+  공용 기기에서 다른 사람 것으로 확정된 기록은 가져다 쓰지 않는다(`canClaimLocalConsent`)
+- 막는 건 서버가 "기록 없음"이라고 **분명히 답했을 때뿐**이다. 오프라인·테이블 없음·네트워크 오류는 통과시킨다
+  (비행기 안에서 항공권을 꺼내려는 사람 앞을 막으면 안 되고, "동의 안 함 → 로그아웃"은 오프라인 서류까지 지운다)
+- 약관·방침 내용이 달라지면 `legal/versions.ts`의 버전을 올린다 → 이미 가입한 사람도 다음 접속에 다시 동의한다.
+  **지금 문서는 법률 검토 전 초안(`draft1`)이다. 정식 문서로 확정하면 반드시 버전을 올릴 것**
+
+### 탈퇴
+- 서버 함수가 한 트랜잭션으로 처리: 혼자 쓰던 여행 삭제 / 함께 쓰는 여행은 가장 먼저 참여한 멤버에게 방장 이관 /
+  채팅·댓글·개인 문서 삭제 / 이름·사진 사본 비움 / 계정 삭제. `accountStore.planDeletion`은 이 규칙의 화면용 복제다 —
+  **한쪽을 고치면 다른 쪽도 고친다**
+- 문서 **파일**은 SQL로 못 지운다(`storage.objects` 행만 지우면 파일이 남는다). 그래서 클라이언트가 서버 함수를 부르기
+  **전에**, 아직 멤버일 때 먼저 지운다. 여행 삭제(`trip-edit.ts`)도 같은 순서다
+- 안전망: 서버 함수는 `auth.users`와 `trip_members(id)`를 가리키는 no-action FK를 `pg_constraint`에서 찾아 미리
+  비운다(null 가능이면 비우고, 아니면 그 행을 지운다). 이 저장소 SQL에 없는 베이스 테이블(`trips`·`trip_members`·
+  `places`…)의 FK를 몰라도 삭제가 막히지 않게 하려는 것이다. 새 컬럼이 멤버/사용자를 참조할 땐 FK에 `on delete set null`을 쓴다
+- **알려진 한계**: 계정과 연결되지 않은 옛 개인 문서(`trip_doc_users.user_id`가 null)는 자동으로 못 지운다.
+  AI 요약 캐시(`ai_plan_cache`)는 문서 단위로 못 지워서 30일 TTL에 맡긴다. 둘 다 방침에 적어 두었다
+
+### 방침은 코드의 사실 기술이다
+방침을 처음 쓴 뒤 36개 커밋이 쌓이는 동안 위치(GPS)·날씨 API·문서 AI 요약·오프라인 저장이 생겼는데 방침은 그대로여서,
+"GPS를 수집하지 않는다"는 문장이 거짓이 돼 있었다. 개인정보를 건드리는 변경을 할 땐 8장 체크리스트의 항목대로 방침을 같이 고친다.
+
+---
+
 ## 6. 파일 구조
 
 ```
@@ -1256,6 +1292,11 @@ supabase/
   docs/notes.ts                      ← NOTES 탭 (메모 CRUD·고정·확인, 5-5 참고)
   docs/docsStore.ts                  ← 문서·메모·PIN·Storage I/O의 단일 창구 (5-5 참고)
   docs/docsIcons.ts                  ← DOCUMENTS/NOTES 공용 아이콘·포맷 유틸
+  legal/legal.ts, legal.css          ← 이용약관·개인정보처리방침 (#terms, #privacy). 코드가 실제로 하는 일을 적은 문서 (5-8)
+  legal/versions.ts                  ← 약관·방침 버전 + 동의 항목. 내용이 달라지면 여기 버전을 올려 전원 재동의
+  account/consent.ts, consentStore.ts ← 가입 동의 창 + 동의 기록(기기·서버)
+  account/settings.ts                ← #settings — 계정 정보, 로그아웃, 회원 탈퇴 창
+  account/accountStore.ts            ← 탈퇴 미리보기 계산·실행, account/tripFiles.ts = 문서 파일(Storage) 삭제
   assistant/assistant.ts, assistant.css  ← Assistant 패널(Drawer) — 문서/메모 기반 질의응답 (5-6 참고)
   assistant/assistantClient.ts       ← `/api/ai`(doc-digest/doc-qa) 클라이언트 (5-6 참고)
   workspace/workspace.ts             ← 게이트 라우팅, 사이드바
@@ -1331,6 +1372,11 @@ api/                                  ← Vercel 서버리스 함수 (각각 완
       (PR을 올리면 `.github/workflows/ci.yml`이 같은 걸 다시 돌린다 — 로컬에서 먼저 보는 게 빠를 뿐)
 - [ ] `expenseModel.ts`(돈)나 `travelEstimate.ts`(시간)의 계산을 건드렸다면, 옆의 `*.test.ts`가
       여전히 통과하는가 — 통과하지 못한다면 **테스트를 고치기 전에 계산이 맞는지 먼저 의심할 것**
+- [ ] **개인정보를 새로 모으거나 밖으로 보내는가?** 위치·파일·사진·메모를 다루거나, 새 외부 API/AI를 붙이거나,
+      기기에 새로 저장하는가 → `src/legal/legal.ts`(개인정보처리방침)가 그 사실과 맞는지 확인하고 고친다 (5-8).
+      방침이 코드와 어긋나는 것 자체가 법 위반이라, 방침을 먼저 쓰고 기능을 나중에 바꾸면 안 된다
+- [ ] 사람을 가리키는 컬럼(`user_id`·`*_by`)이나 이름·사진 **사본**(`display_name`·`*_by_name`)을 가진 테이블을
+      추가했는가 → `supabase/delete_my_account.sql`이 탈퇴 때 그걸 비우는지 확인 (`deletionDrift.test.ts`가 잡아 준다)
 
 ---
 
