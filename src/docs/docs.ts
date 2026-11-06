@@ -47,7 +47,9 @@ import {
 } from './docsStore';
 import type { DayOption, DocCategory, DocScope, DocsTab, UploadedFile } from './docsStore';
 import {
-  DOC_CATEGORY_ICON,
+  DOC_CATEGORY_VISUAL,
+  categoryIconBox,
+  categoryIconInline,
   IC,
   escapeHtml,
   fileKindLabel,
@@ -565,7 +567,7 @@ function docRowHtml(doc: TripDocument): string {
 
   return [
     '<button type="button" class="dn-row' + (doc.id === selectedDocId ? ' is-selected' : '') + '" data-doc-id="' + doc.id + '">',
-    '  <span class="dn-row-icon">' + DOC_CATEGORY_ICON[category] + '</span>',
+    '  ' + categoryIconBox(DOC_CATEGORY_VISUAL[category]),
     '  <span class="dn-row-main">',
     '    <span class="dn-row-title">' + escapeHtml(doc.title) + '</span>',
     '    <span class="dn-tags">',
@@ -649,7 +651,7 @@ function renderDetail(): void {
   detailEl.innerHTML = [
     '<div class="dn-detail-inner">',
     '  <div class="dn-detail-head">',
-    '    <span class="dn-detail-icon">' + DOC_CATEGORY_ICON[category] + '</span>',
+    '    ' + categoryIconBox(DOC_CATEGORY_VISUAL[category], 'dn-detail-icon'),
     '    <span class="dn-detail-title">' + escapeHtml(doc.title) + '</span>',
     '    <button type="button" class="dn-icon-btn" id="dn-detail-close" aria-label="닫기">' + IC.close + '</button>',
     '  </div>',
@@ -991,7 +993,7 @@ function openDocumentSheet(existing: TripDocument | null, presetFiles?: File[]):
     DOC_CATEGORIES.map(
       (c) =>
         '<button type="button" class="dn-pick-item' + (c === category ? ' is-active' : '') + '" data-cat="' + c + '">' +
-        DOC_CATEGORY_ICON[c] + '<span>' + DOC_CATEGORY_LABEL[c] + '</span></button>'
+        categoryIconInline(DOC_CATEGORY_VISUAL[c]) + '<span>' + DOC_CATEGORY_LABEL[c] + '</span></button>'
     ).join(''),
     '      </div>',
     '    </div>',
