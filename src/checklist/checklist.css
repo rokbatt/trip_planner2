@@ -8,9 +8,15 @@
    ============================================================ */
 
 .ck-wrap {
-  padding: 24px 28px 56px;
-  max-width: 1240px;
+  /* 워크스페이스 본문(.ws-content-body)의 높이를 그대로 받아 한 화면에 채운다 — 작은 화면에선 최소 높이만큼 스크롤 */
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 600px;
+  padding: 16px 20px 20px;
+  max-width: 1680px;
   margin: 0 auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .ck-loading,
@@ -24,86 +30,29 @@
 .ck-unavailable-title { font-size: 14.5px; font-weight: 700; color: var(--al-text); }
 .ck-unavailable-hint { font-size: 12.5px; line-height: 1.6; max-width: 420px; margin-bottom: 8px; }
 
-/* ── 헤더 ── */
-.ck-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 20px;
-  flex-wrap: wrap;
-  margin-bottom: 20px;
-}
-.ck-head-text { min-width: 0; }
-.ck-title {
-  margin: 0;
-  font-family: var(--font-serif);
-  font-size: 32px;
-  font-weight: 400;
-  line-height: 1.15;
-  color: #0B2A5C;
-  overflow-wrap: anywhere;
-}
-.ck-sub { margin: 6px 0 0; font-size: 13px; color: var(--al-text-secondary); }
-.ck-head-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--al-text-secondary);
-}
-.ck-head-meta svg { width: 13px; height: 13px; color: var(--al-text-tertiary); flex-shrink: 0; }
-
-.ck-head-stats { display: flex; gap: 10px; flex-wrap: wrap; }
-.ck-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 10px 16px;
-  border: 1px dashed rgba(130,150,170,0.32);
-  border-radius: 12px;
-  background: rgba(255,255,255,0.82);
-}
-.ck-stat-label { font-size: 10px; font-weight: 700; letter-spacing: 0.16em; color: var(--al-text-tertiary); }
-.ck-stat-value { font-size: 13.5px; font-weight: 700; color: #0B2A5C; white-space: nowrap; }
-.ck-stat-value strong { color: var(--al-action); }
-
-.ck-notice {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-bottom: 16px;
-  padding: 10px 14px;
-  border-radius: 10px;
-  background: #F4F8FC;
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--al-text-secondary);
-}
-.ck-notice svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; color: var(--al-action); }
-
-/* ── 레이아웃: 왼쪽 60% 목록 / 오른쪽 40% 보조 ── */
+/* ── 레이아웃: 왼쪽 60% 목록(+완료한 항목) / 오른쪽 40% 보조. 두 컬럼 모두 화면 높이를 채운다 ── */
 .ck-grid {
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  /* 마지막 1fr 행이 남는 높이를 흡수해서, 목록이 길어도 오른쪽 카드 사이가 벌어지지 않는다 */
-  grid-template-rows: auto auto auto auto 1fr;
-  gap: 16px 20px;
-  align-items: start;
+  gap: 14px;
 }
-.ck-main { grid-column: 1; grid-row: 1 / -1; }
-.ck-ready, .ck-suggest, .ck-done-card, .ck-must { grid-column: 2; }
+.ck-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; }
+/* 오른쪽은 내용이 화면보다 길면 이 컬럼만 스크롤한다 */
+.ck-col-right { overflow-y: auto; scrollbar-width: thin; padding-right: 2px; }
 
 .ck-card {
   background: #FFFFFF;
   border: 1px solid rgba(130,150,170,0.18);
   border-radius: var(--al-radius);
   box-shadow: 0 1px 2px rgba(11,42,92,0.03);
-  padding: 18px 20px;
+  padding: 14px 16px;
   min-width: 0;
+  flex-shrink: 0;
 }
-.ck-main { padding: 0; overflow: hidden; }
+/* 목록 카드가 남는 높이를 전부 차지한다 — 목록이 짧아도 아래가 비지 않고, 길면 목록만 스크롤 */
+.ck-main { padding: 0; overflow: hidden; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; flex-shrink: 1; }
 
 .ck-card-eyebrow {
   display: flex;
@@ -123,8 +72,8 @@
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  margin-top: 12px;
-  padding-top: 10px;
+  margin-top: 6px;
+  padding-top: 8px;
   border-top: 1px dashed rgba(130,150,170,0.22);
 }
 .ck-side-empty { margin-top: 12px; font-size: 12px; line-height: 1.6; color: var(--al-text-tertiary); }
@@ -224,7 +173,7 @@
 .ck-cats {
   display: flex;
   gap: 6px;
-  padding: 16px 18px 12px;
+  padding: 12px 14px 8px;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -256,7 +205,7 @@
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
-  padding: 0 18px 12px;
+  padding: 0 14px 10px;
   border-bottom: 1px solid var(--al-divider);
 }
 .ck-toolbar-left { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -288,7 +237,7 @@
 .ck-select-wrap:focus-within { border-color: #8FD8F8; background: #FFFFFF; }
 
 .ck-filter-note:empty { display: none; }
-.ck-filter-note { padding: 10px 18px 0; }
+.ck-filter-note { padding: 8px 14px 0; }
 .ck-filter-chip {
   display: inline-flex;
   align-items: center;
@@ -311,7 +260,7 @@
 .ck-filter-chip svg { width: 12px; height: 12px; }
 
 /* ── 목록 ── */
-.ck-list { position: relative; }
+.ck-list { position: relative; flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
 .ck-item {
   border-bottom: 1px dashed rgba(130,150,170,0.18);
   background: #FFFFFF;
@@ -535,8 +484,11 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 48px 20px;
+  min-height: 100%;
+  padding: 32px 20px;
+  box-sizing: border-box;
   text-align: center;
 }
 .ck-empty-title { font-size: 13.5px; font-weight: 700; color: var(--al-text-secondary); }
@@ -547,7 +499,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 18px 14px 44px;
+  padding: 10px 14px 10px 40px;
+  flex-shrink: 0;
   border-top: 1px solid var(--al-divider);
   background: #FBFDFF;
 }
@@ -567,12 +520,14 @@
 .ck-quick-input::placeholder { color: #A8B7C7; }
 
 /* ── 오른쪽: 준비 현황 ── */
-.ck-ready-top { display: flex; align-items: center; gap: 16px; margin-top: 12px; }
-.ck-ring { width: 76px; height: 76px; flex-shrink: 0; transform: rotate(-90deg); }
+.ck-ready-eyebrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ck-dday { font-size: 11px; font-weight: 700; color: #185FA5; background: #EAF2FA; border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+.ck-ready-top { display: flex; align-items: center; gap: 14px; margin-top: 8px; }
+.ck-ring { width: 54px; height: 54px; flex-shrink: 0; transform: rotate(-90deg); }
 .ck-ring-track { fill: none; stroke: #EEF3F8; stroke-width: 7; }
 .ck-ring-fill { fill: none; stroke: var(--al-action); stroke-width: 7; stroke-linecap: round; transition: stroke-dashoffset 400ms var(--al-ease); }
 .ck-ready-text { min-width: 0; }
-.ck-ready-pct { font-size: 28px; font-weight: 700; color: #0B2A5C; line-height: 1; font-variant-numeric: tabular-nums; }
+.ck-ready-pct { font-size: 24px; font-weight: 700; color: #0B2A5C; line-height: 1; font-variant-numeric: tabular-nums; }
 .ck-ready-pct span { font-size: 16px; margin-left: 1px; }
 .ck-ready-count { margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--al-text-secondary); }
 .ck-ready-summary { margin-top: 2px; font-size: 11.5px; color: var(--al-text-tertiary); }
@@ -580,17 +535,17 @@
 
 .ck-ready-cats {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 12px;
 }
 .ck-ready-cat {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
   grid-template-areas: 'icon label count' 'bar bar bar';
   align-items: center;
-  gap: 7px 6px;
-  padding: 10px 11px;
+  gap: 5px 5px;
+  padding: 6px 9px;
   border: 1px solid rgba(130,150,170,0.16);
   border-radius: 11px;
   background: #FBFDFF;
@@ -602,20 +557,21 @@
 .ck-ready-cat:hover { border-color: #8FD8F8; }
 .ck-ready-cat.is-active { border-color: var(--al-action); background: rgba(47,134,214,0.05); }
 .ck-ready-cat-icon { grid-area: icon; display: inline-flex; color: #2F5E8E; }
-.ck-ready-cat-icon svg { width: 15px; height: 15px; }
-.ck-ready-cat-label { grid-area: label; font-size: 11.5px; font-weight: 600; color: var(--al-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ck-ready-cat-icon svg { width: 13px; height: 13px; }
+.ck-ready-cat-label { grid-area: label; font-size: 11px; font-weight: 600; color: var(--al-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ck-ready-cat-count { grid-area: count; font-size: 11px; font-weight: 700; color: var(--al-text-secondary); font-variant-numeric: tabular-nums; }
 .ck-bar { grid-area: bar; display: block; height: 4px; border-radius: 999px; background: #EAF0F6; overflow: hidden; }
 .ck-bar span { display: block; height: 100%; border-radius: inherit; background: var(--al-action); transition: width 400ms var(--al-ease); }
 
 /* ── 오른쪽: 스마트 추천 ── */
-.ck-sugg-list { display: flex; flex-direction: column; margin-top: 12px; }
+.ck-sugg-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ck-sugg-list { display: flex; flex-direction: column; margin-top: 6px; }
 .ck-sugg {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) auto;
   align-items: start;
   gap: 10px;
-  padding: 11px 0;
+  padding: 6px 0;
   border-top: 1px dashed rgba(130,150,170,0.2);
 }
 .ck-sugg:first-child { border-top: none; padding-top: 4px; }
@@ -648,19 +604,24 @@
   background: #EEF4FA;
   color: #5B7896;
 }
-.ck-sugg-reason { margin-top: 3px; font-size: 11.5px; line-height: 1.55; color: var(--al-text-secondary); overflow-wrap: anywhere; }
+.ck-sugg-reason { margin-top: 2px; font-size: 11px; line-height: 1.5; color: var(--al-text-secondary); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .ck-sugg-actions { display: flex; align-items: center; gap: 2px; }
 
 /* ── 오른쪽: 완료한 항목 ── */
-.ck-done-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.ck-done-card { padding: 12px 14px; }
+.ck-done-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .ck-done-row {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-areas: 'check title' '. when';
   align-items: center;
-  gap: 8px;
-  padding: 6px 0;
+  gap: 1px 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #F8FBFE;
 }
 .ck-done-check {
+  grid-area: check;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -672,7 +633,8 @@
 }
 .ck-done-check svg { width: 10px; height: 10px; }
 .ck-done-title {
-  font-size: 12.5px;
+  grid-area: title;
+  font-size: 12px;
   color: var(--al-text-tertiary);
   text-decoration: line-through;
   text-decoration-color: rgba(148,163,184,0.6);
@@ -680,27 +642,45 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ck-done-when { font-size: 10.5px; color: var(--al-text-tertiary); white-space: nowrap; }
+.ck-done-when { grid-area: when; font-size: 10.5px; color: var(--al-text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ── 오른쪽: 여행 전 꼭 확인하세요 — 유일하게 옅은 앰버 톤(주의) ── */
 .ck-must { background: #FFFCF6; border-color: rgba(214,170,90,0.24); }
-.ck-must-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; }
+.ck-must { padding: 10px 16px 12px; }
+.ck-must-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; }
 .ck-must-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 9px 0;
-  border-top: 1px dashed rgba(190,160,110,0.22);
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 9px;
+  background: rgba(255,255,255,0.75);
+  border: 1px solid rgba(190,160,110,0.18);
 }
-.ck-must-row:first-child { border-top: none; }
-.ck-must-text { min-width: 0; }
-.ck-must-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--al-text); }
-.ck-must-reason { margin-top: 2px; font-size: 11px; line-height: 1.5; color: var(--al-text-secondary); }
-.ck-must-row.is-taken .ck-must-title { color: var(--al-text-tertiary); }
-.ck-must-row.is-taken .ck-must-reason { display: none; }
-.ck-must-state { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 700; color: #3E8E68; white-space: nowrap; }
-.ck-must-state svg { width: 12px; height: 12px; }
+.ck-must-title { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; min-width: 0; font-size: 12px; font-weight: 700; line-height: 1.35; color: var(--al-text); }
+.ck-must-row.is-taken .ck-must-title { color: var(--al-text-tertiary); font-weight: 600; }
+.ck-must-state { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex-shrink: 0; color: #3E8E68; }
+.ck-must-state svg { width: 13px; height: 13px; }
+.ck-must-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid rgba(47,134,214,0.28);
+  border-radius: 50%;
+  background: #FFFFFF;
+  color: #1F6FB2;
+  cursor: pointer;
+  transition: background var(--al-duration) var(--al-ease), border-color var(--al-duration) var(--al-ease);
+}
+.ck-must-add svg { width: 12px; height: 12px; }
+.ck-must-add:hover { background: #EEF6FE; border-color: var(--al-action); }
+.ck-must-add:disabled { opacity: 0.5; cursor: default; }
 .ck-official {
   font-size: 9.5px;
   font-weight: 700;
@@ -827,25 +807,23 @@
 .ck-radio.is-active.is-recommended { border-color: var(--al-action); background: #EAF4FD; color: #1F6FB2; }
 .ck-radio.is-active.is-normal { border-color: #97A9BD; background: #F2F5F8; color: #4F5D6C; }
 
-/* ── 좁은 화면: 1열. 준비 현황을 목록 위로, 나머지 보조 카드는 목록 아래로 ── */
+/* ── 좁은 화면: 1열(높이 맞춤 해제). 컬럼 래퍼를 풀어(display: contents) 카드 순서를 직접 정한다 ── */
 @media (max-width: 1080px) {
-  /* stretch를 명시해야 한다 — 위 그리드의 align-items:start가 남아 있으면 카드가 내용 폭으로 줄거나 넘친다 */
-  .ck-grid { display: flex; flex-direction: column; align-items: stretch; gap: 14px; }
+  .ck-wrap { height: auto; min-height: 0; }
+  .ck-grid { display: flex; flex-direction: column; gap: 12px; }
+  .ck-col { display: contents; }
   .ck-ready { order: 0; }
-  .ck-main { order: 1; }
+  .ck-main { order: 1; flex: none; }
+  .ck-list { overflow: visible; }
   .ck-suggest { order: 2; }
   .ck-must { order: 3; }
   .ck-done-card { order: 4; }
-  .ck-ready-cats { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .ck-ready-cats { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
 }
 
 @media (max-width: 768px) {
-  .ck-wrap { padding: 16px 16px 40px; }
-  .ck-title { font-size: 26px; }
-  .ck-head { align-items: flex-start; margin-bottom: 16px; }
-  .ck-head-stats { width: 100%; }
-  .ck-stat { flex: 1; padding: 9px 12px; }
-  .ck-card { padding: 16px; }
+  .ck-wrap { padding: 12px 12px 32px; }
+  .ck-card { padding: 14px; }
   .ck-main { padding: 0; }
   .ck-cats { padding: 14px 14px 10px; }
   .ck-toolbar { padding: 0 14px 10px; }
@@ -859,6 +837,8 @@
   .ck-detail { padding: 0 12px 14px 54px; }
   .ck-quick { padding: 12px 14px; }
   .ck-ready-cats { grid-template-columns: 1fr 1fr; }
+  .ck-done-list { grid-template-columns: 1fr; }
+  .ck-must-list { grid-template-columns: 1fr; }
   .ck-field-row { flex-direction: column; }
 
   .ck-sheet {
