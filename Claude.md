@@ -704,8 +704,8 @@ TODAY·TIMELINE·WALLET은 전부 "지금 이 하루"를 다루고, MORE는 하�
 - 체크리스트·링크는 **MORE를 처음 열 때만** 불러온다(WALLET과 같은 절제, 원칙 3-2).
 
 #### 체크리스트 (`trip_checklist` · `mobile/checklist.ts`)
-제품 통틀어 첫 체크리스트다(PC의 `checklist` 게이트는 아직 빈 플레이스홀더 — 나중에 붙일 때
-이 테이블을 그대로 쓰면 된다).
+제품 통틀어 첫 체크리스트다. PC의 `checklist` 게이트(5-7)도 이 테이블을 그대로 쓴다 — 여기서
+체크하면 PC에서도, PC에서 체크하면 여기서도 바로 반영된다.
 
 - **개인 목록이 아니라 트립 공유 목록이다.** 실제로 빠뜨려서 문제가 되는 건 "내 칫솔"이 아니라
   "유심 아무도 안 샀네" 쪽이고, 그건 목록이 공유될 때만 막힌다. 목록을 개인/공용 둘로 쪼개면
@@ -1157,6 +1157,59 @@ PERSONAL 잠금 원칙(5-5)과 동일한 경계를 Assistant도 그대로 지킨
 
 ---
 
+## 5-7. CHECKLIST 아키텍처 (PC 게이트)
+
+사이드바 **Checklist**(`#trip/:id/checklist`). 출발 전부터 여행 중까지 함께 챙길 일을 관리한다.
+왼쪽(약 60%)이 실제 체크리스트, 오른쪽(약 40%)은 보조 — 준비 현황·스마트 추천·완료한 항목·
+"여행 전 꼭 확인하세요". 1080px 아래에선 1열(준비 현황 → 목록 → 추천 → 꼭 확인 → 완료 순).
+
+### 데이터 — 새 테이블 없음 (중요)
+MOBILE(MORE)·TIMELINE(장소 상세)이 쓰는 **트립 공유 목록 `trip_checklist`를 그대로** 쓴다
+(목록을 화면별로 나누면 "어디에 적었더라"가 생긴다 — 5-4 체크리스트 참고). PC에서 필요한
+정보만 컬럼으로 덧붙였다(`supabase/trip_checklist_v2.sql`, MOBILE_SETUP.sql에도 같은 줄):
+`category`(ESSENTIAL/GEAR/HEALTH/BOOKING/TIP) · `priority`(REQUIRED/RECOMMENDED/NORMAL) ·
+`assignee_member_id`(trip_members.id) + `assignee_all`(공동) · `due_date` · `memo` ·
+`linked_doc_id`(공용 문서만, FK 없음) · `suggestion_key`(추천에서 넣은 항목).
+- 전부 null 허용 — 모바일에서 제목만 넣은 항목은 **분류를 제목 키워드로 추정해서 보여주기만**
+  하고 저장하지 않는다(`inferCategory`). 중요도 없음 = 일반, 담당 없음 = 미지정.
+- 완료 시각·완료한 사람은 기존 `checked_at`/`checked_by_name` 그대로.
+- **마이그레이션 전에도 동작한다** — `probeChecklistExtended`가 컬럼 유무를 한 번 확인하고,
+  없으면 입력 시트를 이름만 받게 줄이고 담당 필터를 숨긴 뒤 상단에 안내 한 줄을 띄운다.
+  체크·추가·삭제·순서 바꾸기는 그대로 된다.
+- I/O는 전부 `mobile/checklist.ts`(단일 창구). 실시간은 `subscribeChecklistScoped(..., 'pc')`
+  — TIMELINE과 같은 이유로 채널을 따로 연다.
+
+### 스마트 추천 — AI가 아니라 규칙 (원칙 3-1)
+`checklistModel.ts`의 `buildSmartSuggestions`/`buildMustChecks`. 근거는 **이 트립에 실제로
+저장된 값뿐**이고, 근거가 없으면 그 추천은 만들지 않는다.
+- 항공: `trip_destinations`의 arrival_*/departure_*(공항·시각을 그대로 인용) 또는 항공 문서
+- 숙소: `stay_segments.basecamp_place_id`(없으면 trips.shortlist_basecamp_place_id) → places 이름
+- 일정: 여행지 2곳 이상 → 도시 간 이동 / route_stops 중 테마파크·박물관·미술관 → 예매 확인
+- 여행지: 이름 → 공항표(`trips/airports.ts`의 `lookupAirportCode`) → 나라. 플러그(한국 C·F형이
+  맞는지)와 통화 이름만 고정 표로 쓴다 — 확실하지 않은 나라는 표에서 뺐다(→ 어댑터 추천 없음).
+  공항표에 없는 여행지가 섞이면 국내로 단정하지 않는다.
+- 입국 요건처럼 자주 바뀌는 건 **내용을 적지 않고** "공식 안내로 확인" 배지만 붙인다.
+- 이미 담긴 추천은 다시 안 뜬다(`suggestion_key` 또는 띄어쓰기 무시한 제목 비교).
+  "숨기기"는 **뷰어 개인 편의**라 localStorage에만 둔다(공유 상태 아님). 정렬 방식도 같다.
+- 해당 분류의 공용 문서가 **딱 하나**일 때만 추가하면서 자동 연결한다.
+
+### 문서 연결
+항목 상세에서 연결 문서(또는 관련 분류 문서) 버튼을 누르면 `requestDocFocus`(sessionStorage)
+로 문서 id를 남기고 `mongsil:navigateGate`로 DOCUMENTS에 간다 — docs.ts가 처음 그릴 때 한 번
+꺼내 그 문서 상세를 연다. **공용 문서만** 연결한다(체크리스트는 멤버 모두가 보는 목록이라
+개인 문서 제목이 남에게 보이면 안 됨). 문서가 있어도 체크를 대신 해주지 않는다.
+
+### 순서 바꾸기
+"기본 순서" 정렬에서만 손잡이(⋮⋮)가 보이고, `mobile/reorder.ts`의 제스처를 `handleSelector`
+옵션으로 재사용한다(손잡이를 눌렀을 때만 끌기 시작). 필터가 걸려 있으면 **보이는 항목끼리만**
+자리를 바꾸고(`reorderChanges`), 바뀐 행의 sort_order만 저장한다 — 모바일도 같은 순서로 보인다.
+
+### 파일 구성
+- `src/checklist/checklist.ts`, `checklist.css` — 게이트 UI(목록·도구줄·오른쪽 카드·추가/수정 시트)
+- `src/checklist/checklistModel.ts` — 분류·중요도·진행률·정렬·D-day·추천 규칙(순수 함수, 테스트 있음)
+
+---
+
 ## 6. 파일 구조
 
 ```
@@ -1172,7 +1225,9 @@ src/
   timeline/openingHours.ts           ← 영업시간 문자열 파서 (의존성 없는 순수 모듈, 5-4 참고)
   mobile/mobile.ts, mobile.css       ← Mobile Companion 게이트 (여행 중 화면, 5-4 참고)
   mobile/stopProgress.ts             ← 실제 도착/출발 기록 영속화 + 실시간 (Mobile 전용, 5-4 참고)
-  mobile/checklist.ts                ← 여행 준비 체크리스트 I/O + 실시간 (Mobile 전용, 5-4 참고)
+  mobile/checklist.ts                ← 여행 준비 체크리스트 I/O + 실시간 (Mobile/Timeline/PC 공용, 5-4·5-7 참고)
+  checklist/checklist.ts, .css       ← PC CHECKLIST 게이트 (5-7 참고)
+  checklist/checklistModel.ts        ← 분류·진행률·정렬·스마트 추천 규칙 (순수 함수 + 테스트, 5-7)
   mobile/weather.ts                  ← 날씨 (Open-Meteo, 키 없음 — 5-4 참고)
   mobile/geo.ts                      ← GPS 현재 정류지 판정 (순수 함수 + watch, 5-4 참고)
   mobile/revisit.ts                  ← "숙소 들르기" 정류지에 숙소 장소 붙이기 (표시용, 순수 함수)
@@ -1251,8 +1306,9 @@ api/                                  ← Vercel 서버리스 함수 (각각 완
    실행해야 저장된다(안 해도 앱은 정상 동작 — 해당 게이트만 "준비 중" 안내로 접힌다). 다음 단계
    후보: 개인 문서를 Supabase Auth 기준 소유권으로 올리기(SQL 주석의 정책 초안), 문서 만료일
    알림, 모바일 Companion에서 오늘의 문서 바로 열기
-5. **PC Checklist 게이트** — 아직 빈 플레이스홀더. 데이터 모델(`trip_checklist`)은 모바일 MORE가
-   이미 만들어 뒀으므로, PC 화면을 붙일 땐 그 테이블을 그대로 쓰면 된다(5-4 참고).
+5. **PC Checklist 게이트** — 구현됨(5-7). `supabase/trip_checklist_v2.sql`을 실행해야 분류·담당자·
+   마감일 등이 저장된다(안 해도 체크·추가는 동작). 다음 단계 후보: 마감 임박 항목 알림, 추천 숨기기를
+   트립 공유로 올리기, 모바일 MORE에서도 담당자·중요도 표시.
    **Links 탭**은 채팅 링크를 자동 수집 + og:title/og:image 미리보기 + STAY/PLACE/FOOD/ACTIVITY/VIDEO/ARTICLE/OTHER 자동분류(애매하면 OTHER, 드래그로 수동 재분류 가능)까지 구현됨(`src/links/links.ts`, `src/trips/addLink.ts`, `api/cache-photo.ts`의 `kind:'link-preview'`, `supabase/trip_links.sql`) — 직접 추가 UI는 없음(채팅이 유일한 입력 경로). **Expense 탭**은 구현됨(아래 5-2 참고) — `supabase/trip_expenses.sql` 마이그레이션을 Supabase에서 실행해야 동작
 6. **`google.maps.Marker` → `AdvancedMarkerElement` 마이그레이션** — 지금은 폐기 예정 경고만 뜨는 상태, 급하진 않음 (최소 12개월 유예)
 7. **방콕 외 도시의 `stay_zones` 큐레이션** — 현재 방콕만 실제 조사된 데이터, 나머지 도시는 AI 폴백 상태

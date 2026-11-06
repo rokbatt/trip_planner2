@@ -411,6 +411,7 @@ let linksModuleRef: { teardownLinks: () => void } | null = null;
 let expenseModuleRef: { teardownExpense: () => void } | null = null;
 let mobileModuleRef: { teardownMobile: () => void } | null = null;
 let docsModuleRef: { teardownDocs: () => void } | null = null;
+let checklistModuleRef: { teardownChecklist: () => void } | null = null;
 let navigateGateHandlerRef: EventListener | null = null;
 let openVoteTargetHandlerRef: EventListener | null = null;
 let activeDestChangeHandler: ((e: Event) => void) | null = null;
@@ -448,6 +449,10 @@ async function renderGate(body: HTMLElement, tripId: string, gate: string): Prom
   if (gate !== 'docs' && gate !== 'notes' && docsModuleRef) {
     docsModuleRef.teardownDocs();
     docsModuleRef = null;
+  }
+  if (gate !== 'checklist' && checklistModuleRef) {
+    checklistModuleRef.teardownChecklist();
+    checklistModuleRef = null;
   }
 
   // MOBILE(Companion)은 자체 셸이 화면을 꽉 채우고 스스로 스크롤한다 — 바깥 컨테이너까지
@@ -489,6 +494,10 @@ async function renderGate(body: HTMLElement, tripId: string, gate: string): Prom
     const mod = await import('../docs/docs');
     docsModuleRef = mod;
     await mod.renderDocsContent(body, tripId, gate === 'notes' ? 'notes' : 'documents');
+  } else if (gate === 'checklist') {
+    const mod = await import('../checklist/checklist');
+    checklistModuleRef = mod;
+    await mod.renderChecklistContent(body, tripId);
   } else {
     const title = GATE_TITLES[gate] || gate;
     body.innerHTML = [
@@ -540,6 +549,8 @@ function bindEvents(page: HTMLElement, tripId: string): void {
     expenseModuleRef = null;
     docsModuleRef?.teardownDocs();
     docsModuleRef = null;
+    checklistModuleRef?.teardownChecklist();
+    checklistModuleRef = null;
     navigate('trips');
   });
 

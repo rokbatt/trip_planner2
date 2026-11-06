@@ -40,6 +40,8 @@ export interface ReorderOptions {
   rowSelector: string;
   /** 눌러도 끌기를 시작하지 않을 요소(버튼·링크) */
   ignoreSelector: string;
+  /** 주면 이 손잡이를 눌렀을 때만 끌기를 시작한다(PC 체크리스트처럼 행 전체가 클릭 대상일 때) */
+  handleSelector?: string;
   /** 지금 끌기를 시작해도 되나 — 저장 중이거나 순서를 못 바꾸는 날이면 false */
   canStart: () => boolean;
   onStart: () => void;
@@ -161,7 +163,8 @@ export function bindLongPressReorder(opts: ReorderOptions): () => void {
     if (drag || pending) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     const target = e.target as HTMLElement | null;
-    if (!target || target.closest(ignoreSelector)) return;
+    if (!target) return;
+    if (opts.handleSelector ? !target.closest(opts.handleSelector) : target.closest(ignoreSelector)) return;
     const row = target.closest<HTMLElement>(rowSelector);
     if (!row || !thread.contains(row)) return;
     const p = {
