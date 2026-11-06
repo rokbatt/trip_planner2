@@ -64,6 +64,13 @@ addRoute('join', async (params) => {
   app.replaceChildren(el);
 });
 
+// 계정 설정 · 회원 탈퇴 — 로그인해야 열린다(PUBLIC_ROUTES에 없으므로 가드가 로그인으로 보낸다)
+addRoute('settings', async () => {
+  const app = document.getElementById('app')!;
+  const { renderSettings } = await import('./account/settings');
+  app.replaceChildren(renderSettings());
+});
+
 // 약관 · 개인정보처리방침
 addRoute('terms', async () => {
   const app = document.getElementById('app')!;
@@ -158,6 +165,11 @@ async function handleAuthChange(event: string, session: { user: import('@supabas
     // 같은 사용자로 다시 발화된 SIGNED_IN(탭 포커스 복귀 등) — 화면 그대로 둠
     return;
   }
+
+  // 가입 동의 — 로그인 직전에 받은 기록을 서버에 옮겨 적는다. 기록이 없는 기존 사용자
+  // (이 기능이 생기기 전에 가입했거나 약관 버전이 올라간 경우)에겐 동의 창을 띄운다.
+  // 화면을 막지 않고 위에 얹히는 창이라 아래 라우팅과 동시에 진행해도 된다.
+  if (user) void import('./account/consent').then((m) => m.syncConsentAfterLogin(user));
 
   // 로그인 직후, 초대 링크를 통해 들어왔던 거라면 그 초대 페이지로 되돌아감
   if (user) {

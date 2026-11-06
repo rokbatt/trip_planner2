@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { removeTripFiles } from '../account/tripFiles';
 import { store } from '../store';
 import {
   loadDestinations,
@@ -26,6 +27,10 @@ function escapeHtml(str: string): string {
 
 /* ── 여행 삭제 (내 여행 카드에서 옮겨옴 — 편집 모달의 위험 구역에서 트리거) ── */
 async function deleteTrip(tripId: string): Promise<{ success: boolean; error?: string }> {
+  // 문서 파일(Storage)부터 — 여행·멤버십 행이 사라진 뒤에는 지울 권한도 같이 사라져 파일만 남는다.
+  // 실패해도 삭제는 계속한다(best-effort). 방침이 "여행을 지우면 파일도 지운다"고 약속하므로 순서가 중요하다.
+  await removeTripFiles(tripId);
+
   // trip_members 먼저 정리 (FK 제약 대비)
   const { error: memberError } = await supabase.from('trip_members').delete().eq('trip_id', tripId);
   if (memberError) return { success: false, error: memberError.message };

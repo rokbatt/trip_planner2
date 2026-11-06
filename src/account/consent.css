@@ -1,0 +1,156 @@
+/* ============================================================
+   가입 동의 창 — Airport Lounge Premium Light
+   ============================================================ */
+
+.cs-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(11, 42, 92, 0.46);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  opacity: 0;
+  transition: opacity 180ms var(--al-ease, ease);
+}
+.cs-overlay.open { opacity: 1; }
+
+.cs-modal {
+  width: min(440px, 100%);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  background: #FFFFFF;
+  border-radius: 22px;
+  padding: 28px 26px 22px;
+  box-shadow: 0 30px 70px rgba(11, 42, 92, 0.28);
+  font-family: var(--font-sans);
+  color: var(--al-text, #17212B);
+  transform: translateY(8px);
+  transition: transform 220ms var(--al-ease, ease);
+}
+.cs-overlay.open .cs-modal { transform: none; }
+
+.cs-eyebrow {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: #0B7CC4;
+  margin-bottom: 8px;
+}
+.cs-title {
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #0B2A5C;
+  line-height: 1.3;
+  margin-bottom: 8px;
+}
+.cs-lead { font-size: 13.5px; line-height: 1.7; color: #64748B; margin-bottom: 8px; word-break: keep-all; }
+
+/* ── 체크 행 ── */
+.cs-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  cursor: pointer;
+  padding: 11px 0;
+  flex: 1;
+  min-width: 0;
+}
+.cs-row input { position: absolute; opacity: 0; width: 0; height: 0; }
+.cs-box {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1.5px solid #B8C6D4;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  transition: background 150ms, border-color 150ms;
+}
+.cs-box::after {
+  content: "";
+  width: 9px;
+  height: 5px;
+  border-left: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: translateY(-1px) rotate(-45deg) scale(0);
+  transition: transform 150ms;
+}
+.cs-row input:checked + .cs-box { background: #0B2A5C; border-color: #0B2A5C; }
+.cs-row input:checked + .cs-box::after { transform: translateY(-1px) rotate(-45deg) scale(1); }
+.cs-row input:focus-visible + .cs-box { outline: 2px solid #2F86D6; outline-offset: 2px; }
+
+.cs-text { font-size: 14.5px; line-height: 1.45; word-break: keep-all; }
+.cs-all { margin-top: 14px; padding: 13px 14px; background: #F2F7FB; border-radius: 12px; flex: none; }
+.cs-all .cs-text { font-weight: 700; color: #0B2A5C; }
+
+.cs-list { margin: 6px 0 4px; padding: 0 2px; }
+.cs-item { display: flex; align-items: center; gap: 8px; border-bottom: 1px dashed rgba(130, 150, 170, 0.22); }
+.cs-item:last-child { border-bottom: 0; }
+.cs-req {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  color: #0B7CC4;
+  margin-right: 7px;
+}
+.cs-view {
+  flex: none;
+  font-size: 12.5px;
+  color: #94A3B8;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 6px 2px;
+}
+.cs-view:hover { color: #0B7CC4; }
+
+/* ── 수집·이용 안내 (개인정보 동의 시 알려야 하는 항목) ── */
+.cs-summary {
+  margin-top: 12px;
+  padding: 14px 15px;
+  border: 1px solid #CDEBFB;
+  border-radius: 12px;
+  background: #F8FCFE;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: #475569;
+}
+.cs-summary > strong { display: block; font-size: 12.5px; color: #0B2A5C; margin-bottom: 6px; }
+.cs-summary dl { display: grid; gap: 3px; margin-bottom: 8px; }
+.cs-summary dl > div { display: flex; gap: 10px; }
+.cs-summary dt { flex: none; width: 56px; color: #94A3B8; }
+.cs-summary dd { margin: 0; word-break: keep-all; }
+.cs-summary p { color: #64748B; word-break: keep-all; }
+
+/* ── 버튼 ── */
+.cs-actions { display: flex; gap: 10px; margin-top: 18px; }
+.cs-btn {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 12px;
+  padding: 13px 14px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 160ms, opacity 160ms;
+}
+.cs-secondary { flex: 0 1 auto; background: #fff; color: #64748B; border-color: #DDE6EE; }
+.cs-secondary:hover { background: #F5F8FB; }
+.cs-primary { flex: 1; background: #0B2A5C; color: #fff; }
+.cs-primary:hover:not(:disabled) { background: #123A7A; }
+.cs-primary:disabled { opacity: 0.35; cursor: not-allowed; }
+.cs-btn:focus-visible { outline: 2px solid #2F86D6; outline-offset: 2px; }
+
+@media (max-width: 480px) {
+  .cs-modal { padding: 24px 18px 18px; border-radius: 20px; }
+  .cs-actions { flex-direction: column-reverse; }
+  .cs-secondary { padding: 11px 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cs-overlay, .cs-modal, .cs-box, .cs-box::after { transition: none; }
+}

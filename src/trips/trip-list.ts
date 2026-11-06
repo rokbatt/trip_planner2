@@ -354,7 +354,7 @@ export async function renderTripList(): Promise<HTMLElement> {
   }
 
   page.querySelector('#tl-dd-trips')?.addEventListener('click', () => navigate('trips'));
-  page.querySelector('#tl-dd-settings')?.addEventListener('click', () => alert('설정 페이지는 곧 구현 예정이에요!'));
+  page.querySelector('#tl-dd-settings')?.addEventListener('click', () => navigate('settings'));
   page.querySelector('#tl-dd-help')?.addEventListener('click', () => alert('문의하기 기능은 곧 구현 예정이에요!'));
   page.querySelector('#tl-dd-logout')?.addEventListener('click', signOut);
 
