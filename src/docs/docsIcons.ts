@@ -5,6 +5,7 @@
  */
 
 import type { DocCategory, NoteCategory } from './docsStore';
+import { CATEGORY_META } from '../expense/expenseModel';
 
 const S = 'fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"';
 
@@ -42,28 +43,53 @@ export const IC = {
   info: '<svg viewBox="0 0 24 24" ' + S + ' stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>',
 };
 
-export const DOC_CATEGORY_ICON: Record<DocCategory, string> = {
-  FLIGHT: IC.plane,
-  STAY: IC.bed,
-  TRANSPORT: IC.car,
-  TICKET: IC.ticket,
-  INSURANCE: IC.shield,
-  VISA: IC.stamp,
-  RECEIPT: IC.receipt,
-  OTHER: IC.folder,
+/* ── 카테고리 아이콘 — EXPENSE와 같은 도형·색·선 굵기(1.6)로 통일 ──
+ * 경비에 같은 뜻의 카테고리(항공·숙소·교통·관광·쇼핑·기타)는 expenseModel의 CATEGORY_META를
+ * 그대로 쓰고, 경비에 없는 카테고리(보험·비자·수하물 등)는 같은 7색 팔레트에서 골라 같은
+ * 선 스타일로 그린다. 색은 CVD 검증을 거친 경비 팔레트라 새 색을 만들지 않는다. */
+const withStroke = (svg: string): string => svg.replace('stroke-width="1.5"', 'stroke-width="1.6"');
+
+interface CatVisual {
+  color: string;
+  icon: string;
+}
+
+const EX = CATEGORY_META;
+const vis = (m: { color: string; icon: string }): CatVisual => ({ color: m.color, icon: m.icon });
+const own = (color: string, icon: string): CatVisual => ({ color, icon: withStroke(icon) });
+
+export const DOC_CATEGORY_VISUAL: Record<DocCategory, CatVisual> = {
+  FLIGHT: vis(EX.FLIGHT),
+  STAY: vis(EX.STAY),
+  TRANSPORT: vis(EX.TRANSPORT),
+  TICKET: vis(EX.ACTIVITY),
+  INSURANCE: own(EX.FOOD.color, IC.shield),
+  VISA: own(EX.ETC.color, IC.stamp),
+  RECEIPT: own(EX.SHOPPING.color, IC.receipt),
+  OTHER: vis(EX.ETC),
 };
 
-export const NOTE_CATEGORY_ICON: Record<NoteCategory, string> = {
-  FLIGHT: IC.plane,
-  BAGGAGE: IC.bag,
-  STAY: IC.bed,
-  TRANSPORT: IC.car,
-  PACKING: IC.box,
-  VISA: IC.stamp,
-  BOOKING: IC.calendar,
-  SHOPPING: IC.cart,
-  OTHER: IC.note,
+export const NOTE_CATEGORY_VISUAL: Record<NoteCategory, CatVisual> = {
+  FLIGHT: vis(EX.FLIGHT),
+  BAGGAGE: own(EX.FOOD.color, IC.bag),
+  STAY: vis(EX.STAY),
+  TRANSPORT: vis(EX.TRANSPORT),
+  PACKING: own(EX.ACTIVITY.color, IC.box),
+  VISA: own(EX.ETC.color, IC.stamp),
+  BOOKING: own(EX.FLIGHT.color, IC.calendar),
+  SHOPPING: vis(EX.SHOPPING),
+  OTHER: vis(EX.ETC),
 };
+
+/** 카테고리 아이콘 한 칸 — 경비 목록(.ex-item-cat)과 같은 둥근 박스 + 카테고리 색. */
+export function categoryIconBox(v: CatVisual, cls = 'dn-row-icon'): string {
+  return '<span class="' + cls + '" style="color:' + v.color + '">' + v.icon + '</span>';
+}
+
+/** 카테고리 고르기 칩 안의 아이콘 — 색만 입힌다. */
+export function categoryIconInline(v: CatVisual): string {
+  return '<span class="dn-pick-icon" style="color:' + v.color + '">' + v.icon + '</span>';
+}
 
 export function escapeHtml(str: string): string {
   const div = document.createElement('div');

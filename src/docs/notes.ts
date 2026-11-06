@@ -26,7 +26,7 @@ import {
   dayRangeLabel,
 } from './docsStore';
 import type { DayOption, NoteCategory } from './docsStore';
-import { IC, NOTE_CATEGORY_ICON, escapeHtml, formatDay } from './docsIcons';
+import { IC, NOTE_CATEGORY_VISUAL, categoryIconBox, categoryIconInline, escapeHtml, formatDay } from './docsIcons';
 
 interface NotesHost {
   tripId: string;
@@ -353,7 +353,7 @@ function noteRowHtml(note: TripNote): string {
     '<div class="dn-note-row' + (checked ? ' is-checked' : '') + (note.id === selectedNoteId ? ' is-selected' : '') + '" data-note-id="' + note.id + '">',
     '  <button type="button" class="dn-check" data-check="' + note.id + '" role="checkbox" aria-checked="' + checked + '"',
     '          aria-label="' + (checked ? '확인 완료 해제' : '확인 완료로 표시') + '">' + IC.check + '</button>',
-    '  <span class="dn-row-icon">' + NOTE_CATEGORY_ICON[category] + '</span>',
+    '  ' + categoryIconBox(NOTE_CATEGORY_VISUAL[category]),
     '  <div class="dn-row-main">',
     '    <div class="dn-row-title">' + escapeHtml(note.title) + '</div>',
     body ? '    <div class="dn-row-desc">' + escapeHtml(body) + '</div>' : '',
@@ -433,7 +433,7 @@ function renderNoteDetail(): void {
   detailEl.innerHTML = [
     '<div class="dn-detail-inner">',
     '  <div class="dn-detail-head">',
-    '    <span class="dn-detail-icon">' + NOTE_CATEGORY_ICON[category] + '</span>',
+    '    ' + categoryIconBox(NOTE_CATEGORY_VISUAL[category], 'dn-detail-icon'),
     '    <span class="dn-detail-title">' + escapeHtml(note.title) + '</span>',
     '    <button type="button" class="dn-icon-btn" id="dn-note-detail-close" aria-label="닫기">' + IC.close + '</button>',
     '  </div>',
@@ -543,7 +543,7 @@ export function openNoteEditor(id?: string): void {
     NOTE_CATEGORIES.map(
       (c) =>
         '<button type="button" class="dn-pick-item' + (c === currentCategory ? ' is-active' : '') + '" data-cat="' + c + '">' +
-        NOTE_CATEGORY_ICON[c] + '<span>' + NOTE_CATEGORY_LABEL[c] + '</span></button>'
+        categoryIconInline(NOTE_CATEGORY_VISUAL[c]) + '<span>' + NOTE_CATEGORY_LABEL[c] + '</span></button>'
     ).join(''),
     '      </div>',
     '    </div>',

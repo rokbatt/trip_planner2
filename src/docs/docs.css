@@ -281,18 +281,18 @@
 .dn-row:hover { border-color: #8FD8F8; box-shadow: 0 6px 18px rgba(11,42,92,0.06); }
 .dn-row.is-selected { border-color: var(--al-action); background: rgba(47,134,214,0.04); }
 
+/* 카테고리 아이콘 박스 — EXPENSE의 .ex-item-cat과 같은 크기·모서리·배경. 색은 인라인(카테고리 색) */
 .dn-row-icon {
   flex-shrink: 0;
-  width: 38px;
-  height: 38px;
-  border-radius: 11px;
-  background: #EFF5FB;
-  color: #185FA5;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  background: rgba(130,150,170,0.08);
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
-.dn-row-icon svg { width: 18px; height: 18px; }
+.dn-row-icon svg { width: 16px; height: 16px; }
 
 .dn-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .dn-row-title {
@@ -407,13 +407,12 @@
 }
 .dn-detail-icon {
   width: 30px; height: 30px;
-  border-radius: 9px;
-  background: #EFF5FB;
-  color: #185FA5;
+  border-radius: 10px;
+  background: rgba(130,150,170,0.08);
   display: inline-flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-.dn-detail-icon svg { width: 15px; height: 15px; }
+.dn-detail-icon svg { width: 16px; height: 16px; }
 .dn-detail-title {
   flex: 1;
   min-width: 0;
@@ -615,6 +614,7 @@
   transition: border-color var(--al-duration) var(--al-ease), background var(--al-duration) var(--al-ease), color var(--al-duration) var(--al-ease);
 }
 .dn-pick-item svg { width: 13px; height: 13px; }
+.dn-pick-icon { display: inline-flex; }
 .dn-pick-item:hover { border-color: #8FD8F8; }
 .dn-pick-item.is-active { border-color: var(--al-action); background: rgba(47,134,214,0.06); color: #0B2A5C; }
 
@@ -831,8 +831,6 @@
 .dn-check:hover { border-color: var(--al-action); }
 .dn-note-row.is-checked .dn-check { background: #0B2A5C; border-color: #0B2A5C; color: #FFFFFF; }
 
-.dn-note-row .dn-row-icon { width: 32px; height: 32px; border-radius: 10px; }
-.dn-note-row .dn-row-icon svg { width: 15px; height: 15px; }
 .dn-note-row .dn-row-main { display: flex; flex-direction: column; gap: 4px; }
 .dn-note-row .dn-row-desc {
   white-space: pre-wrap;
