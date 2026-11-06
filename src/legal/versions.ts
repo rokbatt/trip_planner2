@@ -25,7 +25,7 @@ export interface ConsentItem {
 }
 
 export const CONSENT_ITEMS: readonly ConsentItem[] = [
-  { key: 'age', required: true, label: '만 14세 이상입니다' },
-  { key: 'terms', required: true, label: '이용약관에 동의합니다', href: '#terms' },
-  { key: 'privacy', required: true, label: '개인정보 수집·이용에 동의합니다', href: '#privacy' },
+  { key: 'age', required: true, label: '만 14세 이상입니다.' },
+  { key: 'terms', required: true, label: '이용약관에 동의합니다.', href: '#terms' },
+  { key: 'privacy', required: true, label: '개인정보 수집 및 이용에 동의합니다.', href: '#privacy' },
 ];
