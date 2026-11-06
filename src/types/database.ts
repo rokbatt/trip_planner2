@@ -394,6 +394,21 @@ export interface Database {
           place_key: string | null;
           /** 표시용 장소 이름 스냅샷(장소가 지워져도 "어디 준비물이었는지"가 남게) */
           place_name: string | null;
+          /* ── 아래는 supabase/trip_checklist_v2.sql — 마이그레이션 전엔 응답에 없으니(undefined) `?? null`로 읽는다 ── */
+          /** ESSENTIAL | GEAR | HEALTH | BOOKING | TIP. null이면 제목으로 추정해서 보여준다 */
+          category: string | null;
+          /** REQUIRED | RECOMMENDED | NORMAL. null이면 일반 */
+          priority: string | null;
+          /** 담당 멤버(trip_members.id). assignee_all이 true면 공동 담당 */
+          assignee_member_id: string | null;
+          assignee_all: boolean;
+          /** 'YYYY-MM-DD' */
+          due_date: string | null;
+          memo: string | null;
+          /** 연결한 공용 문서(trip_documents.id) — FK 없음, 문서가 없으면 화면에서 그냥 안 그린다 */
+          linked_doc_id: string | null;
+          /** 스마트 추천에서 넣은 항목이면 그 추천 키(같은 추천을 다시 띄우지 않게) */
+          suggestion_key: string | null;
         };
         Insert: {
           id?: string;
@@ -407,6 +422,14 @@ export interface Database {
           created_at?: string;
           place_key?: string | null;
           place_name?: string | null;
+          category?: string | null;
+          priority?: string | null;
+          assignee_member_id?: string | null;
+          assignee_all?: boolean;
+          due_date?: string | null;
+          memo?: string | null;
+          linked_doc_id?: string | null;
+          suggestion_key?: string | null;
         };
         Update: Partial<Database['public']['Tables']['trip_checklist']['Insert']>;
         Relationships: [];

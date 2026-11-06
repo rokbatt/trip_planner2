@@ -49,6 +49,16 @@ alter table if exists trip_checklist add column if not exists place_key text;
 -- 체크리스트 ↔ 장소 연결 컬럼
 alter table if exists trip_checklist add column if not exists place_name text;
 
+-- PC 체크리스트 — 분류 / 중요도 / 담당자 / 마감일 / 메모 / 연결 문서 / 추천 키 (trip_checklist_v2.sql)
+alter table if exists trip_checklist add column if not exists category text;
+alter table if exists trip_checklist add column if not exists priority text;
+alter table if exists trip_checklist add column if not exists assignee_member_id uuid references trip_members(id) on delete set null;
+alter table if exists trip_checklist add column if not exists assignee_all boolean not null default false;
+alter table if exists trip_checklist add column if not exists due_date date;
+alter table if exists trip_checklist add column if not exists memo text;
+alter table if exists trip_checklist add column if not exists linked_doc_id uuid;
+alter table if exists trip_checklist add column if not exists suggestion_key text;
+
 -- 문서 잠금 사용자
 create table if not exists trip_doc_users ( id uuid primary key default gen_random_uuid(), trip_id uuid not null references trips(id) on delete cascade, name text not null, pin_salt text not null, pin_hash text not null, user_id uuid references auth.users(id) on delete set null, created_by uuid references auth.users(id) on delete set null, created_at timestamptz not null default now() );
 create index if not exists trip_doc_users_trip_id_idx on trip_doc_users(trip_id);

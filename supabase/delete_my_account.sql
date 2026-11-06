@@ -13,7 +13,7 @@
 --        - 다른 멤버가 없으면 여행을 지운다
 --        - 있으면 가장 먼저 참여한 멤버에게 방장을 넘긴다 (여행은 남는다)
 --   3. 내 이름 사본을 지운다 (작성자 FK는 set null 이라 id는 끊기지만 이름 글자는 남기 때문)
---   4. 내가 쓴 댓글과 채팅을 지우고, 모든 여행에서 내 멤버십을 지운다
+--   4. 내가 쓴 댓글과 채팅을 지우고, 모든 여행에서 내 멤버십을 지운다 (멤버십을 id 로 참조하는 FK 도 먼저 비운다)
 --   5. 안전망 - auth.users 를 가리키는데 위에서 못 다룬 FK(이 저장소 SQL에 없는 베이스 테이블 등)가
 --      삭제를 막지 않게 한다. null 가능한 열은 비우고, null 불가한 열은 그 행을 지운다
 --   6. auth.users 에서 내 계정을 지운다 (동의 기록 등은 cascade로 같이 지워진다)
@@ -86,6 +86,29 @@ begin
   if to_regclass('public.chat_messages') is not null then
     delete from public.chat_messages where user_id = uid;
   end if;
+
+  -- 4-1) 내 멤버십 행(trip_members.id)을 가리키는 FK 중 삭제를 막을 수 있는 것도 미리 비운다.
+  --      체크리스트 담당자처럼 팀이 멤버를 id 로 참조하는 경우가 있고, 이 저장소 SQL 에 없는
+  --      베이스 테이블이 어떻게 참조하는지는 볼 수 없다. null 가능이면 비우고, 아니면 그 행을 지운다
+  for c in
+    select cl.oid::regclass as tbl, a.attname as col, a.attnotnull as nn
+      from pg_constraint con
+      join pg_class cl on cl.oid = con.conrelid
+      join pg_namespace ns on ns.oid = cl.relnamespace
+      join pg_attribute a on a.attrelid = con.conrelid and a.attnum = con.conkey[1]
+     where con.contype = 'f'
+       and con.confrelid = 'public.trip_members'::regclass
+       and con.confdeltype in ('a', 'r')
+       and array_length(con.conkey, 1) = 1
+       and ns.nspname = 'public'
+  loop
+    if c.nn then
+      execute format('delete from %s where %I in (select id from public.trip_members where user_id = $1)', c.tbl, c.col) using uid;
+    else
+      execute format('update %s set %I = null where %I in (select id from public.trip_members where user_id = $1)', c.tbl, c.col, c.col) using uid;
+    end if;
+  end loop;
+
   delete from public.trip_members where user_id = uid;
 
   -- 5) 안전망: 삭제를 막을 수 있는 FK (no action / restrict) 를 찾아 미리 비운다

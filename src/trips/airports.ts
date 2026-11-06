@@ -253,6 +253,11 @@ export function toAirportCode(city: string): string {
   return city.trim().slice(0, 3).toUpperCase();
 }
 
+/** 여행지 이름 → IATA 코드. 표에 없으면 null(앞 3글자로 지어내지 않는다 — 나라 판별용). */
+export function lookupAirportCode(city: string): string | null {
+  return lookup(city)?.code ?? null;
+}
+
 /** 여행지 이름 → 영문 도시명(보딩패스 스텁용). 표에 없으면 null. */
 export function toAirportCityEn(city: string): string | null {
   return lookup(city)?.en ?? null;
