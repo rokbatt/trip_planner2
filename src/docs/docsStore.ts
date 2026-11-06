@@ -301,6 +301,27 @@ export function setLastScope(tripId: string, scope: DocScope): void {
   } catch { /* noop */ }
 }
 
+const FOCUS_KEY = 'mongsil:docs-focus:';
+
+/** 다른 게이트에서 DOCUMENTS로 넘어갈 때 열어둘 문서를 남긴다(넘어간 뒤 한 번만 쓰인다) */
+export function requestDocFocus(tripId: string, docId: string): void {
+  try {
+    sessionStorage.setItem(FOCUS_KEY + tripId, docId);
+  } catch {
+    /* 저장소를 못 쓰면 문서함 첫 화면으로 열릴 뿐이다 */
+  }
+}
+
+export function takeRequestedDocFocus(tripId: string): string | null {
+  try {
+    const id = sessionStorage.getItem(FOCUS_KEY + tripId);
+    if (id) sessionStorage.removeItem(FOCUS_KEY + tripId);
+    return id;
+  } catch {
+    return null;
+  }
+}
+
 export function getLastTab(tripId: string): DocsTab {
   try {
     return localStorage.getItem(TAB_KEY + tripId) === 'notes' ? 'notes' : 'documents';

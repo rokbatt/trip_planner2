@@ -40,6 +40,7 @@ import {
   setLastTab,
   setUnlockedUserId,
   signedUrlFor,
+  takeRequestedDocFocus,
   updateDocument,
   uploadDocFile,
   verifyPin,
@@ -155,7 +156,19 @@ export async function renderDocsContent(
   });
 
   subscribeRealtime(tripId);
+  applyRequestedFocus(tripId);
   renderTab();
+}
+
+/** 다른 게이트(CHECKLIST)가 "이 문서 열어줘"라고 남겨둔 요청을 한 번만 반영한다 — 공용 문서만 */
+function applyRequestedFocus(tripId: string): void {
+  const docId = takeRequestedDocFocus(tripId);
+  if (!docId || !sharedDocs.some((d) => d.id === docId)) return;
+  tab = 'documents';
+  scope = 'SHARED';
+  activeCategory = 'ALL';
+  activeRegion = 'ALL';
+  selectedDocId = docId;
 }
 
 /** 이전에 이 탭에서 잠금을 풀어둔 사용자가 있으면 그대로 이어간다(탭을 닫으면 잠김) */

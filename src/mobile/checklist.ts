@@ -1,5 +1,6 @@
 /**
- * 여행 준비 체크리스트의 I/O — MOBILE(Companion)과 TIMELINE(장소 상세 패널)이 같은 목록을 쓴다.
+ * 여행 준비 체크리스트의 I/O — MOBILE(Companion)·TIMELINE(장소 상세 패널)·PC CHECKLIST 게이트가
+ * 같은 목록을 쓴다. PC 전용 추가 정보(분류·중요도·담당자 등, trip_checklist_v2.sql)도 여기서만 읽고 쓴다.
  *
  * `stopProgress.ts`와 같은 뼈대(graceful degradation, self-write echo suppression)를 따른다.
  * 화면은 이 파일이 돌려준 배열을 그리기만 하고, 쿼리·실시간·실패 처리는 전부 여기 있다.
@@ -183,6 +184,131 @@ export async function setChecklistChecked(id: string, checked: boolean): Promise
   return true;
 }
 
+/* ══════════════ PC CHECKLIST — 분류·중요도·담당자 등 추가 정보 ══════════════ */
+
+/** trip_checklist_v2.sql 컬럼이 있는지 — null이면 아직 확인 전 */
+let extendedAvailable: boolean | null = null;
+export function isChecklistExtendedReady(): boolean {
+  return extendedAvailable === true;
+}
+
+/**
+ * 추가 정보 컬럼이 있는지 한 번만 확인한다. 행이 0개인 트립에서도 판별돼야 해서
+ * 응답 행을 보는 대신 컬럼을 콕 집어 select한다(없으면 PostgREST가 컬럼 오류를 낸다).
+ */
+export async function probeChecklistExtended(tripId: string): Promise<boolean> {
+  if (extendedAvailable !== null) return extendedAvailable;
+  const { error } = await supabase.from('trip_checklist').select('id, category').eq('trip_id', tripId).limit(1);
+  if (error) {
+    const missingColumn = /column .* does not exist|Could not find the '.*' column/i.test(error.message ?? '');
+    if (isMissingTable(error)) storageAvailable = false;
+    extendedAvailable = false;
+    if (!missingColumn && !isMissingTable(error)) console.error('[Checklist] 확장 컬럼 확인 실패:', error.message);
+    return false;
+  }
+  extendedAvailable = true;
+  return true;
+}
+
+/** 항목 하나의 편집 가능한 필드 — 제목 말고는 전부 선택 */
+export interface ChecklistDraft {
+  title: string;
+  category: string | null;
+  priority: string | null;
+  assignee_member_id: string | null;
+  assignee_all: boolean;
+  due_date: string | null;
+  memo: string | null;
+  linked_doc_id: string | null;
+  suggestion_key?: string | null;
+}
+
+function extendedFields(draft: Partial<ChecklistDraft>): Partial<ChecklistInsert> {
+  const out: Partial<ChecklistInsert> = {};
+  if ('category' in draft) out.category = draft.category ?? null;
+  if ('priority' in draft) out.priority = draft.priority ?? null;
+  if ('assignee_member_id' in draft) out.assignee_member_id = draft.assignee_member_id ?? null;
+  if ('assignee_all' in draft) out.assignee_all = !!draft.assignee_all;
+  if ('due_date' in draft) out.due_date = draft.due_date || null;
+  if ('memo' in draft) out.memo = draft.memo?.trim() || null;
+  if ('linked_doc_id' in draft) out.linked_doc_id = draft.linked_doc_id ?? null;
+  if ('suggestion_key' in draft) out.suggestion_key = draft.suggestion_key ?? null;
+  return out;
+}
+
+/**
+ * 분류·중요도 등을 담아 새 항목을 추가한다. 추가 정보 컬럼이 아직 없으면(마이그레이션 전)
+ * 제목만 저장한다 — 항목 자체가 사라지는 것보다 낫고, 화면은 분류를 제목으로 추정해서 보여준다.
+ */
+export async function addChecklistItemDetailed(
+  tripId: string,
+  draft: ChecklistDraft,
+  sortOrder: number
+): Promise<TripChecklistItem | null> {
+  if (storageAvailable === false) return null;
+  const title = draft.title.trim();
+  if (!title) return null;
+  const { id: createdBy } = currentUserSnapshot();
+  const base: ChecklistInsert = { trip_id: tripId, title, sort_order: sortOrder, created_by: createdBy };
+  const row: ChecklistInsert = extendedAvailable ? { ...base, ...extendedFields(draft) } : base;
+
+  markSelfWrite();
+  let { data, error } = await supabase.from('trip_checklist').insert(row).select().single();
+  if (error && isMissingColumn(error)) {
+    extendedAvailable = false;
+    ({ data, error } = await supabase.from('trip_checklist').insert(base).select().single());
+  }
+  if (error) {
+    if (isMissingTable(error)) storageAvailable = false;
+    else console.error('[Checklist] 추가 실패:', error.message);
+    return null;
+  }
+  markSelfWrite();
+  return data as TripChecklistItem;
+}
+
+/** 제목·분류·담당자 등을 고친다. 추가 정보 컬럼이 없으면 제목만 고친다. */
+export async function updateChecklistItem(id: string, patch: Partial<ChecklistDraft>): Promise<boolean> {
+  if (storageAvailable === false) return false;
+  const update: Partial<ChecklistInsert> = extendedAvailable ? extendedFields(patch) : {};
+  if (patch.title != null) {
+    const title = patch.title.trim();
+    if (!title) return false;
+    update.title = title;
+  }
+  if (Object.keys(update).length === 0) return true;
+
+  markSelfWrite();
+  const { error } = await supabase.from('trip_checklist').update(update).eq('id', id);
+  if (error) {
+    if (isMissingColumn(error)) extendedAvailable = false;
+    if (isMissingTable(error)) storageAvailable = false;
+    else console.error('[Checklist] 수정 실패:', error.message);
+    return false;
+  }
+  markSelfWrite();
+  return true;
+}
+
+/**
+ * 끌어서 바꾼 순서를 저장한다 — sort_order가 실제로 바뀐 행만 보낸다.
+ * 모바일 MORE 탭도 같은 sort_order를 쓰므로 순서가 양쪽에서 같게 보인다.
+ */
+export async function saveChecklistOrder(changes: Array<{ id: string; sort_order: number }>): Promise<boolean> {
+  if (storageAvailable === false || changes.length === 0) return changes.length === 0;
+  markSelfWrite();
+  const results = await Promise.all(
+    changes.map((c) => supabase.from('trip_checklist').update({ sort_order: c.sort_order }).eq('id', c.id))
+  );
+  markSelfWrite();
+  const failed = results.find((r) => r.error);
+  if (failed?.error) {
+    console.error('[Checklist] 순서 저장 실패:', failed.error.message);
+    return false;
+  }
+  return true;
+}
+
 export async function deleteChecklistItem(id: string): Promise<boolean> {
   if (storageAvailable === false) return false;
 
@@ -244,4 +370,5 @@ export function subscribeChecklistScoped(tripId: string, scope: string, onRemote
 /** 테스트/재진입을 위해 저장소 가용 여부 캐시를 초기화 */
 export function resetChecklistStorageProbe(): void {
   storageAvailable = null;
+  extendedAvailable = null;
 }
