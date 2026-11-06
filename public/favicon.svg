@@ -1,11 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="몽실이">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8FD0FF"/><stop offset="1" stop-color="#3F9CEB"/></linearGradient>
-    <linearGradient id="cl" gradientUnits="userSpaceOnUse" x1="0" y1="22" x2="0" y2="49"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#DCEBFF"/></linearGradient>
-  </defs>
-  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
-  <g>
-    <g fill="url(#cl)"><circle cx="20" cy="40" r="8"/><circle cx="31" cy="33" r="11.5"/><circle cx="43" cy="39" r="8.5"/><rect x="12" y="38" width="39" height="10.5" rx="5.2"/></g>
-    <g transform="translate(37.5 8) rotate(8) scale(0.95)"><path d="M2 12L22 5L15 22L11 14L2 12Z" fill="#0B2A5C"/><path d="M11 14L20.6 5.9" stroke="#8FD0FF" stroke-width="1.1" stroke-linecap="round"/></g>
-  </g>
+  <rect width="64" height="64" rx="14" fill="#EEF4FF"/>
+  <defs><clipPath id="pin-shape"><path d="M236 39C132 39 49 119 49 219C49 278 83 326 125 375C163 419 206 460 225 474C231 478 241 478 247 474C266 460 309 419 347 375C389 326 424 278 424 219C424 119 340 39 236 39Z"/></clipPath></defs><g transform="translate(7.17 4.86) scale(0.105)"><g clip-path="url(#pin-shape)"><path fill="#5F86F2" d="M35 25H440V218C393 235 365 268 324 286C279 306 244 294 207 275C168 255 145 238 128 238C100 238 78 257 62 286C43 257 35 239 35 210Z"/><path fill="#8DBCF0" d="M35 270C66 239 91 229 128 238C160 246 177 269 207 282C226 291 244 297 263 297C251 349 240 415 236 490H35Z"/><path fill="#4562E8" d="M440 176C399 192 371 219 342 244C311 270 282 291 246 293C269 313 296 328 326 331C367 335 402 318 440 298Z"/></g><circle cx="236.5" cy="218.5" r="76" fill="#FFFFFF"/></g>
 </svg>
