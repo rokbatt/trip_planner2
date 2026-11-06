@@ -95,8 +95,8 @@ function heroBtnHtml(): string {
 
 function heroNoteHtml(): string {
   const info = getUserInfo();
-  if (info) return `<p class="lp-hero-note">${escapeHtml(info.name)}님, 안녕하세요</p>`;
-  return `<p class="lp-hero-note">무료 · 카드 등록 없음</p>`;
+  if (info) return `<p class="lp-hero-note">WELCOME, ${escapeHtml(info.name).toUpperCase()}</p>`;
+  return `<p class="lp-hero-note">GATE OPEN · NO CARD REQUIRED</p>`;
 }
 
 function ctaBandBtnHtml(): string {
@@ -120,11 +120,14 @@ export function renderLogin(): void {
       <section class="lp-hero" id="lp-hero">
         <div class="lp-hero-inner">
           ${ICON_PLANE}
-          <p class="lp-eyebrow">공동 여행 계획</p>
-          <h1 class="lp-title">친구와 함께 짜는<br>여행 계획</h1>
+          <p class="lp-eyebrow">ICN · DEPARTURE LOUNGE</p>
+          <!-- 헤드라인 후보(톤이 갈리는 부분이라 남겨 둠):
+               B) 단톡방에 흩어진 여행을 / 한 장의 시각표로.  ← 문제→해결이 가장 잘 보임
+               C) 아직 아무것도 / 안 정했어도 괜찮아요.        ← 타겟 정서에 가장 가까움 -->
+          <h1 class="lp-title">여행은 정하는 게 아니라<br>좁혀가는 거니까.</h1>
           <p class="lp-subtitle">
-            장소 모으기부터 숙소, 동선, 여행 중 일정 확인까지.<br>
-            여행 멤버 모두가 같은 화면에서 함께 편집합니다.
+            가고 싶은 곳을 쌓고 → 숙소를 정하고 → 동선을 잇고 →<br>
+            여행 중엔 오늘 할 일만. 친구들과 같은 화면에서.
           </p>
           ${heroBtnHtml()}
           ${heroNoteHtml()}
@@ -138,11 +141,11 @@ export function renderLogin(): void {
           <div class="lp-section-inner">
             <div class="lp-split reveal">
               <div class="lp-split-text">
-                <p class="lp-sec-eyebrow">서비스 소개</p>
-                <h2 class="lp-sec-title">여행 정보가<br>단톡방에 흩어져 있나요?</h2>
+                <p class="lp-sec-eyebrow">THE PROBLEM</p>
+                <h2 class="lp-sec-title">여행 이야기는 단톡방에서 시작해서,<br>단톡방에서 사라져요.</h2>
                 <p class="lp-sec-desc">
-                  공유한 링크와 후보지가 채팅 속에 묻혀 나중에 찾기 어렵습니다.
-                  몽실이는 후보지를 한곳에 모아 멤버 모두가 같이 보고 정리할 수 있게 합니다.
+                  링크를 던지고, 좋다고 하고, 그러고 끝. 이틀 뒤엔 아무도 그게
+                  어디였는지 못 찾습니다. 결국 누군가 혼자 엑셀을 만들다 맙니다.
                 </p>
               </div>
               <div class="lp-split-demo">
@@ -163,37 +166,37 @@ export function renderLogin(): void {
         <section class="lp-section bg-light">
           <div class="lp-section-inner">
             <div class="reveal" style="text-align:center;margin-bottom:48px;">
-              <p class="lp-sec-eyebrow">이용 방법</p>
-              <h2 class="lp-sec-title" style="margin-bottom:14px;">여행 계획은<br>4단계로 진행됩니다</h2>
-              <p class="lp-sec-desc" style="margin:0 auto;">단계마다 한 가지씩만 정하면 됩니다.</p>
+              <p class="lp-sec-eyebrow">HOW IT WORKS</p>
+              <h2 class="lp-sec-title" style="margin-bottom:14px;">네 개의 게이트를 지나면<br>여행이 완성돼요.</h2>
+              <p class="lp-sec-desc" style="margin:0 auto;">한 번에 다 정하지 않아요. 게이트마다 딱 하나씩만 정합니다.</p>
             </div>
             <div class="lp-gates reveal">
               <div class="lp-gates-head">
-                <span>GATE</span><span>STAGE</span><span>내용</span><span class="lp-gates-verb">ACTION</span>
+                <span>GATE</span><span>STAGE</span><span>여기서 정하는 것</span><span class="lp-gates-verb">ACTION</span>
               </div>
               <div class="lp-gate-row">
                 <span class="lp-gate-code">GATE 01</span>
                 <span class="lp-gate-name">IDEAS<small>Departure Hall</small></span>
-                <span class="lp-gate-desc">가고 싶은 장소를 먼저 모읍니다.</span>
-                <span class="lp-gates-verb lp-gate-verb">모으기</span>
+                <span class="lp-gate-desc">가고 싶은 곳을 판단 없이 모아요.</span>
+                <span class="lp-gates-verb lp-gate-verb">던지기</span>
               </div>
               <div class="lp-gate-row">
                 <span class="lp-gate-code">GATE 02</span>
                 <span class="lp-gate-name">STAY<small>Immigration Counter</small></span>
-                <span class="lp-gate-desc">머물 지역과 숙소를 정합니다.</span>
-                <span class="lp-gates-verb lp-gate-verb">정하기</span>
+                <span class="lp-gate-desc">생활권과 숙소 하나. 여행의 중심이 정해져요.</span>
+                <span class="lp-gates-verb lp-gate-verb">좁히기</span>
               </div>
               <div class="lp-gate-row">
                 <span class="lp-gate-code">GATE 03</span>
                 <span class="lp-gate-name">ROUTE<small>Boarding Pass</small></span>
-                <span class="lp-gate-desc">숙소에서 갈 만한 장소만 골라 동선을 만듭니다.</span>
-                <span class="lp-gates-verb lp-gate-verb">연결하기</span>
+                <span class="lp-gate-desc">숙소 기준으로 갈 만한 곳만 남겨 이어요.</span>
+                <span class="lp-gates-verb lp-gate-verb">잇기</span>
               </div>
               <div class="lp-gate-row">
                 <span class="lp-gate-code">GATE 04</span>
                 <span class="lp-gate-name">TIMELINE<small>Flight Schedule</small></span>
-                <span class="lp-gate-desc">동선을 시간표로 정리합니다. 이동 시간도 함께 표시됩니다.</span>
-                <span class="lp-gates-verb lp-gate-verb">확인하기</span>
+                <span class="lp-gate-desc">동선이 시각표가 돼요. 이동 시간까지.</span>
+                <span class="lp-gates-verb lp-gate-verb">떠나기</span>
               </div>
             </div>
           </div>
@@ -203,15 +206,16 @@ export function renderLogin(): void {
           <div class="lp-section-inner">
             <div class="lp-split reverse reveal">
               <div class="lp-split-text">
-                <p class="lp-sec-eyebrow">STAY · 숙소</p>
-                <h2 class="lp-sec-title">숙소부터 정하고<br>동선을 짭니다</h2>
+                <p class="lp-sec-eyebrow">GATE 02 · IMMIGRATION COUNTER</p>
+                <h2 class="lp-sec-title">숙소를 정하면,<br>여행의 절반이 정해져요.</h2>
                 <p class="lp-sec-desc">
-                  숙소 위치에 따라 하루 동선이 달라집니다. 몽실이는
-                  <strong>지역 → 숙소 → 숙소 주변 장소</strong> 순서로 후보를 좁혀 갑니다.
+                  어디 묵느냐가 하루의 동선을 결정합니다. 그래서 몽실이는 장소부터
+                  늘어놓지 않아요. <strong>생활권 → 숙소 → 그 숙소에서 갈 만한 곳</strong>
+                  순서로 좁혀갑니다.
                 </p>
                 <p class="lp-honest">
-                  점수는 위치, 주변 시설, 평점을 바탕으로 <strong>AI가 분석한 값</strong>이며
-                  예약 사이트의 이용자 평점이 아닙니다. 화면에도 같은 문구로 표시합니다.
+                  점수는 위치 · 주변 시설 · 평점을 바탕으로 <strong>AI가 분석한 값</strong>이고,
+                  예약 사이트의 이용자 평점이 아니에요. 화면에도 그렇게 적습니다.
                 </p>
               </div>
               <div class="lp-split-demo">
@@ -237,11 +241,11 @@ export function renderLogin(): void {
           <div class="lp-section-inner">
             <div class="lp-split reveal">
               <div class="lp-split-text">
-                <p class="lp-sec-eyebrow">실시간 공유</p>
-                <h2 class="lp-sec-title">채팅에 붙인 링크가<br>보드에 카드로 추가됩니다</h2>
+                <p class="lp-sec-eyebrow">REAL-TIME</p>
+                <h2 class="lp-sec-title">단톡방에 던진 링크가,<br>보드 위 카드가 됩니다.</h2>
                 <p class="lp-sec-desc">
-                  링크를 붙이면 미리보기를 불러와 숙소, 맛집, 액티비티로 분류하고 보드에 추가합니다.
-                  누가 무엇을 추가했는지 멤버 모두에게 실시간으로 표시됩니다.
+                  채팅에 링크를 붙이면 미리보기를 불러와 숙소 · 맛집 · 액티비티로
+                  분류해 보드에 꽂아요. 누가 무엇을 올렸는지 모두에게 실시간으로 보입니다.
                 </p>
               </div>
               <div class="lp-split-demo">
@@ -266,11 +270,11 @@ export function renderLogin(): void {
           <div class="lp-section-inner">
             <div class="lp-split reverse reveal">
               <div class="lp-split-text">
-                <p class="lp-sec-eyebrow">IDEAS · 후보지</p>
-                <h2 class="lp-sec-title">여럿이 함께 채우는<br>후보지 보드</h2>
+                <p class="lp-sec-eyebrow">GATE 01 · DEPARTURE HALL</p>
+                <h2 class="lp-sec-title">친구들과<br>함께 채워가는 보드</h2>
                 <p class="lp-sec-desc">
-                  가고싶어, 먹고싶어, 하고싶어 세 가지로 나눠 카드를 모으고
-                  드래그해서 순서를 바꿀 수 있습니다.
+                  가고싶어 · 먹고싶어 · 하고싶어. 무드별로 카드를 쌓고 드래그로 옮겨요.
+                  아직 아무것도 안 정해진 상태가 가장 자유로운 순간이니까요.
                 </p>
               </div>
               <div class="lp-split-demo">
@@ -284,11 +288,12 @@ export function renderLogin(): void {
           <div class="lp-section-inner">
             <div class="lp-split reveal">
               <div class="lp-split-text">
-                <p class="lp-sec-eyebrow">ROUTE · TIMELINE · 동선과 일정</p>
-                <h2 class="lp-sec-title">이동 시간은 실측과 추정을<br>구분해 표시합니다</h2>
+                <p class="lp-sec-eyebrow">ROUTE & TIMELINE</p>
+                <h2 class="lp-sec-title">“18분”이라고 쓰여 있으면,<br>진짜 18분이에요.</h2>
                 <p class="lp-sec-desc">
-                  장소를 확정하면 지도 위 동선과 이동 시간이 시간표로 정리됩니다.
-                  실측 데이터가 있으면 실측값을, 없으면 <strong>“추정”으로 표시합니다.</strong>
+                  장소를 확정하면 지도 위 동선과 이동 시간이 시각표로 정리됩니다.
+                  실측 데이터가 있으면 실측을, 없으면 <strong>“추정”이라고 적어요.</strong>
+                  그래야 그 숫자를 믿고 일정을 짤 수 있으니까요.
                 </p>
               </div>
               <div class="lp-split-demo">
@@ -330,16 +335,16 @@ export function renderLogin(): void {
             <div class="lp-split reveal">
               <div class="lp-split-text">
                 <p class="lp-sec-eyebrow">COMPANION · 여행 중</p>
-                <h2 class="lp-sec-title">여행 중에는<br>다음 일정만 보여줍니다</h2>
+                <h2 class="lp-sec-title">떠난 뒤엔,<br>오늘 한 곳만.</h2>
                 <p class="lp-sec-desc">
-                  다음 목적지와 남은 시간을 한 화면에 보여줍니다.
-                  도착을 누르면 이후 일정이 자동으로 조정됩니다.
+                  여행 중에 계획 전체는 필요 없어요. 다음 갈 곳 하나와 남은 시간이면 충분합니다.
+                  도착을 누르면 남은 일정이 알아서 밀려요. 아무도 다시 계산하지 않아도 됩니다.
                 </p>
               </div>
               <div class="lp-split-demo">
                 <div class="lp-phone">
                   <div class="lp-phone-top"><span>DAY 2 · 뉴욕</span><span>14:20</span></div>
-                  <p class="lp-now-label">다음 목적지</p>
+                  <p class="lp-now-label">NOW — 다음 목적지</p>
                   <p class="lp-now-place">첼시 마켓</p>
                   <p class="lp-now-meta">도보 12분 · 14:32 도착 예정</p>
                   <div class="lp-now-actions">
@@ -358,17 +363,17 @@ export function renderLogin(): void {
           <div class="lp-section-inner">
             <div class="lp-split reverse reveal">
               <div class="lp-split-text">
-                <p class="lp-sec-eyebrow">EXPENSE · 경비 정산</p>
-                <h2 class="lp-sec-title">공동 경비 기록과<br>자동 정산</h2>
+                <p class="lp-sec-eyebrow">EXPENSE</p>
+                <h2 class="lp-sec-title">“내가 더 냈나?”로<br>끝나지 않게.</h2>
                 <p class="lp-sec-desc">
-                  예산을 정하고 현지에서 바로 지출을 기록하면, 여행이 끝난 뒤 누가 누구에게
-                  얼마를 보내면 되는지 최소 송금 기준으로 정리합니다.
-                  외화 지출은 지출일 환율로 환산하고, 적용한 환율도 함께 표시합니다.
+                  예산을 잡고, 현지에서 바로 기록하고, 마지막엔 누가 누구에게 얼마를 보내면
+                  되는지 한 줄로 정리해요. 달러로 낸 돈도 그날 환율로 환산해 두고,
+                  어떤 환율을 썼는지까지 같이 적습니다.
                 </p>
               </div>
               <div class="lp-split-demo">
                 <div class="lp-settle">
-                  <div class="lp-settle-head">정산 · 최소 송금</div>
+                  <div class="lp-settle-head">정산 — 최소 송금</div>
                   <div class="lp-settle-row"><span>태호</span><i>→</i><span>민수</span><b>₩41,200</b></div>
                   <div class="lp-settle-row"><span>지현</span><i>→</i><span>민수</span><b>₩23,000</b></div>
                   <div class="lp-settle-row"><span>현주</span><i>→</i><span>태호</span><b>₩8,500</b></div>
@@ -389,11 +394,11 @@ export function renderLogin(): void {
             <div class="lp-pass-perf"></div>
             <div class="lp-pass-body">
               <div class="lp-pass-fields">
-                <span class="lp-pass-field"><small>PASSENGER</small><b>나와 여행 멤버</b></span>
+                <span class="lp-pass-field"><small>PASSENGER</small><b>당신과 친구들</b></span>
                 <span class="lp-pass-field"><small>GATE</small><b>01 · IDEAS</b></span>
-                <span class="lp-pass-field"><small>BOARDING</small><b>바로 시작</b></span>
+                <span class="lp-pass-field"><small>BOARDING</small><b>지금</b></span>
               </div>
-              <h2 class="lp-pass-title">여행 보드를 만들고<br>멤버를 초대하세요.</h2>
+              <h2 class="lp-pass-title">첫 보드를 만들고<br>친구를 초대하세요.</h2>
               ${ctaBandBtnHtml()}
               <div class="lp-pass-barcode" aria-hidden="true"></div>
             </div>
@@ -449,7 +454,7 @@ export function renderLogin(): void {
 
   document.getElementById('dd-trips')?.addEventListener('click', () => navigate('trips'));
   document.getElementById('dd-settings')?.addEventListener('click', () => navigate('settings'));
-  document.getElementById('dd-help')?.addEventListener('click', () => { window.location.href = 'mailto:help@mongsil.app'; });
+  document.getElementById('dd-help')?.addEventListener('click', () => alert('문의하기 기능은 곧 구현 예정이에요!'));
   document.getElementById('dd-logout')?.addEventListener('click', signOut);
 
   setupScrollEffects();
