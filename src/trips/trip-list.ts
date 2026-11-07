@@ -299,7 +299,7 @@ function navHtml(): string {
 
   return `
     <nav class="tl-nav" id="tl-nav">
-      <div class="tl-nav-logo" id="tl-logo">몽실이</div>
+      <button type="button" class="tl-nav-logo" id="tl-logo" aria-label="몽실이 메인페이지로"><img src="/favicon.svg" alt="" width="26" height="26" />몽실이</button>
       <div class="tl-nav-profile">
         <button class="tl-nav-avatar-btn" id="tl-avatar">${avatarInner}</button>
         <div class="tl-dropdown" id="tl-dropdown">
@@ -340,7 +340,8 @@ export async function renderTripList(): Promise<HTMLElement> {
     </div>
   `;
 
-  page.querySelector('#tl-logo')!.addEventListener('click', () => navigate('trips'));
+  // 로고는 메인페이지(랜딩)로 — 로그인 상태면 랜딩이 "내 여행 보기" 버튼으로 다시 돌아오게 해 준다
+  page.querySelector('#tl-logo')!.addEventListener('click', () => navigate('login'));
 
   const avatarBtn = page.querySelector('#tl-avatar');
   const dropdown = page.querySelector('#tl-dropdown');
