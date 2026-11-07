@@ -24,12 +24,23 @@
 }
 
 .tl-nav-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 2px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font-family: inherit;
   font-size: 18px;
   font-weight: 700;
   letter-spacing: -0.03em;
   color: #0B2A5C;
   cursor: pointer;
 }
+.tl-nav-logo img { display: block; width: 26px; height: 26px; }
+.tl-nav-logo:hover { opacity: 0.8; }
+.tl-nav-logo:focus-visible { outline: 2px solid #2F86D6; outline-offset: 2px; }
 
 .tl-nav-profile {
   display: flex;
