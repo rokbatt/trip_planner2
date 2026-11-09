@@ -2266,3 +2266,204 @@ button.sl-cond-star:hover { color: #E0BC4A; }
   min-height: 14px;
 }
 .sl-import-link-status.error { color: #C0392B; }
+
+/* ============================================================
+   폰(≤768px) — 목록이 기본, 지도는 "지도 보기"로 전체 화면
+   ------------------------------------------------------------
+   PC의 지도+목록 2열은 그대로 두고, 이 블록은 뷰포트 768px 이하에만 적용된다.
+   · .sl-shell의 container-type을 끈다 — 컨테이너(레이아웃 격리)는 position:fixed 자손의
+     기준 상자가 돼서 전체 화면 지도가 셸 안에 갇힌다. 대신 아래에서 @container 세로 스택
+     규칙을 같은 내용으로 다시 적용하고, JS가 읽는 --sl-mobile도 1로 둔다.
+   · 지도 칸(.sl-step2-left)은 평소 숨기고, .sl-mmap-on일 때 화면 전체로 띄운다.
+     위: 목록으로 버튼 / 가운데: 지도 / 아래: 핀을 누르면 뜨는 상세 카드(지도를 덮지 않고
+     지도 높이를 줄여 자리를 만든다 → 줌 버튼과 겹치지 않음).
+   ============================================================ */
+.sl-mmap-open,
+.sl-mmap-bar,
+.sl-mmap-card { display: none; }
+
+@keyframes sl-flash-kf { 0% { box-shadow: 0 0 0 0 rgba(11,124,196,0.55); } 100% { box-shadow: 0 0 0 10px rgba(11,124,196,0); } }
+
+@media (max-width: 768px) {
+  .sl-shell { container-type: normal; padding: 12px 16px 96px; }
+  .sl-body { --sl-mobile: 1; }
+
+  /* @container slshell (max-width: 720px)와 같은 세로 스택 */
+  .sl-step1-layout, .sl-step2-layout { flex-direction: column; height: auto; max-width: 100%; flex: none; min-height: 0; overflow-y: visible; }
+  .sl-step1-layout > .sl-map-wrap, .sl-step1-layout > .sl-zone-panel,
+  .sl-step2-layout > .sl-step2-right { flex: none; width: 100%; }
+  .sl-zone-panel, .sl-step2-right { height: auto; max-height: none; overflow-y: visible; }
+  .sl-stepper-row { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .sl-step2-header-row { flex-direction: column; align-items: stretch; }
+  .sl-step3-layout { flex-direction: column; }
+  .sl-step3-left, .sl-step3-right { flex: none; width: 100%; }
+  .sl-step3-summary-body-wrap { flex-direction: column; }
+  .sl-step3-summary-photo { width: 100%; height: 180px; }
+  .sl-step3-summary-grid { grid-template-columns: 1fr 1fr; }
+  .sl-step3-summary-edit { grid-column: 1 / -1; justify-self: start; }
+  .sl-step3-infra-body { flex-direction: column; }
+  .sl-step3-map-wrap { flex: none; width: 100%; aspect-ratio: 16 / 10; height: auto; max-height: 320px; }
+  .sl-step3-eff-card { flex-direction: column; align-items: stretch; gap: 20px; }
+  .sl-step3-eff-score { border-right: none; border-bottom: 1px solid var(--sl-border); padding-right: 0; padding-bottom: 18px; }
+  .sl-step3-stat-grid { grid-template-columns: 1fr 1fr; }
+
+  .sl-title { font-size: 19px; line-height: 1.4; }
+
+  /* ── 지도 보기 버튼 ── */
+  .sl-mmap-open {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 48px;
+    margin: 4px 0 14px;
+    border: 1px solid rgba(130,150,170,0.24);
+    border-radius: 12px;
+    background: #FFFFFF;
+    color: #0B2A5C;
+    font: inherit;
+    font-size: 14.5px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .sl-mmap-open svg { width: 18px; height: 18px; color: #0B7CC4; }
+  .sl-mmap-open-count { padding: 1px 8px; border-radius: 999px; background: #EAF6FD; color: #0B7CC4; font-size: 12px; }
+
+  /* ── 평소엔 지도 칸을 숨긴다 ── */
+  .sl-step2 .sl-step2-layout > .sl-step2-left { display: none; }
+
+  /* ── 전체 화면 지도 ── */
+  .sl-step2.sl-mmap-on .sl-step2-layout > .sl-step2-left {
+    position: fixed;
+    inset: 0;
+    z-index: 330;
+    display: flex;
+    flex-direction: column;
+    width: auto;
+    /* JS가 PC용으로 남긴 인라인 높이를 무시하고 화면 높이로 고정(주소창이 접혀도 따라가게 dvh) */
+    height: 100vh !important;
+    height: 100dvh !important;
+    min-height: 0;
+    padding: env(safe-area-inset-top) 0 0;
+    background: #FFFFFF;
+  }
+  .sl-step2.sl-mmap-on .sl-mmap-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 56px;
+    padding: 0 12px;
+    border-bottom: 1px solid rgba(130,150,170,0.16);
+  }
+  .sl-mmap-close {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    flex: none;
+    min-height: 44px;
+    padding: 0 12px 0 6px;
+    border: none;
+    border-radius: 10px;
+    background: #F1F6FB;
+    color: #0B2A5C;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .sl-mmap-close svg { width: 18px; height: 18px; }
+  .sl-mmap-title { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; font-weight: 700; color: #0B2A5C; }
+  .sl-step2.sl-mmap-on .sl-step2-left .sl-map-wrap {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    aspect-ratio: auto;
+    border: none;
+    border-radius: 0;
+  }
+  .sl-step2.sl-mmap-on .sl-step2-left .sl-map { min-height: 0; }
+  .sl-step2.sl-mmap-on .sl-step2-left .sl-ai-reason { display: none; }
+  .sl-step2.sl-mmap-on .sl-map-legend { left: 10px; right: auto; bottom: 10px; max-width: calc(100% - 70px); flex-wrap: wrap; }
+
+  /* 핀 상세 카드 — 지도 아래에 붙는다 */
+  .sl-step2.sl-mmap-on .sl-mmap-card:not([hidden]) {
+    display: block;
+    flex: none;
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+    border-top: 1px solid rgba(130,150,170,0.18);
+    background: #FFFFFF;
+    box-shadow: 0 -8px 24px rgba(11,42,92,0.10);
+  }
+  .sl-mmap-card-main { position: relative; display: flex; gap: 12px; padding-right: 40px; }
+  .sl-mmap-card-photo { flex: none; width: 72px; height: 72px; border-radius: 10px; background-size: cover; background-position: center; background-color: #EAF6FD; }
+  .sl-mmap-card-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .sl-mmap-card-name { font-size: 16px; font-weight: 700; color: #0B2A5C; line-height: 1.35; word-break: break-word; }
+  .sl-mmap-card-meta { font-size: 13px; color: #475569; }
+  .sl-mmap-card-addr { font-size: 12.5px; color: #94A3B8; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .sl-mmap-card-x { position: absolute; top: -6px; right: -8px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border: none; background: none; color: #64748B; cursor: pointer; }
+  .sl-mmap-card-x svg { width: 18px; height: 18px; }
+  .sl-mmap-card-acts { display: flex; gap: 8px; margin-top: 12px; }
+  .sl-mmap-card-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 46px;
+    border: 1px solid rgba(130,150,170,0.24);
+    border-radius: 12px;
+    background: #FFFFFF;
+    color: #0B2A5C;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .sl-mmap-card-btn.primary { background: #0B2A5C; border-color: #0B2A5C; color: #FFFFFF; }
+
+  body.sl-mmap-lock .ws-drawer-fab { display: none; }
+
+  /* ── 순서: 후보 목록(비교·확정)이 본문, 숙소 찾기 도구는 그 아래 ── */
+  .sl-step2-right > .sl-candidate-pool { order: 1; }
+  .sl-step2-right > .sl-compare-panel { order: 2; }
+  .sl-step2-right > .sl-step2-cta { order: 3; }
+  .sl-step2-right > .sl-step2-cta-hint { order: 4; margin-bottom: 8px; }
+  .sl-step2-right > .sl-step2-divider { order: 5; }
+  .sl-step2-right > .sl-direct-select-section { order: 6; }
+  .sl-step2-right > .sl-hotel-sites-section { order: 8; }
+  .sl-step2-right > .sl-step2-divider ~ .sl-step2-divider { order: 7; }
+
+  /* 후보 머리말: 제목 한 줄, 정렬·비교하기는 아래 줄에 폭을 나눠서 */
+  .sl-pool-head { flex-direction: column; align-items: stretch; gap: 10px; }
+  .sl-pool-actions { display: flex; gap: 8px; }
+  .sl-pool-actions .sl-pool-sort,
+  .sl-pool-actions .sl-pool-compare-btn { flex: 1 1 0; min-height: 44px; font-size: 14px; }
+
+  /* 후보 카드: 숙박비 입력은 카드 폭만큼 넓게, 1박 평균 안내는 그 아래 줄 */
+  .sl-cand-price-row { flex-wrap: wrap; }
+  .sl-cand-price-input { flex: 1 1 140px; min-width: 0; min-height: 44px; font-size: 16px; }
+  .sl-cand-currency { min-height: 44px; font-size: 14px; }
+  .sl-cand-total { flex-basis: 100%; }
+  .sl-cand-action { width: 40px; height: 40px; }
+  .sl-basecamp-name { font-size: 15px; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; word-break: break-word; }
+  .sl-cand-check { padding: 6px; }
+  .sl-cand-check input { width: 20px; height: 20px; }
+
+  /* ── 후보 카드·입력 — 손가락 기준 ── */
+  .sl-basecamp-card.sl-flash { animation: sl-flash-kf 900ms ease-out 2; }
+  .sl-import-link-input,
+  .sl-direct-search-input,
+  .sl-budget-custom-input { font-size: 16px; min-height: 44px; } /* 16px 미만이면 iOS가 확대한다 */
+  .sl-import-link-btn { min-height: 44px; padding: 0 18px; }
+  .sl-step2-cta { min-height: 52px; }
+}
+
+@media (max-width: 480px) {
+  .sl-hotel-sites-grid { grid-template-columns: repeat(2, 1fr); }
+  .sl-step3-summary-grid { grid-template-columns: 1fr; }
+  .sl-step3-summary-edit { grid-column: auto; }
+  .sl-step3-eff-ratings { grid-template-columns: 1fr; }
+  .sl-step3-stat-grid { grid-template-columns: 1fr; }
+}

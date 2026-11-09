@@ -1291,7 +1291,48 @@ MOBILE(MORE)·TIMELINE(장소 상세)이 쓰는 **트립 공유 목록 `trip_che
 - PC "이 게이트만 크게 보기"는 폰에서 켜지지 않는다(탭과 겹침, `applyGateFocusState`).
 - **검증:** 360/390/430/768에서 가로 넘침 0, 버튼 36px 이상(주요 버튼 44px+), 탭·스와이프·옮기기
   (DB mood)·순서(DB sort_order)·삭제/실행취소·그룹·상세를 실제 앱 코드로 확인. PC 끌어 놓기도 그대로 동작.
-- 남은 게이트(STAY·ROUTE·TIMELINE·EXPENSE 등)는 같은 원칙으로 이어서 한다.
+
+### STAY (`shortlist/shortlist.ts`, `shortlist.css` 맨 아래 모바일 블록)
+- **기본 = 목록, 지도는 "지도 보기"로 전체 화면.** 지도 칸(`.sl-step2-left`)은 폰에서 숨기고,
+  `.sl-step2.sl-mmap-on`이면 `position:fixed`로 화면을 덮는다(위: "목록으로" / 가운데: 지도 / 아래: 핀 카드).
+  **같은 mapInstance를 키우기만** 한다 — 새로 만들지 않아 API 호출이 늘지 않는다.
+- ⚠️ `.sl-shell`의 `container-type: inline-size`는 **fixed 자손의 기준 상자가 된다**(레이아웃 격리) →
+  전체 화면 지도가 셸 안에 갇혔다. 폰에선 `container-type: normal`로 끄고, 대신 `@container slshell`의
+  세로 스택 규칙을 같은 내용으로 미디어쿼리에 다시 적고 `--sl-mobile: 1`(JS `isShortlistStacked`가 읽음)도 둔다.
+  높이는 `inset:0`만으론 안 잡혀(인라인 높이 380px가 남음) `height: 100dvh !important`로 고정.
+- 핀 탭 → 지도 위 말풍선 대신 아래 상세 카드(`showStayMobileCard`, 저장된 값만). 숙소 후보면
+  "목록에서 보기"(지도를 닫고 그 후보 카드로 스크롤+반짝). 손가락 탭은 mouseover도 같이 일으키므로
+  `showPlaceInfoWindow`가 전체 화면 지도에선 **고정(탭)일 때만** 반응한다. 카드는 지도 위를 덮지 않고
+  지도 높이를 줄여 자리를 만든다(줌 버튼과 안 겹침).
+- 순서: 후보 목록(비교·확정)이 본문 → 직접 추가 → 숙소 검색 사이트(`order`). 후보 머리말은 제목/
+  [정렬|비교하기] 두 줄, 숙박비 입력은 카드 폭만큼, 숙소명 2줄 줄바꿈.
+
+### ROUTE (`route/route.ts`, `route.css` 맨 아래 모바일 블록)
+- **일정 보기 ↔ 지도 보기** 두 버튼(`.rt-mmode`, 위에 고정). `.rt-shell[data-rtmode]` 하나로 한쪽 칸만 보인다.
+  전환은 `resizeMap()`만 — 경로 계산·Route Matrix 호출 로직은 손대지 않았다.
+- 장소 추가는 지도 보기의 장소 목록에서 한다 — 일정 보기 위 "장소 추가 · 지도에서 고르기"가 지도 보기로
+  넘기며 목록을 펼친다(지도 보기로 그냥 올 땐 목록이 접혀 지도가 보인다).
+- 날짜 탭은 한 줄 가로 스크롤. 상단 지도 검색창은 지도 보기에서만.
+- **순서 바꾸기 = 길게 누르기**(`bindTouchReorder`, Companion의 `mobile/reorder.ts` 재사용). HTML5 drag는
+  터치에서 안 되고, 안드로이드 크롬은 `draggable` 요소를 길게 누르면 자체 끌기를 시작해서 폰에선
+  `draggable=false`로 바꾼다. 결과는 PC 드롭과 같은 규칙으로 `stopIds`에 반영 → `refreshAll`(저장 동일).
+  시각·메모 입력창 위에서는 끌기가 시작되지 않는다(이름 부분을 누른다 — 목록 위 안내 한 줄).
+  끌기 줄·떠오른 카드 스타일은 `route.css`에 따로 있다(`mobile.css`는 Companion에서만 로드됨).
+
+### TIMELINE (`timeline/timeline.ts`, `timeline.css` 맨 아래 모바일 블록)
+- 맨 위 **오늘의 일정 바**(`mobileNowHtml`): ‹ DAY · 날짜 · 도시 › / 오늘이면 지난 곳 막대·지금·다음 /
+  [다음 장소 길찾기 | 문서 | Assistant]. 진행은 실제 도착 기록이 아니라 **일정 시각 기준**이라 그렇게
+  적는다(3-1, 실제 기록은 Companion). Assistant는 `mongsil:openAssistant` 이벤트 → 워크스페이스가
+  Assistant 패널을 연다(`openAssistantHandlerRef`, 중복 등록 방지).
+- 지도는 폰에서 **기본 접힘**(손잡이 토글은 그대로). 카드를 눌러도 지도를 열지 않는다.
+- **장소 상세 = 바텀시트.** `#tl-pd`는 PC에선 지도 칸 안(지도를 덮음)인데, 지도 칸이 접혀 있으면 같이
+  안 보이므로 폰에선 JS가 셸 바로 아래로 옮겨 붙이고(`placeDetailHost`) CSS가 아래 시트로 띄운다.
+  바깥(스크림)을 누르면 닫힌다. 내용·탭은 PC와 같다.
+- 카드: 시각 칸이 잘리던 것(56px에 패딩) 수정, 사진은 68px 썸네일로 되살림, 도구 버튼(지도·Google 지도·빼기)은
+  카드 아래 줄로 내려 이름을 좁히지 않는다. 아래 여백은 채팅 버튼 + `env(safe-area-inset-bottom)`.
+
+- 검증(2026-11): 360/390/430/768 가로 넘침 0(일부러 잘라 둔 말줄임 제외), PC 1280px 스크린샷이
+  IDEAS·STAY·ROUTE·TIMELINE 모두 main과 바이트 단위로 같음. 남은 게이트(EXPENSE·DOCUMENTS 등)는 같은 원칙으로.
 
 ## 6. 파일 구조
 

@@ -1211,3 +1211,140 @@ a.rt-stopinfo-leg:hover .rt-stopinfo-leg-gmaps { color: var(--rt-blue); }
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ============================================================
+   폰(≤768px) — 일정 보기 ↔ 지도 보기, 날짜는 가로로 밀어서
+   ------------------------------------------------------------
+   PC 레이아웃(지도+일정 패널 나란히)은 그대로 두고 이 블록만 폰에 적용된다.
+   .rt-shell[data-rtmode]가 plan이면 지도 칸을, map이면 일정 칸을 숨긴다.
+   ============================================================ */
+.rt-mmode,
+.rt-madd { display: none; }
+
+@media (max-width: 768px) {
+  .rt-shell { padding: 12px 16px 96px; } /* 아래 여백: 채팅 버튼에 마지막 카드가 가리지 않게 */
+
+  /* ── 날짜 탭: 한 줄 가로 스크롤, 선택된 날은 밑줄+색으로 ── */
+  .rt-toolbar { flex-direction: column; align-items: stretch; gap: 10px; margin-bottom: 10px; }
+  .rt-daytabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin: 0 -16px;
+    padding: 0 16px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .rt-daytabs::-webkit-scrollbar { display: none; }
+  .rt-daytab { flex: none; min-height: 48px; justify-content: flex-end; padding: 4px 6px 9px; }
+  .rt-daytab-line { flex: none; }
+  .rt-daytab-add { flex: none; min-height: 40px; align-self: center; }
+
+  /* ── 도구 줄: 타임라인으로 · 검색(지도 보기에서만) · 실행취소 · 옵션 ── */
+  .rt-toolbar-right { width: 100%; flex-wrap: wrap; gap: 8px; }
+  .rt-to-timeline-top,
+  .rt-optionsbtn,
+  .rt-iconbtn { min-height: 44px; }
+  .rt-iconbtn { min-width: 44px; }
+  .rt-searchbox { flex: 1 1 100%; order: 5; min-height: 44px; }
+  .rt-searchbox input { font-size: 16px; }
+  .rt-shell:not([data-rtmode="map"]) .rt-searchbox { display: none; }
+
+  /* ── 보기 전환 ── */
+  .rt-mmode {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    margin: 0 0 12px;
+    padding: 4px;
+    border-radius: 14px;
+    background: rgba(234,242,250,0.96);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .rt-mmode-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 44px;
+    border: none;
+    border-radius: 11px;
+    background: transparent;
+    color: var(--rt-ink-2);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .rt-mmode-btn svg { width: 17px; height: 17px; }
+  .rt-mmode-btn.active { background: #FFFFFF; color: var(--rt-navy); box-shadow: 0 1px 3px rgba(11,42,92,0.12); }
+
+  .rt-shell:not([data-rtmode="map"]) .rt-madd {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    min-height: 46px;
+    margin-bottom: 12px;
+    border: 1px dashed rgba(11,124,196,0.4);
+    border-radius: 12px;
+    background: #FFFFFF;
+    color: var(--rt-blue);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .rt-madd svg { width: 16px; height: 16px; }
+
+  /* 일정 보기: 지도 칸 숨김 · 지도 보기: 일정 칸 숨김 */
+  .rt-shell:not([data-rtmode="map"]) .rt-map-col { display: none; }
+  .rt-shell[data-rtmode="map"] .rt-panel-col { display: none; }
+  .rt-shell[data-rtmode="map"] .rt-map-wrap { height: max(380px, calc(100dvh - 330px)); border-radius: 16px; }
+  .rt-float-search { width: min(260px, calc(100% - 24px)); max-height: calc(100% - 96px); }
+  .rt-float-search-input input { font-size: 16px; }
+
+  /* ── 일정 카드: 터치 영역 · 길게 눌러 순서 바꾸기 ── */
+  .rt-panel-inner { border-radius: 16px; }
+  .rt-panel-stop { min-height: 56px; padding: 10px 6px 12px 8px; cursor: default; -webkit-touch-callout: none; }
+  .rt-panel-name { font-size: 15px; white-space: normal; word-break: break-word; }
+  .rt-panel-time { min-height: 40px; font-size: 16px; }
+  .rt-panel-memo { min-height: 36px; font-size: 16px; }
+  .rt-panel-remove { width: 40px; height: 40px; opacity: 1; font-size: 14px; } /* 호버가 없으니 늘 보인다 */
+  .rt-panel-list { position: relative; }
+  .rt-panel-list.is-reordering { -webkit-user-select: none; user-select: none; }
+  .rt-panel-list.is-reordering .rt-panel-stop:not(.is-lifted) { opacity: 0.7; }
+  .rt-panel-stop.is-lifted {
+    z-index: 20;
+    background: #FFFFFF;
+    transition: none;
+    will-change: transform;
+    box-shadow: 0 10px 24px rgba(11,42,92,0.22);
+  }
+  .rt-panel-list .mb-drop-line {
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    top: 0;
+    height: 3px;
+    margin-top: -1px;
+    border-radius: 99px;
+    background: var(--rt-blue);
+    pointer-events: none;
+    z-index: 25;
+  }
+}
+@media (max-width: 768px) {
+  /* 끌어 놓기 대신 길게 누르기 — 처음 보는 사람도 알 수 있게 목록 위에 한 줄 */
+  .rt-panel-list:has(.rt-panel-stop + * + .rt-panel-stop)::before {
+    content: '장소 이름을 길게 눌러 위아래로 끌면 순서가 바뀌어요';
+    display: block;
+    margin: 0 4px 6px;
+    font-size: 12px;
+    color: var(--rt-ink-3);
+  }
+}

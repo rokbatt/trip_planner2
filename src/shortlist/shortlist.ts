@@ -60,6 +60,9 @@ const IC_SWAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const IC_LINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
 const IC_ROUTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>';
 const IC_CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>';
+const IC_MAPPIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5v-13L15 6.5 9 4z"/><path d="M9 4v13M15 6.5v13"/></svg>';
+const IC_BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
+const IC_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
 const IC_PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-7.58 7-12A7 7 0 0 0 5 10c0 4.42 7 12 7 12z"/><circle cx="12" cy="10" r="2.4"/></svg>';
 const IC_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
 const IC_RULER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.4 2.4 0 0 1 0-3.4l2.6-2.6a2.4 2.4 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2M11.5 9.5l2-2M8.5 6.5l2-2M17.5 15.5l2-2"/></svg>';
@@ -339,6 +342,7 @@ let distancePolyline: any = null;
 let distanceInfoWindow: any = null;
 
 export function teardownShortlist(): void {
+  document.body.classList.remove('sl-mmap-lock');
   if (shortlistRealtimeChannel) {
     supabase.removeChannel(shortlistRealtimeChannel);
     shortlistRealtimeChannel = null;
@@ -1791,6 +1795,80 @@ function allStayCandidates(): Place[] {
  * "권역부터 골라야 후보를 볼 수 있는" 구조가 오히려 불편했다. 그래서 지도는 (권역 표시는
  * 참고용으로 남기되) 이 여행지의 모든 장소를 그대로 다 보여주고, 바로 옆에서 담아둔 숙소
  * 후보 전체를 비교·소거해 하나를 고르는 화면으로 합쳤다. */
+/* ══════════════════ 폰(≤768px) — 목록이 기본, 지도는 전체 화면 ══════════════════
+ * PC는 지도(왼쪽)와 후보 목록(오른쪽)을 나란히 둔다. 폰 폭에서 그 둘을 함께 두면 둘 다 좁아져서
+ * 기본 화면은 목록으로 두고, "지도 보기"를 누르면 같은 지도(같은 mapInstance)를 화면 전체로 띄운다.
+ * 핀을 누르면 말풍선 대신 아래 상세 카드가 올라오고, 거기서 목록으로 돌아갈 수 있다.
+ * 지도를 새로 만들지 않고 컨테이너만 키우므로 추가 API 호출이 없다(fixMapVisibilityOnResize가 크기 변화를 처리).
+ */
+const STAY_MOBILE_MQ = '(max-width: 768px)';
+
+function isStayMobile(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia(STAY_MOBILE_MQ).matches;
+}
+
+function stayMobileMapOpen(): boolean {
+  return isStayMobile() && !!slContainer?.querySelector('.sl-step2.sl-mmap-on');
+}
+
+function setStayMobileMap(body: HTMLElement, open: boolean): void {
+  const step = body.querySelector('.sl-step2') as HTMLElement | null;
+  if (!step) return;
+  step.classList.toggle('sl-mmap-on', open);
+  document.body.classList.toggle('sl-mmap-lock', open);
+  if (!open) hideStayMobileCard();
+  placeInfoWindowPinned = false;
+  placeInfoWindow?.close();
+  const g = (window as any).google;
+  // 숨어 있던 컨테이너가 커졌다 — 타일이 잘려 보이지 않게 크기 갱신을 한 번 알려 준다
+  if (open && g?.maps && mapInstance) requestAnimationFrame(() => g.maps.event.trigger(mapInstance, 'resize'));
+}
+
+function hideStayMobileCard(): void {
+  const card = slContainer?.querySelector('#sl-mmap-card') as HTMLElement | null;
+  if (card) { card.hidden = true; card.innerHTML = ''; }
+  slContainer?.querySelector('.sl-step2-left')?.classList.remove('has-card');
+}
+
+/** 핀을 누르면 아래에 뜨는 상세 카드 — 저장돼 있는 값만(지어내지 않는다, 원칙 3-1) */
+function showStayMobileCard(place: Place): void {
+  const card = slContainer?.querySelector('#sl-mmap-card') as HTMLElement | null;
+  if (!card) return;
+  const isCandidate = place.mood === '숙소';
+  const moodLabel = MOOD_LABEL[place.mood ?? ''] || '';
+  const mapsUrl = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(place.name) + (place.google_place_id ? '&query_place_id=' + place.google_place_id : '');
+  card.innerHTML = [
+    '<div class="sl-mmap-card-main">',
+    place.photo_url ? '<div class="sl-mmap-card-photo" style="background-image:url(\'' + escapeHtml(place.photo_url) + '\')"></div>' : '',
+    '  <div class="sl-mmap-card-info">',
+    '    <div class="sl-mmap-card-name">' + escapeHtml(place.name) + '</div>',
+    '    <div class="sl-mmap-card-meta">' + [moodLabel, place.category, typeof place.google_rating === 'number' ? '★ ' + place.google_rating.toFixed(1) : ''].filter(Boolean).map((t) => escapeHtml(String(t))).join(' · ') + '</div>',
+    place.address ? '    <div class="sl-mmap-card-addr">' + escapeHtml(place.address) + '</div>' : '',
+    '  </div>',
+    '  <button type="button" class="sl-mmap-card-x" id="sl-mmap-card-x" aria-label="닫기">' + IC_CLOSE + '</button>',
+    '</div>',
+    '<div class="sl-mmap-card-acts">',
+    isCandidate ? '  <button type="button" class="sl-mmap-card-btn primary" id="sl-mmap-card-list">목록에서 보기</button>' : '',
+    '  <a class="sl-mmap-card-btn" href="' + mapsUrl + '" target="_blank" rel="noopener noreferrer">Google 지도</a>',
+    '</div>',
+  ].join('');
+  card.hidden = false;
+  slContainer?.querySelector('.sl-step2-left')?.classList.add('has-card');
+  card.querySelector('#sl-mmap-card-x')?.addEventListener('click', hideStayMobileCard);
+  card.querySelector('#sl-mmap-card-list')?.addEventListener('click', () => {
+    const body = slContainer?.querySelector('#sl-body') as HTMLElement | null;
+    if (!body) return;
+    setStayMobileMap(body, false);
+    const el = body.querySelector('.sl-basecamp-card[data-place-id="' + place.id + '"]') as HTMLElement | null;
+    if (el) {
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      el.classList.remove('sl-flash');
+      void el.offsetWidth;
+      el.classList.add('sl-flash');
+    }
+  });
+}
+
 async function renderStep1(body: HTMLElement): Promise<void> {
   const candidates = allStayCandidates();
   const destination = getTripDestination();
@@ -1827,9 +1905,16 @@ async function renderStep1(body: HTMLElement): Promise<void> {
     '    </div>',
     '  </div>',
 
+    // 폰 전용 — 지도를 목록 옆에 좁게 두지 않고, 이 버튼으로 전체 화면 지도를 연다(PC에선 CSS로 숨김)
+    '  <button type="button" class="sl-mmap-open" id="sl-mmap-open">' + IC_MAPPIN + '<span>지도 보기</span><span class="sl-mmap-open-count">' + allPlaces.filter((p) => p.lat != null && p.lng != null).length + '곳</span></button>',
+
     '  <div class="sl-step2-layout">',
 
     '    <div class="sl-step2-left">',
+    '      <div class="sl-mmap-bar">',
+    '        <button type="button" class="sl-mmap-close" id="sl-mmap-close">' + IC_BACK + '<span>목록으로</span></button>',
+    '        <span class="sl-mmap-title">' + escapeHtml(destination) + ' · 숙소 후보 지도</span>',
+    '      </div>',
     '      <div class="sl-map-wrap">',
     '        <div id="sl-map" class="sl-map"><div class="sl-map-loading">지도를 불러오는 중...</div></div>',
     '        <div class="sl-map-legend">',
@@ -1844,6 +1929,7 @@ async function renderStep1(body: HTMLElement): Promise<void> {
       : zoneDataSource === 'places_only'
       ? '      <div class="sl-ai-reason sl-ai-reason-compact"><span class="sl-ai-reason-icon">' + IC_SPARK + '</span><span class="sl-ai-reason-text">이 여행지는 아직 조사된 지역 데이터가 없어, 담아둔 장소들의 위치를 기준으로 임시 권역 하나만 참고용으로 표시하고 있어요.</span></div>'
       : '',
+    '      <div class="sl-mmap-card" id="sl-mmap-card" hidden></div>',
     '    </div>',
 
     '    <div class="sl-step2-right">',
@@ -1898,6 +1984,8 @@ async function renderStep1(body: HTMLElement): Promise<void> {
   ].join('\n');
 
   body.querySelector('#sl-step2-date-edit')?.addEventListener('click', openStayDateEditor);
+  body.querySelector('#sl-mmap-open')?.addEventListener('click', () => setStayMobileMap(body, true));
+  body.querySelector('#sl-mmap-close')?.addEventListener('click', () => setStayMobileMap(body, false));
 
   body.querySelector('#sl-budget-select')?.addEventListener('change', (e) => {
     stayFilters.budget = (e.target as HTMLSelectElement).value;
@@ -2529,6 +2617,12 @@ const INFO_WINDOW_LINK_FONT_SIZE = +(11.5 * INFO_WINDOW_SCALE).toFixed(1);
  * 누르거나 지도 빈 곳/다른 마커를 클릭해야 풀림.
  */
 function showPlaceInfoWindow(g: any, map: any, marker: any, place: Place, pin = false): void {
+  // 폰 전체 화면 지도에선 지도 위 말풍선 대신 아래 상세 카드 — 손가락 탭이 hover(mouseover)도
+  // 같이 일으키므로 고정(탭)일 때만 반응한다
+  if (map === mapInstance && stayMobileMapOpen()) {
+    if (pin) showStayMobileCard(place);
+    return;
+  }
   if (!placeInfoWindow) {
     // disableAutoPan: 정보창을 열 때 지도가 저절로 움직이던 것 방지(hover만 해도 지도가
     // 흔들리던 문제) — 대신 내용 자체를 작은 화면에서도 안 잘리게 만드는 쪽으로 대응
@@ -2822,6 +2916,7 @@ async function initMap(body: HTMLElement): Promise<void> {
   mapInstance.addListener('click', () => {
     placeInfoWindowPinned = false;
     placeInfoWindow?.close();
+    hideStayMobileCard();
     distanceFirstPoint = null;
     clearDistanceLine();
     highlightZone(null);

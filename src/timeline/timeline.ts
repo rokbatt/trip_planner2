@@ -85,6 +85,8 @@ const IC_WALK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const IC_TRANSIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="14" rx="2"/><path d="M4 11h16M8 21l2-4h4l2 4M8 7h.01M16 7h.01"/></svg>';
 const IC_TAXI = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M5 17a2 2 0 1 0 4 0M15 17a2 2 0 1 0 4 0M5 17l1.5-5h11L19 17M8 12V8h8v4"/></svg>';
 const IC_ARROW_BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>';
+const IC_DOCS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>';
+const IC_SPARKLE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/></svg>';
 const IC_CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
 const IC_ALERT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>';
 const IC_ROUTEPATH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H14a3.5 3.5 0 0 0 0-7h-4a3.5 3.5 0 0 1 0-7h5.5"/></svg>';
@@ -211,6 +213,7 @@ let mapOpen = true;
 /* ══════════════ 정리 ══════════════ */
 
 export function teardownTimeline(): void {
+  document.body.classList.remove('tl-sheet-open');
   dayAttachments = new Map();
   if (remoteReloadTimer) { clearTimeout(remoteReloadTimer); remoteReloadTimer = null; }
   remoteReloadSeq += 1; // 화면을 떠난 뒤 늦게 도착한 응답은 버린다
@@ -460,6 +463,9 @@ export async function renderTimelineContent(host: HTMLElement, tripId: string): 
   // 누르지 않아도 "지금 봐야 할 하루"가 먼저 보이게.
   const today = todayDayIndex();
   activeDayIndex = today >= 0 ? today : firstFilledDay();
+
+  // 폰에선 일정이 먼저다 — 지도는 접어 두고 손잡이·"지도에서 보기"로 연다(토글 기능은 그대로)
+  if (isTlMobile()) mapOpen = false;
 
   host.innerHTML = '<div class="tl-dest-bar-wrap" id="tl-dest-bar-wrap"></div>' + shellHtml();
   renderDestBar(host, tripId);
@@ -770,6 +776,7 @@ function dayScheduleHtml(): string {
 
   return [
     '<div class="tl-day">',
+    mobileNowHtml(day, s),
     dayHeadHtml(day, s),
     '  <ol class="tl-list" id="tl-list">' + rows.join('') + '</ol>',
     // 카드 칸에 맞춰 정렬되도록 같은 3열 격자에 얹는다(시각·스파인 칸은 비움)
@@ -2005,6 +2012,124 @@ const PD_TABS: Array<{ key: PdTab; label: string }> = [
  * 위계는 카드 개수가 아니라 **배경 차이**로 만든다 — 가장 중요한 한눈에 보기·Don't Miss는
  * 배경 위에 그대로 얹고, 보조 정보(Before You Go 체크리스트 등)만 카드로 감싼다.
  */
+/* ══════════════ 폰(≤768px) ══════════════
+ * 여행 중에 가장 많이 여는 화면이라 폰에선 "지금 무엇을, 다음은 어디로"를 맨 위에 둔다.
+ *   · 상단 바: ‹ 날짜 · 도시 › / 오늘이면 예정 시각 기준 진행(지난 곳·지금·다음) / 길찾기·문서·Assistant
+ *   · 지도는 기본으로 접혀 있다(손잡이로 언제든 연다)
+ *   · 장소 상세는 지도 칸이 아니라 아래에서 올라오는 시트(같은 내용·같은 탭)
+ * 진행 상황은 실제 도착 기록이 아니라 **일정 시각 기준**이라 그렇게 적는다(원칙 3-1).
+ * 실제 도착 기록은 Companion(go 게이트)이 맡는다.
+ */
+const TL_MOBILE_MQ = '(max-width: 768px)';
+
+function isTlMobile(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia(TL_MOBILE_MQ).matches;
+}
+
+/** 상세 패널을 둘 자리 — PC는 지도 칸 안(지도를 덮음), 폰은 셸 바로 아래(화면 아래 시트).
+ *  지도 칸이 접혀(display:none) 있어도 시트가 보이려면 그 바깥에 있어야 한다. */
+function placeDetailHost(el: HTMLElement): void {
+  const shell = container?.querySelector('.tl-shell') as HTMLElement | null;
+  const mapcol = container?.querySelector('#tl-mapcol') as HTMLElement | null;
+  if (!shell || !mapcol) return;
+  let scrim = container?.querySelector('#tl-pd-scrim') as HTMLElement | null;
+  if (!scrim) {
+    scrim = document.createElement('div');
+    scrim.id = 'tl-pd-scrim';
+    scrim.className = 'tl-pd-scrim';
+    scrim.hidden = true;
+    scrim.addEventListener('click', () => {
+      detailKey = null;
+      render();
+    });
+    shell.appendChild(scrim);
+  }
+  if (isTlMobile()) {
+    if (el.parentElement !== shell) shell.appendChild(el);
+  } else if (el.parentElement !== mapcol) {
+    mapcol.appendChild(el);
+  }
+}
+
+function mobileNowHtml(day: TlDay, s: DaySchedule): string {
+  const isToday = todayDayIndex() === activeDayIndex;
+  const prev = activeDayIndex > 0;
+  const next = activeDayIndex < days.length - 1;
+  const city = day.destName ?? '';
+  const n = day.stops.length;
+
+  let progress = '';
+  let target: TlStop | null = day.stops[0] ?? null;
+  if (isToday && n) {
+    const now = nowMinutes();
+    const passed = day.stops.filter((_, i) => s.departMin[i] <= now).length;
+    const curIdx = day.stops.findIndex((_, i) => s.arriveMin[i] <= now && now < s.departMin[i]);
+    const nextIdx = day.stops.findIndex((_, i) => s.arriveMin[i] > now);
+    target = nextIdx >= 0 ? day.stops[nextIdx] : curIdx >= 0 ? day.stops[curIdx] : null;
+    const pct = Math.round((passed / n) * 100);
+    progress = [
+      '<div class="tl-mnow-progress">',
+      '  <div class="tl-mnow-bar" role="progressbar" aria-valuemin="0" aria-valuemax="' + n + '" aria-valuenow="' + passed + '"><i style="width:' + pct + '%"></i></div>',
+      '  <div class="tl-mnow-count">' + passed + ' / ' + n + '곳 지남</div>',
+      '</div>',
+      '<div class="tl-mnow-lines">',
+      curIdx >= 0 ? '<div class="tl-mnow-line"><span class="tl-mnow-k">지금</span><b>' + escapeHtml(day.stops[curIdx].name) + '</b><span class="tl-mnow-t">~' + minToHHMM(s.departMin[curIdx]) + '</span></div>' : '',
+      nextIdx >= 0 ? '<div class="tl-mnow-line"><span class="tl-mnow-k is-next">다음</span><b>' + escapeHtml(day.stops[nextIdx].name) + '</b><span class="tl-mnow-t">' + minToHHMM(s.arriveMin[nextIdx]) + '</span></div>' : '<div class="tl-mnow-line"><span class="tl-mnow-k">오늘</span><b>남은 일정이 없어요</b></div>',
+      '</div>',
+      '<div class="tl-mnow-note">일정 시각 기준이에요 · 실제 도착 기록은 Companion에서</div>',
+    ].join('');
+  } else if (n) {
+    progress = '<div class="tl-mnow-lines"><div class="tl-mnow-line"><span class="tl-mnow-k">일정</span><b>' + n + '곳</b><span class="tl-mnow-t">' + minToHHMM(s.spanStartMin) + ' – ' + minToHHMM(s.spanEndMin) + '</span></div></div>';
+  }
+
+  const dirUrl = target && target.lat != null && target.lng != null
+    ? 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(target.lat + ',' + target.lng) +
+      (target.place?.google_place_id ? '&destination_place_id=' + encodeURIComponent(target.place.google_place_id) : '')
+    : null;
+
+  return [
+    '<section class="tl-mnow" aria-label="오늘의 일정">',
+    '  <div class="tl-mnow-nav">',
+    '    <button type="button" class="tl-mnow-arrow" data-mday="-1" aria-label="이전 날"' + (prev ? '' : ' disabled') + '>' + IC_CHEVRON_DOWN + '</button>',
+    '    <div class="tl-mnow-title">',
+    '      <div class="tl-mnow-day"><b>' + escapeHtml(day.label) + '</b>' + (isToday ? '<span class="tl-mnow-today">오늘</span>' : '') + '</div>',
+    '      <div class="tl-mnow-sub">' + escapeHtml(dateLabel(day.date)) + (city ? ' · ' + escapeHtml(city) : '') + '</div>',
+    '    </div>',
+    '    <button type="button" class="tl-mnow-arrow is-next" data-mday="1" aria-label="다음 날"' + (next ? '' : ' disabled') + '>' + IC_CHEVRON_DOWN + '</button>',
+    '  </div>',
+    progress,
+    '  <div class="tl-mnow-acts">',
+    dirUrl
+      ? '    <a class="tl-mnow-act is-primary" href="' + dirUrl + '" target="_blank" rel="noopener noreferrer">' + IC_PIN_SMALL + '<span>' + (isToday ? '다음 장소 길찾기' : '첫 장소 길찾기') + '</span></a>'
+      : '',
+    '    <button type="button" class="tl-mnow-act" data-mact="docs">' + IC_DOCS + '<span>문서</span></button>',
+    '    <button type="button" class="tl-mnow-act" data-mact="ai">' + IC_SPARKLE + '<span>Assistant</span></button>',
+    '  </div>',
+    '</section>',
+  ].join('');
+}
+
+function bindMobileNow(main: HTMLElement): void {
+  main.querySelectorAll('[data-mday]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const next = activeDayIndex + Number((btn as HTMLElement).dataset.mday);
+      if (next < 0 || next >= days.length) return;
+      activeDayIndex = next;
+      selectedKey = null;
+      detailKey = null;
+      openLegIndex = null;
+      addPickerOpen = false;
+      mapFitKey = '';
+      render();
+      void loadRealLegsForActiveDay();
+    });
+  });
+  main.querySelector('[data-mact="docs"]')?.addEventListener('click', () => gotoGate('docs'));
+  main.querySelector('[data-mact="ai"]')?.addEventListener('click', () => {
+    window.dispatchEvent(new CustomEvent('mongsil:openAssistant'));
+  });
+}
+
 function placeDetailHtml(stop: TlStop, dateISO: string | null): string {
   let body: string;
   if (detailTab === 'guide') body = pdGuideTabHtml(stop, dateISO);
@@ -2029,13 +2154,19 @@ function placeDetailHtml(stop: TlStop, dateISO: string | null): string {
 function renderPlaceDetailPanel(): void {
   const el = container?.querySelector('#tl-pd') as HTMLElement | null;
   if (!el) return;
+  placeDetailHost(el);
+  const scrim = container?.querySelector('#tl-pd-scrim') as HTMLElement | null;
   const found = detailKey ? findStop(detailKey) : null;
   if (!found || !found.stop.place) {
     detailKey = null;
     el.hidden = true;
     el.innerHTML = '';
+    if (scrim) scrim.hidden = true;
+    document.body.classList.remove('tl-sheet-open');
     return;
   }
+  if (scrim) scrim.hidden = !isTlMobile();
+  document.body.classList.toggle('tl-sheet-open', isTlMobile());
   el.hidden = false;
   el.innerHTML = placeDetailHtml(found.stop, found.day.date);
   bindPlaceDetail(el, found.stop, found.day);
@@ -2196,6 +2327,7 @@ function findStop(key: string): { day: TlDay; stop: TlStop; index: number } | nu
 
 function bindDaySchedule(main: HTMLElement): void {
   main.querySelector('#tl-day-go-route')?.addEventListener('click', () => gotoGate('route'));
+  bindMobileNow(main);
   bindAddPicker(main);
   bindAttachmentChip();
 
@@ -2227,6 +2359,8 @@ function bindDaySchedule(main: HTMLElement): void {
       selectedKey = key;
       detailKey = key;
       detailTab = 'overview';
+      // 폰에선 상세가 지도 칸이 아니라 아래에서 올라오는 시트라 지도를 열 필요가 없다
+      if (isTlMobile()) { render(); return; }
       const wasClosed = !mapOpen;
       mapOpen = true; // 상세 패널도 지도 칸에 뜨는 거라, 접혀 있었다면 열어준다
       render();
@@ -2245,6 +2379,8 @@ function bindDaySchedule(main: HTMLElement): void {
       render();
       if (wasClosed) resizeMapSoon(() => panToStop(found.stop));
       else panToStop(found.stop);
+      // 폰에선 지도가 목록 위에 펼쳐진다 — 보러 온 지도가 화면 밖에 있지 않게
+      if (isTlMobile()) container?.querySelector('#tl-mapcol')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
 
