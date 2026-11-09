@@ -1262,11 +1262,42 @@ MOBILE(MORE)·TIMELINE(장소 상세)이 쓰는 **트립 공유 목록 `trip_che
 
 ---
 
+## 5-9. 모바일 웹 최적화 — PC 화면을 줄이지 않고 구조를 바꾼다 (2026-11)
+
+폰 브라우저로 계획 게이트를 열면 PC 레이아웃이 그대로 눌려 게이트가 글자 한 줄 폭의 기둥이 되고
+텍스트가 한 글자씩 세로로 꺾였다. 원칙: **PC 디자인은 한 픽셀도 바꾸지 않는다**(1280px 스크린샷이
+변경 전후 바이트 단위로 같아야 한다). 모바일 규칙은 전부 `@media (max-width: 768px)` 안에만 두고,
+모바일 전용 요소는 PC에서 `display:none`. 중단점 768px은 워크스페이스 사이드바가 서랍으로 접히는
+값과 같다. 기능은 줄이지 않는다 — 터치로 못 하는 조작(끌어 놓기·호버 메뉴)은 다른 방법으로 대신한다.
+
+### BRAINSTORM BOARD (`board/board.ts`, `board.css` 맨 아래 모바일 블록)
+- **순서:** 지도 보기·여행지 변경(반반) → 체크인 입력 → AI Monthly Picks(접힘) → Popular Search
+  Sites(접힘, 펼치면 가로 칩) → **탭 바 [대기 · VISIT · FOOD · ACTIVITY · STAY]**(위에 붙음) → 고른
+  탭 하나만 화면 폭 전체. `.bd-inbox`를 `display: contents`로 풀고 `order`로 재배치한다 — DOM은 PC와
+  같은 것 하나라 저장·실시간·카운트 코드가 그대로 돈다. Security 사이니지는 숨긴다.
+- **탭 상태 = `.bd-layout[data-mtab]` 하나**(`setMobileTab`). CSS가 나머지 칸을 숨긴다(재렌더 없음).
+  대기에 카드가 있으면 대기 탭으로 시작, 체크인·AI 추천 추가 직후엔 대기 탭으로 넘겨 새 카드가 보이게
+  (`revealInboxOnMobile`). 좌우로 밀어도 옆 탭(`bindMobileSwipe`, 가로 스크롤 영역·입력창 위는 무시).
+  탭 개수는 `updateZoneCount`가 같이 갱신한다.
+- **끌어 놓기 대신 ⋯ 바텀시트**(`openCardSheet`): 게이트로 옮기기/대기로 되돌리기, 같은 게이트 안
+  위·아래 한 칸, 상세·댓글, 그룹 만들기/추가/제외, 삭제(기존 실행취소 토스트). 옮기기는 PC 드롭과
+  **같은 함수**(`moveToZone`)를 쓴다 — 드롭 핸들러도 이걸 부르게 정리했다. 순서는 `persistOrder` 그대로.
+  호버로만 보이던 케밥·삭제 버튼은 폰에서 숨긴다.
+- 카드: 사진 카드는 가로형(왼쪽 96px 썸네일)이라 세로로 길어지지 않고, 이름은 2줄까지 줄바꿈.
+  그룹 이름표는 늘 보이고(호버 없음), 그룹 고르기 모드의 체크 원은 글자를 덮지 않는다.
+- 폰에선 입력창 자동 포커스를 하지 않는다(열자마자 키보드가 보드를 가림). 입력창 글자 16px(iOS 확대 방지).
+  숨겨진 Security 연출의 0.8초 대기는 건너뛴다(`runSecurityScan`이 `offsetParent`로 판단).
+  빈 게이트 안내도 "드래그하세요" 대신 ⋯ 메뉴로 옮기는 방법을 알려준다(`gateEmptyHtml`).
+- PC "이 게이트만 크게 보기"는 폰에서 켜지지 않는다(탭과 겹침, `applyGateFocusState`).
+- **검증:** 360/390/430/768에서 가로 넘침 0, 버튼 36px 이상(주요 버튼 44px+), 탭·스와이프·옮기기
+  (DB mood)·순서(DB sort_order)·삭제/실행취소·그룹·상세를 실제 앱 코드로 확인. PC 끌어 놓기도 그대로 동작.
+- 남은 게이트(STAY·ROUTE·TIMELINE·EXPENSE 등)는 같은 원칙으로 이어서 한다.
+
 ## 6. 파일 구조
 
 ```
 src/
-  board/board.ts, board.css          ← Brainstorm 게이트
+  board/board.ts, board.css          ← Brainstorm 게이트 (모바일: 5-9)
   shortlist/shortlist.ts, shortlist.css  ← Shortlist 게이트 (Step1/2/3 전부 이 안에)
   route/route.ts, route.css          ← Route 게이트 (지도 위 동선 편집)
   route/routeStore.ts                ← route_days/route_stops 영속화 + 실시간 (Route/Timeline 공용)
