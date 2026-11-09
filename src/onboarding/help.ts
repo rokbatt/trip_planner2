@@ -113,7 +113,7 @@ export function openHelpCenter(ctx: HelpContext): void {
     const parts: string[] = [];
     if (ctx.gate) {
       const name = GATE_NAME[ctx.gate] ?? ctx.gate.toUpperCase();
-      const top = articlesForGate(ctx.gate).slice(0, 4);
+      const top = articlesForGate(ctx.gate).slice(0, 5);
       parts.push(
         '<section class="ob-help-sec ob-help-here">' +
         '  <div class="ob-help-sec-label">이 페이지 · ' + esc(name) + '</div>' +

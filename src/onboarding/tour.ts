@@ -62,7 +62,8 @@ function clipRect(el: HTMLElement): { top: number; left: number; bottom: number;
   let right = window.innerWidth;
   for (let a = el.parentElement; a && a !== document.body && a !== document.documentElement; a = a.parentElement) {
     const cs = getComputedStyle(a);
-    if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
+    // display: contents는 상자가 없어 아무것도 잘라내지 않는다(좁은 화면에서 열을 풀 때 쓰인다)
+    if (cs.display === 'contents' || (cs.overflowX === 'visible' && cs.overflowY === 'visible')) continue;
     const r = a.getBoundingClientRect();
     if (cs.overflowY !== 'visible') { top = Math.max(top, r.top); bottom = Math.min(bottom, r.bottom); }
     if (cs.overflowX !== 'visible') { left = Math.max(left, r.left); right = Math.min(right, r.right); }
@@ -229,6 +230,12 @@ export function runTour(def: TourDef, opts: TourOptions): TourHandle | null {
     y = Math.min(Math.max(y, MARGIN), vh - th - MARGIN);
     tip.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px)';
     tip.dataset.side = side;
+    // 첫 자리를 잡은 뒤에야 보여 준다 — 그 전엔 왼쪽 위(0,0)에서 미끄러져 들어오는 게 보인다.
+    // 단계 사이 이동만 애니메이션한다(is-placed).
+    if (!root.classList.contains('is-ready')) {
+      root.classList.add('is-ready');
+      requestAnimationFrame(() => root.classList.add('is-placed'));
+    }
   }
 
   function scrollIntoViewIfNeeded(target: HTMLElement): void {
@@ -269,7 +276,6 @@ export function runTour(def: TourDef, opts: TourOptions): TourHandle | null {
           // 앞 단계 대상이 지금 없으면(예: 패널을 열어 채팅 버튼이 숨었다) 이전으로 갈 곳이 없다
           prevBtn.disabled = !steps.slice(0, j).some((x) => !!resolveNow(x) || !!x.prepare);
           nextBtn.textContent = j === steps.length - 1 ? '종료' : '다음';
-          root.classList.add('is-ready');
           if (el) scrollIntoViewIfNeeded(el);
           // 키보드 사용자를 위해 설명 상자로 초점을 옮긴다(스크롤은 건드리지 않게)
           nextBtn.focus({ preventScroll: true });
@@ -279,6 +285,7 @@ export function runTour(def: TourDef, opts: TourOptions): TourHandle | null {
       }
       // 더 갈 단계가 없다 — 앞으로 가던 중이면 끝까지 본 것, 뒤로 가던 중이면 지금 단계에 머문다
       if (dir === 1) stop('done');
+      else prevBtn.disabled = true; // 앞 단계 대상이 그새 사라졌다 — 누를 수 없는 버튼으로 남기지 않는다
     } finally {
       busy = false;
     }

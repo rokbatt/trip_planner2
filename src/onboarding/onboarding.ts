@@ -204,10 +204,13 @@ export function openHelp(): void {
   openHelpCenter({ tripId: loc.tripId, gate: loc.gate, startTour, replayAll, replayWelcome });
 }
 
-// 다른 화면으로 옮기면 돌던 가이드를 멈춘다(그 화면의 요소를 가리키고 있으므로)
-let lastHash = window.location.hash;
-window.addEventListener('hashchange', () => {
-  const prev = lastHash;
-  lastHash = window.location.hash;
-  if (prev !== lastHash && isTourRunning()) stopActiveTour('close');
-});
+// 다른 화면으로 옮기면 돌던 가이드를 멈춘다(그 화면의 요소를 가리키고 있으므로).
+// 모듈을 불러오기만 하는 테스트(node 환경)에서는 window가 없다 — 그때는 건너뛴다.
+if (typeof window !== 'undefined') {
+  let lastHash = window.location.hash;
+  window.addEventListener('hashchange', () => {
+    const prev = lastHash;
+    lastHash = window.location.hash;
+    if (prev !== lastHash && isTourRunning()) stopActiveTour('close');
+  });
+}
