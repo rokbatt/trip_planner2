@@ -337,7 +337,7 @@
 .lp-proof-label { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 800; letter-spacing: .16em; color: #E24B4A; margin-bottom: 12px; }
 .lp-proof-label i { width: 8px; height: 8px; border-radius: 50%; background: #E24B4A; animation: lp-rec 1.6s ease-in-out infinite; }
 @keyframes lp-rec { 50% { opacity: .25; } }
-.lp-proof-title { font-size: 24px; font-weight: 800; color: #0B2A5C; letter-spacing: -.03em; line-height: 1.35; margin-bottom: 10px; word-break: keep-all; }
+.lp-proof-title { font-size: 24px; font-weight: 800; color: #0B2A5C; letter-spacing: -.04em; line-height: 1.35; margin-bottom: 10px; word-break: keep-all; }
 .lp-proof-trip { font-size: 13.5px; color: #64748B; line-height: 1.7; word-break: keep-all; }
 .lp-proof-trip b { color: #0B2A5C; }
 .lp-proof-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }

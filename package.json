@@ -20,7 +20,8 @@
     "@turf/intersect": "^7.3.5",
     "@turf/polygon-smooth": "^7.3.5",
     "@turf/union": "^7.3.5",
-    "@turf/voronoi": "^7.3.5"
+    "@turf/voronoi": "^7.3.5",
+    "wanted-sans": "1.0.3"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
