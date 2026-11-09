@@ -219,14 +219,14 @@ function shellHtml(): string {
     '  <div class="dn-head">',
     '    <div class="dn-tabs" role="tablist">',
     '      <button type="button" class="dn-tab" data-tab="documents" role="tab">DOCUMENTS<span class="dn-tab-count" id="dn-count-doc"></span></button>',
-    '      <button type="button" class="dn-tab" data-tab="notes" role="tab">NOTES<span class="dn-tab-count" id="dn-count-note"></span></button>',
+    '      <button type="button" class="dn-tab" data-tab="notes" role="tab" data-tour="docs-notes-tab">NOTES<span class="dn-tab-count" id="dn-count-note"></span></button>',
     '    </div>',
     '    <div class="dn-head-actions">',
     '      <div class="dn-search">',
     '        ' + IC.search,
     '        <input type="search" id="dn-search" placeholder="문서와 메모 검색" autocomplete="off" />',
     '      </div>',
-    '      <button type="button" class="dn-btn-primary" id="dn-add">' + IC.plus + '<span id="dn-add-label">문서 추가</span></button>',
+    '      <button type="button" class="dn-btn-primary" id="dn-add" data-tour="docs-add">' + IC.plus + '<span id="dn-add-label">문서 추가</span></button>',
     '    </div>',
     '  </div>',
     '  <div class="dn-cross-hint" id="dn-cross-hint"></div>',
@@ -423,7 +423,7 @@ function renderDocuments(): void {
   panel.innerHTML = [
     '<div class="dn-docs">',
     '  <div class="dn-subbar">',
-    '    <div class="dn-segment" role="tablist">',
+    '    <div class="dn-segment" role="tablist" data-tour="docs-scope">',
     '      <button type="button" class="dn-segment-item' + (scope === 'PERSONAL' ? ' is-active' : '') + '" data-scope="PERSONAL">' +
       IC.lock + '<span>PERSONAL</span></button>',
     '      <button type="button" class="dn-segment-item' + (scope === 'SHARED' ? ' is-active' : '') + '" data-scope="SHARED">' +

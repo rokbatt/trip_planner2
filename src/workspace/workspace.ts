@@ -9,6 +9,7 @@ import type { SegmentState } from '../trips/destinations';
 import { toAirportCode } from '../trips/airports';
 import type { Database, TripDestination } from '../types/database';
 import type { ChatMessage } from '../types/database';
+import { onGateRendered, openHelp } from '../onboarding/onboarding';
 import './workspace.css';
 
 type Trip = Database['public']['Tables']['trips']['Row'];
@@ -20,6 +21,7 @@ const IC = {
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
   collapse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 17l-5-5 5-5M18 17l-5-5 5-5"/></svg>',
   menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
+  help: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8 1c0 1.7-2.4 2.2-2.4 3.7"/><circle cx="12" cy="17.2" r="0.6" fill="currentColor"/></svg>',
   share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7M16 6l-4-4-4 4M12 2v14"/></svg>',
   ideas: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>',
   shortlist: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20l-7-7h4V4h6v9h4z"/></svg>',
@@ -227,7 +229,7 @@ export async function renderWorkspace(tripId: string, subPath?: string): Promise
     '      <div class="ws-placeholder">불러오는 중...</div>',
     '    </div>',
     '    <div class="ws-panel" id="ws-panel"></div>',
-    '    <button class="ws-drawer-fab" id="ws-drawer-fab">',
+    '    <button class="ws-drawer-fab" id="ws-drawer-fab" data-tour="panel-fab">',
     '      ' + IC.chat,
     '      <span class="ws-drawer-badge" id="rail-badge">0</span>',
     '    </button>',
@@ -360,6 +362,7 @@ function buildContentHeader(trip: Trip, activeGate: string, destInfo: { name: st
     '</div>',
     '<div class="ws-header-right">',
     '  <div class="ws-member-avatars" id="ws-member-avatars"></div>',
+    '  <button type="button" class="ob-help-btn" id="ws-help-btn" aria-label="도움말" title="도움말">' + IC.help + '</button>',
     '  <button class="ws-share-btn" id="ws-share-btn">' + IC.share + ' <span>공유</span></button>',
     '</div>',
   ].join('\n');
@@ -509,6 +512,9 @@ async function renderGate(body: HTMLElement, tripId: string, gate: string): Prom
       '</div>',
     ].join('\n');
   }
+
+  // 처음 들어온 게이트면 환영 안내·페이지 가이드(PC 전용, onboarding.ts가 판단)
+  void onGateRendered(tripId, gate);
 }
 
 /** 뒤로가기 버튼 아이콘 — 펼쳐진 상태에선 "<"(여행 목록으로), 접힌 상태에선 사이드바
@@ -615,6 +621,8 @@ function bindEvents(page: HTMLElement, tripId: string): void {
     }
   });
 
+  page.querySelector('#ws-help-btn')?.addEventListener('click', () => openHelp());
+
   page.querySelector('#ws-share-btn')?.addEventListener('click', () => {
     const trip = store.get('currentTrip');
     if (trip && trip.invite_code) {
@@ -681,6 +689,9 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
       aiModuleRef = mod;
       mod.renderAssistantPanel(bodyEl, tripId);
     }
+    // 페이지 가이드의 "자료 기반 답변" 단계가 가리키는 곳 — Assistant 탭일 때만 이름을 붙인다
+    if (activeTab === 'ai') bodyEl.dataset.tour = 'panel-assistant';
+    else delete bodyEl.dataset.tour;
   }
 
   function openDrawer(tab: PanelTab): void {

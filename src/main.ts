@@ -13,6 +13,7 @@ import { addRoute, setNotFound, startRouter, navigate, rerender, currentPath } f
 
 import { renderLogin } from './auth/auth';
 import { renderTripList } from './trips/trip-list';
+import { onTripsShown } from './onboarding/onboarding';
 import { renderJoinPage, consumePendingInvite } from './trips/trip-join';
 import { renderWorkspace, findExistingWorkspace, switchGate, defaultGateFor } from './workspace/workspace';
 
@@ -31,6 +32,7 @@ addRoute('trips', async () => {
   const app = document.getElementById('app')!;
   const el = await renderTripList();
   app.replaceChildren(el);
+  void onTripsShown(); // 처음 로그인한 PC 사용자에게 환영 안내
 });
 
 // 새 워크스페이스 라우트: #trip/:tripId/:gate

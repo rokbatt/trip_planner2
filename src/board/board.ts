@@ -911,7 +911,7 @@ function renderDestBar(container: HTMLElement, tripId: string): void {
 
   wrap.innerHTML = [
     '<div class="bd-dest-bar" id="bd-dest-bar">',
-    '  <button type="button" class="bd-map-view-btn" id="bd-map-view-btn">' + ICON_MAP + ' 지도로 보기</button>',
+    '  <button type="button" class="bd-map-view-btn" id="bd-map-view-btn" data-tour="brainstorm-map">' + ICON_MAP + ' 지도로 보기</button>',
     destSwitchBtn,
     '</div>',
   ].join('');
@@ -1433,7 +1433,7 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
     '  </div>',
     '  <div class="bd-inbox-title">아이디어 체크인</div>',
     '</div>',
-    '<form class="bd-inbox-form" id="bd-inbox-form">',
+    '<form class="bd-inbox-form" id="bd-inbox-form" data-tour="brainstorm-search">',
     '  <div class="bd-inbox-input-wrap">',
     '    <span class="bd-inbox-search-icon">' + ICON_SEARCH + '</span>',
     '    <input class="bd-inbox-input" id="bd-inbox-input" type="text" placeholder="장소 · 링크 · 메모를 입력하세요" autocomplete="off" />',
@@ -1441,7 +1441,7 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
     '  </div>',
     '  <button type="submit" class="bd-inbox-btn">' + ICON_PLUS + '</button>',
     '</form>',
-    '<div class="bd-ai-picks">',
+    '<div class="bd-ai-picks" data-tour="brainstorm-monthly-picks">',
     '  <button type="button" class="bd-ai-picks-toggle" id="ai-picks-toggle">',
     '    <span class="bd-ai-picks-title"><span class="bd-ai-picks-icon"><img src="https://www.google.com/s2/favicons?domain=gemini.google.com&sz=64" alt="" loading="lazy" /></span> AI Monthly Picks</span>',
     '    <span class="bd-ai-picks-chevron">' + ICON_CHEVRON_DOWN + '</span>',
@@ -1453,7 +1453,7 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
     '  <span>대기 중</span>',
     '  <span class="bd-inbox-count" id="inbox-count">' + items.length + '</span>',
     '</div>',
-    '<div class="bd-inbox-list bd-dropzone" id="inbox-list" data-zone=""></div>',
+    '<div class="bd-inbox-list bd-dropzone" id="inbox-list" data-zone="" data-tour="brainstorm-inbox"></div>',
   ].join('\n');
 
   const listEl = inbox.querySelector('#inbox-list') as HTMLElement;
@@ -2231,7 +2231,7 @@ function createTicket(place: Place): HTMLElement {
 
 function buildSuggestionChip(s: Suggestion): string {
   return [
-    '<div class="bd-suggest">',
+    '<div class="bd-suggest" data-tour="brainstorm-suggest">',
     '  <span class="bd-suggest-text">제안 · ' + s.label + ' ' + s.confidence + '%</span>',
     '  <button class="bd-suggest-apply" type="button">적용</button>',
     '  <button class="bd-suggest-dismiss" type="button">무시</button>',
@@ -2298,6 +2298,7 @@ function buildSecuritySignage(): HTMLElement {
 function buildGates(tripId: string): HTMLElement {
   const gates = document.createElement('div');
   gates.className = 'bd-gates';
+  gates.dataset.tour = 'brainstorm-gates';
 
   GATES.forEach((gate) => {
     gates.appendChild(createGateColumn(tripId, gate));
