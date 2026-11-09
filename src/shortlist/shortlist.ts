@@ -1881,7 +1881,7 @@ async function renderStep1(body: HTMLElement): Promise<void> {
     '      <div class="sl-eyebrow">DEPARTURE HALL</div>',
     '      <div class="sl-title">담아둔 숙소를 비교해서 하나를 골라보세요</div>',
     '    </div>',
-    '    <div class="sl-step2-summary-card">',
+    '    <div class="sl-step2-summary-card" data-tour="stay-summary">',
     '      <div class="sl-step2-summary-item"><span class="sl-step2-summary-label">숙박 기간</span><span class="sl-step2-summary-value">' + escapeHtml(dateRange) + '</span></div>',
     '      <div class="sl-step2-summary-divider"></div>',
     '      <div class="sl-step2-summary-item sl-step2-summary-budget">',
@@ -1942,7 +1942,7 @@ async function renderStep1(body: HTMLElement): Promise<void> {
 
     '      <div class="sl-step2-divider"></div>',
 
-    '      <section class="sl-direct-select-section">',
+    '      <section class="sl-direct-select-section" data-tour="stay-import">',
     '        <div class="sl-section-title">직접 숙소 선택하기</div>',
     '        <div class="sl-section-desc">예약 사이트에서 본 숙소 이름을 붙여넣으면 자동으로 추가돼요.</div>',
 
@@ -1966,14 +1966,14 @@ async function renderStep1(body: HTMLElement): Promise<void> {
     '          <span class="sl-direct-search-icon">' + IC_SEARCH2 + '</span>',
     '          <input type="text" id="sl-hotel-filter" class="sl-direct-search-input" placeholder="숙소명으로 찾기" value="' + escapeHtml(step2FilterText) + '" />',
     '        </div>',
-    '        <div class="sl-basecamp-list" id="sl-basecamp-list"></div>',
+    '        <div class="sl-basecamp-list" id="sl-basecamp-list" data-tour="stay-candidates"></div>',
     '        <div class="sl-excluded-section" id="sl-excluded-section"></div>',
     '      </section>',
 
     // 비교 모드는 페이지 이동 없이 이 패널 안에서 열린다(지도는 그대로 옆에 유지)
     '      <section class="sl-compare-panel" id="sl-compare-panel" hidden></section>',
 
-    '      <button class="sl-step2-cta" id="sl-step2-cta" disabled>',
+    '      <button class="sl-step2-cta" id="sl-step2-cta" data-tour="stay-confirm" disabled>',
     '        <span>' + IC_CHECK + ' 이 숙소를 여행 중심으로 선택하기</span>',
     '      </button>',
     '      <div class="sl-step2-cta-hint">선택한 숙소를 기준으로 이동시간과 동선을 계산해요.</div>',
@@ -3528,7 +3528,7 @@ function renderPoolHead(body: HTMLElement, candidates: Place[]): void {
     '    <option value="price"' + (step2SortMode === 'price' ? ' selected' : '') + '>가격순</option>',
     '    <option value="access"' + (step2SortMode === 'access' ? ' selected' : '') + '>일정 접근성순</option>',
     '  </select>',
-    '  <button type="button" class="sl-pool-compare-btn" id="sl-pool-compare-btn"' + (compareCount < 2 ? ' disabled' : '') + '>',
+    '  <button type="button" class="sl-pool-compare-btn" id="sl-pool-compare-btn" data-tour="stay-compare"' + (compareCount < 2 ? ' disabled' : '') + '>',
     '    비교하기' + (compareCount > 0 ? ' <span class="sl-pool-compare-count">' + compareCount + '</span>' : ''),
     '  </button>',
     '</div>',

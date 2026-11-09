@@ -150,7 +150,7 @@ export function mountNotes(container: HTMLElement): void {
   container.innerHTML = [
     '<div class="dn-notes">',
     '  <div class="dn-subbar">',
-    '    <div class="dn-chips" id="dn-note-chips"></div>',
+    '    <div class="dn-chips" id="dn-note-chips" data-tour="notes-cats"></div>',
     '    <label class="dn-sort">',
     '      <select id="dn-note-sort" aria-label="메모 정렬">',
     '        <option value="recent">최근순</option>',

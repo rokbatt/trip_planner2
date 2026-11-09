@@ -554,9 +554,9 @@ export async function renderLinksContent(container: HTMLElement, tripId: string)
     '      <input type="text" id="lk-search-input" placeholder="제목, 사이트, 메모, 보낸 사람으로 검색" autocomplete="off" />',
     '    </div>',
     '    <div class="lk-chips" id="lk-chips"></div>',
-    '    <div class="lk-chips" id="lk-group-chips"></div>',
+    '    <div class="lk-chips" id="lk-group-chips" data-tour="links-groups"></div>',
     '  </div>',
-    '  <div class="lk-list" id="lk-list"><div class="lk-loading">불러오는 중...</div></div>',
+    '  <div class="lk-list" id="lk-list" data-tour="links-list"><div class="lk-loading">불러오는 중...</div></div>',
     '</div>',
   ].join('');
   listEl = container.querySelector('#lk-list') as HTMLElement;

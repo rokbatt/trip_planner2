@@ -1,0 +1,495 @@
+/* ============================================================
+   온보딩 · 페이지 가이드 · 도움말 센터 — PC 전용(폭 769px 이상)
+   기존 Deep Navy(#0B2A5C) / Sky Blue(#79BDF8 · #2F86D6) 톤을 그대로 쓴다.
+   ============================================================ */
+
+:root {
+  --ob-navy: #0B2A5C;
+  --ob-navy-hover: #0E3676;
+  --ob-sky: #79BDF8;
+  --ob-sky-soft: #EAF5FE;
+  --ob-action: #2F86D6;
+  --ob-text: #17212B;
+  --ob-text-2: #697586;
+  --ob-text-3: #94A3B8;
+  --ob-line: rgba(130, 150, 170, 0.18);
+  --ob-dim: rgba(11, 42, 92, 0.42);
+}
+
+/* ── 공통 버튼 ── */
+.ob-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font: 700 13px/1 var(--font-sans);
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+  white-space: nowrap;
+}
+.ob-btn:disabled { opacity: 0.45; cursor: default; }
+.ob-btn-primary { background: var(--ob-navy); color: #fff; }
+.ob-btn-primary:not(:disabled):hover { background: var(--ob-navy-hover); }
+.ob-btn-ghost { background: #fff; color: var(--ob-text-2); border-color: var(--ob-line); }
+.ob-btn-ghost:not(:disabled):hover { color: var(--ob-navy); border-color: var(--ob-sky); }
+.ob-btn-lg { height: 42px; padding: 0 22px; font-size: 14px; }
+.ob-btn:focus-visible,
+.ob-help button:focus-visible,
+.ob-tour-tip button:focus-visible,
+.ob-welcome button:focus-visible { outline: 2px solid var(--ob-sky); outline-offset: 2px; }
+
+/* ── 환영 안내 ── */
+.ob-welcome-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(11, 42, 92, 0.46);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: ob-fade 180ms ease;
+}
+.ob-welcome {
+  position: relative;
+  width: min(760px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 40px 40px 32px;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 24px 64px rgba(11, 42, 92, 0.22);
+  font-family: var(--font-sans);
+  color: var(--ob-text);
+  animation: ob-rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ob-welcome-x {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ob-text-3);
+  cursor: pointer;
+}
+.ob-welcome-x:hover { background: var(--ob-sky-soft); color: var(--ob-navy); }
+.ob-welcome-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: var(--ob-action);
+}
+.ob-welcome-title {
+  margin-top: 10px;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  color: var(--ob-navy);
+}
+.ob-welcome-intro {
+  margin-top: 10px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ob-text-2);
+}
+.ob-welcome-flow {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 28px;
+}
+.ob-flow-item {
+  display: flex;
+  flex-direction: column;
+  padding: 18px 16px 16px;
+  border-radius: 16px;
+  background: #F8FBFE;
+  border: 1px solid var(--ob-line);
+}
+.ob-flow-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--ob-sky-soft);
+  color: var(--ob-action);
+}
+.ob-flow-icon svg { width: 20px; height: 20px; }
+.ob-flow-step {
+  margin-top: 14px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ob-navy);
+}
+.ob-flow-step span { font-size: 11px; font-weight: 800; letter-spacing: 0.08em; color: var(--ob-sky); }
+.ob-flow-title { margin-top: 4px; font-size: 13px; font-weight: 700; color: var(--ob-text); line-height: 1.45; }
+.ob-flow-body { margin-top: 6px; font-size: 12.5px; line-height: 1.55; color: var(--ob-text-2); flex: 1; }
+.ob-flow-gates { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 4px; }
+.ob-flow-gates span {
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: #fff;
+  border: 1px solid var(--ob-line);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ob-text-2);
+}
+.ob-welcome-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 28px;
+}
+
+/* ── 페이지 가이드 ──
+   덮개 전체가 클릭을 통과시킨다(pointer-events: none). 설명 상자만 클릭을 받는다. */
+.ob-tour {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  pointer-events: none;
+}
+.ob-tour-spot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 12px;
+  box-shadow: 0 0 0 2px var(--ob-sky), 0 0 0 9999px var(--ob-dim);
+  opacity: 0;
+}
+/* 첫 자리를 잡은 뒤 단계 사이 이동만 움직인다 */
+.ob-tour.is-placed .ob-tour-spot {
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), width 220ms cubic-bezier(0.2, 0.8, 0.2, 1), height 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ob-tour.is-ready .ob-tour-spot { opacity: 1; }
+.ob-tour-tip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 320px;
+  padding: 16px 16px 14px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 16px 40px rgba(11, 42, 92, 0.24);
+  font-family: var(--font-sans);
+  color: var(--ob-text);
+  pointer-events: auto;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.ob-tour.is-placed .ob-tour-tip { transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 160ms ease; }
+.ob-tour.is-ready .ob-tour-tip { opacity: 1; }
+.ob-tour-tip:focus { outline: none; }
+/* 대상이 잠깐 사라진 동안(다시 그려지는 중) */
+.ob-tour.is-lost .ob-tour-spot,
+.ob-tour.is-lost .ob-tour-tip { opacity: 0; pointer-events: none; }
+.ob-tour-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ob-tour-eyebrow {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--ob-action);
+  text-transform: uppercase;
+}
+.ob-tour-x {
+  width: 28px;
+  height: 28px;
+  margin: -4px -6px -4px 0;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ob-text-3);
+  cursor: pointer;
+}
+.ob-tour-x:hover { background: var(--ob-sky-soft); color: var(--ob-navy); }
+.ob-tour-title { margin-top: 8px; font-size: 16px; font-weight: 800; color: var(--ob-navy); line-height: 1.35; }
+.ob-tour-body { margin-top: 6px; font-size: 13.5px; line-height: 1.6; color: var(--ob-text-2); }
+.ob-tour-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 16px; }
+.ob-tour-nav { display: flex; gap: 6px; }
+.ob-tour-nav .ob-btn { height: 32px; padding: 0 14px; }
+.ob-tour-skip {
+  border: none;
+  background: none;
+  padding: 4px 0;
+  font: 600 12.5px/1 var(--font-sans);
+  color: var(--ob-text-3);
+  cursor: pointer;
+}
+.ob-tour-skip:hover { color: var(--ob-navy); text-decoration: underline; }
+
+/* ── 도움말 센터 (오른쪽 서랍) ── */
+.ob-help-layer { position: fixed; inset: 0; z-index: 8500; }
+.ob-help-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(11, 42, 92, 0.18);
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.ob-help {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 420px;
+  max-width: 100vw;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  box-shadow: -16px 0 48px rgba(11, 42, 92, 0.16);
+  font-family: var(--font-sans);
+  color: var(--ob-text);
+  transform: translateX(100%);
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ob-help-layer.is-open .ob-help-scrim { opacity: 1; }
+.ob-help-layer.is-open .ob-help { transform: none; }
+.ob-help-head { padding: 22px 24px 16px; border-bottom: 1px solid var(--ob-line); background: #F8FBFE; }
+.ob-help-headrow { display: flex; align-items: center; justify-content: space-between; }
+.ob-help-eyebrow { font-size: 11px; font-weight: 800; letter-spacing: 0.16em; color: var(--ob-action); }
+.ob-help-x {
+  width: 32px;
+  height: 32px;
+  margin-right: -6px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ob-text-3);
+  cursor: pointer;
+}
+.ob-help-x:hover { background: var(--ob-sky-soft); color: var(--ob-navy); }
+.ob-help-heading { margin-top: 6px; font-size: 22px; font-weight: 800; letter-spacing: -0.02em; color: var(--ob-navy); }
+.ob-help-search {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid var(--ob-line);
+  background: #fff;
+  color: var(--ob-text-3);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.ob-help-search:focus-within { border-color: var(--ob-sky); box-shadow: 0 0 0 3px rgba(121, 189, 248, 0.25); }
+.ob-help-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: 500 14px var(--font-sans);
+  color: var(--ob-text);
+}
+.ob-help-search input::placeholder { color: var(--ob-text-3); }
+.ob-help-body { flex: 1; overflow-y: auto; padding: 18px 24px 32px; }
+.ob-help-sec + .ob-help-sec { margin-top: 24px; }
+.ob-help-sec-label {
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--ob-text-3);
+}
+.ob-help-here {
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--ob-sky-soft);
+}
+.ob-help-here .ob-help-sec-label { color: var(--ob-action); }
+.ob-help-here .ob-help-list { margin-top: 10px; background: #fff; }
+.ob-help-tourbtn { width: 100%; height: 40px; }
+.ob-help-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--ob-line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.ob-help-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border: none;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ob-text-3);
+  font-family: var(--font-sans);
+}
+.ob-help-row + .ob-help-row { border-top: 1px solid var(--ob-line); }
+.ob-help-row:hover { background: #F8FBFE; }
+.ob-help-row:hover .ob-help-row-title { color: var(--ob-navy); }
+.ob-help-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ob-help-row-title { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; color: var(--ob-text); }
+.ob-help-row-sum {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ob-text-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ob-help-count {
+  padding: 1px 7px;
+  border-radius: 9999px;
+  background: var(--ob-sky-soft);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ob-action);
+}
+.ob-help-replays { display: flex; flex-direction: column; gap: 8px; }
+.ob-help-replay {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--ob-line);
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ob-action);
+  font-family: var(--font-sans);
+}
+.ob-help-replay span { display: flex; flex-direction: column; gap: 2px; }
+.ob-help-replay b { font-size: 13.5px; font-weight: 700; color: var(--ob-text); }
+.ob-help-replay small { font-size: 12px; color: var(--ob-text-2); }
+.ob-help-replay:not(:disabled):hover { border-color: var(--ob-sky); background: #F8FBFE; }
+.ob-help-replay:disabled { cursor: default; color: var(--ob-text-3); }
+.ob-help-replay:disabled b { color: var(--ob-text-3); }
+.ob-help-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 14px -4px;
+  padding: 4px;
+  border: none;
+  background: none;
+  font: 600 13px var(--font-sans);
+  color: var(--ob-text-2);
+  cursor: pointer;
+}
+.ob-help-back:hover { color: var(--ob-navy); }
+.ob-help-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1.35;
+  color: var(--ob-navy);
+}
+.ob-help-lead { margin: 8px 0 16px; font-size: 14px; line-height: 1.6; color: var(--ob-text-2); }
+.ob-help-steps { margin: 0 0 12px; padding: 0; list-style: none; counter-reset: ob-step; }
+.ob-help-steps li {
+  position: relative;
+  padding: 0 0 12px 34px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ob-text);
+  counter-increment: ob-step;
+}
+.ob-help-steps li::before {
+  content: counter(ob-step);
+  position: absolute;
+  left: 0;
+  top: 1px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ob-sky-soft);
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--ob-action);
+}
+.ob-help-p { margin-bottom: 10px; font-size: 14px; line-height: 1.65; color: var(--ob-text); }
+.ob-help-tourbox {
+  margin-top: 18px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--ob-sky-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ob-help-tourhint { font-size: 12px; color: var(--ob-text-2); text-align: center; }
+.ob-status {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.ob-status-ok { background: #E3F6EC; color: #1F7A4D; }
+.ob-status-part { background: #FFF4DB; color: #8A5A00; }
+.ob-status-no { background: #F1F3F6; color: #5B6675; }
+.ob-help-empty {
+  padding: 36px 12px;
+  text-align: center;
+  color: var(--ob-text-2);
+}
+.ob-help-empty-title { font-size: 15px; font-weight: 700; color: var(--ob-text); }
+.ob-help-empty p { margin: 8px 0 16px; font-size: 13px; line-height: 1.6; }
+
+/* ── 헤더의 ? 버튼 (워크스페이스 · 내 여행) ── */
+.ob-help-btn {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1px solid var(--ob-line);
+  background: #fff;
+  color: var(--ob-navy);
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.ob-help-btn svg { width: 18px; height: 18px; }
+.ob-help-btn:hover { border-color: var(--ob-sky); background: #F8FBFE; }
+.ob-help-btn:focus-visible { outline: 2px solid var(--ob-sky); outline-offset: 2px; }
+
+@keyframes ob-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ob-rise { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ob-welcome-overlay, .ob-welcome { animation: none; }
+  .ob-tour-spot, .ob-tour-tip, .ob-help, .ob-help-scrim { transition: none; }
+}
+
+/* PC 전용 — 폰 화면에는 진입점도 보이지 않는다(폰 레이아웃 변경 없음) */
+@media (max-width: 768px) {
+  .ob-help-btn { display: none !important; }
+}

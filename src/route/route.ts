@@ -1265,7 +1265,7 @@ export async function renderRouteContent(container: HTMLElement, tripId: string)
   if (!basecamp) {
     container.innerHTML = [
       '<div class="rt-shell">',
-      '  <div class="rt-empty">',
+      '  <div class="rt-empty" data-tour="route-need-stay">',
       '    <span class="rt-empty-icon">' + IC_BED + '</span>',
       '    <div class="rt-empty-title">아직 숙소를 확정하지 않았어요</div>',
       '    <div class="rt-empty-hint">STAY에서 숙소를 여행의 중심으로 확정하면, 그 숙소를 출발점으로 하루 동선을 만들 수 있어요.</div>',
@@ -1325,9 +1325,9 @@ function buildPageHtml(): string {
     '<div class="rt-shell">',
 
     '  <div class="rt-toolbar">',
-    '    <div class="rt-daytabs" id="rt-daytabs"></div>',
+    '    <div class="rt-daytabs" id="rt-daytabs" data-tour="route-days"></div>',
     '    <div class="rt-toolbar-right">',
-    '      <button type="button" class="rt-to-timeline-top" id="rt-to-timeline-top">' + IC_ARROW + ' 타임라인으로</button>',
+    '      <button type="button" class="rt-to-timeline-top" id="rt-to-timeline-top" data-tour="route-to-timeline">' + IC_ARROW + ' 타임라인으로</button>',
     '      <div class="rt-searchbox" id="rt-searchbox-top" title="지도에 실제 장소를 검색해서 핀으로 찍어요 · Enter로 검색">' +
       IC_SEARCH +
       '<input type="text" id="rt-search-top" placeholder="지도에서 장소 검색 (Enter)" />' +
@@ -1351,7 +1351,7 @@ function buildPageHtml(): string {
     '      <div class="rt-map-wrap">',
     '        <div id="rt-map" class="rt-map"></div>',
 
-    '        <div class="rt-float-search" id="rt-float-search">',
+    '        <div class="rt-float-search" id="rt-float-search" data-tour="route-library">',
     '          <div class="rt-float-search-input">',
     '            <button type="button" class="rt-float-search-icon" id="rt-float-search-icon" title="장소 검색 패널 펼치기" aria-label="장소 검색 패널 펼치기">' + IC_SEARCH + '</button>',
     '            <input type="text" id="rt-float-search-input" placeholder="장소 검색" />',
@@ -2904,7 +2904,7 @@ function renderRightPanel(container: HTMLElement): void {
         ? '<span class="rt-ai-spinner"></span><span>' + escapeHtml(aiPlanProgressLabel ?? '일정 짜는 중…') + '</span>'
         : IC_SPARK + '<span>AI 일정 짜기</span>') +
       '</button>',
-    '<div class="rt-panel-list" id="rt-panel-list">',
+    '<div class="rt-panel-list" id="rt-panel-list" data-tour="route-plan">',
     stops.length
       // 숙소/공항 앵커만 있고 그 사이에 담은 곳이 없어도(예: 공항→숙소만 있는 여유로운 날,
       // 하루 종일 숙소에서 쉬는 날) 그 자체로 완결된 하루라 "아직 안 담았다"는 안내를 덧붙이지
@@ -2930,7 +2930,7 @@ function renderRightPanel(container: HTMLElement): void {
     '</div>',
     // 원칙 3-1 — 실측/추정을 섞어 쓰므로 어느 쪽인지 반드시 구분해 표기
     '<div class="rt-panel-estimate-note">' + estimateNoteHtml(legs) + '</div>',
-    '<div class="rt-panel-actions">',
+    '<div class="rt-panel-actions" data-tour="route-refine">',
     '  <button type="button" class="rt-panel-action" id="rt-panel-add-revisit"' +
       (basecampForDay(dayIndex) ? '' : ' disabled') +
       ' title="낮에 숙소에 짐을 두거나 쉬러 잠깐 들르는 것처럼, 하루 중간에 숙소로 돌아오는 지점을 추가해요">' +

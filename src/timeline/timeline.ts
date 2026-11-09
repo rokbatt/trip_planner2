@@ -615,7 +615,7 @@ async function reloadFromRemote(): Promise<void> {
 function emptyStateHtml(): string {
   return [
     '<div class="tl-shell">',
-    '  <div class="tl-empty">',
+    '  <div class="tl-empty" data-tour="timeline-empty">',
     '    <span class="tl-empty-icon">' + IC_ROUTEPATH + '</span>',
     '    <div class="tl-empty-title">아직 일정에 올릴 동선이 없어요</div>',
     '    <div class="tl-empty-hint">ROUTE에서 하루 동선을 만들면,<br>여기서 시간 단위로 다듬을 수 있어요.</div>',
@@ -629,14 +629,14 @@ function shellHtml(): string {
   return [
     '<div class="tl-shell">',
     '  <div class="tl-topbar">',
-    '    <div class="tl-daystrip" id="tl-daystrip"></div>',
+    '    <div class="tl-daystrip" id="tl-daystrip" data-tour="timeline-days"></div>',
     '    <div class="tl-topbar-actions">',
     '      <div class="tl-segmented" id="tl-viewmode">',
     '        <button type="button" class="tl-segment" data-view="day">하루</button>',
     '        <button type="button" class="tl-segment" data-view="all">전체</button>',
     '      </div>',
-    '      <button type="button" class="tl-nowbtn" id="tl-now-btn" hidden>' + IC_CLOCK + '<span>지금</span></button>',
-    '      <button type="button" class="tl-routebtn" id="tl-to-route">' + IC_ARROW_BACK + ' 동선 수정</button>',
+    '      <button type="button" class="tl-nowbtn" id="tl-now-btn" data-tour="timeline-now" hidden>' + IC_CLOCK + '<span>지금</span></button>',
+    '      <button type="button" class="tl-routebtn" id="tl-to-route" data-tour="timeline-route">' + IC_ARROW_BACK + ' 동선 수정</button>',
     '    </div>',
     '  </div>',
     '  <div class="tl-body" id="tl-body">',
@@ -1197,7 +1197,7 @@ function stopCardHtml(stop: TlStop, i: number, s: DaySchedule, dateISO: string |
     '<li class="tl-row tl-stop' + (selected ? ' is-selected' : '') + '" data-key="' + stop.key + '" data-idx="' + i + '" draggable="true">',
 
     '  <div class="tl-col-time">',
-    '    <input type="text" class="tl-time' + (fixed ? ' is-fixed' : '') + '" value="' + minToHHMM(s.arriveMin[i]) + '"' +
+    '    <input type="text" class="tl-time' + (fixed ? ' is-fixed' : '') + '" data-tour="timeline-time" value="' + minToHHMM(s.arriveMin[i]) + '"' +
       ' data-key="' + stop.key + '" inputmode="numeric" maxlength="5" spellcheck="false"' +
       ' title="' + (fixed ? '직접 고정한 시각 · 비우면 자동 계산으로 돌아가요' : '앞 일정에서 자동 계산된 시각 · 입력하면 고정돼요') + '"' +
       ' aria-label="' + escapeHtml(stop.name) + ' 도착 시각" />',
@@ -1209,7 +1209,7 @@ function stopCardHtml(stop: TlStop, i: number, s: DaySchedule, dateISO: string |
     '  <div class="tl-col-spine"><span class="tl-spine-line"></span><span class="tl-dot"><i></i></span></div>',
 
     '  <div class="tl-col-card">',
-    '    <div class="tl-card">',
+    '    <div class="tl-card" data-tour="timeline-card">',
     // 사진은 카드 맨 왼쪽에서 위아래로 꽉 차게 — 카드가 overflow:hidden이라 왼쪽 모서리만
     // 카드 radius를 따라 둥글게 깎인다.
     photo,

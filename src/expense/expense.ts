@@ -411,8 +411,8 @@ function mountOverviewTab(panel: HTMLElement): void {
     '    </div>',
     '  </div>',
     '  <div class="ex-overview-sidebar">',
-    '    <div class="ex-card al-glass ex-quickadd-card" id="ex-quickadd"></div>',
-    '    <div class="ex-card al-glass ex-settlewidget-card" id="ex-settlewidget"></div>',
+    '    <div class="ex-card al-glass ex-quickadd-card" id="ex-quickadd" data-tour="expense-quickadd"></div>',
+    '    <div class="ex-card al-glass ex-settlewidget-card" id="ex-settlewidget" data-tour="expense-settle"></div>',
     '  </div>',
     '</div>',
   ].join('\n');
@@ -1791,7 +1791,7 @@ export async function renderExpenseContent(container: HTMLElement, tripId: strin
 
   container.innerHTML = [
     '<div class="ex-wrap">',
-    '  <div class="ex-tabs" id="ex-tabs">' + tabsHtml() + '</div>',
+    '  <div class="ex-tabs" id="ex-tabs" data-tour="expense-tabs">' + tabsHtml() + '</div>',
     '  <div class="ex-tabpanel" id="ex-tabpanel"><div class="ex-placeholder-loading">불러오는 중...</div></div>',
     '  <button type="button" class="ex-fab" id="ex-fab" aria-label="지출 추가">' + IC_PLUS + '</button>',
     '  <div class="ex-sheet-overlay" id="ex-sheet-overlay"></div>',

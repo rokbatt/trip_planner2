@@ -7,6 +7,7 @@ import { openEditTripModal } from './trip-edit';
 import { toAirportCode, toAirportCityEn, airportCityEnByCode } from './airports';
 import type { Database } from '../types/database';
 import './trip-list.css';
+import { openHelp } from '../onboarding/onboarding';
 
 type Trip = Database['public']['Tables']['trips']['Row'];
 
@@ -301,6 +302,7 @@ function navHtml(): string {
     <nav class="tl-nav" id="tl-nav">
       <button type="button" class="tl-nav-logo" id="tl-logo" aria-label="몽실이 메인페이지로"><img src="/favicon.svg" alt="" width="26" height="26" />몽실이</button>
       <div class="tl-nav-profile">
+        <button type="button" class="ob-help-btn" id="tl-help-btn" aria-label="도움말" title="도움말"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8 1c0 1.7-2.4 2.2-2.4 3.7"/><circle cx="12" cy="17.2" r="0.6" fill="currentColor"/></svg></button>
         <button class="tl-nav-avatar-btn" id="tl-avatar">${avatarInner}</button>
         <div class="tl-dropdown" id="tl-dropdown">
           <div class="tl-dropdown-header">
@@ -354,6 +356,7 @@ export async function renderTripList(): Promise<HTMLElement> {
     dropdown.addEventListener('click', (e) => e.stopPropagation());
   }
 
+  page.querySelector('#tl-help-btn')?.addEventListener('click', () => openHelp());
   page.querySelector('#tl-dd-trips')?.addEventListener('click', () => navigate('trips'));
   page.querySelector('#tl-dd-settings')?.addEventListener('click', () => navigate('settings'));
   page.querySelector('#tl-dd-help')?.addEventListener('click', () => alert('문의하기 기능은 곧 구현 예정이에요!'));
