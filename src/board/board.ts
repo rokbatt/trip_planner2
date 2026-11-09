@@ -383,6 +383,7 @@ function generateGroupId(): string {
 }
 
 export function teardownBoard(): void {
+  closeCardSheet();
   boardGeneration++; // 진행 중인 재시도/콜백을 즉시 무효화
   if (realtimeChannel) {
     supabase.removeChannel(realtimeChannel);
@@ -551,7 +552,8 @@ async function movePlace(placeId: string, newMood: string | null): Promise<boole
 
 /* ── Security Check 스캔 애니메이션 (게이트로 들어갈 때만) ── */
 function runSecurityScan(): Promise<void> {
-  if (!securityEl) return Promise.resolve();
+  // 모바일에선 사이니지가 숨겨져 있다 — 보이지 않는 연출로 0.8초를 기다리게 하지 않는다
+  if (!securityEl || !securityEl.offsetParent) return Promise.resolve();
   const el = securityEl;
   const original = el.innerHTML;
   el.classList.add('scanning');
@@ -629,11 +631,16 @@ export async function renderBoardContent(container: HTMLElement, tripId: string)
   const inboxItems = places.filter((p) => p.mood === null);
   layout.innerHTML = '';
   layout.appendChild(buildInbox(tripId, inboxItems));
+  // 모바일 게이트 탭 — PC에선 CSS로 숨는다(게이트 4개가 이미 나란히 보이므로)
+  if (mobileTab === null) mobileTab = inboxItems.length ? MOBILE_TAB_INBOX : GATES[0].key;
+  layout.appendChild(buildMobileTabs());
   const security = buildSecuritySignage();
   securityEl = security;
   layout.appendChild(security);
   layout.appendChild(buildGates(tripId));
   applyGateFocusState(); // 여행지 전환 등으로 재렌더돼도 포커스 중이던 게이트 상태를 그대로 반영
+  setMobileTab(mobileTab);
+  bindMobileSwipe(layout);
 
   subscribeRealtime(tripId);
   subscribeCommentActivity();
@@ -650,6 +657,229 @@ export async function renderBoardContent(container: HTMLElement, tripId: string)
       attachAutocompleteWithRetry(tripId, myGeneration);
     })
     .catch((err) => console.error('[GoogleMaps] 로드 실패, 텍스트 입력만 사용:', err.message));
+}
+
+/* ══════════════════ 모바일(≤768px) — 게이트 탭 · 카드 메뉴 ══════════════════
+ *
+ * PC 보드는 체크인 카운터 + 게이트 4개를 한 화면에 나란히 둔다. 폰 폭에 그대로 두면 게이트가
+ * 글자 한 줄 폭의 기둥이 되고, 끌어 놓기(HTML5 drag)는 터치에서 아예 동작하지 않는다.
+ * 그래서 폰에서는
+ *   · 체크인 입력·AI Monthly Picks·검색 사이트를 위로 올리고(CSS가 순서를 바꾼다)
+ *   · 그 아래 탭 [대기 · VISIT · FOOD · ACTIVITY · STAY] 중 하나만 화면 폭 전체로 보여준다.
+ *     좌우로 밀어도 옆 탭으로 넘어간다.
+ *   · 카드 오른쪽 위 ⋯ 버튼 = 바텀시트(옮기기·순서·그룹·삭제·상세). 끌어 놓기 대신이다.
+ * DOM은 PC와 같은 것 하나다 — 탭 바와 ⋯ 버튼은 PC에서 CSS로 숨는다. 데이터·저장 경로도 같다.
+ */
+const MOBILE_BOARD_MQ = '(max-width: 768px)';
+const MOBILE_TAB_INBOX = 'inbox';
+const MOBILE_MENU_BTN = '<button type="button" class="bd-mmenu" aria-label="카드 메뉴">' + ICON_KEBAB + '</button>';
+
+/** 마지막으로 본 탭 — 여행지 전환 등으로 다시 그려도 유지(null이면 첫 렌더에서 정한다) */
+let mobileTab: string | null = null;
+let cardSheetEl: HTMLElement | null = null;
+let cardSheetKeyHandler: ((e: KeyboardEvent) => void) | null = null;
+
+function isMobileBoard(): boolean {
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(MOBILE_BOARD_MQ).matches;
+}
+
+function mobileTabOrder(): string[] {
+  return [MOBILE_TAB_INBOX, ...GATES.map((g) => g.key)];
+}
+
+function gateLabelOf(key: string): string {
+  return key === MOBILE_TAB_INBOX || key === '' ? '대기' : GATES.find((g) => g.key === key)?.label ?? key;
+}
+
+function buildMobileTabs(): HTMLElement {
+  const nav = document.createElement('div');
+  nav.className = 'bd-mtabs';
+  nav.setAttribute('role', 'tablist');
+  nav.setAttribute('aria-label', '게이트');
+  const countOf = (mood: string | null) =>
+    Array.from(placesCache.values()).filter((p) => p.mood === mood && (!boardActiveDest || placeBelongsToDestination(p, boardActiveDest))).length;
+  const tab = (key: string, icon: string, label: string, count: number) =>
+    '<button type="button" class="bd-mtab" role="tab" data-mtab="' + key + '" aria-selected="false">' +
+    icon + '<span class="bd-mtab-label">' + label + '</span>' +
+    '<span class="bd-mtab-count" data-mtab-count="' + key + '">' + count + '</span></button>';
+  nav.innerHTML =
+    tab(MOBILE_TAB_INBOX, ICON_PLANE, '대기', countOf(null)) +
+    GATES.map((g) => tab(g.key, g.icon, g.label, countOf(g.key))).join('');
+  nav.querySelectorAll('.bd-mtab').forEach((btn) => {
+    btn.addEventListener('click', () => setMobileTab((btn as HTMLElement).dataset.mtab ?? MOBILE_TAB_INBOX));
+  });
+  return nav;
+}
+
+/** 보여줄 탭을 바꾼다 — 레이아웃의 data-mtab 하나로 CSS가 나머지 칸을 숨긴다(재렌더 없음) */
+function setMobileTab(key: string): void {
+  if (groupSelectState && key !== groupSelectState.gateKey) exitGroupSelectMode();
+  mobileTab = key;
+  const layout = boardContainer?.querySelector('.bd-layout') as HTMLElement | null;
+  if (!layout) return;
+  layout.dataset.mtab = key;
+  layout.querySelectorAll('.bd-mtab').forEach((el) => {
+    const on = (el as HTMLElement).dataset.mtab === key;
+    el.classList.toggle('active', on);
+    el.setAttribute('aria-selected', String(on));
+    if (on && isMobileBoard()) (el as HTMLElement).scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  });
+}
+
+/** 폰에서 새로 체크인한 카드가 다른 탭에 가려 안 보이지 않게 대기 탭으로 넘겨 준다 */
+function revealInboxOnMobile(): void {
+  if (isMobileBoard() && mobileTab !== MOBILE_TAB_INBOX) setMobileTab(MOBILE_TAB_INBOX);
+}
+
+/** 좌우로 밀어 옆 탭으로 — 가로 스크롤 영역·입력창·시트 위에서는 무시한다 */
+function bindMobileSwipe(layout: HTMLElement): void {
+  let start: { x: number; y: number; t: number } | null = null;
+  layout.addEventListener('touchstart', (e) => {
+    const target = e.target as HTMLElement;
+    if (e.touches.length !== 1 || groupSelectState || target.closest('.bd-mtabs, .bd-site-list, .bd-ai-picks-body, input, textarea')) {
+      start = null;
+      return;
+    }
+    start = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+  }, { passive: true });
+  layout.addEventListener('touchend', (e) => {
+    if (!start || !isMobileBoard()) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    const quick = Date.now() - start.t < 700;
+    start = null;
+    if (!quick || Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.6) return;
+    const order = mobileTabOrder();
+    const i = order.indexOf(mobileTab ?? MOBILE_TAB_INBOX);
+    const next = order[i + (dx < 0 ? 1 : -1)];
+    if (next) setMobileTab(next);
+  }, { passive: true });
+}
+
+function bindMobileMenu(el: HTMLElement, placeId: string): void {
+  el.querySelector('.bd-mmenu')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openCardSheet(placeId, el);
+  });
+}
+
+function closeCardSheet(): void {
+  cardSheetEl?.remove();
+  cardSheetEl = null;
+  if (cardSheetKeyHandler) {
+    document.removeEventListener('keydown', cardSheetKeyHandler);
+    cardSheetKeyHandler = null;
+  }
+}
+
+/**
+ * 카드 메뉴 바텀시트 — 끌어 놓기·호버 케밥 대신. 할 수 있는 일은 PC와 같다:
+ * 게이트로 옮기기(대기로 되돌리기), 같은 게이트 안에서 순서 바꾸기, 그룹, 삭제(실행취소 가능), 상세.
+ */
+function openCardSheet(placeId: string, el: HTMLElement): void {
+  closeCardSheet();
+  const place = placesCache.get(placeId);
+  if (!place) return;
+  const zone = place.mood ?? '';
+  const inGate = zone !== '';
+  const prev = el.previousElementSibling;
+  const next = el.nextElementSibling;
+  const canUp = inGate && !place.group_id && !!prev?.matches('.bd-card');
+  const canDown = inGate && !place.group_id && !!next?.matches('.bd-card');
+
+  const targets = [
+    ...(inGate ? [{ key: '', label: '대기', icon: ICON_PLANE }] : []),
+    ...GATES.filter((g) => g.key !== zone).map((g) => ({ key: g.key, label: g.label, icon: g.icon })),
+  ];
+  const item = (action: string, icon: string, label: string, extra = '') =>
+    '<button type="button" class="bd-msheet-item' + extra + '" data-sheet="' + action + '">' + icon + '<span>' + label + '</span></button>';
+
+  const sheet = document.createElement('div');
+  sheet.className = 'bd-msheet-wrap';
+  sheet.innerHTML = [
+    '<div class="bd-msheet-back" data-sheet="close"></div>',
+    '<div class="bd-msheet" role="dialog" aria-modal="true" aria-label="' + escapeHtml(place.name) + ' 메뉴">',
+    '  <div class="bd-msheet-grip"></div>',
+    '  <div class="bd-msheet-head">',
+    '    <div class="bd-msheet-title">' + escapeHtml(place.name) + '</div>',
+    '    <div class="bd-msheet-sub">지금 ' + escapeHtml(gateLabelOf(zone)) + '</div>',
+    '  </div>',
+    '  <div class="bd-msheet-label">옮기기</div>',
+    '  <div class="bd-msheet-moves">',
+    targets.map((t) => '<button type="button" class="bd-msheet-move" data-sheet-move="' + escapeHtml(t.key) + '">' + t.icon + '<span>' + t.label + '</span></button>').join(''),
+    '  </div>',
+    inGate && (canUp || canDown)
+      ? '  <div class="bd-msheet-row">' +
+        '<button type="button" class="bd-msheet-half" data-sheet="up"' + (canUp ? '' : ' disabled') + '>위로 한 칸</button>' +
+        '<button type="button" class="bd-msheet-half" data-sheet="down"' + (canDown ? '' : ' disabled') + '>아래로 한 칸</button></div>'
+      : '',
+    '  <div class="bd-msheet-list">',
+    item('detail', ICON_EDIT, '상세 보기 · 수정'),
+    item('comment', ICON_COMMENT, '댓글'),
+    inGate
+      ? place.group_id
+        ? item('group-add', ICON_GROUP, '그룹에 추가') + item('group-remove', ICON_CLEAR, '그룹에서 제외')
+        : item('group-create', ICON_GROUP, '그룹 만들기')
+      : '',
+    item('delete', ICON_TRASH, '삭제', ' danger'),
+    '  </div>',
+    '  <button type="button" class="bd-msheet-cancel" data-sheet="close">닫기</button>',
+    '</div>',
+  ].join('');
+  document.body.appendChild(sheet);
+  cardSheetEl = sheet;
+  requestAnimationFrame(() => sheet.classList.add('open'));
+  cardSheetKeyHandler = (e: KeyboardEvent) => { if (e.key === 'Escape') closeCardSheet(); };
+  document.addEventListener('keydown', cardSheetKeyHandler);
+
+  sheet.querySelectorAll('[data-sheet-move]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const to = (btn as HTMLElement).dataset.sheetMove ?? '';
+      closeCardSheet();
+      const moved = await moveToZone(placeId, to);
+      if (moved) showBoardNotice('"' + place.name + '" → ' + gateLabelOf(to));
+    });
+  });
+  sheet.querySelectorAll('[data-sheet]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const action = (btn as HTMLElement).dataset.sheet;
+      const fresh = placesCache.get(placeId) ?? place;
+      closeCardSheet();
+      if (action === 'up' || action === 'down') void moveWithinGate(el, action);
+      else if (action === 'detail' || action === 'comment') {
+        el.dispatchEvent(new CustomEvent('mongsil:openPlaceDetail', { detail: { place: fresh, focus: action === 'comment' ? 'comments' : 'name' }, bubbles: true }));
+      } else if (action === 'group-create') enterGroupSelectMode(fresh, null);
+      else if (action === 'group-add') enterGroupSelectMode(fresh, fresh.group_id);
+      else if (action === 'group-remove') void removeFromGroup(fresh);
+      else if (action === 'delete') scheduleDelete(placeId, fresh.name, el, el.closest('[data-zone]') as HTMLElement | null);
+    });
+  });
+}
+
+/** 같은 게이트 안에서 한 칸 위/아래로 — 끌어서 재정렬하는 PC와 같은 저장(persistOrder) */
+async function moveWithinGate(el: HTMLElement, dir: 'up' | 'down'): Promise<void> {
+  const listEl = el.closest('[data-zone]') as HTMLElement | null;
+  if (!listEl) return;
+  const sibling = dir === 'up' ? el.previousElementSibling : el.nextElementSibling;
+  if (!sibling?.matches('.bd-card')) return;
+  if (dir === 'up') listEl.insertBefore(el, sibling);
+  else listEl.insertBefore(sibling, el);
+  triggerLightSweep(el);
+  await persistOrder(listEl);
+}
+
+/** 짧은 확인 토스트(실행취소 없음) — 옮기기처럼 결과가 다른 탭에 생겨 눈에 안 보일 때 */
+function showBoardNotice(text: string): void {
+  const container = document.getElementById('bd-toast-container');
+  if (!container) return;
+  const toast = document.createElement('div');
+  toast.className = 'bd-toast bd-toast-stub';
+  toast.setAttribute('role', 'status');
+  toast.innerHTML = '<span class="bd-toast-text">' + escapeHtml(text) + '</span>';
+  container.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('show'));
+  setTimeout(() => dismissToast(toast), 2200);
 }
 
 /* ══════════════════ 다중 여행지 바 (Phase 2) ══════════════════ */
@@ -1238,7 +1468,10 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
   const form = inbox.querySelector('#bd-inbox-form') as HTMLFormElement;
   const input = inbox.querySelector('#bd-inbox-input') as HTMLInputElement;
   const clearBtn = inbox.querySelector('#bd-inbox-clear') as HTMLButtonElement;
-  requestAnimationFrame(() => input.focus());
+  // 폰에서 화면을 열자마자 키보드가 올라오면 보드가 반쯤 가려진다 — PC에서만 바로 입력 대기.
+  // 안내 문구도 360px 폭에서 잘리지 않게 짧게
+  if (!isMobileBoard()) requestAnimationFrame(() => input.focus());
+  else input.placeholder = '장소 · 링크 · 메모 입력';
 
   clearBtn.addEventListener('click', () => {
     input.value = '';
@@ -1264,6 +1497,7 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
       triggerLightSweep(el);
       input.value = '';
       updateZoneCount(listEl);
+      revealInboxOnMobile();
     }
   });
 
@@ -1516,9 +1750,10 @@ async function selectPrediction(prediction: UnifiedPrediction, tripId: string, i
       listEl.appendChild(el);
       triggerLightSweep(el);
       updateZoneCount(listEl);
+      revealInboxOnMobile();
     }
   }
-  input.focus();
+  if (!isMobileBoard()) input.focus();
 }
 
 function buildInboxEmpty(): string {
@@ -1930,6 +2165,7 @@ async function addAiPickToInbox(tripId: string, name: string, destination: strin
       listEl.appendChild(el);
       triggerLightSweep(el);
       updateZoneCount(listEl);
+      revealInboxOnMobile();
     }
 
     return true;
@@ -1982,13 +2218,14 @@ function createTicket(place: Place): HTMLElement {
     ].join('');
   }
 
-  ticket.innerHTML = commentBadge + '<div class="bd-ticket-clip">' + innerHtml + '</div>';
+  ticket.innerHTML = commentBadge + '<div class="bd-ticket-clip">' + innerHtml + '</div>' + MOBILE_MENU_BTN;
 
   if (suggestion) {
     bindSuggestionChip(ticket, place.id, suggestion);
   }
 
   bindItemBehavior(ticket, place);
+  bindMobileMenu(ticket, place.id);
   return ticket;
 }
 
@@ -2124,7 +2361,7 @@ function renderGateListContent(listEl: HTMLElement, gateKey: string): void {
   listEl.innerHTML = '';
 
   if (items.length === 0) {
-    listEl.innerHTML = '<div class="bd-empty bd-empty-sm"><div class="bd-empty-hint">아이디어를 여기로 드래그하세요</div></div>';
+    listEl.innerHTML = gateEmptyHtml();
     updateZoneCount(listEl);
     return;
   }
@@ -2432,7 +2669,8 @@ function toggleGateFocus(gateKey: string): void {
 function applyGateFocusState(): void {
   const layout = boardContainer?.querySelector('.bd-layout') as HTMLElement | null;
   if (!layout) return;
-  layout.classList.toggle('bd-focus-mode', focusedGateKey !== null);
+  // 폰에선 탭이 이미 게이트 하나만 보여준다 — PC 확대 보기를 겹쳐 켜지 않는다
+  layout.classList.toggle('bd-focus-mode', focusedGateKey !== null && !isMobileBoard());
 
   layout.querySelectorAll('.bd-gate').forEach((el) => {
     const col = el as HTMLElement;
@@ -2498,9 +2736,10 @@ function createBoardingCard(place: Place): HTMLElement {
     ].join('');
   }
 
-  card.innerHTML = commentBadge + '<div class="bd-card-clip">' + innerHtml + '</div>';
+  card.innerHTML = commentBadge + '<div class="bd-card-clip">' + innerHtml + '</div>' + MOBILE_MENU_BTN;
 
   bindItemBehavior(card, place);
+  bindMobileMenu(card, place.id);
 
   if (place.photo_url) {
     bindKebabMenu(card, place);
@@ -2614,7 +2853,7 @@ function bindItemBehavior(el: HTMLElement, place: Place): void {
 
   el.addEventListener('click', (e) => {
     const target = e.target as HTMLElement;
-    if (target.closest('.bd-ticket-delete, .bd-card-delete, .bd-card-kebab, .bd-card-kebab-menu, .bd-suggest')) return;
+    if (target.closest('.bd-ticket-delete, .bd-card-delete, .bd-card-kebab, .bd-card-kebab-menu, .bd-suggest, .bd-mmenu')) return;
 
     if (groupSelectState && groupSelectState.gateKey === place.mood) {
       toggleCardSelection(id);
@@ -2795,47 +3034,58 @@ function attachDropzone(listEl: HTMLElement): void {
       return;
     }
 
-    const el = document.querySelector('[data-place-id="' + placeId + '"]') as HTMLElement | null;
-    if (!el) return;
-    const place = placesCache.get(placeId);
-    if (!place) return;
-
-    if (toZone !== '') {
-      await runSecurityScan();
-    }
-
-    markRecentlyMutated(placeId);
-    const success = await movePlace(placeId, zoneToMood(toZone));
-    if (!success) return;
-
-    const updatedPlace = { ...place, mood: zoneToMood(toZone), group_id: null, group_name: null, group_order: null };
-    placesCache.set(placeId, updatedPlace);
-
-    if (fromZone === '') {
-      const currentEl = document.querySelector('[data-place-id="' + placeId + '"]') as HTMLElement | null;
-      const inboxListEl = document.getElementById('inbox-list');
-      currentEl?.remove();
-      if (inboxListEl) {
-        updateZoneCount(inboxListEl);
-        ensureEmptyState(inboxListEl);
-      }
-    } else {
-      const sourceListEl = document.getElementById('glist-' + fromZone);
-      if (sourceListEl) renderGateListContent(sourceListEl, fromZone);
-    }
-
-    if (toZone === '') {
-      removeEmptyState(listEl);
-      const newEl = createTicket(updatedPlace);
-      listEl.appendChild(newEl);
-      triggerLightSweep(newEl);
-      updateZoneCount(listEl);
-    } else {
-      renderGateListContent(listEl, toZone);
-      const newEl = listEl.querySelector('[data-place-id="' + placeId + '"]') as HTMLElement | null;
-      if (newEl) triggerLightSweep(newEl);
-    }
+    await moveToZone(placeId, toZone);
   });
+}
+
+/**
+ * 카드를 다른 칸(대기 '' 또는 게이트)으로 옮긴다 — PC 끌어 놓기와 모바일 ⋯ 메뉴가 같은 길을 쓴다.
+ * 게이트로 들어갈 땐 Security Check 연출(보일 때만) → 저장 → 양쪽 칸을 다시 그린다.
+ */
+async function moveToZone(placeId: string, toZone: string): Promise<boolean> {
+  const place = placesCache.get(placeId);
+  if (!place) return false;
+  const fromZone = place.mood ?? '';
+  if (fromZone === toZone) return false;
+
+  if (toZone !== '') {
+    await runSecurityScan();
+  }
+
+  markRecentlyMutated(placeId);
+  const success = await movePlace(placeId, zoneToMood(toZone));
+  if (!success) return false;
+
+  const updatedPlace = { ...place, mood: zoneToMood(toZone), group_id: null, group_name: null, group_order: null };
+  placesCache.set(placeId, updatedPlace);
+
+  if (fromZone === '') {
+    const currentEl = document.querySelector('[data-place-id="' + placeId + '"]') as HTMLElement | null;
+    const inboxListEl = document.getElementById('inbox-list');
+    currentEl?.remove();
+    if (inboxListEl) {
+      updateZoneCount(inboxListEl);
+      ensureEmptyState(inboxListEl);
+    }
+  } else {
+    const sourceListEl = document.getElementById('glist-' + fromZone);
+    if (sourceListEl) renderGateListContent(sourceListEl, fromZone);
+  }
+
+  const listEl = toZone === '' ? document.getElementById('inbox-list') : document.getElementById('glist-' + toZone);
+  if (!listEl) return true;
+  if (toZone === '') {
+    removeEmptyState(listEl);
+    const newEl = createTicket(updatedPlace);
+    listEl.appendChild(newEl);
+    triggerLightSweep(newEl);
+    updateZoneCount(listEl);
+  } else {
+    renderGateListContent(listEl, toZone);
+    const newEl = listEl.querySelector('[data-place-id="' + placeId + '"]') as HTMLElement | null;
+    if (newEl) triggerLightSweep(newEl);
+  }
+  return true;
 }
 
 function triggerLightSweep(el: HTMLElement): void {
@@ -2855,6 +3105,8 @@ function updateZoneCount(listEl: HTMLElement): void {
     ? listEl.closest('.bd-inbox')?.querySelector('.bd-inbox-count')
     : listEl.closest('.bd-gate')?.querySelector('.bd-gate-count');
   if (countEl) countEl.textContent = String(count);
+  const tabCount = boardContainer?.querySelector('[data-mtab-count="' + (zone === '' ? MOBILE_TAB_INBOX : zone) + '"]');
+  if (tabCount) tabCount.textContent = String(count);
 }
 
 function removeEmptyState(listEl: HTMLElement): void {
@@ -2870,5 +3122,13 @@ function ensureEmptyState(listEl: HTMLElement): void {
   const zone = listEl.dataset.zone ?? '';
   listEl.innerHTML = zone === ''
     ? buildInboxEmpty()
-    : '<div class="bd-empty bd-empty-sm"><div class="bd-empty-hint">아이디어를 여기로 드래그하세요</div></div>';
+    : gateEmptyHtml();
+}
+
+/** 빈 게이트 안내 — 폰에선 끌어 놓기가 없으니 실제로 할 수 있는 방법(⋯ 메뉴)을 알려준다 */
+function gateEmptyHtml(): string {
+  const hint = isMobileBoard()
+    ? '아직 담긴 장소가 없어요<br>대기 탭 카드의 ⋯ 버튼으로 옮길 수 있어요'
+    : '아이디어를 여기로 드래그하세요';
+  return '<div class="bd-empty bd-empty-sm"><div class="bd-empty-hint">' + hint + '</div></div>';
 }

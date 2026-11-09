@@ -1730,3 +1730,332 @@
   .bd-export-textarea { min-height: 200px; }
 }
 .bd-site-link:hover .bd-site-arrow { color: #0B7CC4; }
+
+/* ============================================================
+   모바일(≤768px) — 게이트 탭 · 카드 메뉴 바텀시트
+   ------------------------------------------------------------
+   PC 레이아웃을 줄이는 게 아니라 순서와 구조를 바꾼다:
+     체크인 입력 → AI Monthly Picks → 검색 사이트 → 탭 바 → (선택한 탭 하나만) 화면 폭 전체
+   DOM은 PC와 같은 것 하나라, 아래 규칙은 전부 이 미디어쿼리 안에만 있다.
+   PC 전용 요소(Security 사이니지·게이트 확대 버튼·호버 케밥)는 숨기고,
+   모바일 전용 요소(.bd-mtabs · .bd-mmenu)는 PC에서 숨긴다.
+   ============================================================ */
+.bd-mtabs,
+.bd-mmenu { display: none; }
+
+@media (max-width: 768px) {
+  /* ── 상단: 지도 보기 / 여행지 변경 — 두 버튼이 폭을 나눠 쓴다 ── */
+  .bd-dest-bar { padding: 12px 16px 0; justify-content: stretch; }
+  .bd-dest-bar > button { flex: 1 1 0; justify-content: center; min-height: 44px; font-size: 13px; }
+
+  /* ── 레이아웃: 세로 한 줄. overflow-x:hidden은 sticky 탭을 막아서 clip으로 ── */
+  .bd-layout,
+  .bd-dest-bar-wrap:not(:empty) + .bd-layout {
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px 16px 104px; /* 아래 여백: 채팅 버튼에 마지막 카드가 가리지 않게 */
+    min-height: 0;
+    overflow-x: clip;
+  }
+  .bd-security { display: none; }
+
+  /* 체크인 카운터는 옆 기둥이 아니다 — 상자를 풀어서 그 안의 칸들을 레이아웃 순서에 끼워 넣는다 */
+  .bd-inbox { display: contents; }
+  .bd-inbox-header { order: 1; margin: 0; }
+  .bd-inbox-form { order: 2; margin: 0; }
+  .bd-ai-picks { order: 3; margin: 0; }
+  .bd-popular-sites { order: 4; margin: 0; }
+  .bd-mtabs { order: 5; }
+  .bd-inbox-list-header { order: 6; margin: 0; }
+  .bd-inbox-list { order: 7; }
+  .bd-gates { order: 8; }
+
+  .bd-inbox-header-top { margin: 0; }
+  .bd-inbox-header-top .bd-inbox-eyebrow { font-size: 11px; }
+  .bd-inbox-title { display: none; }
+  .bd-export-btn { min-height: 40px; padding: 0 14px; font-size: 12.5px; }
+
+  .bd-inbox-input { font-size: 16px; padding-top: 13px; padding-bottom: 13px; } /* 16px 미만이면 iOS가 확대한다 */
+  .bd-inbox-btn { width: 48px; height: 48px; }
+  .bd-inbox-clear { width: 28px; height: 28px; right: 8px; padding: 5px; }
+
+  .bd-ai-picks,
+  .bd-popular-sites { border-top: none; padding-top: 0; }
+  .bd-ai-picks-toggle,
+  .bd-popular-sites-toggle { min-height: 48px; }
+
+  /* 검색 사이트 — 세로 목록 대신 가로로 밀어 보는 링크 칩 */
+  .bd-popular-sites-body.open { max-height: none; overflow: visible; }
+  .bd-site-list {
+    flex-direction: row;
+    gap: 8px;
+    overflow-x: auto;
+    margin: 0 -16px;
+    padding: 2px 16px 4px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .bd-site-list::-webkit-scrollbar { display: none; }
+  .bd-site-link {
+    flex: none;
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid rgba(130,150,170,0.22);
+    border-radius: 999px;
+    background: #FFFFFF;
+  }
+  .bd-site-name { flex: none; white-space: nowrap; }
+
+  /* ── 게이트 탭 바 — 위에 붙어 있고 가로로 민다 ── */
+  .bd-mtabs {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: flex;
+    gap: 6px;
+    margin: 0 -16px;
+    padding: 8px 16px;
+    overflow-x: auto;
+    background: rgba(244,248,252,0.94);
+    backdrop-filter: saturate(140%) blur(8px);
+    -webkit-backdrop-filter: saturate(140%) blur(8px);
+    border-bottom: 1px solid rgba(130,150,170,0.14);
+    scrollbar-width: none;
+  }
+  .bd-mtabs::-webkit-scrollbar { display: none; }
+  .bd-mtab {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(130,150,170,0.24);
+    background: #FFFFFF;
+    color: #334155;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+  }
+  .bd-mtab svg { width: 15px; height: 15px; flex: none; color: #0B7CC4; }
+  .bd-mtab-count {
+    min-width: 20px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: #EAF6FD;
+    color: #0B7CC4;
+    font-size: 11.5px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .bd-mtab.active { background: #0B2A5C; border-color: #0B2A5C; color: #FFFFFF; }
+  .bd-mtab.active svg { color: #8FD8F8; }
+  .bd-mtab.active .bd-mtab-count { background: rgba(255,255,255,0.16); color: #FFFFFF; }
+
+  /* ── 선택한 탭 하나만 ── */
+  .bd-layout:not([data-mtab="inbox"]) .bd-inbox-list-header,
+  .bd-layout:not([data-mtab="inbox"]) .bd-inbox-list,
+  .bd-layout[data-mtab="inbox"] .bd-gates { display: none; }
+  .bd-layout[data-mtab="가고싶어"] .bd-gate:not([data-gate="가고싶어"]),
+  .bd-layout[data-mtab="먹고싶어"] .bd-gate:not([data-gate="먹고싶어"]),
+  .bd-layout[data-mtab="하고싶어"] .bd-gate:not([data-gate="하고싶어"]),
+  .bd-layout[data-mtab="숙소"] .bd-gate:not([data-gate="숙소"]) { display: none; }
+
+  .bd-layout .bd-inbox-list-header { display: none; } /* 탭이 이미 "대기 N"을 보여준다 */
+  .bd-inbox-list { padding: 0; gap: 8px; }
+
+  /* 게이트 = 탭이 이름·개수를 이미 보여주므로 머리말은 접고, 카드가 폭을 다 쓴다.
+     (PC "이 게이트만 크게 보기"는 폰에서 켜지지 않는다 — applyGateFocusState) */
+  .bd-layout .bd-gates { display: block; }
+  .bd-layout .bd-gate {
+    padding: 0;
+    background: none;
+    border: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .bd-gate-header { display: none; }
+  .bd-layout .bd-gate .bd-gate-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* ── 카드: ⋯ 버튼이 호버 케밥·호버 삭제를 대신한다(터치엔 호버가 없다) ── */
+  .bd-mmenu {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    color: #64748B;
+    cursor: pointer;
+  }
+  .bd-mmenu svg { width: 18px; height: 18px; color: inherit; }
+  .bd-mmenu:active { background: #F1F6FB; }
+  .bd-card-kebab,
+  .bd-card-kebab-menu,
+  .bd-card-delete,
+  .bd-ticket-delete { display: none !important; }
+  .bd-gate.group-select-mode .bd-mmenu { display: none; }
+
+  .bd-ticket { cursor: pointer; font-size: 14px; }
+  .bd-ticket-clip { padding: 12px 48px 12px 14px; }
+  .bd-ticket-text { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; word-break: break-word; }
+  .bd-ticket-thumb { width: 52px; height: 52px; }
+  .bd-suggest { flex-wrap: wrap; }
+  .bd-suggest-text { font-size: 12px; }
+  .bd-suggest-apply,
+  .bd-suggest-dismiss { min-height: 36px; padding: 0 14px; font-size: 12px; border-radius: 9px; }
+  .bd-suggest-note { font-size: 10.5px; }
+
+  .bd-card { cursor: pointer; font-size: 14px; }
+  .bd-card-clip { padding: 13px 48px 13px 14px; }
+  .bd-card .bd-card-text { padding-right: 0; }
+  /* 사진 카드는 가로형 — 세로로 길어지지 않게 사진을 왼쪽 썸네일로 */
+  .bd-card-rich .bd-card-clip { display: flex; align-items: stretch; padding: 0; }
+  .bd-card-photo {
+    flex: none;
+    width: 96px;
+    aspect-ratio: auto;
+    min-height: 96px;
+    border-radius: 10px 0 0 10px;
+  }
+  .bd-card-rich .bd-card-body { flex: 1; min-width: 0; padding: 12px 46px 12px 12px; }
+  .bd-card-title-row { flex-wrap: wrap; row-gap: 2px; }
+  .bd-card-name { font-size: 14.5px; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+  .bd-card-address { font-size: 12px; }
+
+  /* 그룹: 이름표는 호버가 없으니 늘 보이고, 카드 위에 겹치지 않게 테두리 안 첫 줄에 둔다 */
+  .bd-group-cluster { outline-offset: 3px; margin-top: 4px; }
+  .bd-group-cluster-header {
+    position: static;
+    display: inline-flex;
+    margin: 2px 0 8px 2px;
+    max-width: 100%;
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+    box-shadow: none;
+  }
+  .bd-group-cluster-name { font-size: 12.5px; max-width: 220px; }
+  .bd-group-cluster-count { font-size: 11px; }
+  .bd-group-cluster-dissolve { width: 28px; height: 28px; opacity: 1; pointer-events: auto; }
+  .bd-group-cluster-dissolve svg { width: 11px; height: 11px; }
+  /* 그룹 고르기: 체크 원이 글자를 덮지 않게 글자 카드는 왼쪽을 비우고, 툴바는 채팅 버튼 위로 */
+  .bd-card-select-toggle { width: 28px; height: 28px; }
+  .bd-gate.group-select-mode .bd-card:not(.bd-card-rich) .bd-card-clip { padding-left: 46px; }
+  .bd-gate.group-select-mode .bd-card:not(.bd-card-rich) .bd-card-select-toggle { top: 50%; left: 10px; margin-top: -14px; }
+  .bd-group-toolbar { left: 12px; right: 12px; bottom: 80px; transform: none; flex-wrap: wrap; }
+  .bd-group-toolbar-name { flex: 1 1 140px; width: auto; font-size: 16px; }
+  .bd-group-toolbar-cancel,
+  .bd-group-toolbar-confirm { min-height: 40px; }
+
+  .bd-ai-pick-add { width: 40px; height: 40px; flex: none; }
+  .bd-ai-pick-name { font-size: 14px; }
+
+  .bd-empty-sm { padding: 40px 16px; }
+  .bd-empty-hint { font-size: 13px; }
+
+  .bd-map-view { padding: 12px 16px 24px; }
+  .bd-map-view-canvas { height: calc(100dvh - 240px); min-height: 360px; }
+}
+
+/* ── 카드 메뉴 바텀시트 (모바일에서만 열린다 — 여는 버튼이 PC에선 숨어 있다) ── */
+.bd-msheet-wrap { position: fixed; inset: 0; z-index: 420; }
+.bd-msheet-back {
+  position: absolute;
+  inset: 0;
+  background: rgba(11,42,92,0.32);
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+.bd-msheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 86dvh;
+  overflow-y: auto;
+  padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
+  background: #FFFFFF;
+  border-radius: 20px 20px 0 0;
+  box-shadow: 0 -10px 30px rgba(11,42,92,0.16);
+  transform: translateY(100%);
+  transition: transform 220ms cubic-bezier(0.2,0.8,0.2,1);
+  box-sizing: border-box;
+}
+.bd-msheet-wrap.open .bd-msheet-back { opacity: 1; }
+.bd-msheet-wrap.open .bd-msheet { transform: none; }
+.bd-msheet-grip { width: 38px; height: 4px; margin: 2px auto 10px; border-radius: 99px; background: #D8E0EA; }
+.bd-msheet-head { padding: 0 2px 10px; border-bottom: 1px solid rgba(130,150,170,0.16); }
+.bd-msheet-title { font-size: 16px; font-weight: 700; color: #0B2A5C; line-height: 1.4; word-break: break-word; }
+.bd-msheet-sub { margin-top: 2px; font-size: 12.5px; color: #64748B; }
+.bd-msheet-label { margin: 14px 2px 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; color: #94A3B8; }
+.bd-msheet-moves { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.bd-msheet-move,
+.bd-msheet-half {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 48px;
+  padding: 0 10px;
+  border: 1px solid rgba(130,150,170,0.24);
+  border-radius: 12px;
+  background: #F8FBFE;
+  color: #0B2A5C;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+.bd-msheet-move svg { width: 17px; height: 17px; color: #0B7CC4; flex: none; }
+.bd-msheet-half:disabled { opacity: 0.4; cursor: default; }
+.bd-msheet-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.bd-msheet-list { display: flex; flex-direction: column; margin-top: 12px; border-top: 1px solid rgba(130,150,170,0.16); }
+.bd-msheet-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 50px;
+  padding: 0 4px;
+  border: none;
+  border-bottom: 1px solid rgba(130,150,170,0.12);
+  background: none;
+  color: #1E293B;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.bd-msheet-item svg { width: 19px; height: 19px; color: #64748B; flex: none; }
+.bd-msheet-item.danger,
+.bd-msheet-item.danger svg { color: #C0392B; }
+.bd-msheet-cancel {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 12px;
+  border: none;
+  border-radius: 12px;
+  background: #F1F6FB;
+  color: #334155;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
