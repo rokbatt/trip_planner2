@@ -415,6 +415,7 @@ let checklistModuleRef: { teardownChecklist: () => void } | null = null;
 let navigateGateHandlerRef: EventListener | null = null;
 let openVoteTargetHandlerRef: EventListener | null = null;
 let activeDestChangeHandler: ((e: Event) => void) | null = null;
+let openAssistantHandlerRef: (() => void) | null = null;
 
 async function renderGate(body: HTMLElement, tripId: string, gate: string): Promise<void> {
   if (gate !== 'ideas' && boardModuleRef) {
@@ -747,6 +748,11 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
       window.dispatchEvent(new CustomEvent('mongsil:commentsViewed', { detail: { placeId: place.id } }));
     }
   }
+
+  // 다른 게이트(예: 폰 TIMELINE의 "Assistant" 버튼)가 Assistant 패널을 바로 열 수 있게
+  if (openAssistantHandlerRef) window.removeEventListener('mongsil:openAssistant', openAssistantHandlerRef);
+  openAssistantHandlerRef = () => openDrawer('ai');
+  window.addEventListener('mongsil:openAssistant', openAssistantHandlerRef);
 
   page.addEventListener('mongsil:openPlaceDetail', ((e: CustomEvent<{ place: any }>) => {
     openDetailPanel(e.detail.place);

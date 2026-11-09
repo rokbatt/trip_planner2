@@ -68,6 +68,7 @@ import {
 import type { Leg, RealLeg, CatKey } from '../utils/travelEstimate';
 import type { Database, StaySegment, TripDestination } from '../types/database';
 import { isLegCoolingDown, markLegsFailed, clearLegFailures, reportRouteError } from '../utils/legCooldown';
+import { bindLongPressReorder } from '../mobile/reorder';
 import './route.css';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -104,6 +105,8 @@ const IC_SEARCH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const IC_EXTLINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>';
 const IC_DOTS = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
 const IC_PIN_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21C12 21 19 14.5 19 9.5C19 5.9 15.9 3 12 3C8.1 3 5 5.9 5 9.5C5 14.5 12 21 12 21Z"/><path d="M12 6.5v6M9 9.5h6"/></svg>';
+const IC_LIST = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg>';
+const IC_MAPFOLD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5v-13L15 6.5 9 4z"/><path d="M9 4v13M15 6.5v13"/></svg>';
 const IC_NOTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 const IC_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2m-8 0 1 13a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-13"/></svg>';
 // "여행지 변경" 전용 — Board/Shortlist의 같은 아이콘과 통일
@@ -288,6 +291,8 @@ let beforeUnloadHandler: (() => void) | null = null;
 let zoomRedrawHandle: number | null = null;
 
 export function teardownRoute(): void {
+  routeReorderUnbind?.();
+  routeReorderUnbind = null;
   if (resizeHandler) { window.removeEventListener('resize', resizeHandler); resizeHandler = null; }
   if (escHandler) { document.removeEventListener('keydown', escHandler); escHandler = null; }
   if (beforeUnloadHandler) { window.removeEventListener('beforeunload', beforeUnloadHandler); beforeUnloadHandler = null; }
@@ -1334,6 +1339,13 @@ function buildPageHtml(): string {
     '    </div>',
     '  </div>',
 
+    // 폰 전용 — 지도와 일정을 좁게 나란히 두지 않고 둘 중 하나를 화면 폭 전체로(PC에선 CSS로 숨김)
+    '  <div class="rt-mmode" role="tablist" aria-label="보기 전환">',
+    '    <button type="button" class="rt-mmode-btn" role="tab" data-rtmode="plan">' + IC_LIST + '일정 보기</button>',
+    '    <button type="button" class="rt-mmode-btn" role="tab" data-rtmode="map">' + IC_MAPFOLD + '지도 보기</button>',
+    '  </div>',
+    '  <button type="button" class="rt-madd" id="rt-madd">' + IC_PLUS + ' 장소 추가 · 지도에서 고르기</button>',
+
     '  <div class="rt-main" id="rt-main">',
     '    <div class="rt-map-col">',
     '      <div class="rt-map-wrap">',
@@ -1363,7 +1375,41 @@ function buildPageHtml(): string {
   ].join('\n');
 }
 
+/* ── 폰(≤768px): 일정 보기 ↔ 지도 보기 ──
+ * PC는 지도(왼쪽)와 일정 패널(오른쪽)을 나란히 둔다. 폰 폭에선 둘 다 좁아지므로 한 번에 하나만
+ * 화면 폭 전체로 보여주고 위의 두 버튼으로 바꾼다. 지도는 그대로 같은 인스턴스라 다시 만들지 않는다
+ * (경로 계산·Route Matrix 호출은 그대로 — 전환만으로 API를 부르지 않는다). */
+const ROUTE_MOBILE_MQ = '(max-width: 768px)';
+let routeMobileMode: 'plan' | 'map' = 'plan';
+let routeReorderUnbind: (() => void) | null = null;
+
+function isRouteMobile(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia(ROUTE_MOBILE_MQ).matches;
+}
+
+function setRouteMobileMode(container: HTMLElement, mode: 'plan' | 'map', opts: { openLibrary?: boolean } = {}): void {
+  routeMobileMode = mode;
+  const shell = container.querySelector('.rt-shell') as HTMLElement | null;
+  if (!shell) return;
+  shell.dataset.rtmode = mode;
+  shell.querySelectorAll('.rt-mmode-btn').forEach((b) => {
+    const on = (b as HTMLElement).dataset.rtmode === mode;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', String(on));
+  });
+  if (mode === 'map' && isRouteMobile()) {
+    // 지도를 덮는 장소 목록은 기본 접힘 — "장소 추가"로 왔을 때만 펼친다
+    setLeftPanelCollapsed(container, !opts.openLibrary);
+    requestAnimationFrame(() => resizeMap());
+  }
+}
+
 function bindPage(container: HTMLElement): void {
+  container.querySelectorAll('.rt-mmode-btn').forEach((b) => {
+    b.addEventListener('click', () => setRouteMobileMode(container, (b as HTMLElement).dataset.rtmode === 'map' ? 'map' : 'plan'));
+  });
+  container.querySelector('#rt-madd')?.addEventListener('click', () => setRouteMobileMode(container, 'map', { openLibrary: true }));
+  setRouteMobileMode(container, routeMobileMode);
   renderDayTabs(container);
   renderCatFilters(container);
   renderLeftPanel(container);
@@ -2994,6 +3040,7 @@ function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
   });
 
   bindDragReorder(container, el);
+  bindTouchReorder(container, el);
 
   el.querySelector('#rt-panel-more')?.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -3058,6 +3105,42 @@ function bindDragReorder(container: HTMLElement, el: HTMLElement): void {
       dragStopId = null;
       refreshAll(container, { refit: false });
     });
+  });
+}
+
+/**
+ * 폰에서는 HTML5 끌어 놓기가 동작하지 않는다 — 카드를 길게 눌러(0.45초) 위아래로 끌어 순서를
+ * 바꾼다(Companion과 같은 제스처, mobile/reorder.ts). 결과는 PC 드롭과 같은 규칙으로 stopIds에 반영.
+ */
+function bindTouchReorder(container: HTMLElement, el: HTMLElement): void {
+  routeReorderUnbind?.();
+  routeReorderUnbind = null;
+  const list = el.querySelector('#rt-panel-list') as HTMLElement | null;
+  if (!list || !isRouteMobile()) return;
+  // 안드로이드 크롬은 draggable 요소를 길게 누르면 브라우저 자체 끌기를 시작한다 — 폰에선 끈다
+  list.querySelectorAll('.rt-panel-stop[draggable="true"]').forEach((c) => c.setAttribute('draggable', 'false'));
+  const scroller = (container.closest('.ws-content-body') as HTMLElement | null) ?? (document.scrollingElement as HTMLElement);
+  routeReorderUnbind = bindLongPressReorder({
+    thread: list,
+    scroller,
+    rowSelector: '.rt-panel-stop',
+    ignoreSelector: 'input, button, a, textarea, select',
+    canStart: () => true,
+    onStart: () => {},
+    onEnd: () => {},
+    onDrop: (from, to) => {
+      const ids = Array.from(list.querySelectorAll<HTMLElement>('.rt-panel-stop')).map((c) => c.dataset.placeId!);
+      const dragged = ids[from];
+      const rest = ids.filter((_, i) => i !== from);
+      const before = to < rest.length ? rest[to] : null;
+      if (!dragged) return;
+      pushHistory();
+      const day = activeDay();
+      day.stopIds = day.stopIds.filter((id) => id !== dragged);
+      const idx = before ? day.stopIds.indexOf(before) : -1;
+      day.stopIds.splice(idx === -1 ? day.stopIds.length : idx, 0, dragged);
+      refreshAll(container, { refit: false });
+    },
   });
 }
 

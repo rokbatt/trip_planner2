@@ -1229,3 +1229,140 @@
   .tl-legcard-stats { gap: 10px; font-size: 12px; min-width: 0; max-width: 100%; overflow: hidden; }
   .tl-legcard-eta { margin-left: 8px; font-size: 11px; }
 }
+
+/* ============================================================
+   폰(≤768px) — 여행 중에 가장 많이 여는 화면
+   ------------------------------------------------------------
+   PC 레이아웃은 그대로, 이 블록만 폰에 적용된다(위 720px 규칙 위에 덧씌운다).
+   · .tl-mnow: 날짜 이동 · 도시 · (오늘이면) 진행 상황 · 길찾기/문서/Assistant
+   · 카드: 시각 칸이 잘리지 않게 좁히고, 사진은 작은 썸네일로 되살린다(정보가 사진에서 먼저 읽힌다)
+   · 장소 상세(.tl-pd)는 JS가 셸 아래로 옮겨 붙이고, 여기서 아래에서 올라오는 시트로 띄운다
+   · 아래 여백은 채팅 버튼과 홈 인디케이터(safe area)만큼
+   ============================================================ */
+.tl-mnow,
+.tl-pd-scrim { display: none; }
+
+@media (max-width: 768px) {
+  .tl-shell {
+    --tl-col-time: 50px; --tl-col-spine: 14px;
+    padding: 12px 12px calc(96px + env(safe-area-inset-bottom));
+  }
+
+  /* ── 오늘의 일정 바 ── */
+  .tl-mnow {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0 0 14px;
+    padding: 12px 12px 14px;
+    border: 1px solid var(--tl-line);
+    border-radius: 16px;
+    background: #FFFFFF;
+    box-shadow: var(--tl-shadow-sm);
+  }
+  .tl-mnow-nav { display: flex; align-items: center; gap: 8px; }
+  .tl-mnow-arrow {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--tl-line);
+    border-radius: 12px;
+    background: var(--tl-mist);
+    color: var(--tl-navy);
+    cursor: pointer;
+  }
+  .tl-mnow-arrow svg { width: 18px; height: 18px; transform: rotate(90deg); }
+  .tl-mnow-arrow.is-next svg { transform: rotate(-90deg); }
+  .tl-mnow-arrow:disabled { opacity: 0.35; cursor: default; }
+  .tl-mnow-title { flex: 1; min-width: 0; text-align: center; }
+  .tl-mnow-day { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 17px; color: var(--tl-navy); }
+  .tl-mnow-day b { font-weight: 800; }
+  .tl-mnow-today { padding: 1px 8px; border-radius: 999px; background: #FDEBD8; color: #B45309; font-size: 11.5px; font-weight: 700; }
+  .tl-mnow-sub { margin-top: 2px; font-size: 13px; color: var(--tl-ink-3); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .tl-mnow-progress { display: flex; align-items: center; gap: 10px; }
+  .tl-mnow-bar { flex: 1; height: 6px; border-radius: 99px; background: var(--tl-mist); overflow: hidden; }
+  .tl-mnow-bar i { display: block; height: 100%; border-radius: inherit; background: var(--tl-blue); }
+  .tl-mnow-count { flex: none; font-size: 12.5px; font-weight: 700; color: var(--tl-navy); font-variant-numeric: tabular-nums; }
+  .tl-mnow-lines { display: flex; flex-direction: column; gap: 6px; }
+  .tl-mnow-line { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; color: var(--tl-navy); }
+  .tl-mnow-line b { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 700; }
+  .tl-mnow-k { flex: none; padding: 2px 8px; border-radius: 7px; background: var(--tl-mist); color: var(--tl-ink-2); font-size: 12px; font-weight: 700; }
+  .tl-mnow-k.is-next { background: var(--tl-ice); color: var(--tl-blue); }
+  .tl-mnow-t { flex: none; font-size: 13px; font-weight: 700; color: var(--tl-ink-2); font-variant-numeric: tabular-nums; }
+  .tl-mnow-note { font-size: 11.5px; color: var(--tl-ink-4); }
+  .tl-mnow-acts { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 6px; }
+  .tl-mnow-act {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-height: 44px;
+    padding: 0 6px;
+    border: 1px solid var(--tl-line);
+    border-radius: 12px;
+    background: #FFFFFF;
+    color: var(--tl-navy);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .tl-mnow-act svg { width: 15px; height: 15px; flex: none; }
+  .tl-mnow-act.is-primary { background: var(--tl-navy); border-color: var(--tl-navy); color: #FFFFFF; }
+
+  /* 위 상단 바가 날짜를 맡는다 — 큰 DAY 머리말은 한 단계 줄인다 */
+  .tl-dayhead-label { font-size: 19px; }
+
+  /* ── 카드: 시각이 잘리지 않게, 사진은 작은 썸네일 ── */
+  .tl-row { column-gap: 8px; }
+  .tl-col-time { padding-left: 0; align-items: flex-end; }
+  .tl-time { width: 100%; font-size: 14px; text-align: right; padding: 2px 0; }
+  .tl-dwell { font-size: 11px; white-space: normal; text-align: right; line-height: 1.25; }
+  .tl-col-card { padding-right: 0; }
+  .tl-photo { display: block; width: 68px; }
+  .tl-photo-empty { display: none; }
+  .tl-name { font-size: 15px; white-space: normal; word-break: break-word; }
+  /* 카드 = [사진 | 본문] 위, [사진 | 도구 줄] 아래 — 도구 버튼(지도·Google 지도·빼기)이 이름을 좁히지 않게 */
+  .tl-stop .tl-card { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: 1fr auto; }
+  .tl-stop .tl-card > .tl-photo { grid-row: 1 / span 2; }
+  .tl-stop .tl-card > .tl-card-body { grid-column: 2; padding-bottom: 4px; }
+  .tl-stop .tl-card > .tl-card-tools {
+    position: static;
+    grid-column: 2;
+    justify-content: flex-end;
+    padding: 0 8px 8px;
+    opacity: 1;
+  }
+  .tl-card-titlerow { padding-right: 0; align-items: flex-start; }
+  .tl-card-tools { gap: 6px; }
+  .tl-tool { width: 32px; height: 32px; border-radius: 9px; }
+  .tl-tool svg { width: 14px; height: 14px; }
+  .tl-memo { font-size: 16px; }
+
+  /* ── 장소 상세 = 아래에서 올라오는 시트 ── */
+  .tl-shell > .tl-pd {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 340;
+    max-height: 88dvh;
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -12px 32px rgba(11,42,92,0.22);
+    padding-bottom: env(safe-area-inset-bottom);
+    animation: tl-sheet-up 220ms cubic-bezier(0.2,0.8,0.2,1);
+  }
+  .tl-shell > .tl-pd .tl-pd-hero { height: 180px; }
+  .tl-shell > .tl-pd .tl-pd-close { width: 40px; height: 40px; }
+  .tl-shell > .tl-pd-scrim:not([hidden]) {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 339;
+    background: rgba(11,42,92,0.32);
+  }
+  body.tl-sheet-open .ws-drawer-fab { display: none; }
+}
+@keyframes tl-sheet-up { from { transform: translateY(100%); } to { transform: none; } }
