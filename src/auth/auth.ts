@@ -1,6 +1,8 @@
 import { supabase } from '../supabase';
 import { store } from '../store';
 import { navigate } from '../router';
+// 메인페이지 서체(원티드 산스). 글자 범위별로 쪼갠 파일이라 화면에 나온 글자의 조각만 내려받는다
+import 'wanted-sans/fonts/webfonts/variable/split/WantedSansVariable.css';
 import './auth.css';
 import './landing-shots.css';
 import { boardShotHtml, chatShotHtml, expenseShotHtml, routeShotHtml, stayShotHtml, timelineShotHtml } from './landingShots';

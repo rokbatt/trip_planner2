@@ -3,6 +3,9 @@
    ============================================================ */
 
 .login-page {
+  /* 메인페이지 서체는 원티드 산스(SIL OFL, npm wanted-sans를 자체 호스팅 — auth.ts에서 불러온다).
+     앱 안쪽 화면은 그대로 --font-sans를 쓴다. 폰트가 늦게 오면 그동안 Pretendard·시스템 서체로 보인다 */
+  --font-sans: 'Wanted Sans Variable', 'Wanted Sans', 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   position: relative;
   background: var(--al-bg);
   color: var(--al-text);
@@ -37,7 +40,7 @@
 .lp-hero-inner {
   position: relative;
   z-index: 2;
-  max-width: 720px;
+  max-width: 1040px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -53,27 +56,33 @@
   text-transform: uppercase;
   color: rgba(255,255,255,0.82);
   margin-bottom: 20px;
+  text-shadow: 0 1px 8px rgba(6,18,38,0.5);
 }
 
 .lp-title {
-  font-size: 56px;
-  font-weight: 700;
-  letter-spacing: -0.04em;
-  line-height: 1.12;
+  /* 첫 줄("여행은 정하는 게 아니라", 약 10.6em)이 화면 폭에 딱 들어가는 크기 — 줄이 셋으로 꺾여
+     "아니라"가 혼자 남지 않게. 데스크톱은 88px에서 멈춘다 */
+  font-size: min(88px, max(26px, calc((100vw - 48px) / 10.6)));
+  font-weight: 900;
+  letter-spacing: -0.055em;
+  line-height: 1.1;
   margin-bottom: 24px;
   color: #ffffff;
-  text-shadow: 0 2px 22px rgba(0,0,0,0.28);
+  word-break: keep-all;
+  text-shadow: 0 2px 24px rgba(6,18,38,0.35);
 }
 
 .lp-subtitle {
   font-size: 16px;
-  font-weight: 400;
+  font-weight: 500;
   line-height: 1.7;
   letter-spacing: -0.01em;
-  color: rgba(255,255,255,0.86);
+  color: rgba(255,255,255,0.94);
   max-width: 560px;
   margin-bottom: 42px;
-  text-shadow: 0 1px 12px rgba(0,0,0,0.2);
+  word-break: keep-all;
+  /* 밝은 하늘·인물 위에서도 읽히게 — 사진은 그대로 두고 글자에만 그림자 */
+  text-shadow: 0 1px 2px rgba(6,18,38,0.55), 0 2px 16px rgba(6,18,38,0.45);
 }
 
 .lp-hero-btn {
@@ -105,6 +114,7 @@
   letter-spacing: 0.1em;
   color: rgba(255,255,255,0.68);
   text-transform: uppercase;
+  text-shadow: 0 1px 8px rgba(6,18,38,0.5);
 }
 
 .lp-hero-scroll {
@@ -318,8 +328,8 @@
 }
 .lp-sec-title {
   font-size: 32px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
+  font-weight: 800;
+  letter-spacing: -0.04em;
   line-height: 1.3;
   margin-bottom: 18px;
   color: #0B2A5C;
@@ -729,8 +739,8 @@
 .lp-pass-field b { font-size: 14px; font-weight: 700; color: #17212B; }
 .lp-pass-title {
   font-size: 30px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
+  font-weight: 800;
+  letter-spacing: -0.04em;
   line-height: 1.26;
   color: #0B2A5C;
   text-align: center;
@@ -914,7 +924,6 @@
 @media (max-width: 620px) {
   .lp-nav { padding: 0 16px; }
   .lp-section { padding: 88px 20px; }
-  .lp-title { font-size: 38px; }
   .lp-subtitle { font-size: 15px; }
   .lp-nav-name { display: none; }
   .lp-sec-title { font-size: 24px; }
