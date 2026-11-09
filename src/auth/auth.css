@@ -149,6 +149,9 @@
   border-bottom: 1px solid var(--al-divider);
 }
 .lp-nav-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 18px;
   font-weight: 700;
   letter-spacing: -0.03em;
@@ -156,6 +159,7 @@
   transition: color var(--al-duration) var(--al-ease);
 }
 .lp-nav.solid .lp-nav-logo { color: var(--al-text); }
+.lp-nav-logo img { display: block; width: 26px; height: 26px; }
 
 .lp-nav-cta {
   padding: 10px 20px;
