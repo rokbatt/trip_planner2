@@ -45,18 +45,38 @@ export const config = {
 
 const BUCKET = 'place-photos';
 
+/** 이 상태 코드면 "이 사진이 틀렸다"가 아니라 "서버 키·권한·한도가 문제"다 — 같은 키로 부르는 모든 요청이 실패한다 */
+const KEY_PROBLEM_STATUSES = new Set([401, 403, 429]);
+
 async function fetchFreshPhotoUrl(placeId: string, serverMapsKey: string): Promise<string | null> {
   try {
     const detailsRes = await fetch(
       'https://places.googleapis.com/v1/places/' + placeId + '?fields=photos&key=' + serverMapsKey
     );
-    if (!detailsRes.ok) return null;
+    if (!detailsRes.ok) {
+      // 새 사진 주소를 받는 장소 조회마저 거절당하면 원인은 사진이 아니라 키다. 로그와 응답에 그대로 남겨
+      // 브라우저 콘솔에서 바로 원인이 보이게 한다(Vercel 로그를 안 열어도 된다).
+      if (KEY_PROBLEM_STATUSES.has(detailsRes.status)) {
+        throw new KeyProblemError(detailsRes.status);
+      }
+      return null;
+    }
     const data: any = await detailsRes.json();
     const photoName = data?.photos?.[0]?.name;
     if (!photoName) return null;
     return 'https://places.googleapis.com/v1/' + photoName + '/media?maxWidthPx=480&maxHeightPx=480&key=' + serverMapsKey;
   } catch (e) {
+    if (e instanceof KeyProblemError) throw e;
     return null;
+  }
+}
+
+class KeyProblemError extends Error {
+  constructor(status: number) {
+    super(
+      'Google가 서버 키 요청을 거절했어요 (HTTP ' + status + '). Cloud Console에서 GOOGLE_MAPS_SERVER_KEY의 ' +
+        'API 제한(Places API (New) 허용)·애플리케이션 제한(없음 또는 IP)·결제를 확인해 주세요.'
+    );
   }
 }
 
@@ -90,6 +110,7 @@ async function rehostGooglePhoto(
   }
 
   if (!imgRes.ok) {
+    if (KEY_PROBLEM_STATUSES.has(imgRes.status)) throw new KeyProblemError(imgRes.status);
     throw new Error('사진 다운로드 실패 (' + imgRes.status + ') — 원본 URL 만료 + 재발급도 실패');
   }
 
