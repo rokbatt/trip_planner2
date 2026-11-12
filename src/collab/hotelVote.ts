@@ -13,6 +13,7 @@ import { supabase } from '../supabase';
 import { store } from '../store';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import './hotelVote.css';
+import { escapeHtml } from '../utils/html';
 
 interface VoteRequestPayload {
   requestId: string;
@@ -53,11 +54,6 @@ const activeRequestByPlace = new Map<string, string>();
 /** 이 클라이언트가 이 숙소에 대해 이미 던진 투표(있다면) */
 const myVoteByPlace = new Map<string, 'up' | 'down'>();
 
-function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 function ensureToastLayer(): HTMLElement {
   if (toastLayer && document.body.contains(toastLayer)) return toastLayer;

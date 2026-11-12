@@ -67,6 +67,7 @@ export type { ExpenseCategory };
 type TripExpenseInsert = Database['public']['Tables']['trip_expenses']['Insert'];
 import './expense.css';
 import { todayLocalISO } from '../utils/dates';
+import { escapeHtml } from '../utils/html';
 
 /* ── UI 전용 아이콘 (카테고리 아이콘은 expenseModel의 CATEGORY_META에 있다) ── */
 const IC_DOTS = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
@@ -141,11 +142,6 @@ let quickAddMode: 'direct' | 'receipt' | 'sms' = 'direct';
 /* 환율 캐시 — 같은 세션에서 통화당 1회만 조회 */
 const fxCache = new Map<string, { rate: number | null; source: string }>();
 
-function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 /* ── 계산은 expenseModel에 위임한다 ──
  * 모듈 상태(expenses/members/budgets/headcount)를 컨텍스트로 묶어 넘기기만 하고,

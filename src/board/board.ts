@@ -19,6 +19,7 @@ import { MarkerClusterer } from '@googlemaps/markerclusterer';
 import './board.css';
 import { parseISODate } from '../utils/dates';
 import { apiFetch } from '../utils/apiFetch';
+import { escapeHtml } from '../utils/html';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type PlacesDbRow = Database['public']['Tables']['places_db']['Row'];
@@ -229,11 +230,6 @@ function zoneToMood(zone: string): string | null {
   return zone === '' ? null : zone;
 }
 
-function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 /* ── 최근 내가 직접 반영한 변경 id (realtime 에코 중복 처리 방지) ── */
 const recentlyMutatedIds = new Set<string>();

@@ -79,6 +79,7 @@ import { isLegCoolingDown, markLegsFailed, reportRouteError } from '../utils/leg
 import './timeline.css';
 import { parseISODate } from '../utils/dates';
 import { apiFetch } from '../utils/apiFetch';
+import { escapeHtml } from '../utils/html';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type Trip = Database['public']['Tables']['trips']['Row'];
@@ -267,11 +268,6 @@ export function teardownTimeline(): void {
 
 /* ══════════════ 유틸 ══════════════ */
 
-function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 function gotoGate(gate: string): void {
   window.dispatchEvent(new CustomEvent('mongsil:navigateGate', { detail: { tripId: currentTripId, gate } }));

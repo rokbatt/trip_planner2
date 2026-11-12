@@ -6,6 +6,7 @@ import 'wanted-sans/fonts/webfonts/variable/split/WantedSansVariable.css';
 import './auth.css';
 import './landing-shots.css';
 import { boardShotHtml, chatShotHtml, expenseShotHtml, routeShotHtml, stayShotHtml, timelineShotHtml } from './landingShots';
+import { escapeHtml } from '../utils/html';
 
 /* ── 인증 ── */
 export async function signInWithGoogle(): Promise<void> {
@@ -57,11 +58,6 @@ function getUserInfo() {
   };
 }
 
-function escapeHtml(str: string): string {
-  const d = document.createElement('div');
-  d.textContent = str;
-  return d.innerHTML;
-}
 
 /* ── 네비 우측 영역 ── */
 function navRightHtml(): string {

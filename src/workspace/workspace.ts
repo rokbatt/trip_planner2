@@ -12,6 +12,7 @@ import type { ChatMessage } from '../types/database';
 import { onGateRendered, openHelp } from '../onboarding/onboarding';
 import './workspace.css';
 import { parseISODate } from '../utils/dates';
+import { escapeHtml, safeHttpUrl } from '../utils/html';
 
 type Trip = Database['public']['Tables']['trips']['Row'];
 
@@ -84,11 +85,6 @@ const GATE_TITLES: Record<string, string> = {
 
 type PanelTab = 'chat' | 'ai' | 'detail';
 
-function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 async function getTrip(tripId: string): Promise<Trip | null> {
   const cached = store.get('currentTrip');
@@ -378,7 +374,7 @@ function buildMemberAvatars(members: TripMemberLite[]): string {
   const avatarsHtml = visible.map((m) => {
     const initial = (m.display_name || '?').charAt(0);
     const img = m.avatar_url
-      ? '<img src="' + m.avatar_url + '" alt="" referrerpolicy="no-referrer" />'
+      ? '<img src="' + escapeHtml(safeHttpUrl(m.avatar_url) ?? '') + '" alt="" referrerpolicy="no-referrer" />'
       : escapeHtml(initial);
     return '<div class="ws-avatar" title="' + escapeHtml(m.display_name || '멤버') + '">' + img + '</div>';
   }).join('');
@@ -813,7 +809,7 @@ function buildStayLinkSectionHtml(place: any): string {
   const body = place.linked_url
     ? [
         '<div class="ws-linked-url-row">',
-        '  <a class="ws-linked-url-link" href="' + escapeHtml(place.linked_url) + '" target="_blank" rel="noopener noreferrer">',
+        '  <a class="ws-linked-url-link" href="' + escapeHtml(safeHttpUrl(place.linked_url) ?? '#') + '" target="_blank" rel="noopener noreferrer">',
              IC.link,
         '    <span>' + escapeHtml(place.linked_url_title || place.linked_url) + '</span>',
         '  </a>',

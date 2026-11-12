@@ -9,6 +9,7 @@ import type { Database } from '../types/database';
 import './trip-list.css';
 import { openHelp } from '../onboarding/onboarding';
 import { parseISODate } from '../utils/dates';
+import { escapeHtml } from '../utils/html';
 
 type Trip = Database['public']['Tables']['trips']['Row'];
 
@@ -96,11 +97,6 @@ function getUserInfo() {
   };
 }
 
-function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 /* ── 날짜 포매팅 ── */
 function formatMMDD(dateStr: string | null): string {

@@ -43,6 +43,7 @@ import './shortlist.css';
 import { parseISODate, daysBetweenISO } from '../utils/dates';
 import { CURRENCIES, fmtAmount, symbolOf } from '../utils/currencies';
 import { apiFetch } from '../utils/apiFetch';
+import { escapeHtml, safeHttpUrl } from '../utils/html';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type Trip = Database['public']['Tables']['trips']['Row'];
@@ -510,11 +511,6 @@ function subscribeShortlistRealtime(tripId: string): void {
     .subscribe();
 }
 
-function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 /* ── 거리 계산 (Haversine, API 호출 없음) ── */
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -3647,7 +3643,7 @@ function renderCandidateCards(body: HTMLElement, candidates: Place[]): void {
         '  </div>',
         '  <div class="sl-cand-actions">',
         c.linked_url
-          ? '    <a class="sl-cand-action" href="' + escapeHtml(c.linked_url) + '" target="_blank" rel="noopener noreferrer" data-stop-select="1" title="연동된 링크로 이동">' + IC_LINK + '</a>'
+          ? '    <a class="sl-cand-action" href="' + escapeHtml(safeHttpUrl(c.linked_url) ?? '#') + '" target="_blank" rel="noopener noreferrer" data-stop-select="1" title="연동된 링크로 이동">' + IC_LINK + '</a>'
           : '    <button type="button" class="sl-cand-action sl-cand-link-empty" data-link-hint-place="' + c.id + '" title="연동된 링크가 없어요">' + IC_LINK + '</button>',
         '    <button type="button" class="sl-cand-action sl-cand-elim" data-elim-place="' + c.id + '" title="이 후보 탈락시키기">' + IC_XCLOSE + '</button>',
         '  </div>',

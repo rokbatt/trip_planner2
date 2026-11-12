@@ -10,6 +10,7 @@ import type { PlacePrediction } from '../utils/googleMaps';
 import { rehostPhoto } from './addGooglePlace';
 import { parseTimeInput } from '../utils/travelEstimate';
 import './airportPicker.css';
+import { escapeHtml } from '../utils/html';
 
 export interface AirportValue {
   airport: string | null;
@@ -42,11 +43,6 @@ export interface AirportPickerOptions {
   onChange?: (value: AirportValue) => void;
 }
 
-function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 /** container 안에 공항 입력 행 하나를 mount. route.ts에 있던 airportInfoHtml/bindAirportInfo를
  *  일반화해서 trip-create/trip-edit 등에서 재사용한다. */
