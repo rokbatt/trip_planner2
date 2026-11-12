@@ -11,6 +11,7 @@ import type { Database, TripDestination } from '../types/database';
 import type { ChatMessage } from '../types/database';
 import { onGateRendered, openHelp } from '../onboarding/onboarding';
 import './workspace.css';
+import { parseISODate } from '../utils/dates';
 
 type Trip = Database['public']['Tables']['trips']['Row'];
 
@@ -156,7 +157,7 @@ async function ensureOwnMemberProfile(tripId: string): Promise<void> {
 }
 
 function formatDateShort(d: string): string {
-  const dt = new Date(d);
+  const dt = parseISODate(d);
   return (dt.getMonth() + 1) + '.' + String(dt.getDate()).padStart(2, '0');
 }
 

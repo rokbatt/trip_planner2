@@ -51,20 +51,10 @@ export const CATEGORY_META: Record<ExpenseCategory, { label: string; color: stri
 
 export const SPLIT_MODE_LABEL: Record<SplitMode, string> = { SHARED: '공동 지출', PERSONAL: '개인 지출' };
 
-/* 여행에서 실제로 자주 등장하는 통화만 — 자유 입력이 아니라 유한 목록 */
-export const CURRENCIES: Array<{ code: string; symbol: string }> = [
-  { code: 'KRW', symbol: '₩' },
-  { code: 'THB', symbol: '฿' },
-  { code: 'JPY', symbol: '¥' },
-  { code: 'USD', symbol: '$' },
-  { code: 'EUR', symbol: '€' },
-  { code: 'TWD', symbol: 'NT$' },
-  { code: 'VND', symbol: '₫' },
-  { code: 'SGD', symbol: 'S$' },
-  { code: 'HKD', symbol: 'HK$' },
-  { code: 'PHP', symbol: '₱' },
-  { code: 'IDR', symbol: 'Rp' },
-];
+/* 통화 목록·기호·표기는 utils/currencies.ts 한 곳에서 관리한다(예전엔 세 곳에 따로 있어 어긋났다).
+   지출 화면들이 이 모듈에서 가져다 쓰던 이름은 그대로 다시 내보낸다. */
+export { CURRENCIES, symbolOf, fmtAmount } from '../utils/currencies';
+import { fmtAmount } from '../utils/currencies';
 
 /* ══════════════ 타입 ══════════════ */
 
@@ -107,17 +97,21 @@ export function fmtKRW(n: number): string {
   return '₩' + Math.round(n).toLocaleString('ko-KR');
 }
 
-export function symbolOf(code: string): string {
-  return CURRENCIES.find((c) => c.code === code)?.symbol ?? code + ' ';
+/**
+ * 환율("1 외화 = ? 원") 표기. 1 VND ≈ 0.0569원처럼 1원보다 작은 환율을 반올림하면 "₩0"이 되어 버리므로
+ * 작은 값은 유효숫자 3자리를 살린다(IDR 0.0907, VND 0.0569). 100원 이상은 정수, 그 사이는 소수 둘째 자리.
+ */
+export function fmtRate(rate: number): string {
+  if (!(rate > 0)) return '0';
+  if (rate >= 100) return Math.round(rate).toLocaleString('ko-KR');
+  if (rate >= 1) return rate.toFixed(2);
+  return String(Number(rate.toPrecision(3)));
 }
 
-/** 소수점이 없는 통화(원·엔·동·루피아)는 반올림해서 보여준다 */
-export function fmtAmount(amount: number, currency: string): string {
-  const num = currency === 'KRW' || currency === 'JPY' || currency === 'VND' || currency === 'IDR'
-    ? Math.round(amount).toLocaleString('ko-KR')
-    : amount.toLocaleString('ko-KR', { maximumFractionDigits: 2 });
-  return symbolOf(currency) + num;
+export function fmtRateKRW(rate: number): string {
+  return '₩' + fmtRate(rate);
 }
+
 
 /** 집계에 쓸 원화 금액 — KRW 입력은 amount 그대로, 그 외엔 저장된 환산값(없으면 null) */
 export function krwOf(e: TripExpense): number | null {
@@ -375,11 +369,31 @@ export async function fetchRate(currency: string): Promise<{ rate: number | null
     const res = await fetch('/api/exchange-rate?from=' + encodeURIComponent(currency));
     const data = (await res.json()) as { rate: number | null; source: string };
     const result = { rate: typeof data.rate === 'number' && data.rate > 0 ? data.rate : null, source: data.source ?? 'unavailable' };
-    fxCache.set(currency, result);
+    // 못 구한 결과는 담아 두지 않는다 — 일시적인 실패가 이번 접속 내내 "환율 없음"으로 남지 않게
+    if (result.rate != null) fxCache.set(currency, result);
     return result;
   } catch {
     return { rate: null, source: 'unavailable' };
   }
+}
+
+/**
+ * 환율 출처 표기. live(ECB 기준환율)는 말없이, reference(보조 소스)·fallback(대략치)은 "참고용",
+ * manual(사용자가 직접 입력)은 그렇다고 밝힌다 — 어떤 숫자인지 숨기지 않는다(원칙 3-1).
+ */
+export function fxSourceNote(source: string | null | undefined): string {
+  if (source === 'reference' || source === 'fallback') return ' (참고용 환율)';
+  if (source === 'manual') return ' (직접 입력한 환율)';
+  return '';
+}
+
+/**
+ * 사용자가 직접 적은 환율("1 VND = ? 원") 해석. 쉼표·공백을 허용하고, 양수가 아니거나 말이 안 되게 큰 값은
+ * null — 잘못 친 숫자가 정산에 그대로 들어가지 않게 한다.
+ */
+export function parseRateInput(raw: string): number | null {
+  const n = Number(raw.replace(/[,\s]/g, ''));
+  return Number.isFinite(n) && n > 0 && n < 10_000_000 ? n : null;
 }
 
 export interface ExpenseFields {
@@ -393,6 +407,8 @@ export interface ExpenseFields {
   payer: string | null;
   split: Set<string>;
   memo: string | null;
+  /** 사용자가 직접 입력한 환율(1 외화 = ? 원). 있으면 서버 환율 조회 대신 이 값으로 환산하고 출처를 manual로 남긴다 */
+  manualRate?: number | null;
 }
 
 /**
@@ -404,7 +420,8 @@ export async function buildExpensePayload(ctx: ExpenseCtx, fields: ExpenseFields
   let fxRate: number | null = 1;
   let fxSource: string | null = 'live';
   if (fields.currency !== 'KRW') {
-    const { rate, source } = await fetchRate(fields.currency);
+    const manual = fields.manualRate != null && fields.manualRate > 0 ? fields.manualRate : null;
+    const { rate, source } = manual != null ? { rate: manual, source: 'manual' } : await fetchRate(fields.currency);
     fxRate = rate;
     fxSource = source;
     amountKrw = rate != null ? Math.round(fields.amount * rate) : null;

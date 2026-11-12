@@ -40,6 +40,8 @@ import {
 // 이동시간 추정은 ROUTE/TIMELINE과 같은 기준을 써야 화면마다 숫자가 달라지지 않는다
 import { estimateLegBetween, fmtMin } from '../utils/travelEstimate';
 import './shortlist.css';
+import { parseISODate, daysBetweenISO } from '../utils/dates';
+import { CURRENCIES, fmtAmount, symbolOf } from '../utils/currencies';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type Trip = Database['public']['Tables']['trips']['Row'];
@@ -259,14 +261,12 @@ const ELIMINATION_REASONS = [
   '다른 후보가 더 나음',
 ];
 
-const STEP2_CURRENCIES = ['KRW', 'EUR', 'USD', 'JPY', 'THB', 'GBP'];
-const CURRENCY_SYMBOL: Record<string, string> = {
-  KRW: '₩', EUR: '€', USD: '$', JPY: '¥', THB: '฿', GBP: '£',
-};
+// 통화 목록·기호는 utils/currencies.ts 한 곳 — 예전엔 여기에 6개짜리 목록이 따로 있어 체코 코루나·베트남 동 등으로
+// 숙소 가격을 입력할 수 없었고, 목록에 없는 통화는 기호 없이 숫자만 보였다.
+const STEP2_CURRENCIES = CURRENCIES.map((c) => c.code);
 
 function formatMoney(amount: number, currency: string): string {
-  const sym = CURRENCY_SYMBOL[currency] ?? '';
-  return sym + Math.round(amount).toLocaleString();
+  return fmtAmount(Math.round(amount), currency);
 }
 
 /**
@@ -1085,8 +1085,8 @@ function shortlistDestMeta(d: TripDestination): string {
 
 function dateRangeMeta(start: string | null, end: string | null): string {
   if (!start || !end) return '';
-  const s = new Date(start);
-  const e = new Date(end);
+  const s = parseISODate(start);
+  const e = parseISODate(end);
   const nights = Math.max(0, Math.round((e.getTime() - s.getTime()) / 86400000));
   const fmt = (dt: Date) => dt.getMonth() + 1 + '.' + dt.getDate();
   return (nights > 0 ? nights + '박 · ' : '') + fmt(s) + '–' + fmt(e);
@@ -1448,8 +1448,8 @@ async function resetSegment(segId: string): Promise<void> {
 /** N박 표기 없이 날짜 범위만("10.26–10.29") — 상단 헤더처럼 최대한 압축해서 보여줄 곳에 사용 */
 function dateRangeOnly(start: string | null, end: string | null): string {
   if (!start || !end) return '';
-  const s = new Date(start);
-  const e = new Date(end);
+  const s = parseISODate(start);
+  const e = parseISODate(end);
   const fmt = (d: Date) => d.getMonth() + 1 + '.' + d.getDate();
   return fmt(s) + '–' + fmt(e);
 }
@@ -1534,8 +1534,8 @@ function isoDate(d: Date): string {
 /** start~end(포함) 사이의 모든 날짜를 YYYY-MM-DD로 나열 */
 function enumerateDays(startIso: string, endIso: string): string[] {
   const days: string[] = [];
-  const cur = new Date(startIso);
-  const end = new Date(endIso);
+  const cur = parseISODate(startIso);
+  const end = parseISODate(endIso);
   while (cur <= end) {
     days.push(isoDate(cur));
     cur.setDate(cur.getDate() + 1);
@@ -1577,7 +1577,7 @@ function openDateRangeModal(opts: DateRangeModalOptions): void {
   let pickedEnd: string | null = opts.initialEnd ?? null;
 
   const dayPillHtml = (iso: string): string => {
-    const d = new Date(iso);
+    const d = parseISODate(iso);
     return [
       '<button type="button" class="sl-seg-day" data-date="' + iso + '">',
       '  <span class="sl-seg-day-dow">' + DOW_KO[d.getDay()] + '</span>',
@@ -1592,7 +1592,7 @@ function openDateRangeModal(opts: DateRangeModalOptions): void {
       return '<div class="sl-seg-daystrip" id="sp-daystrip">' + days.map(dayPillHtml).join('') + '</div>';
     }
     const header = '<div class="sl-seg-dow-header">' + DOW_KO.map((d) => '<span>' + d + '</span>').join('') + '</div>';
-    const leadingCount = new Date(days[0]).getDay();
+    const leadingCount = parseISODate(days[0]).getDay();
     const cells = days.map(dayPillHtml);
     const trailingCount = (7 - ((leadingCount + cells.length) % 7)) % 7;
     const blank = '<span class="sl-seg-day-empty"></span>';
@@ -3243,8 +3243,8 @@ function formatTripDateRange(): string {
   const start = slActiveSegment?.start_date || slActiveDest?.start_date || currentTrip?.start_date;
   const end = slActiveSegment?.end_date || slActiveDest?.end_date || currentTrip?.end_date;
   if (!start || !end) return '기간 미정';
-  const s = new Date(start);
-  const e = new Date(end);
+  const s = parseISODate(start);
+  const e = parseISODate(end);
   const fmt = (d: Date) => (d.getMonth() + 1) + '.' + String(d.getDate()).padStart(2, '0');
   return fmt(s) + ' – ' + fmt(e);
 }
@@ -3254,7 +3254,7 @@ function currentStayNights(): number {
   const start = slActiveSegment?.start_date || slActiveDest?.start_date || currentTrip?.start_date;
   const end = slActiveSegment?.end_date || slActiveDest?.end_date || currentTrip?.end_date;
   if (!start || !end) return 1;
-  const nights = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000);
+  const nights = daysBetweenISO(start, end);
   return Math.max(1, nights);
 }
 
@@ -3666,7 +3666,7 @@ function renderCandidateCards(body: HTMLElement, candidates: Place[]): void {
 /** 통화 select의 option 목록 — 카드/비교표에서 같은 마크업을 재사용 */
 function STEP_2_CURRENCY_OPTIONS(current: string): string {
   return STEP2_CURRENCIES.map(
-    (c) => '<option value="' + c + '"' + (c === current ? ' selected' : '') + '>' + (CURRENCY_SYMBOL[c] ?? c) + ' ' + c + '</option>'
+    (c) => '<option value="' + c + '"' + (c === current ? ' selected' : '') + '>' + symbolOf(c).trim() + ' ' + c + '</option>'
   ).join('');
 }
 

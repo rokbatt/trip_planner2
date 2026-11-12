@@ -421,10 +421,16 @@
 .ex-qa-input:focus { outline: none; border-color: var(--al-primary); }
 .ex-qa-row { display: flex; gap: var(--s2); }
 .ex-qa-amount { flex: 1.4; }
-.ex-qa-currency { flex: 0.8; }
+.ex-qa-currency { flex: 0.8; min-width: 78px; }
 .ex-qa-date { flex: 1; }
 
 .ex-fx-hint { font-size: 10px; color: var(--al-text-tertiary); margin-top: -4px; min-height: 12px; }
+/* 환율을 못 가져왔을 때 직접 입력하는 칸 */
+.ex-fx-manual { display: flex; align-items: center; gap: 8px; margin: 2px 0 4px; font-size: 12px; color: var(--al-text-secondary, #475569); }
+.ex-fx-manual[hidden] { display: none; }
+.ex-fx-manual b { font-weight: 700; color: var(--al-text, #0B2A5C); }
+.ex-fx-manual-input { flex: 1; min-width: 0; padding: 7px 10px; border: 1px solid var(--al-border, #DCE3EC); border-radius: 8px; font: inherit; font-size: 12.5px; background: #fff; }
+.ex-fx-manual-input:focus { outline: 2px solid #2F86D6; outline-offset: 1px; }
 
 .ex-splitmode-toggle {
   display: inline-flex;

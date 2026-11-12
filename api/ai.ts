@@ -829,7 +829,10 @@ async function handleDayDetail(req: VercelRequest, res: VercelResponse) {
   const dayIndex = Number(body.dayIndex);
   const dayLabel = String(body.dayLabel ?? '');
   const date = body.date ? String(body.date) : '';
-  const currency = String(body.currency ?? 'THB');
+  // 이 여행지의 현지 통화(클라이언트가 이름으로 알아본 값). 모르면 빈 문자열 — 예전엔 THB로 박혀 있어서
+  // 방콕이 아닌 곳에서도 AI가 바트로 비용을 적었다. 모르면 AI에게 현지 통화로 적고 이름을 밝히라고 한다.
+  const currency = String(body.currency ?? '').trim().toUpperCase().slice(0, 3);
+  const currencyBasis = currency ? currency + ' 기준' : '이 여행지의 현지 통화 기준(통화 이름을 꼭 함께 적을 것)';
   const headcount = Number(body.headcount);
   const stops: Array<PlanPlaceIn & { arriveTime?: string | null }> = Array.isArray(body.stops) ? body.stops : [];
 
@@ -881,11 +884,11 @@ async function handleDayDetail(req: VercelRequest, res: VercelResponse) {
     '요청 사항:',
     '- overview: 이 하루가 어떤 흐름인지 2~3문장으로 설명.',
     '- stops: 각 장소마다 추천 체류시간(stayMinutes, 분 단위), 놓치면 아쉬운 것 2~3개(highlights),',
-    '  현장에서 유용한 팁 한 줄(tip), 그 장소에서 드는 예상 비용(costText, ' + currency + ' 기준).',
+    '  현장에서 유용한 팁 한 줄(tip), 그 장소에서 드는 예상 비용(costText, ' + currencyBasis + ').',
     '  입장료가 없으면 "무료"라고 적어.',
     '- extras: 위 장소들 사이에 넣으면 좋은 것(식사, 카페 휴식, 이동 중 들를 곳 등)을 시간과 함께 2~4개.',
-    '- budget: 교통/식사/입장료/기타로 나눈 1인 기준 예상 지출(lines)과 합계(totalText). ' + currency + ' 기준으로 적고,',
-    '  범위로 적어도 좋아(예: "300~500 THB").',
+    '- budget: 교통/식사/입장료/기타로 나눈 1인 기준 예상 지출(lines)과 합계(totalText). ' + currencyBasis + '으로 적고,',
+    '  범위로 적어도 좋아(예: "300~500 ' + (currency || '현지통화코드') + '").',
     '- cautions: 이 일정에서 주의할 점(더위, 드레스코드, 혼잡 시간, 현금만 받는 곳 등) 2~4개.',
     '',
     '중요: 비용과 체류시간은 일반적인 수준의 **추정치**야. 확실하지 않은 걸 확정된 사실처럼 쓰지 마.',

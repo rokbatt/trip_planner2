@@ -55,6 +55,9 @@ import {
   buildPersonalBreakdownText as buildPersonalBreakdownTextOf,
   buildExpensePayload as buildExpensePayloadOf,
   fetchRate as fetchRateOf,
+  fxSourceNote,
+  parseRateInput,
+  fmtRateKRW,
 } from './expenseModel';
 import type { ExpenseCategory, SplitMode, MemberLite, ExpenseCtx, SettleRow } from './expenseModel';
 
@@ -63,6 +66,7 @@ export type { ExpenseCategory };
 
 type TripExpenseInsert = Database['public']['Tables']['trip_expenses']['Insert'];
 import './expense.css';
+import { todayLocalISO } from '../utils/dates';
 
 /* ── UI 전용 아이콘 (카테고리 아이콘은 expenseModel의 CATEGORY_META에 있다) ── */
 const IC_DOTS = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
@@ -181,11 +185,74 @@ function fetchRate(currency: string): Promise<{ rate: number | null; source: str
 function buildExpensePayload(fields: {
   category: string; title: string; amount: number; currency: string; expenseDate: string | null;
   isPaid: boolean; splitMode: SplitMode; payer: string | null; split: Set<string>; memo: string | null;
+  manualRate?: number | null;
 }): Promise<TripExpenseInsert> {
   return buildExpensePayloadOf(ctx(), fields);
 }
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+/**
+ * 환율 안내 줄 + (환율을 못 가져왔을 때) 직접 입력 칸 — 빠른 추가와 수정 시트가 같이 쓴다.
+ *
+ * 환율은 유럽중앙은행 기준환율에서 먼저 찾고, 없는 통화(베트남 동·대만 달러 등)는 보조 소스에서 찾는다.
+ * 그래도 못 구하면 숫자를 지어내지 않고 사용자가 직접 적게 한다. 비워 두면 예전처럼 원화 환산 없이 저장된다.
+ */
+function bindFxControls(opts: {
+  currencySel: HTMLSelectElement;
+  hintEl: HTMLElement;
+  manualEl: HTMLElement;
+  rateInput: HTMLInputElement;
+  /** 수정 중인 지출이 직접 입력한 환율을 갖고 있으면 그 값(같은 통화일 때만 미리 채운다) */
+  initial?: { currency: string; rate: number } | null;
+}): { manualRate: () => number | null; refresh: () => Promise<void> } {
+  const { currencySel, hintEl, manualEl, rateInput } = opts;
+  const label = manualEl.querySelector('[data-fx-cur]') as HTMLElement | null;
+  let needsManual = false;
+  let prefilled = false;
+
+  const manualRate = (): number | null => (needsManual ? parseRateInput(rateInput.value) : null);
+
+  const paint = (cur: string): void => {
+    const typed = manualRate();
+    if (typed != null) hintEl.textContent = '직접 입력한 환율로 환산해 저장돼요 (1 ' + cur + ' = ' + fmtRateKRW(typed) + ')';
+    else hintEl.textContent = '환율을 가져오지 못했어요 — 아래에 직접 적으면 환산해서 저장하고, 비워 두면 원화 환산 없이 저장돼요';
+  };
+
+  const refresh = async (): Promise<void> => {
+    const cur = currencySel.value;
+    needsManual = false;
+    manualEl.hidden = true;
+    if (cur === 'KRW') { hintEl.textContent = ''; return; }
+    hintEl.textContent = '환율 확인 중...';
+    const { rate, source } = await fetchRate(cur);
+    if (currencySel.value !== cur) return; // 그 사이 다른 통화로 바꿨다
+    if (rate != null) {
+      hintEl.textContent = '1 ' + cur + ' ≈ ' + fmtRateKRW(rate) + fxSourceNote(source);
+      return;
+    }
+    needsManual = true;
+    manualEl.hidden = false;
+    if (label) label.textContent = cur;
+    if (!prefilled && opts.initial && opts.initial.currency === cur) {
+      rateInput.value = String(opts.initial.rate);
+      prefilled = true;
+    }
+    paint(cur);
+  };
+
+  rateInput.addEventListener('input', () => { if (needsManual) paint(currencySel.value); });
+  currencySel.addEventListener('change', () => { rateInput.value = ''; void refresh(); });
+  return { manualRate, refresh };
+}
+
+/** 직접 입력 칸 마크업 — id 접두어만 다르다 */
+function fxManualHtml(prefix: string): string {
+  return '<label class="ex-fx-manual" id="' + prefix + '-fxmanual" hidden>' +
+    '<span>1 <b data-fx-cur></b> =</span>' +
+    '<input type="text" inputmode="decimal" class="ex-fx-manual-input" id="' + prefix + '-fxrate" placeholder="원화 환율 (예: 0.0575)" autocomplete="off" />' +
+    '<span>원</span></label>';
+}
 
 /** 정산 완료 시각을 "10.08" 형태로 */
 function fmtSettledAt(iso: string): string {
@@ -747,9 +814,10 @@ function quickAddFormHtml(): string {
     '<div class="ex-qa-row">',
     '  <div class="ex-qa-field ex-qa-amount"><span class="ex-qa-label">금액</span><input type="number" inputmode="decimal" class="ex-qa-input" id="qa-amount" placeholder="0" min="0" step="any" /></div>',
     '  <div class="ex-qa-field ex-qa-currency"><span class="ex-qa-label">통화</span><select class="ex-qa-input" id="qa-currency">' + currencyOptions + '</select></div>',
-    '  <div class="ex-qa-field ex-qa-date"><span class="ex-qa-label">날짜</span><input type="date" class="ex-qa-input" id="qa-date" value="' + new Date().toISOString().slice(0, 10) + '" /></div>',
+    '  <div class="ex-qa-field ex-qa-date"><span class="ex-qa-label">날짜</span><input type="date" class="ex-qa-input" id="qa-date" value="' + todayLocalISO() + '" /></div>',
     '</div>',
     '<div class="ex-fx-hint" id="qa-fxhint"></div>',
+    fxManualHtml('qa'),
     '<div class="ex-qa-field"><span class="ex-qa-label">구분</span>',
     '  <div class="ex-splitmode-toggle" id="qa-splitmode">',
     '    <button type="button" class="ex-splitmode-btn is-active" data-mode="SHARED">공동 지출</button>',
@@ -814,19 +882,13 @@ function renderQuickAddBody(container: HTMLElement): void {
   const split = new Set<string>(members.map((m) => m.user_id));
 
   const currencySel = bodyEl.querySelector('#qa-currency') as HTMLSelectElement;
-  const fxHint = bodyEl.querySelector('#qa-fxhint') as HTMLElement;
-  const updateFxHint = async (): Promise<void> => {
-    const cur = currencySel.value;
-    if (cur === 'KRW') { fxHint.textContent = ''; return; }
-    fxHint.textContent = '환율 확인 중...';
-    const { rate, source } = await fetchRate(cur);
-    if (currencySel.value !== cur) return;
-    fxHint.textContent = rate == null
-      ? '환율을 가져오지 못했어요 — 원화 환산 없이 저장돼요'
-      : '1 ' + cur + ' ≈ ' + fmtKRW(rate) + (source === 'fallback' ? ' (참고용 환율)' : '');
-  };
-  void updateFxHint();
-  currencySel.addEventListener('change', () => void updateFxHint());
+  const fx = bindFxControls({
+    currencySel,
+    hintEl: bodyEl.querySelector('#qa-fxhint') as HTMLElement,
+    manualEl: bodyEl.querySelector('#qa-fxmanual') as HTMLElement,
+    rateInput: bodyEl.querySelector('#qa-fxrate') as HTMLInputElement,
+  });
+  void fx.refresh();
 
   const splitWrap = bodyEl.querySelector('#qa-split-wrap') as HTMLElement;
   const updateSplitVisibility = (): void => {
@@ -929,7 +991,7 @@ function renderQuickAddBody(container: HTMLElement): void {
       // 개인 지출을 여러 명 배치 입력 — 선택한 인원 수만큼 각자의 개인 지출로 나눠서 저장
       // (같은 금액을 n빵하는 게 아니라, 각자 같은 금액을 따로 결제한 것으로 기록)
       const payloads = await Promise.all(
-        payerIds.map((uid) => buildExpensePayload({ category, title, amount, currency, expenseDate: dateVal, isPaid, splitMode, payer: uid, split: new Set([uid]), memo }))
+        payerIds.map((uid) => buildExpensePayload({ category, title, amount, currency, expenseDate: dateVal, isPaid, splitMode, payer: uid, split: new Set([uid]), memo, manualRate: fx.manualRate() }))
       );
       const { data, error } = await supabase.from('trip_expenses').insert(payloads).select();
       saveBtn.disabled = false;
@@ -943,7 +1005,7 @@ function renderQuickAddBody(container: HTMLElement): void {
       resetForm();
       flashEl.textContent = payloads.length + '건 저장했어요';
     } else {
-      const payload = await buildExpensePayload({ category, title, amount, currency, expenseDate: dateVal, isPaid, splitMode, payer: payerIds[0] ?? null, split, memo });
+      const payload = await buildExpensePayload({ category, title, amount, currency, expenseDate: dateVal, isPaid, splitMode, payer: payerIds[0] ?? null, split, memo, manualRate: fx.manualRate() });
       const { data, error } = await supabase.from('trip_expenses').insert(payload).select().single();
       saveBtn.disabled = false;
       saveBtn.textContent = '저장';
@@ -992,7 +1054,7 @@ function expenseRowHtml(e: TripExpense, opts: { showUndo?: boolean } = {}): stri
     amountPart = '<span class="ex-item-amount">' + fmtKRW(e.amount) + '</span>';
   } else {
     const sub = krw != null
-      ? '<span class="ex-item-krw"' + (e.fx_source === 'fallback' ? ' title="참고용 환율로 환산된 금액이에요"' : '') + '>≈ ' + fmtKRW(krw) + (e.fx_source === 'fallback' ? '*' : '') + '</span>'
+      ? '<span class="ex-item-krw"' + (fxSourceNote(e.fx_source) ? ' title="' + escapeHtml(fxSourceNote(e.fx_source).trim().replace(/[()]/g, '')) + '로 환산된 금액이에요"' : '') + '>≈ ' + fmtKRW(krw) + (fxSourceNote(e.fx_source) ? '*' : '') + '</span>'
       : '<span class="ex-item-krw is-na">환산 불가</span>';
     amountPart = '<span class="ex-item-amount">' + escapeHtml(fmtAmount(e.amount, e.currency)) + '</span>' + sub;
   }
@@ -1534,6 +1596,7 @@ function openSheet(editing: TripExpense | null): void {
     '    </label>',
     '  </div>',
     '  <div class="ex-fx-hint" id="ex-f-fxhint"></div>',
+    '  ' + fxManualHtml('ex-f'),
     '  <div class="ex-field"><span class="ex-field-label">카테고리</span>',
     '    <div class="ex-sheet-cats" id="ex-f-cats">' + catChips + '</div>',
     '  </div>',
@@ -1581,22 +1644,15 @@ function openSheet(editing: TripExpense | null): void {
   };
   updateSplitVisibility();
 
-  const fxHint = sheet.querySelector('#ex-f-fxhint') as HTMLElement;
   const currencySel = sheet.querySelector('#ex-f-currency') as HTMLSelectElement;
-  const updateFxHint = async (): Promise<void> => {
-    const cur = currencySel.value;
-    if (cur === 'KRW') { fxHint.textContent = ''; return; }
-    fxHint.textContent = '환율 확인 중...';
-    const { rate, source } = await fetchRate(cur);
-    if (currencySel.value !== cur) return;
-    if (rate == null) {
-      fxHint.textContent = '환율을 가져오지 못했어요 — 원화 환산 없이 저장돼요';
-    } else {
-      fxHint.textContent = '1 ' + cur + ' ≈ ' + fmtKRW(rate) + (source === 'fallback' ? ' (참고용 환율)' : '');
-    }
-  };
-  void updateFxHint();
-  currencySel.addEventListener('change', () => void updateFxHint());
+  const fx = bindFxControls({
+    currencySel,
+    hintEl: sheet.querySelector('#ex-f-fxhint') as HTMLElement,
+    manualEl: sheet.querySelector('#ex-f-fxmanual') as HTMLElement,
+    rateInput: sheet.querySelector('#ex-f-fxrate') as HTMLInputElement,
+    initial: editing && editing.fx_source === 'manual' && editing.fx_rate ? { currency: editing.currency, rate: editing.fx_rate } : null,
+  });
+  void fx.refresh();
 
   sheet.querySelector('#ex-sheet-close')?.addEventListener('click', closeSheet);
   overlay.onclick = closeSheet;
@@ -1705,7 +1761,7 @@ function openSheet(editing: TripExpense | null): void {
     const payerIds = Array.from(payerSet);
 
     if (editing) {
-      const payload = await buildExpensePayload({ category, title, amount, currency, expenseDate: dateVal, isPaid, splitMode, payer: payerIds[0] ?? null, split, memo });
+      const payload = await buildExpensePayload({ category, title, amount, currency, expenseDate: dateVal, isPaid, splitMode, payer: payerIds[0] ?? null, split, memo, manualRate: fx.manualRate() });
       // 개인 지출로 바꾸거나 결제 전으로 돌리면 "정산 완료"는 의미가 없으니 같이 풀어준다
       if (editing.settled_at && (splitMode !== 'SHARED' || !isPaid)) payload.settled_at = null;
       const { data, error } = await supabase.from('trip_expenses').update(payload).eq('id', editing.id).select().single();
@@ -1721,7 +1777,7 @@ function openSheet(editing: TripExpense | null): void {
     } else if (splitMode === 'PERSONAL' && payerIds.length > 1) {
       // 개인 지출을 여러 명 배치 입력 — n빵이 아니라 각자 같은 금액을 따로 결제한 것으로 기록
       const payloads = await Promise.all(
-        payerIds.map((uid) => buildExpensePayload({ category, title, amount, currency, expenseDate: dateVal, isPaid, splitMode, payer: uid, split: new Set([uid]), memo }))
+        payerIds.map((uid) => buildExpensePayload({ category, title, amount, currency, expenseDate: dateVal, isPaid, splitMode, payer: uid, split: new Set([uid]), memo, manualRate: fx.manualRate() }))
       );
       const { data, error } = await supabase.from('trip_expenses').insert(payloads).select();
       if (error) {
@@ -1733,7 +1789,7 @@ function openSheet(editing: TripExpense | null): void {
       }
       if (data) expenses.push(...(data as TripExpense[]));
     } else {
-      const payload = await buildExpensePayload({ category, title, amount, currency, expenseDate: dateVal, isPaid, splitMode, payer: payerIds[0] ?? null, split, memo });
+      const payload = await buildExpensePayload({ category, title, amount, currency, expenseDate: dateVal, isPaid, splitMode, payer: payerIds[0] ?? null, split, memo, manualRate: fx.manualRate() });
       const { data, error } = await supabase.from('trip_expenses').insert(payload).select().single();
       if (error) {
         console.error('지출 추가 실패:', error.message);
