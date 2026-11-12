@@ -9,7 +9,7 @@ import { supabase } from '../supabase';
 import { store } from '../store';
 import type { Database } from '../types/database';
 import type { GooglePlaceResult } from '../utils/googleMaps';
-import { HEAL_COOLDOWN_MS, isGooglePhotoUrl, pickHealTargets } from '../utils/photoHeal';
+import { HEAL_COOLDOWN_MS, classifyRehostResponse, healFailureAction, isGooglePhotoUrl, pickHealTargets, type RehostOutcome } from '../utils/photoHeal';
 
 type Place = Database['public']['Tables']['places']['Row'];
 
@@ -17,25 +17,39 @@ type Place = Database['public']['Tables']['places']['Row'];
  * 공유. insertGooglePlace를 부르기 전에 반드시 이걸 먼저 거쳐야 photo_url이 매번 Google에
  * 요청 나가는 원본 URL(API 키 포함, 언젠가 만료됨)이 아니라 우리 Storage URL로 저장된다. */
 export async function rehostPhoto(photoUrl: string, placeId: string): Promise<string> {
+  const { url } = await rehostPhotoDetailed(photoUrl, placeId);
+  return url ?? photoUrl;
+}
+
+/** rehostPhoto와 같지만, 실패했을 때 이유(장소 문제인지 키·서버 문제인지)를 같이 돌려준다 — 자가 치유가 쓴다 */
+async function rehostPhotoDetailed(photoUrl: string, placeId: string): Promise<{ url: string | null; outcome: RehostOutcome }> {
+  let res: Response;
   try {
-    const res = await fetch('/api/cache-photo', {
+    res = await fetch('/api/cache-photo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ photoUrl, placeId }),
     });
-    const data = await res.json();
-    if (res.ok && data.url) {
-      console.log(
-        '[Verify][사진 재호스팅] ' + (data.cached ? '이미 Storage에 있음(재다운로드 안 함)' : 'Google에서 새로 다운로드 → Storage 업로드') +
-        ' → ' + data.url
-      );
-      return data.url;
-    }
-    console.error('[Photo] 재호스팅 실패, 원본 URL 사용:', data.error);
   } catch (e) {
     console.error('[Photo] 재호스팅 네트워크 오류, 원본 URL 사용:', (e as Error).message);
+    return { url: null, outcome: 'network' };
   }
-  return photoUrl;
+  let data: any = null;
+  try {
+    data = await res.json();
+  } catch {
+    /* 본문이 JSON이 아니면(플랫폼 오류 페이지 등) 상태 코드로만 판단한다 */
+  }
+  const outcome = classifyRehostResponse(res.status, data);
+  if (outcome === 'ok') {
+    console.log(
+      '[Verify][사진 재호스팅] ' + (data.cached ? '이미 Storage에 있음(재다운로드 안 함)' : 'Google에서 새로 다운로드 → Storage 업로드') +
+      ' → ' + data.url
+    );
+    return { url: data.url, outcome };
+  }
+  console.error('[Photo] 재호스팅 실패, 원본 URL 사용:', data?.error ?? 'HTTP ' + res.status);
+  return { url: null, outcome };
 }
 
 /* ── 예전에 Google 주소로 저장된 사진 자가 치유 ──
@@ -97,14 +111,24 @@ export async function healLegacyPhotos(places: Place[]): Promise<number> {
   for (const p of targets) {
     healTried.add(p.id);
     const googlePlaceId = p.google_place_id as string;
-    const url = await rehostPhoto(p.photo_url as string, googlePlaceId);
+    const { url, outcome } = await rehostPhotoDetailed(p.photo_url as string, googlePlaceId);
     if (!url || isGooglePhotoUrl(url)) {
-      // 첫 실패에서 멈춘다 — 키·권한 문제면 남은 장도 전부 실패하고, 실패마다 Google 오류 호출이 나간다
-      writeHealFailure(googlePlaceId);
-      writeHealStop();
-      healStopped = true;
-      console.warn('[Photo] 사진 옮기기가 실패해서 이 기기에선 잠시 멈춰요. 서버의 Google 키 설정(Places API (New) 허용)을 확인해 주세요.');
-      break;
+      const action = healFailureAction(outcome === 'ok' ? 'place' : outcome);
+      // 그 장소만의 문제면 그 장소만 쉬고 다음으로 간다
+      if (action.restPlace) writeHealFailure(googlePlaceId);
+      // 키·서버·네트워크 문제면 남은 장도 같은 이유로 실패한다 — 전체를 멈추되 장소는 쉬게 하지 않는다
+      // (쉬게 하면 키를 고친 뒤에도 그 장소들만 몇 시간씩 남는다)
+      if (action.stopAll) {
+        writeHealStop();
+        healStopped = true;
+        console.warn(
+          outcome === 'key'
+            ? '[Photo] 서버의 Google 키가 거절돼 사진 옮기기를 잠시 멈춰요. 서버 키의 API 제한(Places API (New))·애플리케이션 제한을 확인해 주세요.'
+            : '[Photo] 서버에 닿지 못해 사진 옮기기를 잠시 멈춰요.'
+        );
+        break;
+      }
+      continue;
     }
     const { error } = await supabase.from('places').update({ photo_url: url }).eq('id', p.id);
     if (error) {
