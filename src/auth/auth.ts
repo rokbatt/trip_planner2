@@ -117,7 +117,7 @@ export function renderLogin(): void {
     <div class="login-page">
 
       <nav class="lp-nav" id="lp-nav">
-        <div class="lp-nav-logo">몽실이</div>
+        <div class="lp-nav-logo"><img src="/favicon.svg" alt="" width="26" height="26" />몽실이</div>
         ${navRightHtml()}
       </nav>
 
@@ -406,8 +406,8 @@ export function renderLogin(): void {
             <div class="lp-footer-top">
               <div class="lp-footer-brand">몽실이</div>
               <div class="lp-footer-links">
-                <a href="#terms">이용약관</a>
-                <a href="#privacy" class="strong">개인정보 처리방침</a>
+                <a href="/terms">이용약관</a>
+                <a href="/privacy" class="strong">개인정보 처리방침</a>
                 <a href="mailto:help@mongsil.app">문의하기</a>
               </div>
             </div>
