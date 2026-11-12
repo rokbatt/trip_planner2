@@ -10,6 +10,7 @@ import { store } from '../store';
 import type { Database } from '../types/database';
 import type { GooglePlaceResult } from '../utils/googleMaps';
 import { HEAL_COOLDOWN_MS, classifyRehostResponse, healFailureAction, isGooglePhotoUrl, pickHealTargets, type RehostOutcome } from '../utils/photoHeal';
+import { apiFetch } from '../utils/apiFetch';
 
 type Place = Database['public']['Tables']['places']['Row'];
 
@@ -25,7 +26,7 @@ export async function rehostPhoto(photoUrl: string, placeId: string): Promise<st
 async function rehostPhotoDetailed(photoUrl: string, placeId: string): Promise<{ url: string | null; outcome: RehostOutcome }> {
   let res: Response;
   try {
-    res = await fetch('/api/cache-photo', {
+    res = await apiFetch('/api/cache-photo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ photoUrl, placeId }),

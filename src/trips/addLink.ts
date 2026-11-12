@@ -9,6 +9,7 @@ import { getCategoryLabel } from '../utils/googleMaps';
 import type { GooglePlaceResult } from '../utils/googleMaps';
 import type { ChatMessage, Trip } from '../types/database';
 import { loadDestinations, resolveActiveDestination, isSyntheticDestination } from './destinations';
+import { apiFetch } from '../utils/apiFetch';
 
 export type LinkCategory = 'STAY' | 'PLACE' | 'FOOD' | 'ACTIVITY' | 'VIDEO' | 'ARTICLE' | 'OTHER';
 export const LINK_CATEGORIES: LinkCategory[] = ['STAY', 'PLACE', 'FOOD', 'ACTIVITY', 'VIDEO', 'ARTICLE', 'OTHER'];
@@ -127,7 +128,7 @@ async function tryAutoImportHotelFromLink(tripId: string, url: string, ogTitle: 
     const contextHint = activeDest?.name ?? '';
     const destinationId = activeDest && !isSyntheticDestination(activeDest.id) ? activeDest.id : undefined;
 
-    const res = await fetch('/api/import-hotel', {
+    const res = await apiFetch('/api/import-hotel', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, contextHint }),
@@ -160,7 +161,7 @@ async function tryAutoImportHotelFromLink(tripId: string, url: string, ogTitle: 
 async function fetchLinkPreview(url: string, linkId: string): Promise<LinkPreview> {
   const empty: LinkPreview = { title: null, imageUrl: null, siteName: null, ogType: null };
   try {
-    const res = await fetch('/api/cache-photo', {
+    const res = await apiFetch('/api/cache-photo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind: 'link-preview', url, linkId }),
