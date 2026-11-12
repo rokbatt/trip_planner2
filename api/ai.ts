@@ -109,6 +109,12 @@ interface GeminiFilePart {
   base64: string;
 }
 
+/** 외부 AI 오류를 사용자에게 보여줄 문장으로 — 원문(내부 한도·프로젝트 정보 포함)은 서버 로그에만 남긴다 */
+function geminiFailMessage(status: number): string {
+  if (status === 429) return 'AI 요청이 잠깐 몰렸어요. 1분쯤 뒤에 다시 시도해 주세요.';
+  return 'AI 응답을 받지 못했어요. 잠시 후 다시 시도해 주세요. (' + status + ')';
+}
+
 async function callGeminiJson(
   model: string,
   geminiKey: string,
@@ -133,7 +139,8 @@ async function callGeminiJson(
     return { error: 'Gemini 요청 네트워크 오류: ' + (e as Error).message };
   }
   if (!geminiRes.ok) {
-    return { error: 'Gemini 요청 실패 (' + geminiRes.status + '): ' + (await geminiRes.text()) };
+    console.error('[ai] Gemini 요청 실패 (' + geminiRes.status + '):', (await geminiRes.text()).slice(0, 2000));
+    return { error: geminiFailMessage(geminiRes.status) };
   }
   const payload: any = await geminiRes.json();
   const text: string | undefined = payload?.candidates?.[0]?.content?.parts
@@ -334,8 +341,8 @@ async function handleHotelReview(req: VercelRequest, res: VercelResponse) {
   }
 
   if (!geminiRes.ok) {
-    const errText = await geminiRes.text();
-    res.status(502).json({ error: 'Gemini 요청 실패 (' + geminiRes.status + '): ' + errText });
+    console.error('[ai] Gemini 요청 실패 (' + geminiRes.status + '):', (await geminiRes.text()).slice(0, 2000));
+    res.status(502).json({ error: geminiFailMessage(geminiRes.status) });
     return;
   }
 

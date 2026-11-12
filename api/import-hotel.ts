@@ -107,8 +107,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (!searchRes.ok) {
-    const errText = await searchRes.text();
-    res.status(502).json({ error: 'Places 검색 실패(' + searchRes.status + '): ' + errText });
+    // Google 오류 원문(프로젝트·한도 정보 포함)은 서버 로그에만 남긴다
+    console.error('[import-hotel] Places 검색 실패(' + searchRes.status + '):', (await searchRes.text()).slice(0, 2000));
+    res.status(502).json({
+      error: searchRes.status === 429 ? '장소 검색이 잠깐 몰렸어요. 잠시 후 다시 시도해 주세요.' : '장소 검색에 실패했어요. 잠시 후 다시 시도해 주세요. (' + searchRes.status + ')',
+    });
     return;
   }
 
