@@ -16,6 +16,7 @@
  */
 
 import type { TourDef, TourStepContent } from './tourContent';
+import { escapeHtml as esc } from '../utils/html';
 
 export type TourEndReason = 'done' | 'skip' | 'close';
 
@@ -106,9 +107,6 @@ function waitFor(fn: () => boolean, timeoutMs: number): Promise<boolean> {
   });
 }
 
-function esc(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
-}
 
 let active: TourHandle | null = null;
 

@@ -25,6 +25,7 @@ import type { LinkCategory } from '../trips/addLink';
 import type { TripLink, TripLinkGroup } from '../types/database';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import './links.css';
+import { escapeHtml, safeHttpUrl } from '../utils/html';
 
 const IC_LINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
 const IC_BED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20v-8a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v8M2 20v-3a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3M2 20h20M6 10V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4"/></svg>';
@@ -70,11 +71,6 @@ let openCategoryMenuId: string | null = null;
 let openGroupMenuId: string | null = null;
 let outsideClickHandler: ((e: MouseEvent) => void) | null = null;
 
-function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 function hostnameOf(url: string): string {
   try {
@@ -173,7 +169,7 @@ function cardHtml(link: TripLink): string {
   const category = normalizeCategory(link.category);
   const initial = (link.display_name || '?').charAt(0);
   const avatar = link.avatar_url
-    ? '<img src="' + link.avatar_url + '" alt="" referrerpolicy="no-referrer" />'
+    ? '<img src="' + escapeHtml(safeHttpUrl(link.avatar_url) ?? '') + '" alt="" referrerpolicy="no-referrer" />'
     : escapeHtml(initial);
   const title = displayTitle(link);
   const domain = (link.site_name || '').trim() || hostnameOf(link.url);
@@ -351,7 +347,9 @@ function bindCards(): void {
       const target = e.target as HTMLElement;
       if (target.closest('.lk-card-actions')) return;
       if (target.closest('.lk-cat-picker')) return;
-      window.open(url, '_blank', 'noopener,noreferrer');
+      // 링크 주소는 멤버가 저장한 값이다 — http(s)만 연다(javascript: 등은 열지 않음)
+      const safe = safeHttpUrl(url);
+      if (safe) window.open(safe, '_blank', 'noopener,noreferrer');
     });
 
     card.querySelector('.lk-card-remove')?.addEventListener('click', (e) => {

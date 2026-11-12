@@ -131,6 +131,7 @@ import type { PlaceBrief, PlaceBriefRequest } from '../timeline/placeBrief';
 import type { Database, TripDestination, StaySegment, TripChecklistItem, TripLink, TripDocument } from '../types/database';
 import './mobile.css';
 import { apiFetch } from '../utils/apiFetch';
+import { escapeHtml, safeHttpUrl } from '../utils/html';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type Trip = Database['public']['Tables']['trips']['Row'];
@@ -472,11 +473,6 @@ export function teardownMobile(): void {
 
 /* ══════════════ 유틸 ══════════════ */
 
-function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 function todayISO(): string {
   const d = new Date();
@@ -3871,7 +3867,7 @@ function bookingLinksHtml(): string {
       try { host = new URL(l.url).hostname.replace(/^www\./, ''); } catch { /* 잘못된 URL이면 원문 그대로 */ }
       const label = l.title || l.site_name || host;
       return [
-        '<a class="mb-bk-row" href="' + escapeHtml(l.url) + '" target="_blank" rel="noopener">',
+        '<a class="mb-bk-row" href="' + escapeHtml(safeHttpUrl(l.url) ?? '#') + '" target="_blank" rel="noopener">',
         l.image_url
           ? '  <span class="mb-bk-thumb" style="background-image:url(' + escapeHtml(l.image_url) + ')"></span>'
           : '  <span class="mb-bk-thumb is-blank">' + IC.bookmark + '</span>',

@@ -6,6 +6,7 @@
 
 import type { DocCategory, NoteCategory } from './docsStore';
 import { CATEGORY_META } from '../expense/expenseModel';
+export { escapeHtml } from '../utils/html';
 
 const S = 'fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"';
 
@@ -91,11 +92,6 @@ export function categoryIconInline(v: CatVisual): string {
   return '<span class="dn-pick-icon" style="color:' + v.color + '">' + v.icon + '</span>';
 }
 
-export function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 /** "7월 31일" — 올해가 아니면 "2025. 7. 31." */
 export function formatDay(iso: string): string {

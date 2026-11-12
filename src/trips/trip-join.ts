@@ -4,6 +4,7 @@ import { navigate } from '../router';
 import { signInWithGoogle } from '../auth/auth';
 import './trip-join.css';
 import { parseISODate } from '../utils/dates';
+import { escapeHtml } from '../utils/html';
 
 const PENDING_INVITE_KEY = 'mongsil_pending_invite';
 
@@ -26,11 +27,6 @@ function toAirportCode(city: string): string {
   return cleaned.slice(0, 3).toUpperCase();
 }
 
-function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 function formatDateShort(d: string): string {
   const dt = parseISODate(d);

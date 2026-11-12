@@ -14,14 +14,10 @@ import { navigate } from '../router';
 import { signOut } from '../auth/auth';
 import { readLocalConsent } from './consentStore';
 import { deleteMyAccount, loadDeletionPreview, type DeletionPreview, type TripOutcome } from './accountStore';
+import { escapeHtml as esc } from '../utils/html';
 
 const SUPPORT_EMAIL = 'help@mongsil.app';
 
-function esc(s: string): string {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
-}
 
 function fmtDate(iso: string): string {
   const d = new Date(iso);

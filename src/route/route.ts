@@ -76,6 +76,7 @@ import { bindLongPressReorder } from '../mobile/reorder';
 import './route.css';
 import { parseISODate, toISODate } from '../utils/dates';
 import { apiFetch } from '../utils/apiFetch';
+import { escapeHtml } from '../utils/html';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type Trip = Database['public']['Tables']['trips']['Row'];
@@ -376,11 +377,6 @@ export function teardownRoute(): void {
   rtContainer = null;
 }
 
-function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 /**
  * 두 지점 사이의 이동 leg — 공용 추정기(utils/travelEstimate)에 이 화면이 들고 있는

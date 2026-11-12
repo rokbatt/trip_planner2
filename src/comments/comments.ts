@@ -3,17 +3,13 @@ import { store } from '../store';
 import type { PlaceComment } from '../types/database';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import './comments.css';
+import { escapeHtml, safeHttpUrl } from '../utils/html';
 
 let currentPlaceId: string | null = null;
 let channel: RealtimeChannel | null = null;
 let comments: PlaceComment[] = [];
 let listeners: Array<(c: PlaceComment) => void> = [];
 
-function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 /** place가 바뀔 때마다 새로 초기화 (이전 place 구독은 반드시 teardown 후 호출) */
 export async function initComments(placeId: string): Promise<void> {
@@ -101,7 +97,7 @@ function formatTime(iso: string): string {
 function commentHtml(c: PlaceComment, isMe: boolean): string {
   const initial = (c.display_name || '?').charAt(0);
   const avatar = c.avatar_url
-    ? '<img src="' + c.avatar_url + '" alt="" referrerpolicy="no-referrer" />'
+    ? '<img src="' + escapeHtml(safeHttpUrl(c.avatar_url) ?? '') + '" alt="" referrerpolicy="no-referrer" />'
     : escapeHtml(initial);
 
   return [

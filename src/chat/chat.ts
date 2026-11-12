@@ -4,6 +4,7 @@ import type { ChatMessage } from '../types/database';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { saveTripLinkFromChatMessage, hostnameOf } from '../trips/addLink';
 import './chat.css';
+import { escapeHtml, safeHttpUrl } from '../utils/html';
 
 /* ── 모듈 내부 상태 (워크스페이스 페이지 하나당 하나의 채팅 세션) ── */
 let currentTripId: string | null = null;
@@ -19,11 +20,6 @@ type ChatEvent =
 let panelListeners: Array<(evt: ChatEvent) => void> = [];
 let badgeListener: ((msg: ChatMessage) => void) | null = null;
 
-function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 /* ── 채팅에 링크가 오면 "이동할까요?" 토스트를 띄우는 기능 ──
  * 별도 브로드캐스트 채널 없이 이미 구독 중인 chat_messages INSERT 이벤트를 그대로 활용한다.
@@ -298,7 +294,7 @@ function renderMessageBody(text: string): string {
 function bubbleHtml(msg: ChatMessage, isMe: boolean): string {
   const initial = (msg.display_name || '?').charAt(0);
   const avatar = msg.avatar_url
-    ? '<img src="' + msg.avatar_url + '" alt="" referrerpolicy="no-referrer" />'
+    ? '<img src="' + escapeHtml(safeHttpUrl(msg.avatar_url) ?? '') + '" alt="" referrerpolicy="no-referrer" />'
     : escapeHtml(initial);
   const editedLabel = msg.edited_at ? ' <span class="chat-edited">(수정됨)</span>' : '';
   const body = renderMessageBody(msg.message);
