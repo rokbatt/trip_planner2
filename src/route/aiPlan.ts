@@ -18,6 +18,8 @@
  * 중복 배치가 안 생기고, 각 Day 호출은 훨씬 짧고 구체적인 프롬프트를 받는다.
  */
 
+import { apiFetch } from '../utils/apiFetch';
+
 /** 서버에 보내는 장소 한 건 — 우리가 이미 갖고 있는 사실 정보만 담는다(지어낸 값 없음) */
 export interface AiPlanPlace {
   id: string;
@@ -66,7 +68,7 @@ export interface AiDayDetailResult {
 async function postAi<T>(body: Record<string, unknown>): Promise<T> {
   let res: Response;
   try {
-    res = await fetch('/api/ai', {
+    res = await apiFetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

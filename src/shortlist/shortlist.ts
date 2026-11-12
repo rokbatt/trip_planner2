@@ -42,6 +42,7 @@ import { estimateLegBetween, fmtMin } from '../utils/travelEstimate';
 import './shortlist.css';
 import { parseISODate, daysBetweenISO } from '../utils/dates';
 import { CURRENCIES, fmtAmount, symbolOf } from '../utils/currencies';
+import { apiFetch } from '../utils/apiFetch';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type Trip = Database['public']['Tables']['trips']['Row'];
@@ -541,7 +542,7 @@ interface ZoneSeed {
  */
 async function fetchDestinationZones(destination: string): Promise<{ seeds: ZoneSeed[]; source: string }> {
   try {
-    const res = await fetch('/api/destination-zones', {
+    const res = await apiFetch('/api/destination-zones', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ destination }),
@@ -3274,7 +3275,7 @@ async function loadLiveExchangeRate(): Promise<void> {
   try {
     // 브라우저에서 Frankfurter를 직접 부르면 배포 환경에서 CORS로 막혀서,
     // 우리 서버(/api/exchange-rate)가 대신 호출해서 프록시함
-    const res = await fetch('/api/exchange-rate');
+    const res = await apiFetch('/api/exchange-rate');
     const data = await res.json();
     if (typeof data?.rate === 'number' && data.rate > 0) {
       liveKrwPerUsd = data.rate;
@@ -4250,7 +4251,7 @@ async function handleImportHotelLink(body: HTMLElement, candidates: Place[]): Pr
   statusEl.className = 'sl-import-link-status';
 
   try {
-    const res = await fetch('/api/import-hotel', {
+    const res = await apiFetch('/api/import-hotel', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, contextHint: getTripDestination() }),
@@ -4976,7 +4977,7 @@ async function runReviewSummary(
   try {
     // Gemini를 쓰는 엔드포인트들은 Vercel 함수 12개 한도(Claude.md 3-7) 때문에
     // /api/ai 한 파일로 합쳐져 있고 body의 kind로 분기한다.
-    const res = await fetch('/api/ai', {
+    const res = await apiFetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -5087,7 +5088,7 @@ async function runNearbySearch(body: HTMLElement, basecamp: Place): Promise<void
   let results: NearbySearchResult[] = [];
   let failed = false;
   try {
-    const res = await fetch('/api/nearby-search', {
+    const res = await apiFetch('/api/nearby-search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -5144,7 +5145,7 @@ async function loadNearbyInfra(body: HTMLElement, basecamp: Place, withDistance:
 
   let facilities: InfraFacility[] = [];
   try {
-    const res = await fetch('/api/nearby-infra', {
+    const res = await apiFetch('/api/nearby-infra', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ placeId: basecamp.google_place_id ?? undefined, lat: basecamp.lat, lng: basecamp.lng }),
@@ -5186,7 +5187,7 @@ async function loadHotelScore(
 ): Promise<void> {
   let result: { score: number; grade: string; ratings: Record<string, number> } | null = null;
   try {
-    const res = await fetch('/api/hotel-score', {
+    const res = await apiFetch('/api/hotel-score', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -5268,7 +5269,7 @@ async function loadRealTravelTimes(
     });
     if (batchItems.length === 0) return;
     try {
-      const resp = await fetch('/api/route-matrix', {
+      const resp = await apiFetch('/api/route-matrix', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

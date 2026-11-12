@@ -12,19 +12,15 @@
  *    사용자가 원본으로 다시 확인할 수 있게 한다.
  */
 
-import { supabase } from '../supabase';
+import { apiFetch } from '../utils/apiFetch';
 
 async function postAi<T>(payload: Record<string, unknown>): Promise<T> {
-  // 서버가 "누가 어떤 문서를 읽는지" 확인하도록 로그인 토큰을 같이 보낸다(doc-digest는 토큰이 없으면 401)
-  const token = (await supabase.auth.getSession()).data.session?.access_token ?? null;
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) headers.Authorization = 'Bearer ' + token;
-
+  // apiFetch가 로그인 토큰을 붙인다 — 서버가 "누가 어떤 문서를 읽는지" 확인한다(doc-digest는 토큰이 없으면 401)
   let res: Response;
   try {
-    res = await fetch('/api/ai', {
+    res = await apiFetch('/api/ai', {
       method: 'POST',
-      headers,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
   } catch {

@@ -55,6 +55,7 @@ export const SPLIT_MODE_LABEL: Record<SplitMode, string> = { SHARED: '공동 지
    지출 화면들이 이 모듈에서 가져다 쓰던 이름은 그대로 다시 내보낸다. */
 export { CURRENCIES, symbolOf, fmtAmount } from '../utils/currencies';
 import { fmtAmount } from '../utils/currencies';
+import { apiFetch } from '../utils/apiFetch';
 
 /* ══════════════ 타입 ══════════════ */
 
@@ -366,7 +367,7 @@ export async function fetchRate(currency: string): Promise<{ rate: number | null
   const cached = fxCache.get(currency);
   if (cached) return cached;
   try {
-    const res = await fetch('/api/exchange-rate?from=' + encodeURIComponent(currency));
+    const res = await apiFetch('/api/exchange-rate?from=' + encodeURIComponent(currency));
     const data = (await res.json()) as { rate: number | null; source: string };
     const result = { rate: typeof data.rate === 'number' && data.rate > 0 ? data.rate : null, source: data.source ?? 'unavailable' };
     // 못 구한 결과는 담아 두지 않는다 — 일시적인 실패가 이번 접속 내내 "환율 없음"으로 남지 않게

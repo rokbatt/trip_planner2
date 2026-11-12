@@ -75,6 +75,7 @@ import { isLegCoolingDown, markLegsFailed, clearLegFailures, reportRouteError } 
 import { bindLongPressReorder } from '../mobile/reorder';
 import './route.css';
 import { parseISODate, toISODate } from '../utils/dates';
+import { apiFetch } from '../utils/apiFetch';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type Trip = Database['public']['Tables']['trips']['Row'];
@@ -1000,7 +1001,7 @@ async function loadRealLegsForActiveDay(container: HTMLElement, force = false): 
   try {
     // route-legs.ts는 Vercel Hobby 플랜의 서버리스 함수 12개 한도를 넘겨 route-matrix.ts에
     // 합쳐졌다(body에 legs가 있으면 이 경로로 분기됨) — api/route-matrix.ts 상단 설명 참고.
-    const res = await fetch('/api/route-matrix', {
+    const res = await apiFetch('/api/route-matrix', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ legs: pending, modes: ['WALK', 'TRANSIT', 'DRIVE'] }),
@@ -2039,7 +2040,7 @@ const krwRateFetchInFlight = new Set<string>();
 function ensureKrwRate(currency: string): void {
   if (currency === 'KRW' || krwRateCache.has(currency) || krwRateFetchInFlight.has(currency)) return;
   krwRateFetchInFlight.add(currency);
-  fetch('/api/exchange-rate?from=' + encodeURIComponent(currency))
+  apiFetch('/api/exchange-rate?from=' + encodeURIComponent(currency))
     .then((res) => res.json())
     .then((data) => {
       if (typeof data?.rate === 'number' && data.rate > 0) {

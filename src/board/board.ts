@@ -18,6 +18,7 @@ import { isGooglePhotoUrl } from '../utils/photoHeal';
 import { MarkerClusterer } from '@googlemaps/markerclusterer';
 import './board.css';
 import { parseISODate } from '../utils/dates';
+import { apiFetch } from '../utils/apiFetch';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type PlacesDbRow = Database['public']['Tables']['places_db']['Row'];
@@ -2052,7 +2053,7 @@ function bindAiPicksToggle(inbox: HTMLElement, tripId: string): void {
     body.innerHTML = '<div class="bd-ai-picks-loading">AI가 이번 달 추천을 준비하고 있어요...</div>';
 
     try {
-      const res = await fetch('/api/monthly-picks', {
+      const res = await apiFetch('/api/monthly-picks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ destination }),

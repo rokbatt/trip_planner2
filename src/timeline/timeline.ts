@@ -78,6 +78,7 @@ import type { Database, StaySegment, TripDestination } from '../types/database';
 import { isLegCoolingDown, markLegsFailed, reportRouteError } from '../utils/legCooldown';
 import './timeline.css';
 import { parseISODate } from '../utils/dates';
+import { apiFetch } from '../utils/apiFetch';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type Trip = Database['public']['Tables']['trips']['Row'];
@@ -368,7 +369,7 @@ async function loadRealLegsForActiveDay(): Promise<void> {
   realLegPending = true;
   setLegLoading(true);
   try {
-    const res = await fetch('/api/route-matrix', {
+    const res = await apiFetch('/api/route-matrix', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ legs: pending, modes: ['WALK', 'TRANSIT', 'DRIVE'] }),

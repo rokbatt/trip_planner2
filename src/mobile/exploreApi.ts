@@ -31,6 +31,7 @@ import {
   type HoursPeriod,
   type PriceLevel,
 } from './explore';
+import { apiFetch } from '../utils/apiFetch';
 
 export interface ExplorePlace extends FilterablePlace {
   id: string;
@@ -322,7 +323,7 @@ export async function fetchTravelTimes(
   if (failed != null && now - failed < TRAVEL_RETRY_MS) throw new Error('route-matrix 최근에 실패 — 잠시 뒤 다시');
 
   try {
-    const res = await fetch('/api/route-matrix', {
+    const res = await apiFetch('/api/route-matrix', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ legs: [{ id: 'explore', from: f, to }], modes: ['WALK', 'DRIVE'] }),

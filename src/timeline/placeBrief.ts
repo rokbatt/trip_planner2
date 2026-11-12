@@ -14,6 +14,8 @@
  *    (영업시간·주소·평점)과 같은 위계로 섞어 놓지 않는다.
  */
 
+import { apiFetch } from '../utils/apiFetch';
+
 /** 서버에 보내는 장소 정보 — 우리가 이미 갖고 있는 사실만 담는다(지어낸 값 없음) */
 export interface PlaceBriefRequest {
   name: string;
@@ -62,7 +64,7 @@ export function placeBriefKey(req: PlaceBriefRequest): string {
 export async function requestPlaceBrief(req: PlaceBriefRequest, refresh = false): Promise<PlaceBrief> {
   let res: Response;
   try {
-    res = await fetch('/api/ai', {
+    res = await apiFetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind: 'place-brief', ...req, refresh }),
