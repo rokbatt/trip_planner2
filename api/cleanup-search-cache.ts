@@ -40,6 +40,8 @@ const CLEANUP_TARGETS: { table: string; retentionDays: number }[] = [
   // 30일이면 "장소를 안 바꾸는 한 계속 캐시가 살아있다"는 사용자 기대에는 충분히 길고,
   // 오래된 추천(폐업/시즌 변화 반영 안 된)이 자연스럽게 갱신되는 효과도 있음.
   { table: 'ai_plan_cache', retentionDays: 30 },
+  // 하루 사용량 기록(supabase/api_usage.sql) — 상한은 오늘 기록만 보므로 7일이면 충분하다
+  { table: 'api_usage', retentionDays: 7 },
 ];
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

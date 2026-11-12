@@ -32,6 +32,7 @@ import { createClient } from '@supabase/supabase-js';
 declare const process: { env: Record<string, string | undefined> };
 
 interface VercelRequest {
+  headers?: Record<string, string | string[] | undefined>;
   method?: string;
   body?: any;
 }
@@ -44,6 +45,45 @@ function isFiniteNum(n: any): n is number {
   // typeof NaN === 'number' 함정을 피하려면 반드시 Number.isFinite 사용 (Claude.md 알려진 버그 패턴)
   return Number.isFinite(n);
 }
+
+// ── 사용량 상한 (BEGIN — api/ai·destination-zones·hotel-score·import-hotel·monthly-picks·nearby-infra·nearby-search·route-matrix에 같은 내용이 있다. 고치면 모두 고친다) ──
+/* 사용자당 하루 상한(Claude.md 5-11, supabase/api_usage.sql). 돈이 드는 외부 호출 직전에만 센다 — 캐시에서 나온 결과는 세지 않는다.
+ * - 로그인 토큰이 없으면 세지 않고 통과한다(서버 로그인 확인을 켜기 전까지 — 예전 화면을 쓰는 기기를 막지 않기 위해)
+ * - app_roles에 admin·unlimited로 등록된 이메일은 세지 않는다(관리자·지인 예외)
+ * - 표가 없거나 오류가 나면 통과한다(있으면 좋고 없어도 동작) */
+export type QuotaKind = 'ai' | 'search' | 'infra' | 'routes';
+export const DAILY_LIMITS: Record<QuotaKind, number> = { ai: 60, search: 40, infra: 20, routes: 60 };
+export const QUOTA_EXCEEDED_MESSAGE = '오늘 사용할 수 있는 양을 다 썼어요. 내일 다시 이용해 주세요.';
+
+export async function spendDailyQuota(
+  req: { headers?: Record<string, string | string[] | undefined> },
+  kind: QuotaKind
+): Promise<boolean> {
+  const raw = req.headers?.authorization;
+  const header = Array.isArray(raw) ? raw[0] : raw;
+  const m = typeof header === 'string' ? header.match(/^Bearer\s+(\S+)$/i) : null;
+  if (!m) return true;
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return true;
+  try {
+    const sb: any = createClient(url, key);
+    const { data, error } = await sb.auth.getUser(m[1]);
+    const user = data?.user;
+    if (error || !user) return true;
+    const email = String(user.email ?? '').toLowerCase();
+    if (email) {
+      const { data: role } = await sb.from('app_roles').select('role').eq('email', email).maybeSingle();
+      if (role && (role.role === 'admin' || role.role === 'unlimited')) return true;
+    }
+    const { data: allowed, error: rpcError } = await sb.rpc('spend_api_quota', { p_user: user.id, p_kind: kind, p_limit: DAILY_LIMITS[kind] });
+    if (rpcError) return true;
+    return allowed !== false;
+  } catch {
+    return true;
+  }
+}
+// ── 사용량 상한 (END) ──
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -84,6 +124,10 @@ async function handleMatrix(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
+  if (!(await spendDailyQuota(req, 'routes'))) {
+    res.status(429).json({ error: QUOTA_EXCEEDED_MESSAGE, quotaExceeded: true });
+    return;
+  }
   let apiRes: Response;
   try {
     apiRes = await fetch('https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix', {
@@ -308,6 +352,11 @@ async function handleLegCompare(req: VercelRequest, res: VercelResponse) {
   // "Routes API 요청 671건, 오류 100%"로 찍힌 원인. 이제 첫 호출이 치명적으로 실패하면 거기서 멈춘다.
   let fatal: { status: number; message: string } | undefined;
   const fetchedEntries: Array<{ key: string; mode: Mode; result: LegResult | null }> = [];
+  // 캐시에 없는 구간이 있을 때만(실제로 Google을 부를 때만) 센다
+  if (todo.length && !(await spendDailyQuota(req, 'routes'))) {
+    res.status(429).json({ error: QUOTA_EXCEEDED_MESSAGE, quotaExceeded: true });
+    return;
+  }
   if (todo.length) {
     const first = await fetchLeg(routesKey, todo[0].from, todo[0].to, todo[0].mode);
     fetchedEntries.push({ key: todo[0].key, mode: todo[0].mode, result: first.result });
