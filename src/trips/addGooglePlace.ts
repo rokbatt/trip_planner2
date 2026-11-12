@@ -9,6 +9,7 @@ import { supabase } from '../supabase';
 import { store } from '../store';
 import type { Database } from '../types/database';
 import type { GooglePlaceResult } from '../utils/googleMaps';
+import { isGooglePhotoUrl, pickHealTargets } from '../utils/photoHeal';
 
 type Place = Database['public']['Tables']['places']['Row'];
 
@@ -35,6 +36,55 @@ export async function rehostPhoto(photoUrl: string, placeId: string): Promise<st
     console.error('[Photo] 재호스팅 네트워크 오류, 원본 URL 사용:', (e as Error).message);
   }
   return photoUrl;
+}
+
+/* ── 예전에 Google 주소로 저장된 사진 자가 치유 ──
+ * rehostPhoto가 실패해 원본 주소로 폴백했거나(위), 재호스팅이 없던 시절에 저장된 행은 Google 주소가
+ * 남아 있다. 그대로 두면 그릴 때마다 Google에 요청이 나가고 만료되면 오류로 쌓인다. 보드를 열 때
+ * 한 번 우리 Storage로 옮기고 DB의 photo_url을 바꾼다(한 번 바뀌면 모든 멤버·화면이 그 주소를 쓴다). */
+const healTried = new Set<string>();
+const HEAL_FAIL_KEY = 'mongsil:photoHealFail:';
+
+function readHealFailure(googlePlaceId: string): number | null {
+  try {
+    const v = localStorage.getItem(HEAL_FAIL_KEY + googlePlaceId);
+    const n = v ? Number(v) : NaN;
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeHealFailure(googlePlaceId: string): void {
+  try {
+    localStorage.setItem(HEAL_FAIL_KEY + googlePlaceId, String(Date.now()));
+  } catch {
+    /* 저장소를 못 쓰면 이번 세션 안에서만 쉰다(healTried) */
+  }
+}
+
+/** 화면을 막지 않는 백그라운드 작업 — 순서대로 한 장씩, 실패해도 화면은 그대로 */
+export async function healLegacyPhotos(places: Place[]): Promise<number> {
+  const targets = pickHealTargets(places, { now: Date.now(), failedAt: readHealFailure, tried: healTried });
+  let healed = 0;
+  for (const p of targets) {
+    healTried.add(p.id);
+    const googlePlaceId = p.google_place_id as string;
+    const url = await rehostPhoto(p.photo_url as string, googlePlaceId);
+    if (!url || isGooglePhotoUrl(url)) {
+      writeHealFailure(googlePlaceId);
+      continue;
+    }
+    const { error } = await supabase.from('places').update({ photo_url: url }).eq('id', p.id);
+    if (error) {
+      console.error('[Photo] 사진 주소 교체 저장 실패:', error.message);
+      continue;
+    }
+    p.photo_url = url;
+    healed++;
+  }
+  if (healed > 0) console.log('[Photo] Google 원본 주소 ' + healed + '곳을 우리 Storage로 옮겼어요. 다음에 열 때부터 적용돼요.');
+  return healed;
 }
 
 /**

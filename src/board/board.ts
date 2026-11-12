@@ -13,7 +13,8 @@ import type { Database, TripDestination } from '../types/database';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { loadGoogleMapsScript, extractPlaceResult, suggestGateFromCategory, getPlacePredictions, getPlaceDetails, getCategoryLabel, resetGoogleServices } from '../utils/googleMaps';
 import type { GooglePlaceResult, PlacePrediction } from '../utils/googleMaps';
-import { insertGooglePlace, rehostPhoto } from '../trips/addGooglePlace';
+import { insertGooglePlace, rehostPhoto, healLegacyPhotos } from '../trips/addGooglePlace';
+import { isGooglePhotoUrl } from '../utils/photoHeal';
 import { MarkerClusterer } from '@googlemaps/markerclusterer';
 import './board.css';
 import { parseISODate } from '../utils/dates';
@@ -626,6 +627,9 @@ export async function renderBoardContent(container: HTMLElement, tripId: string)
       console.log('  · "' + p.name + '" — ⚠️ 아직 Google URL 그대로 저장됨 (재호스팅 전 데이터, 이미지 로드 시 Google에 요청 나감)', p.photo_url);
     }
   });
+
+  // 위에서 ⚠️로 찍힌 Google 원본 주소를 백그라운드에서 우리 Storage로 옮긴다(화면은 기다리지 않는다)
+  void healLegacyPhotos(allTripPlaces);
 
   const layout = container.querySelector('#bd-layout') as HTMLElement;
 
@@ -1710,6 +1714,11 @@ async function selectPrediction(prediction: UnifiedPrediction, tripId: string, i
     // DB에 이미 있는 장소 — Place Details 재요청 없이 캐시된 데이터 그대로 사용 (비용 0원)
     console.log('[Verify][3단계: DB 히트 → Google 호출 생략]', prediction.mainText, '— Place Details 요청 안 나감');
     result = cachedRowToGoogleResult(prediction.cachedRow);
+    // 예전에 Google 주소로 저장된 캐시 행이면 그대로 복사하지 않고 Storage로 옮겨서 담는다 —
+    // 안 그러면 이 경로가 Google 원본 주소를 여행마다 새로 퍼뜨린다(이미 Storage에 있으면 다시 받지 않음).
+    if (result.place_id && isGooglePhotoUrl(result.photoUrl)) {
+      result.photoUrl = await rehostPhoto(result.photoUrl as string, result.place_id);
+    }
   } else {
     console.log('[Verify][4단계: DB 미스 → Google Place Details 호출]', prediction.mainText, '(Network 탭에서 place-details/getDetails 관련 요청 확인)');
     try {
