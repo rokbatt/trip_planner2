@@ -12,12 +12,19 @@
  *    사용자가 원본으로 다시 확인할 수 있게 한다.
  */
 
+import { supabase } from '../supabase';
+
 async function postAi<T>(payload: Record<string, unknown>): Promise<T> {
+  // 서버가 "누가 어떤 문서를 읽는지" 확인하도록 로그인 토큰을 같이 보낸다(doc-digest는 토큰이 없으면 401)
+  const token = (await supabase.auth.getSession()).data.session?.access_token ?? null;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = 'Bearer ' + token;
+
   let res: Response;
   try {
     res = await fetch('/api/ai', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(payload),
     });
   } catch {
@@ -36,6 +43,7 @@ async function postAi<T>(payload: Record<string, unknown>): Promise<T> {
   return json as T;
 }
 
+/** 서버는 documentId만 믿는다 — 파일 경로·종류·수정 시각은 서버가 DB에서 다시 읽는다(남의 파일을 지목하지 못하게) */
 export interface DocDigestRequest {
   documentId: string;
   title: string;
