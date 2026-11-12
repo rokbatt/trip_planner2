@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { HEAL_COOLDOWN_MS, HEAL_MAX_PER_RUN, isGooglePhotoUrl, pickHealTargets } from './photoHeal';
+import {
+  HEAL_COOLDOWN_MS,
+  HEAL_MAX_PER_RUN,
+  classifyRehostResponse,
+  healFailureAction,
+  isGooglePhotoUrl,
+  pickHealTargets,
+} from './photoHeal';
 
 const G = 'https://places.googleapis.com/v1/places/X/photos/Y/media?maxWidthPx=480&key=K';
 const S = 'https://abc.supabase.co/storage/v1/object/public/place-photos/places/X.jpg';
@@ -44,5 +51,38 @@ describe('pickHealTargets', () => {
     const many = Array.from({ length: HEAL_MAX_PER_RUN + 5 }, (_, i) => row(String(i), G));
     expect(pickHealTargets(many, base)).toHaveLength(HEAL_MAX_PER_RUN);
     expect(pickHealTargets(many, { ...base, max: 2 })).toHaveLength(2);
+  });
+});
+
+
+describe('classifyRehostResponse', () => {
+  it('성공 응답', () => {
+    expect(classifyRehostResponse(200, { url: 'https://x.supabase.co/storage/a.jpg' })).toBe('ok');
+  });
+  it('서버 키 거절은 key', () => {
+    expect(classifyRehostResponse(502, { keyProblem: true })).toBe('key');
+  });
+  it('그 장소만의 실패(형식 오류·사진 없음)는 place', () => {
+    expect(classifyRehostResponse(400, {})).toBe('place');
+    expect(classifyRehostResponse(502, { keyProblem: false })).toBe('place');
+  });
+  it('그 밖의 서버 오류는 server', () => {
+    expect(classifyRehostResponse(500, {})).toBe('server');
+    expect(classifyRehostResponse(504, null)).toBe('server');
+    expect(classifyRehostResponse(200, {})).toBe('server');
+  });
+});
+
+describe('healFailureAction', () => {
+  it('키·서버·네트워크 문제면 전체만 멈추고 장소는 쉬게 하지 않는다', () => {
+    for (const o of ['key', 'server', 'network'] as const) {
+      expect(healFailureAction(o)).toEqual({ stopAll: true, restPlace: false });
+    }
+  });
+  it('장소 문제면 그 장소만 쉬고 계속한다', () => {
+    expect(healFailureAction('place')).toEqual({ stopAll: false, restPlace: true });
+  });
+  it('성공이면 아무것도 하지 않는다', () => {
+    expect(healFailureAction('ok')).toEqual({ stopAll: false, restPlace: false });
   });
 });

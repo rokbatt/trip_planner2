@@ -537,6 +537,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const result = await rehostGooglePhoto(supabase, photoUrl, placeId, serverMapsKey);
     res.status(200).json(result);
   } catch (e) {
-    res.status(502).json({ error: (e as Error).message });
+    // keyProblem: 장소가 아니라 서버 키가 거절된 경우 — 앱이 그 장소를 쉬게 하지 않고 전체만 멈추게 한다
+    res.status(502).json({ error: (e as Error).message, keyProblem: e instanceof KeyProblemError });
   }
 }

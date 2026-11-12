@@ -47,3 +47,27 @@ export function pickHealTargets<T extends HealCandidate>(places: readonly T[], o
   }
   return out;
 }
+
+/**
+ * 사진 옮기기 결과의 종류.
+ * - ok: 성공
+ * - place: 그 장소만의 문제(사진 없음·형식 오류 등) → 그 장소만 쉬고 다음 장소로
+ * - key: 서버의 Google 키가 거절됨(401/403/429) → 장소 탓이 아니다. 전체를 멈추고 장소는 쉬게 하지 않는다
+ * - server / network: 서버 설정·장애나 오프라인 → key와 같이 전체만 멈춘다
+ * 키 문제로 실패한 장소까지 쉬게 하면, 키를 고친 뒤에도 그 장소들만 몇 시간씩 남는다.
+ */
+export type RehostOutcome = 'ok' | 'place' | 'key' | 'server' | 'network';
+
+export function healFailureAction(outcome: RehostOutcome): { stopAll: boolean; restPlace: boolean } {
+  if (outcome === 'ok') return { stopAll: false, restPlace: false };
+  if (outcome === 'place') return { stopAll: false, restPlace: true };
+  return { stopAll: true, restPlace: false };
+}
+
+/** /api/cache-photo 응답을 결과 종류로 바꾼다 */
+export function classifyRehostResponse(status: number, body: { url?: unknown; keyProblem?: unknown } | null): RehostOutcome {
+  if (status >= 200 && status < 300 && body && typeof body.url === 'string' && body.url) return 'ok';
+  if (body && body.keyProblem === true) return 'key';
+  if (status === 400 || status === 502) return 'place';
+  return 'server';
+}
