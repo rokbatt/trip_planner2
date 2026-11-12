@@ -10,9 +10,9 @@
  *   - Routes API 실측이 있으면 `real: true`  → 화면에서 그대로 실측으로 표기
  *   - 없으면 직선거리(Haversine) 기반 추정   → 화면에서 반드시 "추정"으로 표기
  *   - 택시 요금은 Routes API가 주지 않으므로 실측 구간에서도 항상 추정치다
- *   - **요금 추정은 검증된 요금 모델이 있는 통화에서만 한다**(아래 FARE_MODELS). 예전에는 방콕 기준
+ *   - **요금 추정은 그 나라 실제 요금표를 확인한 통화에서만 한다**(아래 FARE_MODELS). 예전에는 방콕 기준
  *     공식(35 + 6.5×km)을 어느 나라에나 써서, 도쿄 택시 5km가 "¥68"로 나왔다. 모델이 없는 곳은
- *     요금을 지어내지 않고 null — 화면이 "요금 정보 없음"이라고 적는다.
+ *     요금을 지어내지 않고 null — 화면이 "요금 정보 없음"이라고 적는다. 새 나라는 요금표를 확인하고 한 줄씩 더한다.
  */
 
 import { fmtAmountWithCode } from './currencies';
@@ -74,14 +74,25 @@ export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: numb
  * THB: 방콕에서 실제로 탄 구간들에 맞춰 잡은 값(택시 기본 35 + km당 6.5, 대중교통 20 + km당 6·상한 62).
  */
 interface FareModel {
+  /** 택시: 기본요금(포함 거리까지) + 포함 거리를 넘은 만큼 km당 요금 */
   taxiBase: number;
+  /** 기본요금에 포함된 거리(km). 생략하면 0 */
+  taxiIncludedKm?: number;
   taxiPerKm: number;
-  transitBase: number;
-  transitPerKm: number;
-  transitCap: number;
+  /** 이 거리(km)를 넘으면 요금 체계가 바뀌는 곳 — 확인하지 못한 구간은 추정하지 않는다 */
+  taxiMaxKm?: number;
+  /** 대중교통: 거리에 비례하는 요금 체계가 확인된 곳만. 없으면 구글이 준 실제 요금만 쓴다 */
+  transit?: { base: number; perKm: number; cap: number };
 }
 const FARE_MODELS: Record<string, FareModel> = {
-  THB: { taxiBase: 35, taxiPerKm: 6.5, transitBase: 20, transitPerKm: 6, transitCap: 62 },
+  THB: { taxiBase: 35, taxiPerKm: 6.5, transit: { base: 20, perKm: 6, cap: 62 } },
+  // 일본: 도쿄 23구 택시 — 2026-04 개정 기본 ¥500(1km), 이후 232m마다 ¥100(≈¥431/km). 심야 할증 제외.
+  //   다른 도시는 기본요금·증분이 조금 다르다(예: 오사카 ¥600/1.3km). 대중교통은 노선·구간별 요금이라 추정하지 않는다.
+  JPY: { taxiBase: 500, taxiIncludedKm: 1, taxiPerKm: 431 },
+  // 홍콩: 시내(urban) 택시 — 2024-07 기준 첫 2km HK$29, 이후 200m마다 HK$2.1(≈10.5/km, 9km까지만 확인된 구간).
+  HKD: { taxiBase: 29, taxiIncludedKm: 2, taxiPerKm: 10.5, taxiMaxKm: 9 },
+  // 대만: 택시 — 첫 1.25km NT$85, 이후 200m마다 NT$5(=25/km). 안내 사이트마다 증분 거리가 달라 참고용. 야간 할증 제외.
+  TWD: { taxiBase: 85, taxiIncludedKm: 1.25, taxiPerKm: 25 },
 };
 
 /** 이 통화에 요금 추정 모델이 있는가 */
@@ -89,15 +100,22 @@ export function hasFareModel(currency: string | null | undefined): boolean {
   return !!currency && currency in FARE_MODELS;
 }
 
-/** 요금 모델이 있는 통화에서만 추정 요금을 돌려준다. 도보는 무료라 null. */
+/**
+ * 요금 모델이 있는 통화에서만 추정 요금을 돌려준다. 도보는 무료라 null.
+ * 택시는 모델이 있으면 항상, 대중교통은 거리 비례 모델이 확인된 통화에서만 추정한다.
+ */
 export function estimateCost(mode: TravelMode, km: number, currency: string | null | undefined): LegCost | null {
   if (mode === 'WALK' || !currency) return null;
   const m = FARE_MODELS[currency];
   if (!m) return null;
-  const amount =
-    mode === 'TRANSIT'
-      ? Math.min(m.transitCap, m.transitBase + Math.round(km) * m.transitPerKm)
-      : m.taxiBase + Math.round(km * m.taxiPerKm);
+  let amount: number;
+  if (mode === 'TRANSIT') {
+    if (!m.transit) return null;
+    amount = Math.min(m.transit.cap, m.transit.base + Math.round(km) * m.transit.perKm);
+  } else {
+    if (m.taxiMaxKm != null && km > m.taxiMaxKm) return null;
+    amount = m.taxiBase + Math.round(Math.max(0, km - (m.taxiIncludedKm ?? 0)) * m.taxiPerKm);
+  }
   return { amount, currency, estimated: true };
 }
 
