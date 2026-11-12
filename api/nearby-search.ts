@@ -169,6 +169,49 @@ async function computeWalkMatrix(
   return out;
 }
 
+// ── 장소 확인 (BEGIN — api/ai.ts·hotel-score.ts·nearby-infra.ts·nearby-search.ts에 같은 내용이 있다. 고치면 넷 다 고친다) ──
+/* 캐시 키는 Google 장소 ID인데 내용(이름·주소·좌표)을 화면이 보내면, 누군가 남의 장소 ID에 가짜 값을 넣어
+ * 모든 사용자에게 보이는 캐시를 오염시킬 수 있다. 그래서 캐시를 새로 만들 땐 서버가 Google에서 직접 확인한
+ * 값만 쓰고, 확인하지 못하면 결과는 돌려주되 캐시에는 남기지 않는다(Claude.md 5-11).
+ * 요금: 좌표만 = Place Details Essentials, 이름까지 = Pro. 둘 다 장소당 캐시를 처음 만들 때 1회뿐이다. */
+const VERIFY_PLACE_ID_RE = /^[A-Za-z0-9_-]{10,300}$/;
+
+interface VerifiedPlace {
+  name: string | null;
+  address: string | null;
+  lat: number;
+  lng: number;
+}
+
+export async function lookupPlace(placeId: unknown, serverKey: string | undefined, withName: boolean): Promise<VerifiedPlace | null> {
+  if (typeof placeId !== 'string' || !VERIFY_PLACE_ID_RE.test(placeId) || !serverKey) return null;
+  const fields = withName ? 'displayName,formattedAddress,location' : 'location';
+  try {
+    const res = await fetch('https://places.googleapis.com/v1/places/' + placeId + '?languageCode=ko', {
+      headers: { 'X-Goog-Api-Key': serverKey, 'X-Goog-FieldMask': fields },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) {
+      console.error('[verify-place] Google 장소 확인 실패(' + res.status + ') — 이번 결과는 캐시에 남기지 않음');
+      return null;
+    }
+    const data: any = await res.json();
+    const lat = data?.location?.latitude;
+    const lng = data?.location?.longitude;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return {
+      name: typeof data?.displayName?.text === 'string' ? data.displayName.text : null,
+      address: typeof data?.formattedAddress === 'string' ? data.formattedAddress : null,
+      lat,
+      lng,
+    };
+  } catch (e) {
+    console.error('[verify-place] Google 장소 확인 오류 — 이번 결과는 캐시에 남기지 않음:', (e as Error).message);
+    return null;
+  }
+}
+// ── 장소 확인 (END) ──
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
@@ -217,8 +260,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
+  // 캐시(placeId+검색어, 모든 사용자 공유)를 새로 만들 땐 숙소 좌표를 Google에서 직접 확인한 값으로 계산한다
+  const verified = await lookupPlace(placeId, serverKey, false);
+  const canCache = !!verified;
+  const oLat = verified ? verified.lat : lat;
+  const oLng = verified ? verified.lng : lng;
+
   // 2a. 자유 검색어로 최대 MAX_RESULTS곳 조회
-  const found = await textSearch(serverKey, lat, lng, query);
+  const found = await textSearch(serverKey, oLat, oLng, query);
   if (found.length === 0) {
     res.status(200).json({ results: [], cached: false });
     return;
@@ -226,7 +275,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // 2b. Routes API로 실제 도보 시간/거리 (1회 호출), 실패분은 직선거리 폴백
   const matrix = routesKey
-    ? await computeWalkMatrix(routesKey, { lat, lng }, found.map((f) => ({ lat: f.lat, lng: f.lng })))
+    ? await computeWalkMatrix(routesKey, { lat: oLat, lng: oLng }, found.map((f) => ({ lat: f.lat, lng: f.lng })))
     : new Map<number, { meters: number; seconds: number }>();
 
   const results: SearchResult[] = found
@@ -236,13 +285,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (route) {
         return { ...base, meters: Math.round(route.meters), walkMin: Math.max(1, Math.round(route.seconds / 60)) };
       }
-      const meters = Math.round(haversineMeters(lat, lng, f.lat, f.lng));
+      const meters = Math.round(haversineMeters(oLat, oLng, f.lat, f.lng));
       return { ...base, meters, walkMin: Math.max(1, Math.round(meters / 80)) };
     })
     .sort((a, b) => a.meters - b.meters);
 
   // 3. 캐싱 — 같은 숙소+검색어 조합은 이후 전부 캐시 히트
-  if (supabase && placeId) {
+  if (canCache && supabase && placeId) {
     const { error: upsertError } = await supabase
       .from('hotel_search_cache')
       .upsert({ place_id: placeId, query, results, updated_at: new Date().toISOString() }, { onConflict: 'place_id,query' });
