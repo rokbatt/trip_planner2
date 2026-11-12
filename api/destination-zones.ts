@@ -37,6 +37,12 @@ interface ZoneSeed {
   lng: number;
 }
 
+/** 외부 AI 오류를 사용자에게 보여줄 문장으로 — 원문(내부 한도·프로젝트 정보 포함)은 서버 로그에만 남긴다 */
+function geminiFailMessage(status: number): string {
+  if (status === 429) return 'AI 요청이 잠깐 몰렸어요. 1분쯤 뒤에 다시 시도해 주세요.';
+  return 'AI 응답을 받지 못했어요. 잠시 후 다시 시도해 주세요. (' + status + ')';
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
@@ -119,8 +125,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (!geminiRes.ok) {
-    const errText = await geminiRes.text();
-    res.status(502).json({ error: 'Gemini 요청 실패 (' + geminiRes.status + '): ' + errText });
+    console.error('[destination-zones] Gemini 요청 실패 (' + geminiRes.status + '):', (await geminiRes.text()).slice(0, 2000));
+    res.status(502).json({ error: geminiFailMessage(geminiRes.status) });
     return;
   }
 

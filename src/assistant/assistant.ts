@@ -95,7 +95,9 @@ async function loadSources(tripId: string): Promise<void> {
     const personal = unlockedUserId ? await loadPersonalDocuments(tripId, unlockedUserId) : [];
     const docs = [...shared, ...personal];
 
-    const resolved = await Promise.all(docs.map(async (doc) => ({ doc, source: await resolveDocSource(doc) })));
+    // 한꺼번에 보내지 않고 2개씩 — 문서가 많으면 질문 한 번에 Gemini 분당 한도(무료 등급 10회)를 넘었다.
+    // 문서 요약은 서버에 캐싱되므로 이렇게 느려지는 건 문서를 처음 읽을 때뿐이다.
+    const resolved = await mapWithLimit(docs, 2, async (doc) => ({ doc, source: await resolveDocSource(doc) }));
     const docSources = resolved.filter((r) => r.source).map((r) => r.source!);
     sourcesFailedCount = resolved.filter((r) => !r.source && r.doc.file_path).length;
 
@@ -120,6 +122,20 @@ async function loadSources(tripId: string): Promise<void> {
     renderList();
     updateFormState();
   }
+}
+
+/** 순서를 지키며 최대 limit개씩만 동시에 처리한다 */
+async function mapWithLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
 }
 
 /** 문서 하나를 질문에 쓸 수 있는 자료로 바꾼다 — 파일이 없으면 저장된 필드를 그대로,
