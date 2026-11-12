@@ -46,6 +46,7 @@ declare const Buffer: { from(data: ArrayBuffer | Uint8Array): { toString(encodin
 interface VercelRequest {
   method?: string;
   body?: any;
+  headers?: Record<string, string | string[] | undefined>;
 }
 interface VercelResponse {
   status: (code: number) => VercelResponse;
@@ -1102,6 +1103,40 @@ async function handlePlaceBrief(req: VercelRequest, res: VercelResponse) {
  * 다뤄야 한다.
  */
 
+/* ── 문서 접근 확인 (doc-digest) ──
+ * 문서 파일은 비공개 보관함에 있고 이 함수는 서비스 키로 꺼낸다. 그래서 "누가, 어떤 문서를" 서버가 직접
+ * 확인해야 한다 — 화면이 보낸 파일 경로나 문서 id를 그대로 믿으면 남의 여권·항공권을 읽을 수 있다. */
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(v: unknown): v is string {
+  return typeof v === 'string' && UUID_RE.test(v);
+}
+
+/** Authorization: Bearer <토큰>에서 토큰만 꺼낸다 */
+export function bearerToken(header: string | string[] | undefined): string | null {
+  const v = Array.isArray(header) ? header[0] : header;
+  if (typeof v !== 'string') return null;
+  const m = v.match(/^Bearer\s+(\S+)$/i);
+  return m ? m[1] : null;
+}
+
+/**
+ * 문서를 읽어도 되는가 — 그 여행의 멤버여야 하고, 개인 문서면 그 문서 보관함의 주인(로그인 계정)이어야 한다.
+ * 계정과 연결되지 않은 옛 개인 문서(주인 user_id가 없음)는 누구 것인지 확인할 수 없어 읽지 않는다.
+ */
+export function canReadDocument(input: {
+  userId: string;
+  isMember: boolean;
+  visibility: string;
+  ownerUserId: string | null;
+}): boolean {
+  if (!input.isMember) return false;
+  if (input.visibility === 'SHARED') return true;
+  if (input.visibility === 'PERSONAL') return !!input.ownerUserId && input.ownerUserId === input.userId;
+  return false;
+}
+
 const DOC_DIGEST_SCHEMA = {
   type: 'OBJECT',
   properties: {
@@ -1114,39 +1149,83 @@ const DOC_DIGEST_SCHEMA = {
 async function handleDocDigest(req: VercelRequest, res: VercelResponse) {
   const body = (req.body ?? {}) as Record<string, any>;
   const documentId = String(body.documentId ?? '').trim();
-  const title = String(body.title ?? '').trim();
-  const category = String(body.category ?? '').trim();
-  const filePath = String(body.filePath ?? '').trim();
-  const fileType = String(body.fileType ?? 'application/octet-stream').trim();
-  const updatedAt = String(body.updatedAt ?? '').trim();
+  // 분류는 화면의 한국어 표시 이름이라 화면 값을 쓰되(프롬프트용), 길이를 제한한다
+  const categoryLabel = String(body.category ?? '').trim().slice(0, 40);
 
-  if (!documentId || !filePath) {
-    res.status(400).json({ error: 'documentId와 filePath가 필요해요.' });
+  if (!isUuid(documentId)) {
+    res.status(400).json({ error: 'documentId가 올바르지 않아요.' });
     return;
   }
 
-  const cacheKey = 'doc-digest:' + stableHash(documentId + ':' + updatedAt);
   const supabase = makeSupabase();
+  if (!supabase) {
+    // 서비스 롤 키가 없으면 비공개 버킷에서 파일을 받아올 방법이 없다
+    res.status(500).json({ error: '문서 저장소 접근 설정이 안 돼 있어요(SUPABASE_SERVICE_ROLE_KEY).' });
+    return;
+  }
+
+  // ① 로그인 확인
+  const token = bearerToken(req.headers?.authorization);
+  if (!token) {
+    res.status(401).json({ error: '로그인이 필요해요.' });
+    return;
+  }
+  const { data: authData, error: authError } = await supabase.auth.getUser(token);
+  const userId = authData?.user?.id;
+  if (authError || !userId) {
+    res.status(401).json({ error: '로그인이 만료됐어요. 다시 로그인해 주세요.' });
+    return;
+  }
+
+  // ② 문서는 화면이 보낸 값이 아니라 DB에서 직접 읽는다(파일 경로·종류·수정 시각 모두)
+  const { data: doc, error: docError } = await supabase
+    .from('trip_documents')
+    .select('id, trip_id, visibility, owner_id, title, file_path, file_type, updated_at')
+    .eq('id', documentId)
+    .maybeSingle();
+  if (docError || !doc || !doc.file_path) {
+    res.status(404).json({ error: '문서를 찾지 못했어요.' });
+    return;
+  }
+
+  // ③ 그 여행의 멤버인지, 개인 문서면 본인 것인지
+  const { data: member } = await supabase
+    .from('trip_members')
+    .select('id')
+    .eq('trip_id', doc.trip_id)
+    .eq('user_id', userId)
+    .maybeSingle();
+  let ownerUserId: string | null = null;
+  if (doc.visibility === 'PERSONAL' && doc.owner_id) {
+    const { data: owner } = await supabase.from('trip_doc_users').select('user_id').eq('id', doc.owner_id).maybeSingle();
+    ownerUserId = owner?.user_id ?? null;
+  }
+  if (!canReadDocument({ userId, isMember: !!member, visibility: doc.visibility, ownerUserId })) {
+    // 남의 문서인지 없는 문서인지 구분해 알려 주지 않는다
+    res.status(404).json({ error: '문서를 찾지 못했어요.' });
+    return;
+  }
+
+  // ④ 확인을 통과한 뒤에만 캐시를 본다 — 앞에서 보면 문서 id만으로 남의 요약을 받아 갈 수 있다
+  const cacheKey = 'doc-digest:' + stableHash(doc.id + ':' + doc.updated_at);
   const cached = await readPlanCache(supabase, cacheKey);
   if (cached) {
     res.status(200).json({ ...cached, cached: true });
     return;
   }
 
-  if (!supabase) {
-    // 서비스 롤 키가 없으면 비공개 버킷에서 파일을 받아올 방법이 없다
-    res.status(500).json({ error: '문서 저장소 접근 설정이 안 돼 있어요(SUPABASE_SERVICE_ROLE_KEY).' });
-    return;
-  }
   const geminiKey = process.env.GEMINI_API_KEY;
   if (!geminiKey) {
     res.status(500).json({ error: 'GEMINI_API_KEY가 설정되지 않았어요.' });
     return;
   }
 
-  const { data: fileBlob, error: downloadError } = await supabase.storage.from('trip-docs').download(filePath);
+  const title = String(doc.title ?? '');
+  const category = categoryLabel;
+  const fileType = String(doc.file_type ?? 'application/octet-stream');
+  const { data: fileBlob, error: downloadError } = await supabase.storage.from('trip-docs').download(doc.file_path);
   if (downloadError || !fileBlob) {
-    res.status(502).json({ error: '문서 파일을 불러오지 못했어요: ' + (downloadError?.message ?? '알 수 없는 오류') });
+    res.status(502).json({ error: '문서 파일을 불러오지 못했어요.' });
     return;
   }
 
