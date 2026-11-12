@@ -10,15 +10,30 @@
  *   - Routes API 실측이 있으면 `real: true`  → 화면에서 그대로 실측으로 표기
  *   - 없으면 직선거리(Haversine) 기반 추정   → 화면에서 반드시 "추정"으로 표기
  *   - 택시 요금은 Routes API가 주지 않으므로 실측 구간에서도 항상 추정치다
+ *   - **요금 추정은 그 나라 실제 요금표를 확인한 통화에서만 한다**(아래 FARE_MODELS). 예전에는 방콕 기준
+ *     공식(35 + 6.5×km)을 어느 나라에나 써서, 도쿄 택시 5km가 "¥68"로 나왔다. 모델이 없는 곳은
+ *     요금을 지어내지 않고 null — 화면이 "요금 정보 없음"이라고 적는다. 새 나라는 요금표를 확인하고 한 줄씩 더한다.
  */
 
+import { fmtAmountWithCode } from './currencies';
+
 export type TravelMode = 'WALK' | 'TRANSIT' | 'TAXI';
+
+/** 구간 요금 — 실측(대중교통 요금) 또는 요금 모델이 있는 통화의 추정치 */
+export interface LegCost {
+  amount: number;
+  currency: string;
+  /** true면 추정(택시 요금은 항상 추정), false면 Routes API가 준 실측 요금 */
+  estimated: boolean;
+}
 
 export interface Leg {
   mode: TravelMode;
   km: number;
   min: number;
-  costTHB: number;
+  /** 이 구간에 드는 돈. 도보는 무료라 null이 아니라 `mode === 'WALK'`로 구분하고,
+   *  유료 구간인데 요금을 모르면 null이다("무료"와 "모름"을 섞지 않는다). */
+  cost: LegCost | null;
   /** true면 Routes API 실측, false면 직선거리 기반 추정치 (원칙 3-1 — 화면에 구분 표기) */
   real: boolean;
   /** 실측 대중교통 요금이 있을 때만 (통화 포함) */
@@ -52,10 +67,68 @@ export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: numb
 
 /* ══════════════ 구간 추정 ══════════════ */
 
-export function legForMode(km: number, mode: TravelMode): Leg {
-  if (mode === 'WALK') return { mode, km, min: Math.max(2, Math.round(km * 13)), costTHB: 0, real: false };
-  if (mode === 'TRANSIT') return { mode, km, min: Math.max(6, Math.round((km / 18) * 60) + 6), costTHB: Math.min(62, 20 + Math.round(km) * 6), real: false };
-  return { mode, km, min: Math.max(8, Math.round((km / 24) * 60)), costTHB: 35 + Math.round(km * 6.5), real: false };
+/**
+ * 요금 추정 모델 — **검증된 통화만** 둔다. 값을 아는 나라가 생길 때 한 줄씩 더한다
+ * (그 나라 실제 요금표를 확인한 뒤에). 없는 통화는 estimateCost가 null을 돌려준다.
+ *
+ * THB: 방콕에서 실제로 탄 구간들에 맞춰 잡은 값(택시 기본 35 + km당 6.5, 대중교통 20 + km당 6·상한 62).
+ */
+interface FareModel {
+  /** 택시: 기본요금(포함 거리까지) + 포함 거리를 넘은 만큼 km당 요금 */
+  taxiBase: number;
+  /** 기본요금에 포함된 거리(km). 생략하면 0 */
+  taxiIncludedKm?: number;
+  taxiPerKm: number;
+  /** 이 거리(km)를 넘으면 요금 체계가 바뀌는 곳 — 확인하지 못한 구간은 추정하지 않는다 */
+  taxiMaxKm?: number;
+  /** 대중교통: 거리에 비례하는 요금 체계가 확인된 곳만. 없으면 구글이 준 실제 요금만 쓴다 */
+  transit?: { base: number; perKm: number; cap: number };
+}
+const FARE_MODELS: Record<string, FareModel> = {
+  THB: { taxiBase: 35, taxiPerKm: 6.5, transit: { base: 20, perKm: 6, cap: 62 } },
+  // 일본: 도쿄 23구 택시 — 2026-04 개정 기본 ¥500(1km), 이후 232m마다 ¥100(≈¥431/km). 심야 할증 제외.
+  //   다른 도시는 기본요금·증분이 조금 다르다(예: 오사카 ¥600/1.3km). 대중교통은 노선·구간별 요금이라 추정하지 않는다.
+  JPY: { taxiBase: 500, taxiIncludedKm: 1, taxiPerKm: 431 },
+  // 홍콩: 시내(urban) 택시 — 2024-07 기준 첫 2km HK$29, 이후 200m마다 HK$2.1(≈10.5/km, 9km까지만 확인된 구간).
+  HKD: { taxiBase: 29, taxiIncludedKm: 2, taxiPerKm: 10.5, taxiMaxKm: 9 },
+  // 대만: 택시 — 첫 1.25km NT$85, 이후 200m마다 NT$5(=25/km). 안내 사이트마다 증분 거리가 달라 참고용. 야간 할증 제외.
+  TWD: { taxiBase: 85, taxiIncludedKm: 1.25, taxiPerKm: 25 },
+};
+
+/** 이 통화에 요금 추정 모델이 있는가 */
+export function hasFareModel(currency: string | null | undefined): boolean {
+  return !!currency && currency in FARE_MODELS;
+}
+
+/**
+ * 요금 모델이 있는 통화에서만 추정 요금을 돌려준다. 도보는 무료라 null.
+ * 택시는 모델이 있으면 항상, 대중교통은 거리 비례 모델이 확인된 통화에서만 추정한다.
+ */
+export function estimateCost(mode: TravelMode, km: number, currency: string | null | undefined): LegCost | null {
+  if (mode === 'WALK' || !currency) return null;
+  const m = FARE_MODELS[currency];
+  if (!m) return null;
+  let amount: number;
+  if (mode === 'TRANSIT') {
+    if (!m.transit) return null;
+    amount = Math.min(m.transit.cap, m.transit.base + Math.round(km) * m.transit.perKm);
+  } else {
+    if (m.taxiMaxKm != null && km > m.taxiMaxKm) return null;
+    amount = m.taxiBase + Math.round(Math.max(0, km - (m.taxiIncludedKm ?? 0)) * m.taxiPerKm);
+  }
+  return { amount, currency, estimated: true };
+}
+
+/** 금액을 소수 둘째 자리까지만(2.5유로를 3으로 뭉개지 않는다) */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/** `currency`는 이 여행지의 현지 통화(모르면 생략) — 요금 모델이 있을 때만 추정 요금이 붙는다 */
+export function legForMode(km: number, mode: TravelMode, currency?: string | null): Leg {
+  if (mode === 'WALK') return { mode, km, min: Math.max(2, Math.round(km * 13)), cost: null, real: false };
+  if (mode === 'TRANSIT') return { mode, km, min: Math.max(6, Math.round((km / 18) * 60) + 6), cost: estimateCost(mode, km, currency), real: false };
+  return { mode, km, min: Math.max(8, Math.round((km / 24) * 60)), cost: estimateCost(mode, km, currency), real: false };
 }
 
 /** 앱 내부 모드 ↔ Routes API travelMode */
@@ -98,18 +171,54 @@ export function decodePolyline(encoded: string): Array<{ lat: number; lng: numbe
   return points;
 }
 
-/** 실측 데이터를 Leg로 변환. 택시 요금은 Routes API가 주지 않으므로 거리 기반 추정 유지 */
-export function realToLeg(mode: TravelMode, r: RealLeg): Leg {
+/** 실측 데이터를 Leg로 변환. 택시 요금은 Routes API가 주지 않으므로 요금 모델이 있는 통화에서만 추정한다 */
+export function realToLeg(mode: TravelMode, r: RealLeg, currency?: string | null): Leg {
   const km = r.meters / 1000;
   const min = Math.max(1, Math.round(r.seconds / 60));
   const path = r.polyline ? decodePolyline(r.polyline) : undefined;
   if (mode === 'TRANSIT') {
-    // 실측 요금이 있으면 그 값을, 없으면 거리 기반 추정치를 쓴다(추정 여부는 fare 유무로 구분).
-    const costTHB = r.fare ? Math.round(r.fare.units) : Math.min(62, 20 + Math.round(km) * 6);
-    return { mode, km, min, costTHB, real: true, fare: r.fare, path };
+    // 실측 요금이 있으면 그 값과 **그 통화**를 그대로 쓰고(여행지가 어디든 정확), 없으면 요금 모델이 있을 때만 추정
+    const cost: LegCost | null = r.fare
+      ? { amount: round2(r.fare.units), currency: r.fare.currency, estimated: false }
+      : estimateCost(mode, km, currency);
+    return { mode, km, min, cost, real: true, fare: r.fare, path };
   }
-  if (mode === 'WALK') return { mode, km, min, costTHB: 0, real: true, path };
-  return { mode, km, min, costTHB: 35 + Math.round(km * 6.5), real: true, path };
+  if (mode === 'WALK') return { mode, km, min, cost: null, real: true, path };
+  return { mode, km, min, cost: estimateCost(mode, km, currency), real: true, path };
+}
+
+/* ══════════════ 요금 합계 ══════════════ */
+
+export interface CostSummary {
+  amount: number;
+  currency: string;
+  /** 요금을 아는 구간만 더했다 — 요금을 모르는 유료 구간이 남아 있다 */
+  partial: boolean;
+  /** 요금을 모르는 유료(도보가 아닌) 구간 수 */
+  unknownLegs: number;
+  /** 합계에 추정 요금이 하나라도 섞여 있다 */
+  estimated: boolean;
+}
+
+/**
+ * 하루 교통비 합계. **요금을 아는 구간만** 더하고, 모르는 구간이 있으면 partial로 표시한다 —
+ * 모르는 구간을 0으로 쳐서 "총 0원"처럼 보이게 하지 않는다. 아는 요금이 하나도 없거나 통화가 섞여
+ * 더할 수 없으면 null(화면이 "요금 정보 없음"이라고 적는다).
+ */
+export function summarizeCosts(legs: ReadonlyArray<Leg | null>): CostSummary | null {
+  const paid = legs.filter((l): l is Leg => !!l && l.mode !== 'WALK');
+  const known = paid.filter((l) => l.cost != null);
+  if (!known.length) return null;
+  const currencies = new Set(known.map((l) => l.cost!.currency));
+  if (currencies.size > 1) return null;
+  const unknownLegs = paid.length - known.length;
+  return {
+    amount: round2(known.reduce((sum, l) => sum + l.cost!.amount, 0)),
+    currency: known[0].cost!.currency,
+    partial: unknownLegs > 0,
+    unknownLegs,
+    estimated: known.some((l) => l.cost!.estimated),
+  };
 }
 
 /**
@@ -138,13 +247,14 @@ export function estimateLegBetween(
   from: { lat: number; lng: number },
   to: { lat: number; lng: number },
   override?: TravelMode,
-  measured?: Record<string, RealLeg>
+  measured?: Record<string, RealLeg>,
+  currency?: string | null
 ): Leg {
   const straightKm = haversineKm(from.lat, from.lng, to.lat, to.lng) * STRAIGHT_TO_ROAD;
   const mode: TravelMode = override ?? pickAutoMode(straightKm, measured);
   const r = measured?.[toApiMode(mode)];
-  if (r) return realToLeg(mode, r);
-  return legForMode(straightKm, mode);
+  if (r) return realToLeg(mode, r, currency);
+  return legForMode(straightKm, mode, currency);
 }
 
 export function legKey(fromId: string, toId: string): string {
@@ -204,6 +314,19 @@ export function modeLabel(mode: TravelMode): string {
 
 export function modeColorClass(mode: TravelMode): string {
   return mode === 'WALK' ? 'walk' : mode === 'TRANSIT' ? 'transit' : 'taxi';
+}
+
+/** 구간 요금 한 줄 — "약 276 THB"(추정) / "2.5 EUR"(실측). 도보·요금 모름이면 빈 문자열 */
+export function fmtLegCost(cost: LegCost | null): string {
+  if (!cost) return '';
+  return (cost.estimated ? '약 ' : '') + fmtAmountWithCode(cost.amount, cost.currency);
+}
+
+/** 하루 교통비 한 줄. 요금을 모르면 "요금 정보 없음"(0으로 쓰지 않는다), 일부만 알면 모르는 구간 수를 밝힌다 */
+export function fmtCostSummary(c: CostSummary | null): string {
+  if (!c) return '요금 정보 없음';
+  const base = (c.estimated ? '약 ' : '') + fmtAmountWithCode(c.amount, c.currency);
+  return c.partial ? base + ' + ' + c.unknownLegs + '구간 미확인' : base;
 }
 
 export function fmtMin(min: number): string {

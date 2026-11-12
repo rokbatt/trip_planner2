@@ -29,6 +29,11 @@ import {
   isSettleable,
   fmtKRW,
   fmtAmount,
+  fmtRate,
+  fmtRateKRW,
+  fxSourceNote,
+  parseRateInput,
+  buildExpensePayload,
   BUDGET_TOTAL_KEY,
   type ExpenseCtx,
   type MemberLite,
@@ -395,7 +400,7 @@ describe('표기', () => {
   });
 
   it('목록에 없는 통화는 코드를 그대로 붙인다', () => {
-    expect(fmtAmount(100, 'AUD')).toBe('AUD 100');
+    expect(fmtAmount(100, 'BHD')).toBe('BHD 100');
   });
 });
 
@@ -435,5 +440,84 @@ describe('memberBurdenTotal', () => {
       expense({ amount: 100, currency: 'USD', amount_krw: null, paid_by: A }),
     ]);
     expect(memberBurdenTotal(ctx, A)).toBe(0);
+  });
+});
+
+/* ══════════════ 환율 표기 · 직접 입력 ══════════════ */
+
+describe('fmtRate — 1원보다 작은 환율을 "0"으로 뭉개지 않는다', () => {
+  it('동·루피아처럼 1원 미만이면 유효숫자 3자리', () => {
+    expect(fmtRate(0.0569)).toBe('0.0569');
+    expect(fmtRate(0.0907)).toBe('0.0907');
+    expect(fmtRateKRW(0.0569)).toBe('₩0.0569');
+  });
+
+  it('1~100원은 소수 둘째 자리, 100원 이상은 정수', () => {
+    expect(fmtRate(46.123)).toBe('46.12');
+    expect(fmtRate(1495.4)).toBe('1,495');
+    expect(fmtRate(40)).toBe('40.00');
+  });
+
+  it('이상한 값은 0', () => {
+    expect(fmtRate(0)).toBe('0');
+    expect(fmtRate(-3)).toBe('0');
+    expect(fmtRate(NaN)).toBe('0');
+  });
+});
+
+describe('parseRateInput — 직접 적은 환율', () => {
+  it('숫자·쉼표·공백을 받아들인다', () => {
+    expect(parseRateInput('0.0575')).toBe(0.0575);
+    expect(parseRateInput(' 1,495.5 ')).toBe(1495.5);
+    expect(parseRateInput('46')).toBe(46);
+  });
+
+  it('양수가 아니거나 숫자가 아니면 null — 잘못 친 값이 정산에 들어가지 않는다', () => {
+    for (const bad of ['', '0', '-1', 'abc', '1e', '12원', '99999999999']) expect(parseRateInput(bad), bad).toBeNull();
+  });
+});
+
+describe('fxSourceNote — 환율이 어디서 왔는지 숨기지 않는다', () => {
+  it('ECB(live)는 말없이, 참고용·직접 입력은 밝힌다', () => {
+    expect(fxSourceNote('live')).toBe('');
+    expect(fxSourceNote('reference')).toBe(' (참고용 환율)');
+    expect(fxSourceNote('fallback')).toBe(' (참고용 환율)');
+    expect(fxSourceNote('manual')).toBe(' (직접 입력한 환율)');
+    expect(fxSourceNote(null)).toBe('');
+  });
+});
+
+describe('buildExpensePayload — 직접 입력한 환율', () => {
+  const ctx = ctxOf(THREE, []);
+  const base = {
+    category: 'FOOD', title: '쌀국수', amount: 100_000, currency: 'VND', expenseDate: '2026-10-27',
+    isPaid: true, splitMode: 'SHARED' as const, payer: A, split: new Set([A, B, C]), memo: null,
+  };
+
+  it('직접 입력한 환율로 환산하고 출처를 manual로 남긴다 (서버 환율 조회 없이)', async () => {
+    const p = await buildExpensePayload(ctx, { ...base, manualRate: 0.0575 });
+    expect(p.fx_rate).toBe(0.0575);
+    expect(p.fx_source).toBe('manual');
+    expect(p.amount_krw).toBe(5750);
+    expect(p.currency).toBe('VND');
+    expect(p.amount).toBe(100_000);
+  });
+
+  it('원화 지출에는 직접 환율이 끼어들지 않는다', async () => {
+    const p = await buildExpensePayload(ctx, { ...base, currency: 'KRW', manualRate: 9 });
+    expect(p.fx_rate).toBe(1);
+    expect(p.amount_krw).toBe(100_000);
+  });
+
+  it('0이하·없음은 직접 환율로 쓰지 않는다(서버 조회로 넘어간다)', async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => ({ json: async () => ({ rate: 0.06, source: 'reference' }) })) as unknown as typeof fetch;
+    try {
+      const p = await buildExpensePayload(ctx, { ...base, currency: 'IDR', manualRate: 0 });
+      expect(p.fx_source).toBe('reference');
+      expect(p.fx_rate).toBe(0.06);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });

@@ -3,6 +3,7 @@ import { store } from '../store';
 import { navigate } from '../router';
 import { signInWithGoogle } from '../auth/auth';
 import './trip-join.css';
+import { parseISODate } from '../utils/dates';
 
 const PENDING_INVITE_KEY = 'mongsil_pending_invite';
 
@@ -32,7 +33,7 @@ function escapeHtml(str: string): string {
 }
 
 function formatDateShort(d: string): string {
-  const dt = new Date(d);
+  const dt = parseISODate(d);
   return (dt.getMonth() + 1) + '.' + String(dt.getDate()).padStart(2, '0');
 }
 

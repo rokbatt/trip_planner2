@@ -2939,6 +2939,10 @@
   min-height: 18px;
 }
 .mb-pad-warn { color: var(--mb-live-soft); }
+/* 환율을 못 가져왔을 때 직접 입력하는 칸 */
+.mb-pad-manual { display: flex; align-items: center; gap: 8px; margin: 6px 16px 2px; font-size: 13px; color: var(--mb-ink-2); }
+.mb-pad-manual input { flex: 1; min-width: 0; padding: 9px 12px; border: 1px solid var(--mb-line-soft); border-radius: 10px; font: inherit; font-size: 14px; background: #fff; }
+.mb-pad-more { appearance: auto; padding-right: 6px; }
 
 .mb-pad-currencies,
 .mb-pad-cats {

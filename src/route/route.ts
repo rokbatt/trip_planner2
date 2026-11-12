@@ -60,16 +60,21 @@ import {
   modeColorClass,
   fmtMin,
   fmtKm,
+  fmtLegCost,
+  fmtCostSummary,
+  summarizeCosts,
   minToHHMM,
   parseTimeInput,
   CAT_COLOR,
   STRAIGHT_TO_ROAD,
 } from '../utils/travelEstimate';
-import type { Leg, RealLeg, CatKey } from '../utils/travelEstimate';
+import type { Leg, LegCost, CostSummary, RealLeg, CatKey } from '../utils/travelEstimate';
+import { currencyForDestination, fmtAmountWithCode } from '../utils/currencies';
 import type { Database, StaySegment, TripDestination } from '../types/database';
 import { isLegCoolingDown, markLegsFailed, clearLegFailures, reportRouteError } from '../utils/legCooldown';
 import { bindLongPressReorder } from '../mobile/reorder';
 import './route.css';
+import { parseISODate, toISODate } from '../utils/dates';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type Trip = Database['public']['Tables']['trips']['Row'];
@@ -385,7 +390,8 @@ function estimateLegWithOverride(a: Place, b: Place, override?: Leg['mode']): Le
     { lat: a.lat!, lng: a.lng! },
     { lat: b.lat!, lng: b.lng! },
     override,
-    realLegs.get(legKey(a.id, b.id))
+    realLegs.get(legKey(a.id, b.id)),
+    localCurrency()
   );
 }
 
@@ -1044,14 +1050,14 @@ function setLegLoading(container: HTMLElement, on: boolean): void {
 /** dayIndex(0-based)의 실제 캘린더 날짜(YYYY-MM-DD). 시작일을 모르면 null */
 function dayDateISO(dayIndex: number): string | null {
   if (!dayRangeStartDate) return null;
-  const d = new Date(dayRangeStartDate);
+  const d = parseISODate(dayRangeStartDate);
   d.setDate(d.getDate() + dayIndex);
-  return d.toISOString().slice(0, 10);
+  return toISODate(d);
 }
 
 function dayDateLabel(dayIndex: number): string {
   if (!dayRangeStartDate) return '';
-  const d = new Date(dayRangeStartDate);
+  const d = parseISODate(dayRangeStartDate);
   d.setDate(d.getDate() + dayIndex);
   const week = ['일', '월', '화', '수', '목', '금', '토'][d.getDay()];
   return (d.getMonth() + 1) + '.' + String(d.getDate()).padStart(2, '0') + ' (' + week + ')';
@@ -1803,8 +1809,8 @@ function bindOptionsMenu(container: HTMLElement): void {
 /** "N박 · 10.26–11.01" — Board/Shortlist의 여행지 변경 목록과 같은 형식 */
 function destMetaLabel(d: TripDestination): string {
   if (!d.start_date || !d.end_date) return '';
-  const s = new Date(d.start_date);
-  const e = new Date(d.end_date);
+  const s = parseISODate(d.start_date);
+  const e = parseISODate(d.end_date);
   const nights = Math.max(0, Math.round((e.getTime() - s.getTime()) / 86400000));
   const fmt = (dt: Date) => dt.getMonth() + 1 + '.' + dt.getDate();
   return (nights > 0 ? nights + '박 · ' : '') + fmt(s) + '–' + fmt(e);
@@ -1961,7 +1967,7 @@ function openModeOverridePopover(key: string, anchor?: HTMLElement): void {
       const r = measured?.[toApiMode(mode as Leg['mode'])];
       if (r) {
         const min = Math.max(1, Math.round(r.seconds / 60));
-        const fare = r.fare ? ' · ' + Math.round(r.fare.units) + ' ' + r.fare.currency : '';
+        const fare = r.fare ? ' · ' + fmtAmountWithCode(r.fare.units, r.fare.currency) : '';
         meta = '<span class="rt-mode-meta">' + fmtMin(min) + fare + '</span>';
       } else if (measured) {
         meta = '<span class="rt-mode-meta rt-mode-na">경로 없음</span>';
@@ -2014,52 +2020,13 @@ function openModeOverridePopover(key: string, anchor?: HTMLElement): void {
 }
 
 /**
- * 여행지 이름(사용자가 직접 입력한 도시명, 예: "방콕", "프라하")으로 현지 통화를 추정 —
- * 실측 요금이 아직 없는 추정 구간의 통화 폴백에 쓴다. 국가별 공식 통화(ISO 4217)는 실제
- * 사실 데이터라 원칙 3-1(지어내지 않기)에 어긋나지 않는다 — 예전엔 이 폴백이 무조건
- * THB(태국)였는데, 방콕이 아닌 다른 여행지에서도 늘 THB로 나오던 버그의 원인이었다.
- * 목록에 없는 도시는 임의로 특정 나라를 짚어 맞추지 않고 USD로 무난하게 폴백한다.
+ * 이 화면에서 쓰는 "현지 통화" — 여행지 이름으로 알아본 값(utils/currencies). 모르면 null이고,
+ * 그때는 요금을 추정하지 않는다(예전엔 USD로 짐작해서 터키가 "$"로 나왔다).
+ * 요금 한 줄은 구간마다 자기 통화(실측 요금이면 Google이 준 통화)를 들고 있어서, 여기서 통화를
+ * 하나로 정해 모든 구간에 씌우지 않는다.
  */
-const DEST_CURRENCY_KEYWORDS: Array<[string[], string]> = [
-  [['방콕', '파타야', '푸켓', '치앙마이', '끄라비', '태국', 'bangkok', 'phuket', 'thailand'], 'THB'],
-  [['도쿄', '오사카', '교토', '삿포로', '후쿠오카', '오키나와', '나고야', '일본', 'tokyo', 'osaka', 'japan'], 'JPY'],
-  [['다낭', '하노이', '호치민', '나트랑', '호이안', '푸꾸옥', '베트남', 'vietnam'], 'VND'],
-  [['프라하', '체코', 'prague', 'czech'], 'CZK'],
-  [
-    ['파리', '로마', '베를린', '뮌헨', '바르셀로나', '마드리드', '암스테르담', '비엔나', '빈', '밀라노', '피렌체', '베네치아',
-      '리스본', '아테네', '더블린', '브뤼셀', '독일', '프랑스', '이탈리아', '스페인', '포르투갈', '오스트리아', '그리스', '네덜란드', '아일랜드'],
-    'EUR',
-  ],
-  [['런던', '영국', 'london'], 'GBP'],
-  [['뉴욕', '라스베가스', '로스앤젤레스', '샌프란시스코', '하와이', '괌', '미국', 'new york', 'usa'], 'USD'],
-  [['타이베이', '타이페이', '가오슝', '대만', 'taipei', 'taiwan'], 'TWD'],
-  [['홍콩', 'hong kong'], 'HKD'],
-  [['상하이', '베이징', '광저우', '청두', '시안', '중국', 'china'], 'CNY'],
-  [['싱가포르', 'singapore'], 'SGD'],
-  [['쿠알라룸푸르', '코타키나발루', '페낭', '말레이시아', 'malaysia'], 'MYR'],
-  [['발리', '자카르타', '인도네시아', 'bali', 'indonesia'], 'IDR'],
-  [['세부', '마닐라', '보라카이', '팔라완', '필리핀', 'philippines'], 'PHP'],
-  [['시드니', '멜버른', '브리즈번', '호주', 'sydney', 'australia'], 'AUD'],
-  [['오클랜드', '퀸스타운', '뉴질랜드', 'new zealand'], 'NZD'],
-  [['두바이', '아부다비', 'dubai'], 'AED'],
-  [['취리히', '제네바', '스위스', 'zurich', 'switzerland'], 'CHF'],
-  [['토론토', '밴쿠버', '캐나다', 'toronto', 'vancouver', 'canada'], 'CAD'],
-  [['델리', '뭄바이', '인도', 'india'], 'INR'],
-];
-function guessCurrencyForDestination(name: string | null): string {
-  if (!name) return 'USD';
-  const n = name.toLowerCase();
-  const hit = DEST_CURRENCY_KEYWORDS.find(([keywords]) => keywords.some((k) => n.includes(k.toLowerCase())));
-  return hit?.[1] ?? 'USD';
-}
-
-/**
- * 화면에 쓸 통화 코드. 실측 대중교통 요금이 오면 그 통화를 그대로 쓰고(여행지가 어디든 정확),
- * 없으면 이 여행지 이름으로 추정한 현지 통화로 폴백한다.
- */
-function currencyOf(legs: Leg[]): string {
-  const withFare = legs.find((l) => l.fare?.currency);
-  return withFare?.fare?.currency ?? guessCurrencyForDestination(activeDestName);
+function localCurrency(): string | null {
+  return currencyForDestination(activeDestName);
 }
 
 // "예상 교통비 원화로 보기" 토글 — 켜져 있으면 fmtCost가 캐시된 환율로 원화 환산해 보여준다.
@@ -2084,12 +2051,32 @@ function ensureKrwRate(currency: string): void {
     .finally(() => krwRateFetchInFlight.delete(currency));
 }
 
-function fmtCost(amount: number, currency: string): string {
-  if (showCostInKRW && currency !== 'KRW') {
-    const rate = krwRateCache.get(currency);
-    if (rate != null) return Math.round(amount * rate).toLocaleString() + '원';
+/** 구간 요금 한 줄 — 원화 보기가 켜져 있고 환율을 알면 원화로, 아니면 "약 276 THB"/"2.5 EUR" */
+function fmtCost(cost: LegCost): string {
+  if (showCostInKRW && cost.currency !== 'KRW') {
+    const rate = krwRateCache.get(cost.currency);
+    if (rate != null) return (cost.estimated ? '약 ' : '') + Math.round(cost.amount * rate).toLocaleString() + '원';
   }
-  return amount.toLocaleString() + ' ' + currency;
+  return fmtLegCost(cost);
+}
+
+/** 하루 교통비 합계 한 줄 — fmtCost와 같은 규칙. 요금을 모르면 "요금 정보 없음" */
+function fmtCostTotal(c: CostSummary | null): string {
+  if (!c) return fmtCostSummary(null);
+  if (showCostInKRW && c.currency !== 'KRW') {
+    const rate = krwRateCache.get(c.currency);
+    if (rate != null) {
+      const base = (c.estimated ? '약 ' : '') + Math.round(c.amount * rate).toLocaleString() + '원';
+      return c.partial ? base + ' + ' + c.unknownLegs + '구간 미확인' : base;
+    }
+  }
+  return fmtCostSummary(c);
+}
+
+/** 이동 구간 칩 오른쪽 문구 — 도보는 거리, 유료는 요금, 요금을 모르면 모른다고(0·"무료"로 쓰지 않는다) */
+function legExtraText(leg: Leg): string {
+  if (leg.mode === 'WALK') return fmtKm(leg.km);
+  return leg.cost ? fmtCost(leg.cost) : '요금 정보 없음';
 }
 
 /**
@@ -2149,13 +2136,11 @@ function computeStopTimes(day: RouteDay, stops: Place[], legs: Leg[]): string[] 
 }
 
 /* ── DAY 요약 통계 ── */
-function computeDaySummary(day: RouteDay): { totalMin: number; totalCost: number; legCount: number; visitCount: number } {
+function computeDaySummary(day: RouteDay): { totalMin: number; cost: CostSummary | null; legCount: number; visitCount: number } {
   const legs = dayLegs(day);
   let totalMin = 0;
-  let totalCost = 0;
   legs.forEach((l) => {
     totalMin += l.min;
-    totalCost += l.costTHB;
   });
   // 숙소/공항 앵커는 매일 자동으로 붙는 출발·도착점이라 "몇 곳을 방문하는지"엔 세지 않는다
   // (안 그러면 실제로는 아무 데도 안 담았는데 앵커 때문에 1곳으로 잡혀 버튼들이 잘못 활성화됨)
@@ -2164,7 +2149,7 @@ function computeDaySummary(day: RouteDay): { totalMin: number; totalCost: number
     const p = placeById.get(id);
     return p && !isAnyAnchor(p, dayIndex);
   }).length;
-  return { totalMin, totalCost, legCount: legs.length, visitCount };
+  return { totalMin, cost: summarizeCosts(legs), legCount: legs.length, visitCount };
 }
 
 /** 최근접 이웃 재정렬로 총 이동시간을 얼마나 줄일 수 있는지 계산 */
@@ -2614,7 +2599,7 @@ async function runDayDetail(container: HTMLElement): Promise<void> {
       dayIndex,
       dayLabel: day.label,
       date: dayDateLabel(dayIndex),
-      currency: currencyOf(dayLegs(day)),
+      currency: localCurrency() ?? '',
       headcount: currentTrip?.headcount ?? null,
       stops: stops.map((p) => toAiPlace(p, timeByPlace.get(p.id) ?? null)),
     });
@@ -2813,8 +2798,10 @@ function renderRightPanel(container: HTMLElement): void {
   const s = computeDaySummary(day);
   const totalKm = legs.reduce((sum, l) => sum + l.km, 0);
   const dayIndex = days.findIndex((d) => d.id === day.id);
-  const cur = currencyOf(legs);
-  if (showCostInKRW) ensureKrwRate(cur);
+  // 원화 보기에 필요한 환율 — 요금이 있는 구간의 통화마다 한 번씩(이미 있으면 건너뜀)
+  if (showCostInKRW) {
+    for (const l of legs) if (l.cost) ensureKrwRate(l.cost.currency);
+  }
   const dColor = dayColorFor(Math.max(0, dayIndex));
 
   const rows: string[] = [];
@@ -2871,7 +2858,7 @@ function renderRightPanel(container: HTMLElement): void {
       // 지도에서 장소를 클릭하면 그 장소로 "들어오는" 구간만 강조되는 것과 같은 기준으로 맞춘다.
       const selected = highlightedPlaceId === stops[i + 1].id;
       const manual = legModeOverride.has(key);
-      const extra = leg.costTHB > 0 ? fmtCost(leg.costTHB, cur) : (leg.mode === 'WALK' ? fmtKm(leg.km) : '무료');
+      const extra = legExtraText(leg);
       rows.push(
         [
           '<div class="rt-panel-connector ' + modeColorClass(leg.mode) + (selected ? ' rt-highlighted' : '') + '" data-leg-key="' + key + '"' +
@@ -2924,9 +2911,9 @@ function renderRightPanel(container: HTMLElement): void {
     '  <div class="rt-panel-summary-item">' +
       '<div class="rt-panel-summary-label">예상 교통비' +
       '<button type="button" class="rt-cost-toggle' + (showCostInKRW ? ' active' : '') + '" id="rt-cost-toggle"' +
-      ' title="' + (showCostInKRW ? '현지 통화(' + cur + ')로 보기' : '원화로 보기') + '" aria-pressed="' + showCostInKRW + '">₩</button>' +
+      ' title="' + (showCostInKRW ? '현지 통화(' + (s.cost?.currency ?? '현지') + ')로 보기' : '원화로 보기') + '" aria-pressed="' + showCostInKRW + '">₩</button>' +
       '</div>' +
-      '<div class="rt-panel-summary-value">' + fmtCost(s.totalCost, cur) + '</div></div>',
+      '<div class="rt-panel-summary-value">' + escapeHtml(fmtCostTotal(s.cost)) + '</div></div>',
     '</div>',
     // 원칙 3-1 — 실측/추정을 섞어 쓰므로 어느 쪽인지 반드시 구분해 표기
     '<div class="rt-panel-estimate-note">' + estimateNoteHtml(legs) + '</div>',
@@ -3354,7 +3341,6 @@ function drawRouteOnMap(refit: boolean): void {
   const day = activeDay();
   const stops = orderedStops(day).filter((p) => p.lat != null && p.lng != null);
   const legs = dayLegs(day);
-  const mapCur = currencyOf(legs);
   const dayIndex = days.findIndex((d) => d.id === day.id);
 
   // 강조 기준점: 클릭 선택이 우선, 없으면 타임라인 호버(일시적 미리보기)
@@ -3416,7 +3402,7 @@ function drawRouteOnMap(refit: boolean): void {
     // 반응하면 타임라인 위에서 마우스를 움직일 때마다 패널이 깜빡여 예전에 겪은 문제가 재발한다.
     if (p.id === highlightedPlaceId) {
       stopInfoShown = true;
-      updateStopInfoPanel(p, isBasecamp, legs[i - 1] ?? null, stops[i - 1] ?? null, legs[i] ?? null, stops[i + 1] ?? null, mapCur);
+      updateStopInfoPanel(p, isBasecamp, legs[i - 1] ?? null, stops[i - 1] ?? null, legs[i] ?? null, stops[i + 1] ?? null);
     }
   });
   if (!stopInfoShown && stopInfoPanelEl) stopInfoPanelEl.style.display = 'none';
@@ -3510,15 +3496,14 @@ function updateStopInfoPanel(
   prevLeg: Leg | null,
   prevPlace: Place | null,
   nextLeg: Leg | null,
-  nextPlace: Place | null,
-  currency: string
+  nextPlace: Place | null
 ): void {
   if (!stopInfoPanelEl) return;
   const meta = categoryMeta(p, isBasecamp);
 
   const legRow = (arrow: string, leg: Leg | null, place: Place | null, manual: boolean): string => {
     if (!leg || !place) return '';
-    const extra = leg.mode === 'WALK' ? fmtKm(leg.km) : (leg.costTHB > 0 ? fmtCost(leg.costTHB, currency) : '무료');
+    const extra = legExtraText(leg);
     // 이 구간을 누르면 구글맵 경로 화면으로 — "←"는 place→p, "→"는 p→place 방향.
     const gmUrl =
       p.lat != null && p.lng != null && place.lat != null && place.lng != null

@@ -14,6 +14,10 @@ import {
   haversineKm,
   legForMode,
   realToLeg,
+  hasFareModel,
+  summarizeCosts,
+  fmtCostSummary,
+  fmtLegCost,
   pickAutoMode,
   estimateLegBetween,
   decodePolyline,
@@ -73,9 +77,46 @@ describe('legForMode', () => {
     }
   });
 
-  it('도보는 요금이 없고, 대중교통 요금엔 상한이 있다', () => {
-    expect(legForMode(5, 'WALK').costTHB).toBe(0);
-    expect(legForMode(500, 'TRANSIT').costTHB).toBe(62);
+  it('도보는 요금이 없고, 방콕 요금 모델(THB)의 대중교통 요금엔 상한이 있다', () => {
+    expect(legForMode(5, 'WALK', 'THB').cost).toBeNull();
+    expect(legForMode(500, 'TRANSIT', 'THB').cost).toEqual({ amount: 62, currency: 'THB', estimated: true });
+  });
+
+  it('요금 모델이 있는 통화(THB)에서는 방콕 때와 같은 추정 요금이 나온다', () => {
+    expect(legForMode(5, 'TAXI', 'THB').cost).toEqual({ amount: 35 + Math.round(5 * 6.5), currency: 'THB', estimated: true });
+    expect(legForMode(5, 'TRANSIT', 'THB').cost).toEqual({ amount: 50, currency: 'THB', estimated: true });
+  });
+
+  it('요금 모델이 없는 곳(유로·달러·통화 모름)에서는 요금을 지어내지 않는다 — 방콕 숫자를 다른 통화로 붙이던 버그', () => {
+    for (const cur of ['EUR', 'USD', 'CZK', 'VND', null, undefined]) {
+      expect(legForMode(5, 'TAXI', cur).cost).toBeNull();
+      expect(legForMode(5, 'TRANSIT', cur).cost).toBeNull();
+    }
+    expect(hasFareModel('EUR')).toBe(false);
+    expect(hasFareModel('THB')).toBe(true);
+  });
+
+  it('일본: 도쿄 택시 요금표(기본 ¥500/1km, 232m마다 ¥100)로 엔화 추정이 나오고, 대중교통은 추정하지 않는다', () => {
+    expect(hasFareModel('JPY')).toBe(true);
+    // 예전 버그: 도쿄 택시 5km가 "¥68". 이제 5km ≈ 500 + 4×431
+    expect(legForMode(5, 'TAXI', 'JPY').cost).toEqual({ amount: 500 + 4 * 431, currency: 'JPY', estimated: true });
+    // 기본요금에 포함된 1km 안쪽은 기본요금 그대로
+    expect(legForMode(0.6, 'TAXI', 'JPY').cost?.amount).toBe(500);
+    // 일본 전철·버스는 구간별 정액이라 거리 공식으로 짐작하지 않는다(구글 실측 요금이 있을 때만)
+    expect(legForMode(5, 'TRANSIT', 'JPY').cost).toBeNull();
+    const real = realToLeg('TRANSIT', { meters: 5000, seconds: 900, fare: { units: 210, currency: 'JPY' } }, 'JPY');
+    expect(real.cost).toEqual({ amount: 210, currency: 'JPY', estimated: false });
+  });
+
+  it('홍콩: 요금 체계가 바뀌는 9km 너머는 추정하지 않는다', () => {
+    expect(legForMode(2, 'TAXI', 'HKD').cost?.amount).toBe(29);
+    expect(legForMode(5, 'TAXI', 'HKD').cost?.amount).toBe(29 + Math.round(3 * 10.5));
+    expect(legForMode(12, 'TAXI', 'HKD').cost).toBeNull();
+  });
+
+  it('대만: 첫 1.25km NT$85, 이후 km당 25', () => {
+    expect(legForMode(1, 'TAXI', 'TWD').cost?.amount).toBe(85);
+    expect(legForMode(5, 'TAXI', 'TWD').cost?.amount).toBe(85 + Math.round(3.75 * 25));
   });
 
   it('추정치는 전부 real=false로 표시된다 (원칙 3-1)', () => {
@@ -99,22 +140,35 @@ describe('realToLeg', () => {
 
   it('실측 대중교통 요금이 있으면 추정 요금 대신 그 값을 쓴다', () => {
     const leg = realToLeg('TRANSIT', { meters: 8000, seconds: 1200, fare: { units: 44, currency: 'THB' } });
-    expect(leg.costTHB).toBe(44);
+    expect(leg.cost).toEqual({ amount: 44, currency: 'THB', estimated: false });
     expect(leg.fare).toEqual({ units: 44, currency: 'THB' });
   });
 
-  it('실측 요금이 없으면 거리 기반 추정 요금으로 채우되 fare는 비워 둔다', () => {
-    // fare 유무가 "이 요금이 실측인가"의 구분 기준이다 (원칙 3-1)
-    const leg = realToLeg('TRANSIT', { meters: 8000, seconds: 1200 });
-    expect(leg.fare).toBeUndefined();
-    expect(leg.costTHB).toBeGreaterThan(0);
+  it('실측 요금은 Google이 준 통화 그대로 — 여행지 통화를 따로 짐작하지 않는다', () => {
+    const leg = realToLeg('TRANSIT', { meters: 8000, seconds: 1200, fare: { units: 2.5, currency: 'EUR' } }, 'THB');
+    expect(leg.cost).toEqual({ amount: 2.5, currency: 'EUR', estimated: false });
   });
 
-  it('택시 요금은 실측 구간에서도 항상 추정이다', () => {
-    // Routes API가 택시 요금을 주지 않으므로 거리 기반 추정을 유지한다
-    const leg = realToLeg('TAXI', { meters: 10000, seconds: 1500 });
+  it('실측 요금을 정수로 뭉개지 않는다 (2.5유로가 3이 되면 안 된다)', () => {
+    const leg = realToLeg('TRANSIT', { meters: 3000, seconds: 600, fare: { units: 2.45, currency: 'EUR' } });
+    expect(leg.cost?.amount).toBe(2.45);
+  });
+
+  it('실측 요금이 없으면 요금 모델이 있는 통화에서만 추정하고, fare는 비워 둔다', () => {
+    // fare 유무가 "이 요금이 실측인가"의 구분 기준이다 (원칙 3-1)
+    const thb = realToLeg('TRANSIT', { meters: 8000, seconds: 1200 }, 'THB');
+    expect(thb.fare).toBeUndefined();
+    expect(thb.cost?.estimated).toBe(true);
+    expect(realToLeg('TRANSIT', { meters: 8000, seconds: 1200 }, 'JPY').cost).toBeNull();
+    expect(realToLeg('TRANSIT', { meters: 8000, seconds: 1200 }).cost).toBeNull();
+  });
+
+  it('택시 요금은 실측 구간에서도 항상 추정이고, 모델이 없는 통화에서는 없다', () => {
+    // Routes API가 택시 요금을 주지 않는다
+    const leg = realToLeg('TAXI', { meters: 10000, seconds: 1500 }, 'THB');
     expect(leg.fare).toBeUndefined();
-    expect(leg.costTHB).toBe(35 + Math.round(10 * 6.5));
+    expect(leg.cost).toEqual({ amount: 35 + Math.round(10 * 6.5), currency: 'THB', estimated: true });
+    expect(realToLeg('TAXI', { meters: 10000, seconds: 1500 }, 'CZK').cost).toBeNull();
   });
 
   it('폴리라인이 있으면 좌표 배열로 풀어 둔다', () => {
@@ -376,5 +430,59 @@ describe('parseTimeInput', () => {
       expect(parsed).not.toBeNull();
       expect(hhmmToMin(parsed!)).not.toBeNull();
     }
+  });
+});
+
+/* ══════════════ 하루 교통비 합계 ══════════════ */
+
+describe('summarizeCosts', () => {
+  const walk = legForMode(0.5, 'WALK', 'THB');
+  const taxiTHB = legForMode(5, 'TAXI', 'THB'); // 68
+  const taxiUnknown = legForMode(5, 'TAXI', 'CZK'); // 요금 모름
+  const fareEUR = realToLeg('TRANSIT', { meters: 4000, seconds: 900, fare: { units: 2.5, currency: 'EUR' } });
+
+  it('요금을 아는 구간을 더한다 — 도보는 무료라 세지 않는다', () => {
+    const s = summarizeCosts([walk, taxiTHB, taxiTHB]);
+    expect(s).toEqual({ amount: 136, currency: 'THB', partial: false, unknownLegs: 0, estimated: true });
+  });
+
+  it('요금을 하나도 모르면 null — 0으로 쓰지 않는다(총 0원처럼 보이면 거짓이다)', () => {
+    expect(summarizeCosts([taxiUnknown, taxiUnknown])).toBeNull();
+    expect(summarizeCosts([walk])).toBeNull();
+    expect(summarizeCosts([])).toBeNull();
+  });
+
+  it('일부만 알면 아는 것만 더하고 모르는 구간 수를 남긴다', () => {
+    const s = summarizeCosts([fareEUR, taxiUnknown, walk]);
+    expect(s).toEqual({ amount: 2.5, currency: 'EUR', partial: true, unknownLegs: 1, estimated: false });
+  });
+
+  it('통화가 섞이면 더하지 않는다', () => {
+    expect(summarizeCosts([fareEUR, taxiTHB])).toBeNull();
+  });
+
+  it('좌표가 없어 계산 못 한 구간(null)은 건너뛴다', () => {
+    expect(summarizeCosts([null, taxiTHB])?.amount).toBe(68);
+  });
+
+  it('추정이 하나라도 섞이면 estimated', () => {
+    const real = realToLeg('TRANSIT', { meters: 4000, seconds: 900, fare: { units: 30, currency: 'THB' } });
+    expect(summarizeCosts([real])?.estimated).toBe(false);
+    expect(summarizeCosts([real, taxiTHB])?.estimated).toBe(true);
+  });
+});
+
+describe('요금 표기', () => {
+  it('추정은 "약", 실측은 그대로 — 소수는 살린다', () => {
+    expect(fmtLegCost({ amount: 276, currency: 'THB', estimated: true })).toBe('약 276 THB');
+    expect(fmtLegCost({ amount: 2.5, currency: 'EUR', estimated: false })).toBe('2.5 EUR');
+    expect(fmtLegCost({ amount: 200, currency: 'JPY', estimated: false })).toBe('200 JPY');
+    expect(fmtLegCost(null)).toBe('');
+  });
+
+  it('합계: 모르면 "요금 정보 없음", 일부만 알면 미확인 구간 수를 밝힌다', () => {
+    expect(fmtCostSummary(null)).toBe('요금 정보 없음');
+    expect(fmtCostSummary({ amount: 590, currency: 'THB', partial: false, unknownLegs: 0, estimated: true })).toBe('약 590 THB');
+    expect(fmtCostSummary({ amount: 2.5, currency: 'EUR', partial: true, unknownLegs: 2, estimated: false })).toBe('2.5 EUR + 2구간 미확인');
   });
 });

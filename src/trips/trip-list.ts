@@ -8,6 +8,7 @@ import { toAirportCode, toAirportCityEn, airportCityEnByCode } from './airports'
 import type { Database } from '../types/database';
 import './trip-list.css';
 import { openHelp } from '../onboarding/onboarding';
+import { parseISODate } from '../utils/dates';
 
 type Trip = Database['public']['Tables']['trips']['Row'];
 
@@ -104,15 +105,15 @@ function escapeHtml(str: string): string {
 /* ── 날짜 포매팅 ── */
 function formatMMDD(dateStr: string | null): string {
   if (!dateStr) return '--.--';
-  const d = new Date(dateStr);
+  const d = parseISODate(dateStr);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(d.getMonth() + 1)}.${pad(d.getDate())}`;
 }
 
 function formatDays(start: string | null, end: string | null): string {
   if (!start || !end) return '-';
-  const s = new Date(start);
-  const e = new Date(end);
+  const s = parseISODate(start);
+  const e = parseISODate(end);
   const diff = Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
   return `${diff + 1}일`;
 }
@@ -121,7 +122,7 @@ function formatDDay(start: string | null): string | null {
   if (!start) return null;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const target = new Date(start);
+  const target = parseISODate(start);
   target.setHours(0, 0, 0, 0);
 
   const diffDays = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
@@ -141,7 +142,7 @@ function tripIdCode(destCode: string, start: string | null): string {
 /** 스텁의 DATE — "10.26 → 10.30, 2026" */
 function formatStubRange(start: string | null, end: string | null): string {
   if (!start || !end) return '-';
-  return `${formatMMDD(start)} → ${formatMMDD(end)}, ${new Date(start).getFullYear()}`;
+  return `${formatMMDD(start)} → ${formatMMDD(end)}, ${parseISODate(start).getFullYear()}`;
 }
 
 /** 스텁의 PAX — 항공권처럼 두 자리로 0을 채운다(2명 → 02). 인원수 미입력이면 '--' */

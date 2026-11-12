@@ -17,6 +17,7 @@ import { insertGooglePlace, rehostPhoto, healLegacyPhotos } from '../trips/addGo
 import { isGooglePhotoUrl } from '../utils/photoHeal';
 import { MarkerClusterer } from '@googlemaps/markerclusterer';
 import './board.css';
+import { parseISODate } from '../utils/dates';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type PlacesDbRow = Database['public']['Tables']['places_db']['Row'];
@@ -891,8 +892,8 @@ function showBoardNotice(text: string): void {
 /** 여행지 메타 문구: "3박 · 3.20–3.22" 형태 (날짜 없으면 생략) */
 function destMeta(d: TripDestination): string {
   if (!d.start_date || !d.end_date) return '';
-  const s = new Date(d.start_date);
-  const e = new Date(d.end_date);
+  const s = parseISODate(d.start_date);
+  const e = parseISODate(d.end_date);
   const nights = Math.max(0, Math.round((e.getTime() - s.getTime()) / 86400000));
   const fmt = (dt: Date) => dt.getMonth() + 1 + '.' + dt.getDate();
   return (nights > 0 ? nights + '박 · ' : '') + fmt(s) + '–' + fmt(e);

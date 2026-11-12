@@ -81,7 +81,11 @@ import {
   EXPENSE_CATEGORIES,
   CATEGORY_META,
   CURRENCIES,
+  fxSourceNote,
+  parseRateInput,
+  fmtRate,
 } from '../expense/expenseModel';
+import { currencyForDestination, isSupportedCurrency } from '../utils/currencies';
 import type { ExpenseCtx, ExpenseCategory } from '../expense/expenseModel';
 import {
   loadChecklist,
@@ -291,6 +295,8 @@ let expenseChannel: ReturnType<typeof supabase.channel> | null = null;
 let padOpen = false;
 let padAmount = '';
 let padCurrency = 'KRW';
+/** 환율을 못 가져왔을 때 사용자가 직접 적은 환율(1 외화 = ? 원). 통화를 바꾸면 비운다 */
+let padManualRate: number | null = null;
 let padCategory: ExpenseCategory = 'ETC';
 let padSaving = false;
 /**
@@ -432,6 +438,7 @@ export function teardownMobile(): void {
   padOpen = false;
   padAmount = '';
   padCurrency = 'KRW';
+  padManualRate = null;
   padCategory = 'ETC';
   padSaving = false;
   padMode = 'expense';
@@ -2883,6 +2890,11 @@ async function ensureExpenseCtx(): Promise<void> {
     // 마지막으로 쓴 통화를 기본값으로 — 방콕 여행이면 두 번째 지출부터 THB가 미리 잡힌다
     const last = [...expenseCtx.expenses].reverse().find((e) => e.currency);
     if (last?.currency) padCurrency = last.currency;
+    else {
+      // 아직 쓴 적이 없으면 이 여행지의 현지 통화를 미리 잡아 둔다(모르면 원화 그대로)
+      const local = currencyForDestination(activeDay()?.destName ?? days[0]?.destName ?? null);
+      if (local && isSupportedCurrency(local)) padCurrency = local;
+    }
     subscribeExpenses();
   } catch (e) {
     console.error('[Mobile] 지출 로드 실패:', e);
@@ -3388,6 +3400,7 @@ function openCalc(): void {
 async function refreshPadRate(): Promise<void> {
   if (padCurrency === 'KRW') { padRate = { rate: 1, source: 'live' }; render(); return; }
   padRate = null;
+  padManualRate = null;
   render();
   padRate = await fetchRate(padCurrency);
   if (padOpen) render();
@@ -3396,11 +3409,33 @@ async function refreshPadRate(): Promise<void> {
 function padSheetHtml(): string {
   const amount = padAmount ? Number(padAmount) : 0;
   const guess = guessFromCurrentStop();
-  const krw = padRate?.rate != null ? Math.round(amount * padRate.rate) : null;
+  // 서버가 준 환율이 우선이고, 못 받았을 때만 사용자가 직접 적은 환율을 쓴다
+  const rateKnown = padRate?.rate != null;
+  const effRate = padRate?.rate ?? padManualRate;
+  const krw = effRate != null ? Math.round(amount * effRate) : null;
+  const rateFailed = padCurrency !== 'KRW' && padRate !== null && padRate.rate == null;
+  const rateTag = rateKnown
+    ? (fxSourceNote(padRate?.source) ? ' <span class="mb-tag-est">참고용 환율</span>' : '')
+    : padManualRate != null ? ' <span class="mb-tag-est">직접 입력</span>' : '';
+  const manualRow = rateFailed
+    ? '  <label class="mb-pad-manual"><span>1 ' + escapeHtml(padCurrency) + ' =</span>' +
+      '<input id="mb-pad-rate" type="text" inputmode="decimal" placeholder="원화 환율 (예: 0.0575)" autocomplete="off"' +
+      (padManualRate != null ? ' value="' + padManualRate + '"' : '') + ' /><span>원</span></label>'
+    : '';
 
-  const currencyChips = CURRENCIES.slice(0, 6)
-    .map((c) => '<button class="mb-pad-chip' + (c.code === padCurrency ? ' active' : '') + '" data-cur="' + c.code + '">' + c.code + '</button>')
-    .join('');
+  // 칩은 자주 쓰는 6개 — 지금 통화와 이 여행지의 현지 통화는 항상 들어가게 하고, 나머지는 "기타"에서 고른다
+  const localCur = currencyForDestination(activeDay()?.destName ?? days[0]?.destName ?? null);
+  const chipCodes = [...new Set(['KRW', localCur, padCurrency, 'USD', 'EUR', 'JPY', 'THB', 'TWD', 'VND'].filter((c): c is string => !!c && isSupportedCurrency(c)))].slice(0, 6);
+  if (!chipCodes.includes(padCurrency)) chipCodes[chipCodes.length - 1] = padCurrency;
+  const currencyChips =
+    chipCodes
+      .map((code) => '<button class="mb-pad-chip' + (code === padCurrency ? ' active' : '') + '" data-cur="' + code + '">' + code + '</button>')
+      .join('') +
+    '<select class="mb-pad-chip mb-pad-more" id="mb-pad-more" aria-label="다른 통화 고르기"><option value="">기타</option>' +
+    CURRENCIES.filter((c) => !chipCodes.includes(c.code))
+      .map((c) => '<option value="' + c.code + '">' + c.code + ' · ' + escapeHtml(c.name) + '</option>')
+      .join('') +
+    '</select>';
 
   const catChips = EXPENSE_CATEGORIES.map((cat) => {
     const meta = CATEGORY_META[cat];
@@ -3431,11 +3466,10 @@ function padSheetHtml(): string {
       ? '    <div class="mb-calc-note">원화는 환산할 게 없어요. 위에서 외화를 골라주세요.</div>'
       : krw != null
         ? '    <div class="mb-calc-value">' + escapeHtml(fmtKRW(krw)) + '</div>' +
-          '    <div class="mb-calc-rate">1 ' + escapeHtml(padCurrency) + ' ≈ ' + (padRate!.rate as number).toFixed(2) + '원' +
-          (padRate?.source === 'fallback' ? ' <span class="mb-tag-est">참고용</span>' : '') + '</div>'
+          '    <div class="mb-calc-rate">1 ' + escapeHtml(padCurrency) + ' ≈ ' + fmtRate(Number(effRate)) + '원' + rateTag + '</div>'
         : padRate === null
           ? '    <div class="mb-calc-note">환율 확인 중…</div>'
-          : '    <div class="mb-calc-note">환율을 못 받았어요 · 지금은 환산할 수 없어요</div>',
+          : '    <div class="mb-calc-note">환율을 못 받았어요 · 아래에 직접 적으면 환산해 드려요</div>',
     '  </div>',
   ].join('');
 
@@ -3455,10 +3489,11 @@ function padSheetHtml(): string {
       : padCurrency !== 'KRW'
         ? '  <div class="mb-pad-krw">' +
           (krw != null
-            ? '≈ ' + escapeHtml(fmtKRW(krw)) + (padRate?.source === 'fallback' ? ' <span class="mb-tag-est">참고용 환율</span>' : '')
-            : padRate === null ? '환율 확인 중…' : '<span class="mb-pad-warn">환율을 못 받았어요 · 원화 환산 없이 저장돼요</span>') +
+            ? '≈ ' + escapeHtml(fmtKRW(krw)) + rateTag
+            : padRate === null ? '환율 확인 중…' : '<span class="mb-pad-warn">환율을 못 받았어요 · 아래에 적으면 환산해 저장하고, 비우면 환산 없이 저장돼요</span>') +
           '</div>'
         : '',
+    manualRow,
     '  <div class="mb-pad-currencies">' + currencyChips + '</div>',
     isCalc ? '' : '  <div class="mb-pad-cats">' + catChips + '</div>',
     !isCalc && guess
@@ -3512,6 +3547,8 @@ async function savePadExpense(): Promise<void> {
       payer: me,
       split: allIds,
       memo: null,
+      // 서버 환율을 못 받았을 때만 직접 입력한 값이 쓰인다
+      manualRate: padRate?.rate == null ? padManualRate : null,
     });
     const { error } = await supabase.from('trip_expenses').insert(payload);
     if (error) {
@@ -4753,6 +4790,24 @@ function bind(): void {
       padCurrency = (btn as HTMLElement).dataset.cur!;
       void refreshPadRate();
     });
+  });
+  // 칩에 없는 통화 — 목록에서 고른다
+  root.querySelector('#mb-pad-more')?.addEventListener('change', (e) => {
+    const code = (e.target as HTMLSelectElement).value;
+    if (!code) return;
+    padCurrency = code;
+    void refreshPadRate();
+  });
+  // 환율을 못 받았을 때 직접 적는 값 — 입력하는 대로 환산 미리보기 한 줄만 갱신한다.
+  // 화면 전체를 다시 그리면 입력칸이 떠나는 순간(blur) 저장 버튼이 교체되어 탭이 먹히지 않는다.
+  root.querySelector('#mb-pad-rate')?.addEventListener('input', (e) => {
+    padManualRate = parseRateInput((e.target as HTMLInputElement).value);
+    const el = root.querySelector('.mb-pad-krw');
+    if (!el) return;
+    const krw = padManualRate != null ? Math.round((padAmount ? Number(padAmount) : 0) * padManualRate) : null;
+    el.innerHTML = krw != null
+      ? '≈ ' + escapeHtml(fmtKRW(krw)) + ' <span class="mb-tag-est">직접 입력</span>'
+      : '<span class="mb-pad-warn">환율을 못 받았어요 · 아래에 적으면 환산해 저장하고, 비우면 환산 없이 저장돼요</span>';
   });
   root.querySelectorAll('[data-cat]').forEach((btn) => {
     btn.addEventListener('click', () => {
