@@ -83,7 +83,7 @@ export function openHelpCenter(ctx: HelpContext): void {
     '    </div>' +
     '    <h2 class="ob-help-heading" id="ob-help-heading">무엇을 도와드릴까요?</h2>' +
     '    <label class="ob-help-search">' + IC.search +
-    '      <input type="search" id="ob-help-q" placeholder="궁금한 기능을 검색한다 (예: 숙소, 동행자, 문서)" autocomplete="off" />' +
+    '      <input type="search" id="ob-help-q" placeholder="궁금한 기능을 검색해 보세요 (예: 숙소, 문서)" autocomplete="off" />' +
     '    </label>' +
     '  </header>' +
     '  <div class="ob-help-body" id="ob-help-body"></div>' +
@@ -144,9 +144,9 @@ export function openHelpCenter(ctx: HelpContext): void {
       '  <div class="ob-help-sec-label">다시 보기</div>' +
       '  <div class="ob-help-replays">' +
       '    <button type="button" class="ob-help-replay" data-replay="all"' + (inTrip ? '' : ' disabled') + '>' + IC.replay +
-      '      <span><b>전체 사용법 다시 보기</b><small>' + (inTrip ? 'IDEAS부터 페이지별 가이드를 차례로 본다' : '여행을 열면 실행할 수 있다') + '</small></span></button>' +
+      '      <span><b>전체 사용법 다시 보기</b><small>' + (inTrip ? 'IDEAS부터 페이지별 가이드를 차례로 볼 수 있어요' : '여행을 열면 실행할 수 있어요') + '</small></span></button>' +
       '    <button type="button" class="ob-help-replay" data-replay="page"' + (gateTour ? '' : ' disabled') + '>' + IC.replay +
-      '      <span><b>현재 페이지 가이드 다시 실행</b><small>' + (gateTour ? esc(gateTour.label) : '이 화면에는 가이드가 없다') + '</small></span></button>' +
+      '      <span><b>현재 페이지 가이드 다시 실행</b><small>' + (gateTour ? esc(gateTour.label) : '이 화면에는 가이드가 없어요') + '</small></span></button>' +
       '    <button type="button" class="ob-help-replay" data-replay="welcome">' + IC.replay +
       '      <span><b>최초 환영 안내 다시 보기</b><small>모으기 · 정하기 · 떠나기</small></span></button>' +
       '  </div>' +
@@ -182,7 +182,7 @@ export function openHelpCenter(ctx: HelpContext): void {
       (tour
         ? '<div class="ob-help-tourbox">' +
           '<button type="button" class="ob-btn ob-btn-primary ob-help-tourbtn" data-tour-run="' + tour.id + '"' + (canRun ? '' : ' disabled') + '>' + IC.play + '이 페이지 사용법 보기</button>' +
-          '<span class="ob-help-tourhint">' + (canRun ? esc(tour.label) + ' 화면에서 실제 버튼을 짚어 준다' : '여행을 열면 실행할 수 있다') + '</span>' +
+          '<span class="ob-help-tourhint">' + (canRun ? esc(tour.label) + ' 화면에서 실제 버튼을 하나씩 짚어 드려요' : '여행을 열면 실행할 수 있어요') + '</span>' +
           '</div>'
         : '')
     );
@@ -193,8 +193,8 @@ export function openHelpCenter(ctx: HelpContext): void {
     if (!results.length) {
       return (
         '<div class="ob-help-empty">' +
-        '  <div class="ob-help-empty-title">‘' + esc(qstr.trim()) + '’에 맞는 도움말이 없다</div>' +
-        '  <p>낱말을 줄이거나 다른 말로 찾아본다. 예: 숙소, 동선, 초대, 문서, 정산</p>' +
+        '  <div class="ob-help-empty-title">‘' + esc(qstr.trim()) + '’에 대한 도움말을 찾지 못했어요</div>' +
+        '  <p>더 짧은 단어나 다른 표현으로 검색해 보세요. 예: 숙소, 동선, 초대, 문서, 정산</p>' +
         '  <button type="button" class="ob-btn ob-btn-ghost" data-clear>카테고리에서 찾기</button>' +
         '</div>'
       );
