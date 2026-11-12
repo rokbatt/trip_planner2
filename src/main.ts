@@ -9,7 +9,7 @@ import { offlineFallbackUser } from './offline/auth';
 import { clearOfflineRest } from './offline/restCache';
 import { clearOfflineDocs } from './offline/docs';
 import { store } from './store';
-import { addRoute, setNotFound, startRouter, navigate, rerender, currentPath } from './router';
+import { addRoute, setNotFound, startRouter, navigate, rerender, currentPath, pathnameChangedSinceRender } from './router';
 
 import { renderLogin } from './auth/auth';
 import { renderTripList } from './trips/trip-list';
@@ -190,6 +190,10 @@ async function handleAuthChange(event: string, session: { user: import('@supabas
 // ─── 라우터 시작 ───
 window.addEventListener('hashchange', () => {
   if (originalHandleRoute()) rerender();
+});
+// 약관·방침이 /terms · /privacy 경로로도 열리므로, 뒤로 가기로 경로만 바뀌는 이동도 화면을 따라가야 한다
+window.addEventListener('popstate', () => {
+  if (pathnameChangedSinceRender() && originalHandleRoute()) rerender();
 });
 
 if (originalHandleRoute()) {

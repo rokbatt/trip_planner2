@@ -1,6 +1,10 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/terms", "destination": "/index.html" },
+    { "source": "/privacy", "destination": "/index.html" }
+  ],
   "crons": [
     { "path": "/api/cleanup-search-cache", "schedule": "0 3 * * *" }
   ],

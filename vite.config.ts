@@ -1,7 +1,8 @@
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { resolve } from 'path';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { createHash } from 'crypto';
+import { appendSitemapLine, buildSitemap, normalizeOrigin, verificationTags } from './src/seo/seoFiles';
 
 /**
  * index.html의 `%SITE_URL%`을 실제 배포 주소로 치환한다.
@@ -12,6 +13,14 @@ import { createHash } from 'crypto';
  *   2) VERCEL_PROJECT_PRODUCTION_URL — Vercel이 빌드에 자동 주입하는 프로덕션 도메인
  *   3) 둘 다 없으면 상대경로로 남긴다(로컬 dev). 이 경우 공유 미리보기는 보장되지 않음
  */
+function resolveOrigin(mode: string): string {
+  const env = loadEnv(mode, process.cwd(), '');
+  const explicit = (env.VITE_SITE_URL ?? '').trim();
+  const vercel = (env.VERCEL_PROJECT_PRODUCTION_URL ?? '').trim();
+  // 뒤에 붙은 슬래시는 템플릿이 `%SITE_URL%/`로 쓰므로 여기서 떼어낸다
+  return normalizeOrigin(explicit || (vercel ? 'https://' + vercel : ''));
+}
+
 function siteUrlPlugin(mode: string): Plugin {
   return {
     name: 'mongsil-site-url',
@@ -19,15 +28,7 @@ function siteUrlPlugin(mode: string): Plugin {
       order: 'pre',
       handler(html) {
         const env = loadEnv(mode, process.cwd(), '');
-        const explicit = (env.VITE_SITE_URL ?? '').trim();
-        const vercel = (env.VERCEL_PROJECT_PRODUCTION_URL ?? '').trim();
-
-        let origin = '';
-        if (explicit) origin = explicit;
-        else if (vercel) origin = 'https://' + vercel;
-
-        // 뒤에 붙은 슬래시는 템플릿이 `%SITE_URL%/`로 쓰므로 여기서 떼어낸다
-        origin = origin.replace(/\/+$/, '');
+        const origin = resolveOrigin(mode);
 
         if (!origin && mode === 'production') {
           console.warn(
@@ -36,8 +37,33 @@ function siteUrlPlugin(mode: string): Plugin {
           );
         }
 
-        return html.replaceAll('%SITE_URL%', origin);
+        // 검색엔진 소유확인 태그 — 값은 서치 콘솔·서치어드바이저가 발급하는 코드(배포 환경변수로 받는다)
+        const verification = verificationTags({
+          google: env.VITE_GOOGLE_SITE_VERIFICATION,
+          naver: env.VITE_NAVER_SITE_VERIFICATION,
+        });
+
+        return html.replaceAll('%SITE_URL%', origin).replace('<!--SEO_VERIFICATION-->', verification);
       },
+    },
+  };
+}
+
+/**
+ * 빌드가 끝난 뒤 sitemap.xml을 만들고 robots.txt에 Sitemap 줄을 붙인다.
+ * 주소는 절대 URL이어야 해서 도메인을 아는 빌드에서만 만든다(siteUrlPlugin과 같은 규칙).
+ */
+function seoFilesPlugin(mode: string): Plugin {
+  return {
+    name: 'mongsil-seo-files',
+    apply: 'build',
+    closeBundle() {
+      const origin = resolveOrigin(mode);
+      const sitemap = buildSitemap(origin);
+      if (!sitemap) return; // 경고는 siteUrlPlugin이 이미 낸다
+      writeFileSync(resolve(__dirname, 'dist/sitemap.xml'), sitemap);
+      const robotsPath = resolve(__dirname, 'dist/robots.txt');
+      if (existsSync(robotsPath)) writeFileSync(robotsPath, appendSitemapLine(readFileSync(robotsPath, 'utf8'), origin));
     },
   };
 }
@@ -72,7 +98,7 @@ function swPlugin(): Plugin {
 }
 
 export default defineConfig(({ mode }) => ({
-  plugins: [siteUrlPlugin(mode), swPlugin()],
+  plugins: [siteUrlPlugin(mode), swPlugin(), seoFilesPlugin(mode)],
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),

@@ -1,8 +1,8 @@
-# 지금은 색인할 공개 페이지가 랜딩(/) 하나뿐이다.
+# 색인할 공개 페이지는 랜딩(/)과 약관·방침(/terms, /privacy)이다.
 # 트립 내부는 해시 라우터(#trip/...) 위에 있어 크롤러가 접근하지 못하고,
 # 애초에 초대받은 멤버만 보는 공간이라 색인 대상이 아니다.
+# Sitemap 줄은 도메인을 아는 빌드에서만 붙는다(vite.config.ts의 seoFilesPlugin).
 User-agent: *
 Disallow: /api/
 
-# 목적지 소개 같은 공개 콘텐츠 페이지를 프리렌더해서 붙이게 되면
-# 그때 Sitemap 항목을 여기에 추가한다.
+# 목적지 소개 같은 공개 페이지가 생기면 src/seo/seoFiles.ts의 PUBLIC_PATHS에 더한다.
