@@ -32,8 +32,10 @@ import {
   catKeyFor,
   dwellMinutes,
   hhmmToMin,
+  summarizeCosts,
 } from '../utils/travelEstimate';
-import type { Leg, RealLeg, TravelMode, CatKey } from '../utils/travelEstimate';
+import type { Leg, RealLeg, TravelMode, CatKey, CostSummary } from '../utils/travelEstimate';
+import { currencyForDestination } from '../utils/currencies';
 import type { Database, StaySegment, TripDestination } from '../types/database';
 import { warningFor } from './openingHours';
 import type { HoursWarning } from './openingHours';
@@ -103,8 +105,8 @@ export interface DaySchedule {
   legs: Array<Leg | null>;
   totalMoveMin: number;
   totalDwellMin: number;
-  totalCost: number;
-  currency: string;
+  /** 하루 교통비. 요금을 아는 구간만 더한 값이고, 하나도 모르면 null (CostSummary 참고) */
+  cost: CostSummary | null;
   spanStartMin: number;
   spanEndMin: number;
   realLegCount: number;
@@ -302,13 +304,14 @@ export function coordId(s: TlStop): string {
 }
 
 /** 좌표가 둘 다 있어야 구간을 계산할 수 있다 (원칙 3-1 — 좌표를 지어내지 않음) */
-export function legBetween(a: TlStop, b: TlStop, realLegs: RealLegMap): Leg | null {
+export function legBetween(a: TlStop, b: TlStop, realLegs: RealLegMap, currency?: string | null): Leg | null {
   if (a.lat == null || a.lng == null || b.lat == null || b.lng == null) return null;
   return estimateLegBetween(
     { lat: a.lat, lng: a.lng },
     { lat: b.lat, lng: b.lng },
     b.travelMode ?? undefined,
-    realLegs.get(stopLegKey(a, b))
+    realLegs.get(stopLegKey(a, b)),
+    currency
   );
 }
 
@@ -357,8 +360,10 @@ function isoToMinutesOfDay(iso: string): number {
 export function scheduleFor(day: TlDay, realLegs: RealLegMap, progress?: ProgressMap): DaySchedule {
   const stops = day.stops;
   const legs: Array<Leg | null> = [];
+  // 이 여행지의 현지 통화 — 요금 추정 모델이 있는 통화(지금은 THB)일 때만 추정 요금이 붙는다
+  const currency = currencyForDestination(day.destName);
   for (let i = 0; i < stops.length - 1; i++) {
-    legs.push(legBetween(stops[i], stops[i + 1], realLegs));
+    legs.push(legBetween(stops[i], stops[i + 1], realLegs, currency));
   }
 
   const arriveMin: number[] = [];
@@ -395,25 +400,20 @@ export function scheduleFor(day: TlDay, realLegs: RealLegMap, progress?: Progres
   });
 
   let totalMove = 0;
-  let totalCost = 0;
   let realLegCount = 0;
   let legCount = 0;
-  let currency = 'THB';
   legs.forEach((l) => {
     if (!l) return;
     legCount += 1;
     totalMove += l.min;
-    totalCost += l.costTHB;
     if (l.real) realLegCount += 1;
-    if (l.fare?.currency) currency = l.fare.currency;
   });
 
   return {
     arriveMin, departMin, dwellMin, slackMin, overrunMin, legs,
     totalMoveMin: totalMove,
     totalDwellMin: dwellMin.reduce((a, b) => a + b, 0),
-    totalCost,
-    currency,
+    cost: summarizeCosts(legs),
     spanStartMin: arriveMin.length ? arriveMin[0] : DAY_START_MIN,
     spanEndMin: departMin.length ? departMin[departMin.length - 1] : DAY_START_MIN,
     realLegCount,

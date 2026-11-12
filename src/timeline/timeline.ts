@@ -52,6 +52,8 @@ import {
   modeColorClass,
   fmtMin,
   fmtKm,
+  fmtLegCost,
+  fmtCostSummary,
   minToHHMM,
   hhmmToMin,
   parseTimeInput,
@@ -75,6 +77,7 @@ import type { TripChecklistItem } from '../types/database';
 import type { Database, StaySegment, TripDestination } from '../types/database';
 import { isLegCoolingDown, markLegsFailed, reportRouteError } from '../utils/legCooldown';
 import './timeline.css';
+import { parseISODate } from '../utils/dates';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type Trip = Database['public']['Tables']['trips']['Row'];
@@ -485,8 +488,8 @@ export async function renderTimelineContent(host: HTMLElement, tripId: string): 
 /** "N박 · 10.26–11.01" — Board/Shortlist의 여행지 변경 목록과 같은 형식 */
 function destMetaLabel(d: TripDestination): string {
   if (!d.start_date || !d.end_date) return '';
-  const s = new Date(d.start_date);
-  const e = new Date(d.end_date);
+  const s = parseISODate(d.start_date);
+  const e = parseISODate(d.end_date);
   const nights = Math.max(0, Math.round((e.getTime() - s.getTime()) / 86400000));
   const fmt = (dt: Date) => dt.getMonth() + 1 + '.' + dt.getDate();
   return (nights > 0 ? nights + '박 · ' : '') + fmt(s) + '–' + fmt(e);
@@ -1099,7 +1102,7 @@ function dayHeadHtml(day: TlDay, s: DaySchedule): string {
   const stats = [
     ['일정', day.stops.length + '곳'],
     ['이동', fmtMin(s.totalMoveMin)],
-    ['예상 교통비', s.totalCost.toLocaleString() + ' ' + s.currency],
+    ['예상 교통비', fmtCostSummary(s.cost)],
   ];
 
   const attachment = attachmentChipHtml(day);
@@ -1297,9 +1300,11 @@ function legRowHtml(leg: Leg | null, to: TlStop, i: number, nextArriveMin: numbe
   const manual = !!to.travelMode;
   // 바에는 "얼마나 걸리고 얼마 드는지"만 — 거리(km)는 펼쳤을 때만 보인다.
   // 걸어서 가는 구간엔 요금이 없으므로 시간만 남는다.
-  const fareText = leg.costTHB > 0 ? '약 ' + leg.costTHB.toLocaleString() + ' ' + (leg.fare?.currency ?? 'THB') : '';
+  const fareText = fmtLegCost(leg.cost);
   const legDetail =
-    '거리 ' + fmtKm(leg.km) + ' · ' + (leg.real ? '실제 경로 기준' : '직선거리 기반 추정');
+    '거리 ' + fmtKm(leg.km) + ' · ' + (leg.real ? '실제 경로 기준' : '직선거리 기반 추정') +
+    // 유료 구간인데 요금을 모르면 "무료"가 아니라 모른다고 적는다
+    (leg.mode !== 'WALK' && !leg.cost ? ' · 요금 정보 없음' : '');
 
   const modeBtns = MODES.map((m) =>
     '<button type="button" class="tl-modebtn' + (to.travelMode === m ? ' active' : '') + '"' +
