@@ -80,6 +80,36 @@ class KeyProblemError extends Error {
   }
 }
 
+// ── 사진 주소 검증 (BEGIN — api/backfill-photos.ts에 같은 내용이 있다. 고치면 둘 다 고친다) ──
+/** Google 장소 ID 형식 — Storage 경로(places/{id}.jpg)와 Google 주소에 그대로 들어가므로 글자를 제한한다 */
+const PLACE_ID_RE = /^[A-Za-z0-9_-]{10,300}$/;
+
+export function isValidPlaceId(id: unknown): id is string {
+  return typeof id === 'string' && PLACE_ID_RE.test(id);
+}
+
+/**
+ * 서버 키를 붙여도 되는 사진 주소로 바꾼다 — Places API(New)의 그 장소 사진 주소일 때만.
+ * 다른 호스트·다른 장소·다른 형식이면 null을 돌려주고, 호출부는 키를 붙이지 않고 placeId로 새 주소를 받는다.
+ * 원본 쿼리(예전 키 포함)는 버리고 크기만 우리가 정해서 새로 만든다.
+ */
+export function trustedPhotoFetchUrl(photoUrl: unknown, placeId: string): string | null {
+  if (typeof photoUrl !== 'string' || photoUrl.length > 4000) return null;
+  let u: URL;
+  try {
+    u = new URL(photoUrl);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'https:' || u.hostname !== 'places.googleapis.com' || u.port !== '' || u.username || u.password) {
+    return null;
+  }
+  const m = u.pathname.match(/^\/v1\/places\/([A-Za-z0-9_-]+)\/photos\/([A-Za-z0-9_-]+)\/media$/);
+  if (!m || m[1] !== placeId) return null;
+  return 'https://places.googleapis.com/v1/places/' + m[1] + '/photos/' + m[2] + '/media?maxWidthPx=480&maxHeightPx=480';
+}
+// ── 사진 주소 검증 (END) ──
+
 async function rehostGooglePhoto(
   supabase: any,
   photoUrl: string,
@@ -96,19 +126,21 @@ async function rehostGooglePhoto(
     return { url: pub.publicUrl, cached: true };
   }
 
-  const urlObj = new URL(photoUrl);
-  urlObj.searchParams.set('key', serverMapsKey);
-  const fetchUrl = urlObj.toString();
+  // 받은 주소가 그 장소의 Google 사진 주소일 때만 서버 키를 붙인다. 아니면 키를 붙이지 않고 placeId로 새 주소를 받는다
+  // — 검증 없이 키를 붙이면 아무 서버에나 서버 키가 넘어간다.
+  const trusted = trustedPhotoFetchUrl(photoUrl, placeId);
+  let imgRes: Response | null = trusted ? await fetch(trusted + '&key=' + serverMapsKey) : null;
 
-  let imgRes = await fetch(fetchUrl);
-
-  if (!imgRes.ok) {
+  if (!imgRes || !imgRes.ok) {
     const freshUrl = await fetchFreshPhotoUrl(placeId, serverMapsKey);
     if (freshUrl) {
       imgRes = await fetch(freshUrl);
     }
   }
 
+  if (!imgRes) {
+    throw new Error('이 장소의 사진을 Google에서 찾지 못했어요');
+  }
   if (!imgRes.ok) {
     if (KEY_PROBLEM_STATUSES.has(imgRes.status)) throw new KeyProblemError(imgRes.status);
     throw new Error('사진 다운로드 실패 (' + imgRes.status + ') — 원본 URL 만료 + 재발급도 실패');
@@ -243,7 +275,7 @@ function titleFromUrlSlug(targetUrl: string): string | null {
 async function rehostArbitraryImage(supabase: any, imgUrl: string, linkId: string): Promise<string | null> {
   const path = linkId + '.jpg';
   try {
-    const { data: existing, error: listError } = await withTimeout(
+    const { data: existing, error: listError } = await withTimeout<any>(
       supabase.storage.from(LINK_PREVIEW_BUCKET).list('', { search: linkId }),
       5000,
       'Storage list()'
@@ -274,7 +306,7 @@ async function rehostArbitraryImage(supabase: any, imgUrl: string, linkId: strin
     const bytes = new Uint8Array(arrayBuffer);
     if (bytes.byteLength > 5_000_000) return null; // 비정상적으로 큰 이미지는 스킵(안전장치)
 
-    const { error: uploadError } = await withTimeout(
+    const { error: uploadError } = await withTimeout<any>(
       supabase.storage.from(LINK_PREVIEW_BUCKET).upload(path, bytes, { contentType, upsert: true, cacheControl: '2592000' }),
       5000,
       'Storage upload()'
@@ -487,6 +519,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (!photoUrl || !placeId) {
     res.status(400).json({ error: 'photoUrl, placeId가 필요해요.' });
+    return;
+  }
+  // placeId는 Storage 경로와 Google 주소에 그대로 들어간다 — 형식이 다르면 아무것도 하지 않는다
+  if (!isValidPlaceId(placeId)) {
+    res.status(400).json({ error: 'placeId 형식이 올바르지 않아요.' });
     return;
   }
 
