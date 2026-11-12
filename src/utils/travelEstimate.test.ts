@@ -87,14 +87,36 @@ describe('legForMode', () => {
     expect(legForMode(5, 'TRANSIT', 'THB').cost).toEqual({ amount: 50, currency: 'THB', estimated: true });
   });
 
-  it('요금 모델이 없는 곳(도쿄·파리·통화 모름)에서는 요금을 지어내지 않는다 — 방콕 숫자를 다른 통화로 붙이던 버그', () => {
-    // 예전: 도쿄 택시 5km가 "¥68"로 나왔다. 이제는 모르면 null.
-    for (const cur of ['JPY', 'EUR', 'USD', 'CZK', null, undefined]) {
+  it('요금 모델이 없는 곳(유로·달러·통화 모름)에서는 요금을 지어내지 않는다 — 방콕 숫자를 다른 통화로 붙이던 버그', () => {
+    for (const cur of ['EUR', 'USD', 'CZK', 'VND', null, undefined]) {
       expect(legForMode(5, 'TAXI', cur).cost).toBeNull();
       expect(legForMode(5, 'TRANSIT', cur).cost).toBeNull();
     }
-    expect(hasFareModel('JPY')).toBe(false);
+    expect(hasFareModel('EUR')).toBe(false);
     expect(hasFareModel('THB')).toBe(true);
+  });
+
+  it('일본: 도쿄 택시 요금표(기본 ¥500/1km, 232m마다 ¥100)로 엔화 추정이 나오고, 대중교통은 추정하지 않는다', () => {
+    expect(hasFareModel('JPY')).toBe(true);
+    // 예전 버그: 도쿄 택시 5km가 "¥68". 이제 5km ≈ 500 + 4×431
+    expect(legForMode(5, 'TAXI', 'JPY').cost).toEqual({ amount: 500 + 4 * 431, currency: 'JPY', estimated: true });
+    // 기본요금에 포함된 1km 안쪽은 기본요금 그대로
+    expect(legForMode(0.6, 'TAXI', 'JPY').cost?.amount).toBe(500);
+    // 일본 전철·버스는 구간별 정액이라 거리 공식으로 짐작하지 않는다(구글 실측 요금이 있을 때만)
+    expect(legForMode(5, 'TRANSIT', 'JPY').cost).toBeNull();
+    const real = realToLeg('TRANSIT', { meters: 5000, seconds: 900, fare: { units: 210, currency: 'JPY' } }, 'JPY');
+    expect(real.cost).toEqual({ amount: 210, currency: 'JPY', estimated: false });
+  });
+
+  it('홍콩: 요금 체계가 바뀌는 9km 너머는 추정하지 않는다', () => {
+    expect(legForMode(2, 'TAXI', 'HKD').cost?.amount).toBe(29);
+    expect(legForMode(5, 'TAXI', 'HKD').cost?.amount).toBe(29 + Math.round(3 * 10.5));
+    expect(legForMode(12, 'TAXI', 'HKD').cost).toBeNull();
+  });
+
+  it('대만: 첫 1.25km NT$85, 이후 km당 25', () => {
+    expect(legForMode(1, 'TAXI', 'TWD').cost?.amount).toBe(85);
+    expect(legForMode(5, 'TAXI', 'TWD').cost?.amount).toBe(85 + Math.round(3.75 * 25));
   });
 
   it('추정치는 전부 real=false로 표시된다 (원칙 3-1)', () => {
@@ -146,7 +168,7 @@ describe('realToLeg', () => {
     const leg = realToLeg('TAXI', { meters: 10000, seconds: 1500 }, 'THB');
     expect(leg.fare).toBeUndefined();
     expect(leg.cost).toEqual({ amount: 35 + Math.round(10 * 6.5), currency: 'THB', estimated: true });
-    expect(realToLeg('TAXI', { meters: 10000, seconds: 1500 }, 'JPY').cost).toBeNull();
+    expect(realToLeg('TAXI', { meters: 10000, seconds: 1500 }, 'CZK').cost).toBeNull();
   });
 
   it('폴리라인이 있으면 좌표 배열로 풀어 둔다', () => {
@@ -416,7 +438,7 @@ describe('parseTimeInput', () => {
 describe('summarizeCosts', () => {
   const walk = legForMode(0.5, 'WALK', 'THB');
   const taxiTHB = legForMode(5, 'TAXI', 'THB'); // 68
-  const taxiUnknown = legForMode(5, 'TAXI', 'JPY'); // 요금 모름
+  const taxiUnknown = legForMode(5, 'TAXI', 'CZK'); // 요금 모름
   const fareEUR = realToLeg('TRANSIT', { meters: 4000, seconds: 900, fare: { units: 2.5, currency: 'EUR' } });
 
   it('요금을 아는 구간을 더한다 — 도보는 무료라 세지 않는다', () => {
