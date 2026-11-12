@@ -272,6 +272,103 @@ function titleFromUrlSlug(targetUrl: string): string | null {
 /** og:image 등 미리보기 이미지를 받아 link-previews 버킷에 재호스팅. 실패하면 null(치명적이지 않음).
  * 실패 사유는 전부 console.error로 남긴다 — 화면에는 그냥 카테고리 아이콘으로 조용히
  * 대체되기 때문에, 원인(버킷 미생성/이미지 차단/업로드 실패 등)은 Vercel 함수 로그로만 구분 가능하다. */
+/* ── 링크 미리보기의 바깥 요청 범위 (SSRF 방어) ──
+ * 링크 미리보기는 사용자가 붙인 아무 주소로 서버가 요청을 보낸다. 그대로 두면 서버 안쪽에서만 닿는 주소
+ * (클라우드 메타데이터·사설망·localhost)를 대신 열어 주는 통로가 된다. 그래서
+ * (1) http(s)·기본 포트만 (2) 주소가 가리키는 IP가 공인 주소일 때만 (3) 리다이렉트도 한 단계씩 같은 확인을 거친다(최대 5번).
+ * 한계: 확인과 실제 연결 사이에 DNS가 바뀌는 공격(DNS rebinding)까지는 막지 못한다. */
+
+/** 링크 미리보기 파일 이름이 되는 linkId — 경로 문자를 막는다(다른 파일을 덮어쓰지 못하게) */
+export function isValidLinkId(id: unknown): id is string {
+  return typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{7,79}$/.test(id) && !id.includes('..');
+}
+
+function ipv4ToInt(ip: string): number | null {
+  const m = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return null;
+  const parts = m.slice(1).map(Number);
+  if (parts.some((n) => n > 255)) return null;
+  return ((parts[0] << 24) >>> 0) + (parts[1] << 16) + (parts[2] << 8) + parts[3];
+}
+
+const PRIVATE_V4: Array<[string, number]> = [
+  ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16],
+  ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.0.2.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15],
+  ['198.51.100.0', 24], ['203.0.113.0', 24], ['224.0.0.0', 3],
+];
+
+/** 서버가 대신 열어 주면 안 되는 주소인가(사설·루프백·링크로컬·예약·멀티캐스트). 모르는 형식도 막는다 */
+export function isPrivateAddress(ip: string): boolean {
+  const v4 = ipv4ToInt(ip);
+  if (v4 != null) {
+    return PRIVATE_V4.some(([base, bits]) => {
+      const b = ipv4ToInt(base) as number;
+      const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+      return ((v4 & mask) >>> 0) === ((b & mask) >>> 0);
+    });
+  }
+  const v6 = ip.toLowerCase().replace(/^\[|\]$/g, '');
+  if (!v6.includes(':')) return true;
+  const mapped = v6.match(/^(?:::ffff:|64:ff9b::)(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (mapped) return isPrivateAddress(mapped[1]);
+  if (v6 === '::' || v6 === '::1') return true;
+  const first = parseInt(v6.split(':')[0] || '0', 16);
+  if (!Number.isFinite(first)) return true;
+  if ((first & 0xfe00) === 0xfc00) return true; // fc00::/7 고유 로컬
+  if ((first & 0xffc0) === 0xfe80) return true; // fe80::/10 링크 로컬
+  if ((first & 0xff00) === 0xff00) return true; // ff00::/8 멀티캐스트
+  return false;
+}
+
+/** 이름으로 보이는 주소를 걸러 낸다 — localhost·내부 도메인 */
+export function isBlockedHostname(host: string): boolean {
+  const h = host.toLowerCase().replace(/\.$/, '');
+  return h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.internal') || h.endsWith('.local');
+}
+
+/** 이 주소로 서버가 요청해도 되는지(형식만) — http(s), 기본 포트, 계정 정보 없음 */
+export function checkPublicUrlShape(raw: string): URL | null {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+  if (u.port !== '' && u.port !== '80' && u.port !== '443') return null;
+  if (u.username || u.password) return null;
+  if (isBlockedHostname(u.hostname)) return null;
+  return u;
+}
+
+async function resolvesToPublic(hostname: string): Promise<boolean> {
+  const bare = hostname.replace(/^\[|\]$/g, '');
+  if (ipv4ToInt(bare) != null || bare.includes(':')) return !isPrivateAddress(bare);
+  try {
+    // node:dns를 변수로 불러온다 — 이 파일은 @types/node 없이 타입 검사되기 때문(tsconfig 참고)
+    const modName = 'node:dns/promises';
+    const dns: any = await import(/* @vite-ignore */ modName);
+    const addrs: Array<{ address: string }> = await dns.lookup(bare, { all: true });
+    return addrs.length > 0 && addrs.every((a) => !isPrivateAddress(a.address));
+  } catch {
+    return false;
+  }
+}
+
+/** 공인 주소에만, 리다이렉트도 한 단계씩 확인하며 요청한다. 막히면 예외 */
+export async function safePublicFetch(raw: string, init: RequestInit, maxRedirects = 5): Promise<Response> {
+  let current = raw;
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    const u = checkPublicUrlShape(current);
+    if (!u || !(await resolvesToPublic(u.hostname))) throw new Error('허용되지 않는 주소예요');
+    const res = await fetch(u.href, { ...init, redirect: 'manual' });
+    const loc = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+    if (!loc) return res;
+    current = new URL(loc, u.href).href;
+  }
+  throw new Error('리다이렉트가 너무 많아요');
+}
+
 async function rehostArbitraryImage(supabase: any, imgUrl: string, linkId: string): Promise<string | null> {
   const path = linkId + '.jpg';
   try {
@@ -290,7 +387,7 @@ async function rehostArbitraryImage(supabase: any, imgUrl: string, linkId: strin
       return pub.publicUrl;
     }
 
-    const imgRes = await withTimeout(fetch(imgUrl, { signal: AbortSignal.timeout(6000) }), 6500, 'og:image 다운로드');
+    const imgRes = await withTimeout(safePublicFetch(imgUrl, { signal: AbortSignal.timeout(6000) }), 6500, 'og:image 다운로드');
     if (!imgRes.ok) {
       console.error('[link-preview] og:image 다운로드 실패(' + imgRes.status + '):', imgUrl);
       return null;
@@ -366,8 +463,7 @@ async function fetchPreviewHtml(targetUrl: string): Promise<string> {
       // 한 번 더 강제로 끊는다.
       const html = await withTimeout(
         (async () => {
-          const res = await fetch(targetUrl, {
-            redirect: 'follow',
+          const res = await safePublicFetch(targetUrl, {
             headers: previewHeaders(ua),
             signal: AbortSignal.timeout(4000),
           });
@@ -474,6 +570,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const linkId: string | undefined = req.body?.linkId;
     if (!url || !linkId) {
       res.status(400).json({ error: 'url, linkId가 필요해요.' });
+      return;
+    }
+    // linkId는 미리보기 이미지 파일 이름이 된다 — 경로 문자를 막는다. 주소는 형식부터 거른다(실제 IP 확인은 요청 직전)
+    if (!isValidLinkId(linkId) || typeof url !== 'string' || url.length > 2000 || !checkPublicUrlShape(url)) {
+      res.status(400).json({ error: '링크 주소나 linkId가 올바르지 않아요.' });
       return;
     }
     // buildLinkPreview 안에도 단계별 withTimeout이 있지만, 트립닷컴에서 그것마저 안 먹히고
