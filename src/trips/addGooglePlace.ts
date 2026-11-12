@@ -9,7 +9,7 @@ import { supabase } from '../supabase';
 import { store } from '../store';
 import type { Database } from '../types/database';
 import type { GooglePlaceResult } from '../utils/googleMaps';
-import { isGooglePhotoUrl, pickHealTargets } from '../utils/photoHeal';
+import { HEAL_COOLDOWN_MS, isGooglePhotoUrl, pickHealTargets } from '../utils/photoHeal';
 
 type Place = Database['public']['Tables']['places']['Row'];
 
@@ -44,6 +44,29 @@ export async function rehostPhoto(photoUrl: string, placeId: string): Promise<st
  * 한 번 우리 Storage로 옮기고 DB의 photo_url을 바꾼다(한 번 바뀌면 모든 멤버·화면이 그 주소를 쓴다). */
 const healTried = new Set<string>();
 const HEAL_FAIL_KEY = 'mongsil:photoHealFail:';
+/** 한 장이라도 실패하면 이 기기에서 치유 전체를 쉬는 시각 — 실패 원인이 거의 항상 장소가 아니라
+ *  서버 키·권한·한도(403)라서, 다음 장도 같은 이유로 실패하며 Google 오류 호출만 쌓는다 */
+const HEAL_STOP_KEY = 'mongsil:photoHealStop';
+
+function readHealStop(): number | null {
+  try {
+    const v = localStorage.getItem(HEAL_STOP_KEY);
+    const n = v ? Number(v) : NaN;
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeHealStop(): void {
+  try {
+    localStorage.setItem(HEAL_STOP_KEY, String(Date.now()));
+  } catch {
+    /* 저장소를 못 쓰면 이번 세션에서만 멈춘다(healStopped) */
+  }
+}
+
+let healStopped = false;
 
 function readHealFailure(googlePlaceId: string): number | null {
   try {
@@ -65,6 +88,10 @@ function writeHealFailure(googlePlaceId: string): void {
 
 /** 화면을 막지 않는 백그라운드 작업 — 순서대로 한 장씩, 실패해도 화면은 그대로 */
 export async function healLegacyPhotos(places: Place[]): Promise<number> {
+  if (healStopped) return 0;
+  const stop = readHealStop();
+  if (stop != null && Date.now() - stop < HEAL_COOLDOWN_MS) return 0;
+
   const targets = pickHealTargets(places, { now: Date.now(), failedAt: readHealFailure, tried: healTried });
   let healed = 0;
   for (const p of targets) {
@@ -72,8 +99,12 @@ export async function healLegacyPhotos(places: Place[]): Promise<number> {
     const googlePlaceId = p.google_place_id as string;
     const url = await rehostPhoto(p.photo_url as string, googlePlaceId);
     if (!url || isGooglePhotoUrl(url)) {
+      // 첫 실패에서 멈춘다 — 키·권한 문제면 남은 장도 전부 실패하고, 실패마다 Google 오류 호출이 나간다
       writeHealFailure(googlePlaceId);
-      continue;
+      writeHealStop();
+      healStopped = true;
+      console.warn('[Photo] 사진 옮기기가 실패해서 이 기기에선 잠시 멈춰요. 서버의 Google 키 설정(Places API (New) 허용)을 확인해 주세요.');
+      break;
     }
     const { error } = await supabase.from('places').update({ photo_url: url }).eq('id', p.id);
     if (error) {
