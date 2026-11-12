@@ -68,6 +68,49 @@ function gradeFor(score: number): string {
   return 'Basic';
 }
 
+// ── 장소 확인 (BEGIN — api/ai.ts·hotel-score.ts·nearby-infra.ts·nearby-search.ts에 같은 내용이 있다. 고치면 넷 다 고친다) ──
+/* 캐시 키는 Google 장소 ID인데 내용(이름·주소·좌표)을 화면이 보내면, 누군가 남의 장소 ID에 가짜 값을 넣어
+ * 모든 사용자에게 보이는 캐시를 오염시킬 수 있다. 그래서 캐시를 새로 만들 땐 서버가 Google에서 직접 확인한
+ * 값만 쓰고, 확인하지 못하면 결과는 돌려주되 캐시에는 남기지 않는다(Claude.md 5-11).
+ * 요금: 좌표만 = Place Details Essentials, 이름까지 = Pro. 둘 다 장소당 캐시를 처음 만들 때 1회뿐이다. */
+const VERIFY_PLACE_ID_RE = /^[A-Za-z0-9_-]{10,300}$/;
+
+interface VerifiedPlace {
+  name: string | null;
+  address: string | null;
+  lat: number;
+  lng: number;
+}
+
+export async function lookupPlace(placeId: unknown, serverKey: string | undefined, withName: boolean): Promise<VerifiedPlace | null> {
+  if (typeof placeId !== 'string' || !VERIFY_PLACE_ID_RE.test(placeId) || !serverKey) return null;
+  const fields = withName ? 'displayName,formattedAddress,location' : 'location';
+  try {
+    const res = await fetch('https://places.googleapis.com/v1/places/' + placeId + '?languageCode=ko', {
+      headers: { 'X-Goog-Api-Key': serverKey, 'X-Goog-FieldMask': fields },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) {
+      console.error('[verify-place] Google 장소 확인 실패(' + res.status + ') — 이번 결과는 캐시에 남기지 않음');
+      return null;
+    }
+    const data: any = await res.json();
+    const lat = data?.location?.latitude;
+    const lng = data?.location?.longitude;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return {
+      name: typeof data?.displayName?.text === 'string' ? data.displayName.text : null,
+      address: typeof data?.formattedAddress === 'string' ? data.formattedAddress : null,
+      lat,
+      lng,
+    };
+  } catch (e) {
+    console.error('[verify-place] Google 장소 확인 오류 — 이번 결과는 캐시에 남기지 않음:', (e as Error).message);
+    return null;
+  }
+}
+// ── 장소 확인 (END) ──
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
@@ -93,6 +136,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const geminiKey = process.env.GEMINI_API_KEY;
+  const serverKey = process.env.GOOGLE_MAPS_SERVER_KEY;
 
   const supabase = supabaseUrl && serviceKey ? createClient(supabaseUrl, serviceKey) : null;
 
@@ -113,19 +157,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
+  // 캐시(placeId 기준, 모든 사용자 공유)를 새로 만들 땐 숙소 이름·주소를 Google에서 직접 확인한 값으로 쓴다.
+  // 화면이 보내는 나머지 값은 여행마다 다른 맥락이라 그대로 쓰되, 길이·범위를 제한한다.
+  const verified = await lookupPlace(placeId, serverKey, true);
+  const canCache = !!verified;
+  const short = (v: unknown, n: number) => String(v ?? '').trim().slice(0, n);
+  const num = (v: unknown, min: number, max: number): number | null => {
+    const n = Number(v);
+    return v == null || v === '' || !Number.isFinite(n) ? null : Math.min(max, Math.max(min, Math.round(n * 10) / 10));
+  };
+  const vName = verified?.name || short(hotelName, 120);
+  const vAddress = verified?.address || short(address, 200);
+  const vZone = short(zoneName, 60);
+  const vDest = short(destination, 60);
+  const vBudget = short(budgetLabel, 60);
+  const vRating = num(googleRating, 0, 5);
+  const vWalkable = num(nearby?.walkableCount, 0, 500);
+  const vAvgWalk = num(nearby?.avgWalkMin, 0, 300);
+  const vFacilities = num(nearby?.facilityCount, 0, 50);
+
   const prompt = [
     '너는 여행 숙소를 "여행 거점(base)"으로서 얼마나 적합한지 평가하는 애널리스트야.',
     '아래 숙소를 여행 거점 관점에서 정형화된 기준으로 채점해줘.',
     '',
-    '숙소: ' + hotelName,
-    address ? '주소: ' + address : '',
-    zoneName ? '선택 지역: ' + zoneName : '',
-    destination ? '여행지: ' + destination : '',
-    googleRating != null ? 'Google 평점: ' + googleRating : '',
-    budgetLabel ? '예산대: ' + budgetLabel : '',
-    nearby?.walkableCount != null ? '도보권(15분 내) 장소 수: ' + nearby.walkableCount : '',
-    nearby?.avgWalkMin != null ? '주변 장소 평균 이동시간(분): ' + nearby.avgWalkMin : '',
-    nearby?.facilityCount != null ? '주변 편의시설 종류 수: ' + nearby.facilityCount : '',
+    '숙소: ' + vName,
+    vAddress ? '주소: ' + vAddress : '',
+    vZone ? '선택 지역: ' + vZone : '',
+    vDest ? '여행지: ' + vDest : '',
+    vRating != null ? 'Google 평점: ' + vRating : '',
+    vBudget ? '예산대: ' + vBudget : '',
+    vWalkable != null ? '도보권(15분 내) 장소 수: ' + vWalkable : '',
+    vAvgWalk != null ? '주변 장소 평균 이동시간(분): ' + vAvgWalk : '',
+    vFacilities != null ? '주변 편의시설 종류 수: ' + vFacilities : '',
     '',
     '채점 기준(각 1~5 정수, 5가 가장 좋음):',
     '- 이동편의성: 대중교통·도보로 다른 장소에 가기 얼마나 편한가',
@@ -187,7 +250,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const result: ScoreResult = { score, grade: gradeFor(score), ratings };
 
-  if (supabase && placeId) {
+  if (canCache && supabase && placeId) {
     const { error: upsertError } = await supabase
       .from('hotel_score_cache')
       .upsert({ place_id: placeId, result, updated_at: new Date().toISOString() }, { onConflict: 'place_id' });
