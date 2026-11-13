@@ -1,0 +1,21 @@
+// Cloudflare Workers 설정 (docs/CLOUDFLARE_MIGRATION.md)
+// 비밀값은 여기에 쓰지 않는다 — Cloudflare 대시보드 → Worker → Settings → Variables and Secrets에 넣는다.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mongsil",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-11-01",
+  // Buffer·node:dns 등 api 파일이 쓰는 Node 기능과 process.env 채우기(2025-04-01 이후 기본)
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    // /terms, /privacy, 새로고침 → index.html
+    "not_found_handling": "single-page-application",
+    // /api/*만 Worker 코드를 먼저 거친다. 나머지는 정적 파일(무료 요청 수에도 안 잡힘)
+    "run_worker_first": ["/api/*"]
+  },
+  // vercel.json crons와 같은 시각: 매일 03:00 UTC(한국 12:00)
+  "triggers": { "crons": ["0 3 * * *"] },
+  "observability": { "enabled": true }
+}

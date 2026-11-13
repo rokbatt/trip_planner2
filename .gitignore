@@ -4,3 +4,6 @@ dist
 .env.local
 *.local
 .DS_Store
+
+# Cloudflare wrangler 로컬 실행 캐시
+.wrangler/

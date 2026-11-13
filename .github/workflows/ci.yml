@@ -31,6 +31,10 @@ jobs:
       - name: 단위 테스트
         run: npm test
 
+      # Cloudflare 이전(docs/CLOUDFLARE_MIGRATION.md) — Worker 번들이 만들어지는지만 확인한다(배포·로그인 없음)
+      - name: Cloudflare Worker 번들 확인
+        run: npx wrangler deploy --dry-run --outdir /tmp/worker-bundle
+
       # 원칙 3-7 — api/*.ts 하나가 서버리스 함수 하나. Hobby 플랜은 배포당 12개가 상한이고,
       # 넘으면 로컬 빌드는 전부 통과하는데 Vercel "배포" 단계에서만 실패해서 원인 찾기가 어렵다.
       # 그래서 배포 전에 여기서 먼저 막는다.
