@@ -34,6 +34,7 @@ import {
   loadDocUsers,
   loadPersonalDocuments,
   loadSharedDocuments,
+  moveDocumentScope,
   normalizeDocCategory,
   resetDocsStore,
   setLastScope,
@@ -188,22 +189,23 @@ function subscribeRealtime(tripId: string): void {
       { event: '*', schema: 'public', table: 'trip_documents', filter: 'trip_id=eq.' + tripId },
       (payload) => {
         const row = (payload.eventType === 'DELETE' ? payload.old : payload.new) as TripDocument;
-        // 개인 문서는 잠금이 풀린 본인 것만 화면에 들인다 — 남의 개인 문서는 받아도 무시
-        const isMine = row.visibility === 'PERSONAL' && unlockedUser && row.owner_id === unlockedUser.id;
-        if (row.visibility !== 'SHARED' && !isMine) return;
+        const without = (list: TripDocument[]) => list.filter((d) => d.id !== row.id);
 
-        const list = row.visibility === 'SHARED' ? sharedDocs : personalDocs;
-        if (payload.eventType === 'INSERT') {
-          if (!list.some((d) => d.id === row.id)) list.unshift(row);
-        } else if (payload.eventType === 'UPDATE') {
-          const idx = list.findIndex((d) => d.id === row.id);
-          if (idx !== -1) list[idx] = row;
+        if (payload.eventType === 'DELETE') {
+          // 삭제 이벤트의 old에는 id만 올 수 있어(visibility 없음) 두 목록 모두에서 id로 지운다
+          sharedDocs = without(sharedDocs);
+          personalDocs = without(personalDocs);
         } else {
-          const filtered = list.filter((d) => d.id !== row.id);
-          if (row.visibility === 'SHARED') sharedDocs = filtered;
-          else personalDocs = filtered;
-          if (selectedDocId === row.id) selectedDocId = null;
+          // 개인 문서는 잠금이 풀린 본인 것만 화면에 들인다 — 남의 개인 문서는 받아도 무시
+          const isMine = row.visibility === 'PERSONAL' && !!unlockedUser && row.owner_id === unlockedUser.id;
+          // 공개 범위가 바뀐 경우(개인 ↔ 공용)를 위해 먼저 양쪽에서 떼고, 볼 수 있는 쪽에만 다시 넣는다.
+          // 다른 멤버가 내 문서를 개인으로 돌리면 이쪽 공용 목록에서 사라져야 한다.
+          sharedDocs = without(sharedDocs);
+          personalDocs = without(personalDocs);
+          if (row.visibility === 'SHARED') sharedDocs = [row, ...sharedDocs];
+          else if (isMine) personalDocs = [row, ...personalDocs];
         }
+        if (selectedDocId === row.id && !currentDocs().some((d) => d.id === row.id)) selectedDocId = null;
         if (tab === 'documents') renderDocuments();
         updateTabCounts();
       }
@@ -674,6 +676,7 @@ function renderDetail(): void {
     '    <button type="button" class="dn-btn-ghost" id="dn-edit">' + IC.edit + '수정</button>',
     '    <button type="button" class="dn-btn-ghost dn-btn-danger" id="dn-delete">' + IC.trash + '삭제</button>',
     '  </div>',
+    moveSectionHtml(doc),
     '</div>',
   ].join('\n');
 
@@ -686,6 +689,7 @@ function renderDetail(): void {
   detailEl.querySelector('#dn-download')?.addEventListener('click', () => downloadFile(doc));
   detailEl.querySelector('#dn-edit')?.addEventListener('click', () => openDocumentSheet(doc));
   detailEl.querySelector('#dn-delete')?.addEventListener('click', () => void removeDocument(doc));
+  detailEl.querySelector('#dn-move')?.addEventListener('click', () => void moveDocument(doc));
 
   if (doc.file_path && isPreviewable(doc.file_type)) void loadPreview(doc);
 }
@@ -778,6 +782,56 @@ async function resolveAndDownload(doc: TripDocument): Promise<void> {
   document.body.appendChild(a);
   a.click();
   a.remove();
+}
+
+/** 상세 패널 맨 아래 — 개인 ↔ 공용 옮기기. 개인으로 옮기려면 잠금이 풀려 있어야 한다(소유자가 필요) */
+function moveSectionHtml(doc: TripDocument): string {
+  const toShared = doc.visibility === 'PERSONAL';
+  const locked = !toShared && !unlockedUser;
+  const label = toShared ? '공용 문서로 옮기기' : '개인 문서로 옮기기';
+  const hint = toShared
+    ? '옮기면 여행 멤버 모두가 이 문서와 파일을 볼 수 있어요.'
+    : locked
+      ? '개인 문서로 옮기려면 PERSONAL에서 먼저 잠금을 풀어주세요.'
+      : '옮기면 나만 볼 수 있고, 다른 멤버 화면에서는 사라져요.';
+  return [
+    '  <div class="dn-detail-move">',
+    '    <div class="dn-detail-move-text"><span class="dn-detail-move-title">공개 범위</span><span class="dn-detail-move-hint">' + escapeHtml(hint) + '</span></div>',
+    '    <button type="button" class="dn-btn-ghost" id="dn-move"' + (locked ? ' disabled' : '') + '>' +
+      (toShared ? IC.users : IC.lock) + escapeHtml(label) + '</button>',
+    '  </div>',
+  ].join('\n');
+}
+
+async function moveDocument(doc: TripDocument): Promise<void> {
+  const target: DocScope = doc.visibility === 'PERSONAL' ? 'SHARED' : 'PERSONAL';
+  if (target === 'PERSONAL' && !unlockedUser) return;
+  const message = target === 'SHARED'
+    ? '"' + doc.title + '" 문서를 공용 문서로 옮길까요?\n여행 멤버 모두가 이 문서와 파일을 볼 수 있어요.'
+    : '"' + doc.title + '" 문서를 개인 문서로 옮길까요?\n다른 멤버는 더 이상 이 문서를 볼 수 없어요. 체크리스트에 연결돼 있다면 연결도 해제돼요.';
+  if (!window.confirm(message)) return;
+
+  const btn = rootEl?.querySelector('#dn-move') as HTMLButtonElement | null;
+  if (btn) btn.disabled = true;
+  const moved = await moveDocumentScope(doc, target, target === 'PERSONAL' ? unlockedUser!.id : null);
+  if (!moved) {
+    if (btn) btn.disabled = false;
+    window.alert('문서를 옮기지 못했어요. 잠시 후 다시 시도해주세요.');
+    return;
+  }
+
+  // 옮긴 문서를 바로 보여준다 — 원래 범위 화면에서는 사라지므로 옮겨간 쪽으로 따라간다
+  sharedDocs = sharedDocs.filter((d) => d.id !== moved.id);
+  personalDocs = personalDocs.filter((d) => d.id !== moved.id);
+  if (target === 'SHARED') sharedDocs = [moved, ...sharedDocs];
+  else personalDocs = [moved, ...personalDocs];
+  scope = target;
+  setLastScope(currentTripId, scope);
+  activeCategory = 'ALL';
+  activeRegion = 'ALL';
+  selectedDocId = moved.id;
+  renderDocuments();
+  updateTabCounts();
 }
 
 async function removeDocument(doc: TripDocument): Promise<void> {

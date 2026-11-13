@@ -503,6 +503,38 @@ export async function updateDocument(
   return data as TripDocument;
 }
 
+/**
+ * 문서의 공개 범위를 옮긴다(개인 ↔ 공용). 파일은 그대로 둔다 — 저장소 정책은 첫 폴더(여행 id)만
+ * 보므로 경로의 `personal`/`shared` 폴더명은 구분용 관례일 뿐이고, 옮기려면 별도 정책이 필요해진다.
+ *
+ * visibility와 owner_id는 DB 체크 제약(PERSONAL이면 owner 필수, SHARED면 owner 없음)이 한 쌍으로
+ * 보므로 반드시 한 번의 UPDATE로 같이 바꾼다. updated_at은 건드리지 않는다 — 내용이 그대로인데
+ * 바뀌면 Assistant가 이 문서를 처음부터 다시 읽는다(키: documentId + updated_at).
+ */
+export async function moveDocumentScope(
+  doc: TripDocument,
+  target: 'SHARED' | 'PERSONAL',
+  ownerId: string | null
+): Promise<TripDocument | null> {
+  if (target === 'PERSONAL' && !ownerId) return null;
+  const { data, error } = await supabase
+    .from('trip_documents')
+    .update({ visibility: target, owner_id: target === 'PERSONAL' ? ownerId : null })
+    .eq('id', doc.id)
+    .select()
+    .single();
+  if (error) {
+    console.error('[Docs] 공개 범위 변경 실패:', error.message);
+    return null;
+  }
+  // 공용 → 개인이면 체크리스트의 연결을 끊는다(체크리스트는 공용 문서만 연결). 컬럼이 없는
+  // 프로젝트(trip_checklist_v2 전)에서는 실패하지만 끊을 연결도 없으니 무시한다.
+  if (target === 'PERSONAL') {
+    await supabase.from('trip_checklist').update({ linked_doc_id: null }).eq('linked_doc_id', doc.id);
+  }
+  return data as TripDocument;
+}
+
 export async function deleteDocument(doc: TripDocument): Promise<boolean> {
   const { error } = await supabase.from('trip_documents').delete().eq('id', doc.id);
   if (error) {
