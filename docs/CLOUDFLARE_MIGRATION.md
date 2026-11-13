@@ -26,12 +26,12 @@
 
 ## 0단계. 첫 단추(결정)
 
-- [ ] 👤 플랫폼: **Workers + Static Assets**(권장) / Pages
-- [ ] 👤 배포 방식: **Workers Builds Git 연동**(권장) / API 토큰으로 Claude가 배포
+- [x] 👤 플랫폼: **Workers + Static Assets** (2026-11-13 결정)
+- [x] 👤 배포 방식: **Workers Builds Git 연동** (2026-11-13 결정)
 
 ## 1단계. 코드 준비 (운영 영향 없음, 주제별 PR)
 
-- [ ] 🤖 PR-1 변환 층: Web `Request` → Vercel식 `req/res` → `Response`, 테스트 포함
+- [x] 🤖 PR-1 변환 층: `worker/vercelAdapter.ts` + 테스트
 - [ ] 🤖 PR-2 Worker 진입점 + `wrangler.jsonc`(assets `dist`, SPA fallback, `/api/*` 먼저 실행, `nodejs_compat`, cron, 캐시 헤더)
 - [ ] 🤖 PR-3 링크 미리보기 DNS 검사를 Workers에서도 되게(시험 결과에 따라)
 - [ ] 🤖 PR-4 route-matrix 호출을 요청당 50번 아래로 나누기
