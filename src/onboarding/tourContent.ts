@@ -11,6 +11,7 @@
  *   · `prepare`는 대상이 열려 있어야 보이는 경우(오른쪽 패널 안 탭 등) 먼저 실행할 동작 이름이다.
  *     실제 동작은 tour.ts의 PREPARE 표에 있다.
  *   · 내용을 크게 바꾸면 그 가이드의 `version`을 올린다 → 이미 본 사람에게도 한 번 더 뜬다.
+ *   · `prepare`가 화면을 바꿨다면(예: 채팅 탭 → Assistant 탭) 가이드가 끝날 때 원래대로 돌려놓는다.
  *   · 폰(Companion) 가이드는 이번 범위가 아니다(PC 전용 구현).
  */
 
@@ -154,13 +155,25 @@ export const TOURS: TourDef[] = [
     ],
   },
   {
-    // 오른쪽 패널 — 어느 게이트에서나 쓰는 거라 자동 실행하지 않고 도움말에서만 연다
-    id: 'panel',
-    label: '채팅 · Assistant',
+    // 채팅 옆 Assistant — 게이트와 상관없이 **오른쪽 채팅 패널을 처음 열 때** 한 번 자동 실행한다
+    // (onboarding.ts onPanelOpened). 도움말 센터에서도 다시 볼 수 있다.
+    // 두 단계 모두 prepare가 있어 패널이 닫혀 있어도(도움말에서 실행) Assistant 탭을 열고 시작한다.
+    id: 'assistant',
+    label: 'Assistant',
     version: 1,
     steps: [
-      { target: 'panel-fab', title: '채팅과 Assistant', body: '멤버끼리 대화는 Collaborate, 문서·메모에 대한 질문은 Assistant에서 해요.' },
-      { target: 'panel-assistant', title: '자료 기반 답변', body: 'DOCUMENTS와 NOTES에 있는 내용만 근거로 답하고, 참고한 자료도 함께 보여 줘요.', prepare: 'openPanelAssistant' },
+      {
+        target: 'panel-assistant-tab',
+        title: '채팅 옆 Assistant',
+        body: '멤버끼리 대화는 Collaborate에서, 여행 서류와 메모에 대한 질문은 옆의 Assistant 탭에서 해요.',
+        prepare: 'openPanelAssistant',
+      },
+      {
+        target: 'panel-assistant',
+        title: '내 자료로 답해 줘요',
+        body: 'DOCUMENTS에 올린 예약증·항공권과 NOTES 메모만 근거로 답하고, 참고한 자료도 함께 보여 줘요. "체크인 몇 시야?"처럼 물어보세요.',
+        prepare: 'openPanelAssistant',
+      },
     ],
   },
 ];

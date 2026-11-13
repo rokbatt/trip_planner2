@@ -1363,6 +1363,9 @@ MOBILE(MORE)·TIMELINE(장소 상세)이 쓰는 **트립 공유 목록 `trip_che
 - 대상이 화면 밖이면 스크롤해서 가져오고, **스크롤 영역에 잘린 부분은 빼고** 보이는 부분만 강조한다(`clipRect`).
   `display: contents`인 조상은 상자가 없으니 잘라내는 것으로 치지 않는다(좁은 폭 CHECKLIST에서 실제로 걸렸던 함정).
 - 닫힌 패널 안의 대상은 `prepare`로 먼저 연다(`PREPARE` 표 — 지금은 `openPanelAssistant` = `mongsil:openAssistant` 이벤트).
+  prepare가 화면을 바꿨다면 되돌리는 함수를 돌려주고, 가이드가 끝날 때 실행된다.
+- **저절로 뜨는 가이드는 다른 가이드가 떠 있으면 끼어들지 않는다**(`runWhenReady(..., auto)`). 끼어들면 보던 가이드가 닫히고 본 것으로 기록돼 버린다.
+  그 경우 기록하지 않으니 다음 기회(다음 방문·다음 패널 열기)에 뜬다.
 - 설명 상자는 대상의 오른쪽 → 왼쪽 → 아래 → 위 순서로 자리를 찾고 화면 가장자리 12px 안으로 붙잡는다. 첫 자리를 잡기 전엔 보이지 않는다.
 
 ### 문구 어조 — 해요체 (사용자 결정, 2026-11)
@@ -1379,7 +1382,9 @@ FAQ 제목은 질문형(~나요?), 요약·본문은 ~해요/~돼요/~할 수 �
 ### 가이드 목록 (게이트 → 강조 대상)
 IDEAS(검색·제안/대기 중·게이트·Monthly Picks·지도) · STAY(기간/예산·후보 추가·후보 목록·비교·확정) ·
 ROUTE(숙소 미확정 빈 화면 / DAY 탭·장소 목록·일정·순서 정리·타임라인으로) · TIMELINE(빈 화면 / 날짜 띠·시각·카드·지금 또는 동선 수정) ·
-Checklist · Documents(추가·공용/개인·NOTES 탭) · Notes · Expense · Links · 오른쪽 패널(채팅 버튼·Assistant — 자동 실행 없음, 도움말에서만).
+Checklist · Documents(추가·공용/개인·NOTES 탭) · Notes · Expense · Links ·
+**Assistant**(채팅 옆 Assistant 탭 → 답변 영역, 2단계) — 게이트가 아니라 **오른쪽 채팅 패널을 처음 열 때** 한 번 자동으로 뜬다
+(`workspace.ts openDrawer` → `onboarding.ts onPanelOpened`). 2단계에서 Assistant 탭으로 바꿨다면 끝날 때 보던 채팅 탭으로 돌려놓는다.
 Companion(`go`)은 가이드가 없다(폰 화면이라 이번 범위 밖).
 
 ### 검색
