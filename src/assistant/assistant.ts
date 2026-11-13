@@ -18,8 +18,10 @@
  */
 
 import {
+  DOCS_LOCK_EVENT,
   getUnlockedUserId,
   isStorageReady,
+  loadDocUsers,
   loadNotes,
   loadPersonalDocuments,
   loadSharedDocuments,
@@ -33,7 +35,10 @@ import { requestAssistantAnswer, requestDocDigest } from './assistantClient';
 import type { AssistantSource } from './assistantClient';
 import type { TripDocument } from '../types/database';
 import './assistant.css';
-import { lookupDigest, storeDigest } from './digestCache';
+import { clearTripDigests, lookupDigest, storeDigest } from './digestCache';
+import { personalNotice, planPersonalVault } from './personalVault';
+import type { PersonalState } from './personalVault';
+import { store } from '../store';
 
 const IC_SPARKLE =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18"/></svg>';
@@ -56,6 +61,13 @@ let sources: AssistantSource[] = [];
 let sourcesReady = false;
 let sourcesFailedCount = 0;
 let sourcesPromise: Promise<void> | null = null;
+/** 개인 문서 보관함 상태와, 읽지 못해 건너뛴 파일 문서 수(안내용) */
+let personalState: PersonalState = 'none';
+let personalSkippedFiles = 0;
+/** 지금 자료에 개인 문서가 들어 있는지 — 다시 잠글 때 대화를 비울지 정한다 */
+let includedPersonal = false;
+/** 가장 최근에 시작한 불러오기 번호 — PIN을 풀거나 잠그는 사이에 시작한 옛 불러오기 결과가 덮어쓰지 못하게 */
+let loadSeq = 0;
 let sending = false;
 
 export function renderAssistantPanel(container: HTMLElement, tripId: string): void {
@@ -66,6 +78,10 @@ export function renderAssistantPanel(container: HTMLElement, tripId: string): vo
     sourcesReady = false;
     sourcesFailedCount = 0;
     sourcesPromise = null;
+    personalState = 'none';
+    personalSkippedFiles = 0;
+    includedPersonal = false;
+    loadSeq++;
     sending = false;
   }
   rootEl = container;
@@ -85,27 +101,50 @@ export function teardownAssistantPanel(): void {
 /* ══════════════ 자료 수집 ══════════════ */
 
 async function loadSources(tripId: string): Promise<void> {
+  const seq = ++loadSeq;
   try {
     if (!isStorageReady()) {
       sources = [];
       return;
     }
 
-    const [shared, notes] = await Promise.all([loadSharedDocuments(tripId), loadNotes(tripId)]);
-    const unlockedUserId = getUnlockedUserId(tripId);
-    const personal = unlockedUserId ? await loadPersonalDocuments(tripId, unlockedUserId) : [];
+    const [shared, notes, vaults] = await Promise.all([loadSharedDocuments(tripId), loadNotes(tripId), loadDocUsers(tripId)]);
+
+    // 개인 문서: 이 탭에서 PIN을 풀었고 내 계정에 연결된 보관함이면 전부, 연결이 비었거나 다른 계정이면 파일 없는 문서만
+    // (파일 문서는 서버가 본인 여부를 확인하므로 읽을 수 없다). PIN을 풀기 전에는 개인 문서를 조회하지 않는다.
+    const plan = planPersonalVault({
+      unlockedId: getUnlockedUserId(tripId),
+      vaults,
+      myUserId: store.get('user')?.id ?? null,
+    });
+    let personal: Awaited<ReturnType<typeof loadPersonalDocuments>> = [];
+    let skippedFiles = 0;
+    if (plan.vaultId) {
+      const all = await loadPersonalDocuments(tripId, plan.vaultId);
+      if (plan.state === 'ready') {
+        personal = all;
+      } else {
+        personal = all.filter((d) => !d.file_path);
+        skippedFiles = all.length - personal.length;
+      }
+    }
     const docs = [...shared, ...personal];
 
     // 한꺼번에 보내지 않고 2개씩 — 문서가 많으면 질문 한 번에 Gemini 분당 한도(무료 등급 10회)를 넘었다.
     // 문서 요약은 서버에 캐싱되므로 이렇게 느려지는 건 문서를 처음 읽을 때뿐이다.
     const stats = { tab: 0, server: 0, fresh: 0, failed: 0 };
     const resolved = await mapWithLimit(docs, 2, async (doc) => ({ doc, source: await resolveDocSource(tripId, doc, stats) }));
+    if (seq !== loadSeq) return; // 그 사이 잠금이 바뀌어 새로 불러오는 중이다 — 이 결과는 버린다
+
     const docSources = resolved.filter((r) => r.source).map((r) => r.source!);
     sourcesFailedCount = stats.failed;
+    personalState = plan.state;
+    personalSkippedFiles = skippedFiles;
+    includedPersonal = personal.length > 0;
     // 진단용 — "매번 다시 읽는다"로 보일 때 실제로 어디서 왔는지 바로 보이게
     console.log(
       '[Assistant] 문서 요약: 이 탭에 저장된 것 ' + stats.tab + ' · 서버에 저장된 것 ' + stats.server +
-      ' · 새로 읽음(AI) ' + stats.fresh + ' · 실패 ' + stats.failed
+      ' · 새로 읽음(AI) ' + stats.fresh + ' · 실패 ' + stats.failed + ' · 개인 문서 ' + plan.state
     );
 
     const noteSources: AssistantSource[] = [];
@@ -122,14 +161,39 @@ async function loadSources(tripId: string): Promise<void> {
 
     sources = [...docSources, ...noteSources];
   } catch (e) {
+    if (seq !== loadSeq) return;
     console.error('[Assistant] 자료 불러오기 실패:', (e as Error).message);
     sources = [];
   } finally {
-    sourcesReady = true;
+    if (seq === loadSeq) {
+      sourcesReady = true;
+      renderList();
+      updateFormState();
+    }
+  }
+}
+
+/** DOCUMENTS에서 PIN을 풀거나 다시 잠갔을 때 — 개인 문서를 바로 반영한다(새로고침 불필요) */
+function handleLockChange(e: Event): void {
+  const detail = (e as CustomEvent<{ tripId: string; unlocked: boolean }>).detail;
+  if (!detail || !currentTripId || detail.tripId !== currentTripId) return;
+
+  if (!detail.unlocked) {
+    // 다시 잠그면 개인 문서 내용이 대화에 남지 않게 한다
+    if (includedPersonal) turns = [];
+    clearTripDigests(sessionStorage, currentTripId);
+  }
+  sourcesReady = false;
+  sourcesPromise = null;
+  if (rootEl) {
+    sourcesPromise = loadSources(currentTripId);
     renderList();
     updateFormState();
   }
+  // 패널이 닫혀 있으면 다음에 열 때 renderAssistantPanel이 새로 불러온다
 }
+
+window.addEventListener(DOCS_LOCK_EVENT, handleLockChange);
 
 /** 순서를 지키며 최대 limit개씩만 동시에 처리한다 */
 async function mapWithLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -228,6 +292,7 @@ function mountShell(): void {
   rootEl.innerHTML = [
     '<div class="ws-ai-chat">',
     '  <div class="ws-ai-chat-list" id="ws-ai-list"></div>',
+    '  <div class="ws-ai-notice" id="ws-ai-notice"></div>',
     '  <div class="ws-ai-disclaimer" id="ws-ai-disclaimer">AI가 문서·메모 내용을 바탕으로 정리한 답변이에요. 중요한 내용은 원본으로 다시 확인하세요.</div>',
     '  <form class="ws-ai-input-form" id="ws-ai-form">',
     '    <input class="ws-ai-input" id="ws-ai-input" type="text" autocomplete="off" />',
@@ -270,6 +335,24 @@ function renderList(): void {
 
   if (turns.length === 0) bindEmptyState(listEl);
   listEl.scrollTop = listEl.scrollHeight;
+  renderNotice();
+}
+
+/** 개인 문서가 포함되지 않은 이유를 대화 위에 계속 보여준다(대화가 있어도 보이게) */
+function renderNotice(): void {
+  const el = rootEl?.querySelector('#ws-ai-notice') as HTMLElement | null;
+  if (!el) return;
+  const text = sourcesReady ? personalNotice(personalState, personalSkippedFiles) : null;
+  if (!text) {
+    el.classList.remove('is-visible');
+    el.innerHTML = '';
+    return;
+  }
+  el.classList.add('is-visible');
+  el.innerHTML = '<span class="ws-ai-notice-text">' + escapeHtml(text) + '</span><button type="button" class="ws-ai-notice-btn" id="ws-ai-notice-go">DOCUMENTS로 가기</button>';
+  el.querySelector('#ws-ai-notice-go')?.addEventListener('click', () => {
+    window.dispatchEvent(new CustomEvent('mongsil:navigateGate', { detail: { tripId: currentTripId, gate: 'docs' } }));
+  });
 }
 
 function sourceSummaryLabel(): string {

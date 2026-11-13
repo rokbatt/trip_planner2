@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DIGEST_FAIL_TTL_MS, clearDigestCache, lookupDigest, storeDigest } from './digestCache';
+import { DIGEST_FAIL_TTL_MS, clearDigestCache, clearTripDigests, lookupDigest, storeDigest } from './digestCache';
 
 function memStorage() {
   const m = new Map<string, string>();
@@ -59,5 +59,14 @@ describe('digestCache', () => {
     clearDigestCache(s);
     expect(lookupDigest(s, 't1', 'd', 'u', 2)).toEqual({ hit: false });
     expect(s.getItem('other')).toBe('x');
+  });
+
+  it('다시 잠글 때는 그 여행의 요약만 지운다', () => {
+    const s2 = memStorage();
+    storeDigest(s2, 't1', 'd', 'u', ['a'], 1);
+    storeDigest(s2, 't2', 'd', 'u', ['b'], 1);
+    clearTripDigests(s2, 't1');
+    expect(lookupDigest(s2, 't1', 'd', 'u', 2)).toEqual({ hit: false });
+    expect(lookupDigest(s2, 't2', 'd', 'u', 2)).toEqual({ hit: true, facts: ['b'] });
   });
 });

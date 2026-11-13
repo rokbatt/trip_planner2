@@ -57,6 +57,15 @@ export function storeDigest(storage: StorageLike, tripId: string, docId: string,
   }
 }
 
+/** 개인 문서를 다시 잠글 때 — 그 여행의 요약 저장을 지운다(개인 문서 요약이 탭에 남지 않게) */
+export function clearTripDigests(storage: StorageLike, tripId: string): void {
+  try {
+    storage.removeItem(DIGEST_CACHE_PREFIX + tripId);
+  } catch {
+    /* 무시 */
+  }
+}
+
 /** 로그아웃 때 — 모든 여행의 요약 저장을 지운다 */
 export function clearDigestCache(storage: StorageLike): void {
   try {

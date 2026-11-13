@@ -267,16 +267,27 @@ export function getUnlockedUserId(tripId: string): string | null {
   }
 }
 
+/** 잠금을 풀거나 다시 잠갔을 때 알리는 이벤트 — 개인 문서를 쓰는 다른 화면(어시스턴트)이 새로 반영하게 한다 */
+export const DOCS_LOCK_EVENT = 'mongsil:docsLockChanged';
+
+function announceLockChange(tripId: string, unlocked: boolean): void {
+  try {
+    window.dispatchEvent(new CustomEvent(DOCS_LOCK_EVENT, { detail: { tripId, unlocked } }));
+  } catch { /* noop */ }
+}
+
 export function setUnlockedUserId(tripId: string, docUserId: string): void {
   try {
     sessionStorage.setItem(UNLOCK_KEY + tripId, docUserId);
   } catch { /* 프라이빗 모드 등 — 잠금 유지 실패는 기능을 막지 않는다 */ }
+  announceLockChange(tripId, true);
 }
 
 export function clearUnlockedUser(tripId: string): void {
   try {
     sessionStorage.removeItem(UNLOCK_KEY + tripId);
   } catch { /* noop */ }
+  announceLockChange(tripId, false);
 }
 
 /* ── 마지막으로 보던 탭 기억(요구사항: 기본값은 마지막 사용 탭) ── */
