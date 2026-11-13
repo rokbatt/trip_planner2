@@ -36,7 +36,8 @@
   - 로컬(`npx wrangler dev`)에서 확인: `/`·`/terms`·`/privacy` 200, 캐시 헤더 규칙, 없는 `/api/*` 404, 깨진 JSON 400
   - 로컬에서 확인 못 함: `node:dns`(작업 환경 네트워크가 막음) → 2단계 실제 배포에서 링크 미리보기로 확인
 - [ ] 🤖 PR-3 링크 미리보기 DNS 검사를 Workers에서도 되게(시험 결과에 따라)
-- [ ] 🤖 PR-4 route-matrix 호출을 요청당 50번 아래로 나누기
+- [x] 🤖 PR-4 route-matrix 호출을 요청당 50번 아래로 나누기 (서버 12구간, 브라우저 `src/utils/routeLegs.ts`가 12구간씩 차례로 요청)
+  - 2단계에서 다른 함수의 외부 호출 수도 실측(특히 관리자용 `backfill-photos`는 사진 여러 장을 한 요청에서 처리)
 - [x] 🤖 CI에 Worker 빌드 확인(`wrangler deploy --dry-run`) 추가
 
 ## 2단계. 시험 배포 (workers.dev 주소)
