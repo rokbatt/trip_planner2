@@ -52,12 +52,15 @@ export interface DocDigestRequest {
 export interface DocDigestResult {
   readable: boolean;
   facts: string[];
+  /** 서버에 저장돼 있던 요약인지(true) AI가 방금 새로 읽었는지(false) */
+  cached: boolean;
 }
 
 /** 문서 파일 하나를 읽어 핵심 사실 몇 줄로 요약받는다 — 문서당 보통 세션 중 1회만 호출 */
 export async function requestDocDigest(req: DocDigestRequest): Promise<DocDigestResult> {
-  const json = await postAi<{ readable?: boolean; facts?: unknown[] }>({ kind: 'doc-digest', ...req });
+  const json = await postAi<{ readable?: boolean; facts?: unknown[]; cached?: boolean }>({ kind: 'doc-digest', ...req });
   return {
+    cached: json.cached === true,
     readable: json.readable !== false,
     facts: Array.isArray(json.facts) ? json.facts.map((f) => String(f)) : [],
   };

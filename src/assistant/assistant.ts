@@ -33,6 +33,7 @@ import { requestAssistantAnswer, requestDocDigest } from './assistantClient';
 import type { AssistantSource } from './assistantClient';
 import type { TripDocument } from '../types/database';
 import './assistant.css';
+import { lookupDigest, storeDigest } from './digestCache';
 
 const IC_SPARKLE =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18"/></svg>';
@@ -97,9 +98,15 @@ async function loadSources(tripId: string): Promise<void> {
 
     // 한꺼번에 보내지 않고 2개씩 — 문서가 많으면 질문 한 번에 Gemini 분당 한도(무료 등급 10회)를 넘었다.
     // 문서 요약은 서버에 캐싱되므로 이렇게 느려지는 건 문서를 처음 읽을 때뿐이다.
-    const resolved = await mapWithLimit(docs, 2, async (doc) => ({ doc, source: await resolveDocSource(doc) }));
+    const stats = { tab: 0, server: 0, fresh: 0, failed: 0 };
+    const resolved = await mapWithLimit(docs, 2, async (doc) => ({ doc, source: await resolveDocSource(tripId, doc, stats) }));
     const docSources = resolved.filter((r) => r.source).map((r) => r.source!);
-    sourcesFailedCount = resolved.filter((r) => !r.source && r.doc.file_path).length;
+    sourcesFailedCount = stats.failed;
+    // 진단용 — "매번 다시 읽는다"로 보일 때 실제로 어디서 왔는지 바로 보이게
+    console.log(
+      '[Assistant] 문서 요약: 이 탭에 저장된 것 ' + stats.tab + ' · 서버에 저장된 것 ' + stats.server +
+      ' · 새로 읽음(AI) ' + stats.fresh + ' · 실패 ' + stats.failed
+    );
 
     const noteSources: AssistantSource[] = [];
     for (const note of notes) {
@@ -138,9 +145,14 @@ async function mapWithLimit<T, R>(items: T[], limit: number, fn: (item: T) => Pr
   return out;
 }
 
-/** 문서 하나를 질문에 쓸 수 있는 자료로 바꾼다 — 파일이 없으면 저장된 필드를 그대로,
- *  있으면 서버에 digest를 요청한다(문서당 캐싱되므로 세션당 1회뿐) */
-async function resolveDocSource(doc: TripDocument): Promise<AssistantSource | null> {
+/** 문서 하나를 질문에 쓸 수 있는 자료로 바꾼다 — 파일이 없으면 저장된 필드를 그대로 쓴다.
+ *  파일이 있으면 ① 이 탭에 저장된 요약(새로고침해도 유지) → ② 서버(저장된 요약이 있으면 그걸 주고,
+ *  없을 때만 AI가 파일을 읽는다) 순서로 찾는다. 그래서 AI가 읽는 건 문서당 처음 한 번뿐이다. */
+async function resolveDocSource(
+  tripId: string,
+  doc: TripDocument,
+  stats: { tab: number; server: number; fresh: number; failed: number }
+): Promise<AssistantSource | null> {
   const category = DOC_CATEGORY_LABEL[normalizeDocCategory(doc.category)];
 
   if (!doc.file_path) {
@@ -149,6 +161,19 @@ async function resolveDocSource(doc: TripDocument): Promise<AssistantSource | nu
     );
     if (parts.length === 0) return null;
     return { title: doc.title, category, kind: 'document', digest: parts.join(' · ') };
+  }
+
+  const toSource = (facts: string[]): AssistantSource | null =>
+    facts.length ? { title: doc.title, category, kind: 'document', digest: facts.join('\n') } : null;
+
+  const local = lookupDigest(sessionStorage, tripId, doc.id, doc.updated_at, Date.now());
+  if (local.hit) {
+    if (local.facts === null) {
+      stats.failed++;
+      return null;
+    }
+    stats.tab++;
+    return toSource(local.facts);
   }
 
   try {
@@ -160,10 +185,16 @@ async function resolveDocSource(doc: TripDocument): Promise<AssistantSource | nu
       fileType: doc.file_type ?? 'application/octet-stream',
       updatedAt: doc.updated_at,
     });
-    if (!result.readable || result.facts.length === 0) return null;
-    return { title: doc.title, category, kind: 'document', digest: result.facts.join('\n') };
+    if (result.cached) stats.server++;
+    else stats.fresh++;
+    const facts = result.readable ? result.facts : [];
+    storeDigest(sessionStorage, tripId, doc.id, doc.updated_at, facts, Date.now());
+    return toSource(facts);
   } catch (e) {
     console.error('[Assistant] 문서 분석 실패(' + doc.title + '):', (e as Error).message);
+    stats.failed++;
+    // 실패도 잠깐 기억한다 — 한도 초과일 때 새로고침마다 다시 몰리지 않게(10분 뒤 재시도)
+    storeDigest(sessionStorage, tripId, doc.id, doc.updated_at, null, Date.now());
     return null;
   }
 }

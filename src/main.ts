@@ -14,6 +14,7 @@ import { addRoute, setNotFound, startRouter, navigate, rerender, currentPath, pa
 import { renderLogin } from './auth/auth';
 import { renderTripList } from './trips/trip-list';
 import { onTripsShown } from './onboarding/onboarding';
+import { clearDigestCache } from './assistant/digestCache';
 import { renderJoinPage, consumePendingInvite } from './trips/trip-join';
 import { renderWorkspace, findExistingWorkspace, switchGate, defaultGateFor } from './workspace/workspace';
 
@@ -145,6 +146,7 @@ async function handleAuthChange(event: string, session: { user: import('@supabas
   if (event === 'SIGNED_OUT') {
     void clearOfflineRest();
     void clearOfflineDocs();
+    clearDigestCache(sessionStorage); // 어시스턴트 문서 요약(예약번호 등)도 이 탭에서 지운다
   }
 
   // 오프라인에서 열었는데 토큰 갱신을 못 해 세션이 비었으면, 남은 로그인 기록으로 연다
