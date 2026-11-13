@@ -9,7 +9,7 @@ import type { SegmentState } from '../trips/destinations';
 import { toAirportCode } from '../trips/airports';
 import type { Database, TripDestination } from '../types/database';
 import type { ChatMessage } from '../types/database';
-import { onGateRendered, openHelp } from '../onboarding/onboarding';
+import { onGateRendered, onPanelOpened, openHelp } from '../onboarding/onboarding';
 import './workspace.css';
 import { parseISODate } from '../utils/dates';
 import { escapeHtml, safeHttpUrl } from '../utils/html';
@@ -226,7 +226,7 @@ export async function renderWorkspace(tripId: string, subPath?: string): Promise
     '      <div class="ws-placeholder">불러오는 중...</div>',
     '    </div>',
     '    <div class="ws-panel" id="ws-panel"></div>',
-    '    <button class="ws-drawer-fab" id="ws-drawer-fab" data-tour="panel-fab">',
+    '    <button class="ws-drawer-fab" id="ws-drawer-fab">',
     '      ' + IC.chat,
     '      <span class="ws-drawer-badge" id="rail-badge">0</span>',
     '    </button>',
@@ -393,7 +393,7 @@ function buildPanelShell(): string {
     '  <div class="ws-panel-header">',
     '    <div class="ws-segmented">',
     '      <button class="ws-segment active" id="tab-chat" data-tab="chat">Collaborate</button>',
-    '      <button class="ws-segment" id="tab-ai" data-tab="ai">Assistant</button>',
+    '      <button class="ws-segment" id="tab-ai" data-tab="ai" data-tour="panel-assistant-tab">Assistant</button>',
     '    </div>',
     '    <button class="ws-panel-close" id="ws-panel-close">' + IC.panelClose + '</button>',
     '  </div>',
@@ -686,7 +686,7 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
       aiModuleRef = mod;
       mod.renderAssistantPanel(bodyEl, tripId);
     }
-    // 페이지 가이드의 "자료 기반 답변" 단계가 가리키는 곳 — Assistant 탭일 때만 이름을 붙인다
+    // Assistant 가이드의 "내 자료로 답해 줘요" 단계가 가리키는 곳 — Assistant 탭일 때만 이름을 붙인다
     if (activeTab === 'ai') bodyEl.dataset.tour = 'panel-assistant';
     else delete bodyEl.dataset.tour;
   }
@@ -713,6 +713,8 @@ async function bindChat(page: HTMLElement, tripId: string): Promise<void> {
     panelEl.querySelector('#ws-panel-close')?.addEventListener('click', closeDrawer);
 
     void renderPanelBody();
+    // 채팅 패널을 처음 열면 옆의 Assistant를 소개한다(PC 전용, 한 번만 — onboarding.ts가 판단)
+    onPanelOpened();
   }
 
   /** 카드 클릭 시 우측 Drawer에 상세 정보 표시 */

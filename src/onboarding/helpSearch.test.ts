@@ -59,6 +59,9 @@ describe('내용 정합성', () => {
     expect(new Set(gates).size).toBe(gates.length);
     expect(tourForGate('shortlist')?.id).toBe('stay');
     expect(tourForGate('go')).toBeNull(); // Companion은 이번 범위 밖(PC 전용)
+    // Assistant 가이드는 게이트에 붙지 않는다 — 채팅 패널을 처음 열 때 뜬다
+    expect(tourById('assistant')?.gate).toBeUndefined();
+    expect(tourById('assistant')?.steps.length).toBe(2);
   });
   it('FAQ에는 지원 상태가 붙어 있다', () => {
     for (const a of HELP_ARTICLES.filter((x) => x.category === 'faq')) expect(a.status, a.id).toBeTruthy();

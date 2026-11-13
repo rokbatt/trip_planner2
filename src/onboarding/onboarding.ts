@@ -28,7 +28,7 @@ const DESKTOP_QUERY = '(min-width: 769px)';
 /** 게이트 본문이 그려진 뒤 가이드 대상이 나타나기까지 기다리는 최대 시간 */
 const TARGET_WAIT_MS = 3000;
 /** "전체 사용법 다시 보기" 순서 — 계획 흐름대로, 오른쪽 패널은 마지막 */
-const FULL_ORDER = ['ideas', 'stay', 'route', 'timeline', 'checklist', 'docs', 'notes', 'expense', 'links', 'panel'];
+const FULL_ORDER = ['ideas', 'stay', 'route', 'timeline', 'checklist', 'docs', 'notes', 'expense', 'links', 'assistant'];
 
 function isDesktop(): boolean {
   return window.matchMedia(DESKTOP_QUERY).matches;
@@ -81,12 +81,18 @@ function startFromTrips(): void {
 
 /* ── 페이지 가이드 ── */
 
-async function runWhenReady(def: TourDef, mySeq: number): Promise<boolean> {
+/**
+ * 대상이 나타나면 가이드를 띄운다. `auto`(처음 들어와서 저절로 뜨는 경우)면 이미 다른 가이드가
+ * 떠 있을 때 끼어들지 않는다 — 끼어들면 보던 가이드가 닫히고 본 것으로 기록돼 버린다.
+ * 도움말에서 직접 고른 가이드는 지금 것을 닫고 바로 띄운다.
+ */
+async function runWhenReady(def: TourDef, mySeq: number, auto = false): Promise<boolean> {
   const ok = await waitFor(() => seq !== mySeq || tourHasTargets(def) || def.steps.some((s) => !!s.prepare), TARGET_WAIT_MS);
   if (seq !== mySeq || !ok) return false;
   // 레이아웃(지도·이미지)이 자리 잡을 시간을 조금 준다
   await new Promise((r) => setTimeout(r, 250));
   if (seq !== mySeq || isWelcomeOpen() || isHelpOpen()) return false;
+  if (auto && isTourRunning()) return false;
   const handle = runTour(def, {
     chainLabel: chain ? '전체 사용법' : undefined,
     onEnd: (reason) => {
@@ -187,14 +193,26 @@ export async function onGateRendered(tripId: string, gate: string): Promise<void
   if (needsWelcome(state)) {
     if (!(await waitForConsentClosed(mySeq)) || isWelcomeOpen()) return;
     openWelcome(() => {
-      if (def && seq === mySeq) void runWhenReady(def, mySeq);
+      if (def && seq === mySeq) void runWhenReady(def, mySeq, true);
     });
     return;
   }
 
   if (def && needsTour(state, def.id, def.version) && !isTourRunning()) {
-    await runWhenReady(def, mySeq);
+    await runWhenReady(def, mySeq, true);
   }
+}
+
+/**
+ * 오른쪽 채팅 패널이 열릴 때(workspace.ts openDrawer) — 처음이면 옆의 Assistant를 소개한다.
+ * 게이트와 상관없는 가이드라 화면 번호(seq)를 올리지 않는다(올리면 기다리던 게이트 가이드가 취소된다).
+ */
+export function onPanelOpened(): void {
+  if (!isDesktop() || !userId()) return;
+  if (isTourRunning() || isWelcomeOpen() || isHelpOpen() || chain) return; // 도움말에서 실행한 가이드가 패널을 연 경우 포함
+  const def = tourById('assistant');
+  if (!def || !needsTour(loadState(kv(), userId()), def.id, def.version)) return;
+  void runWhenReady(def, seq, true);
 }
 
 export function openHelp(): void {

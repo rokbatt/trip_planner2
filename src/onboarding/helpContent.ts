@@ -333,7 +333,6 @@ export const HELP_ARTICLES: HelpArticle[] = [
     title: '채팅 (Collaborate)',
     summary: '오른쪽 아래 말풍선 버튼으로 여행 멤버끼리 대화해요.',
     keywords: ['채팅', '대화', '메시지', 'Collaborate', '동행자', '멤버'],
-    tour: 'panel',
     paragraphs: [
       '오른쪽 아래 말풍선 버튼을 누르면 Collaborate 탭이 열려요.',
       '내가 보낸 메시지는 수정·삭제할 수 있어요. 채팅에 보낸 링크는 Links에 자동으로 모여요.',
@@ -345,7 +344,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     title: 'Assistant',
     summary: 'DOCUMENTS·NOTES에 있는 내용을 바탕으로 질문에 답해요.',
     keywords: ['Assistant', 'AI', '질문', '어시스턴트', '문서'],
-    tour: 'panel',
+    tour: 'assistant',
     paragraphs: [
       '말풍선 버튼 → Assistant 탭에서 써요. 올린 문서와 적어 둔 메모만 근거로 답하고, 참고한 자료 제목도 함께 보여 줘요.',
       '근거가 없으면 모른다고 답해요. 일정이나 장소를 추천해 주는 기능은 아니에요.',

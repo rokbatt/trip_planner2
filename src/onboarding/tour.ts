@@ -30,10 +30,18 @@ export interface TourHandle {
   stop: (reason?: TourEndReason) => void;
 }
 
-/** 대상이 닫힌 컨테이너 안에 있을 때 먼저 실행할 동작 */
-const PREPARE: Record<NonNullable<TourStepContent['prepare']>, () => void> = {
-  // 오른쪽 패널을 Assistant 탭으로 연다(workspace.ts bindChat이 듣는 이벤트)
-  openPanelAssistant: () => window.dispatchEvent(new CustomEvent('mongsil:openAssistant')),
+/**
+ * 대상이 닫힌 컨테이너 안에 있을 때 먼저 실행할 동작. 화면을 바꿨다면 되돌리는 함수를 돌려준다 —
+ * 가이드가 끝나면 실행해서 사용자가 보던 화면으로 돌려놓는다.
+ */
+const PREPARE: Record<NonNullable<TourStepContent['prepare']>, () => (() => void) | void> = {
+  // 오른쪽 패널을 Assistant 탭으로 연다(workspace.ts bindChat이 듣는 이벤트).
+  // 채팅(Collaborate) 탭을 보던 중이었다면 끝날 때 채팅 탭으로 돌려놓는다.
+  openPanelAssistant: () => {
+    const wasChat = !!document.querySelector('#tab-chat.active');
+    window.dispatchEvent(new CustomEvent('mongsil:openAssistant'));
+    if (wasChat) return () => document.querySelector<HTMLElement>('#tab-chat')?.click();
+  },
 };
 
 const MARGIN = 12; // 화면 가장자리와 설명 상자 사이
@@ -164,6 +172,7 @@ export function runTour(def: TourDef, opts: TourOptions): TourHandle | null {
   let lastKey = '';
   let stopped = false;
   let busy = false; // 단계 전환(prepare 대기) 중 중복 클릭 방지
+  const undos: Array<() => void> = []; // prepare로 바꾼 화면을 끝날 때 되돌린다
 
   function place(): void {
     if (stopped) return;
@@ -258,7 +267,8 @@ export function runTour(def: TourDef, opts: TourOptions): TourHandle | null {
         const step = steps[j];
         let res = resolveNow(step);
         if (!res && step.prepare) {
-          PREPARE[step.prepare]();
+          const undo = PREPARE[step.prepare]();
+          if (undo && !undos.length) undos.push(undo); // 처음 상태 하나만 기억하면 된다
           await waitFor(() => !!resolveNow(step), 1500);
           if (stopped) return;
           res = resolveNow(step);
@@ -327,6 +337,7 @@ export function runTour(def: TourDef, opts: TourOptions): TourHandle | null {
     root.removeEventListener('click', onClick);
     document.removeEventListener('keydown', onKey, true);
     root.remove();
+    for (const u of undos) u();
     if (active === handle) active = null;
     opts.onEnd(reason);
   }
