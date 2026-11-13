@@ -1,0 +1,12 @@
+# Cloudflare Workers 정적 파일 응답 헤더 (vercel.json의 headers와 같은 규칙)
+# Vercel은 이 파일을 쓰지 않는다. 이전이 끝나면 vercel.json 쪽을 지운다(docs/CLOUDFLARE_MIGRATION.md 5단계).
+# 규칙이 여러 개 맞으면 값이 이어 붙는다 — 그래서 /assets/*는 "! Cache-Control"로 앞 규칙 값을 지우고 새로 단다.
+
+# 기본: index.html, sw.js, manifest 등은 새 배포가 바로 보이도록 매번 확인
+/*
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# 해시가 붙은 빌드 파일은 내용이 바뀌면 이름이 바뀌니 1년 캐시
+/assets/*
+  ! Cache-Control
+  Cache-Control: public, max-age=31536000, immutable

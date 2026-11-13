@@ -32,10 +32,12 @@
 ## 1단계. 코드 준비 (운영 영향 없음, 주제별 PR)
 
 - [x] 🤖 PR-1 변환 층: `worker/vercelAdapter.ts` + 테스트
-- [ ] 🤖 PR-2 Worker 진입점 + `wrangler.jsonc`(assets `dist`, SPA fallback, `/api/*` 먼저 실행, `nodejs_compat`, cron, 캐시 헤더)
+- [x] 🤖 PR-2 Worker 진입점 + `wrangler.jsonc`(assets `dist`, SPA fallback, `/api/*` 먼저 실행, `nodejs_compat`, cron, 캐시 헤더 `public/_headers`, 환율 캐시)
+  - 로컬(`npx wrangler dev`)에서 확인: `/`·`/terms`·`/privacy` 200, 캐시 헤더 규칙, 없는 `/api/*` 404, 깨진 JSON 400
+  - 로컬에서 확인 못 함: `node:dns`(작업 환경 네트워크가 막음) → 2단계 실제 배포에서 링크 미리보기로 확인
 - [ ] 🤖 PR-3 링크 미리보기 DNS 검사를 Workers에서도 되게(시험 결과에 따라)
 - [ ] 🤖 PR-4 route-matrix 호출을 요청당 50번 아래로 나누기
-- [ ] 🤖 CI에 Worker 빌드 확인(`wrangler deploy --dry-run`) 추가
+- [x] 🤖 CI에 Worker 빌드 확인(`wrangler deploy --dry-run`) 추가
 
 ## 2단계. 시험 배포 (workers.dev 주소)
 
