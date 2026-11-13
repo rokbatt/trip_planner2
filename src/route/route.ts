@@ -76,6 +76,7 @@ import { bindLongPressReorder } from '../mobile/reorder';
 import './route.css';
 import { parseISODate, toISODate } from '../utils/dates';
 import { apiFetch } from '../utils/apiFetch';
+import { requestRouteLegs } from '../utils/routeLegs';
 import { escapeHtml } from '../utils/html';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -997,20 +998,17 @@ async function loadRealLegsForActiveDay(container: HTMLElement, force = false): 
   try {
     // route-legs.ts는 Vercel Hobby 플랜의 서버리스 함수 12개 한도를 넘겨 route-matrix.ts에
     // 합쳐졌다(body에 legs가 있으면 이 경로로 분기됨) — api/route-matrix.ts 상단 설명 참고.
-    const res = await apiFetch('/api/route-matrix', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ legs: pending, modes: ['WALK', 'TRANSIT', 'DRIVE'] }),
-    });
-    if (!res.ok) {
+    // 12구간씩 나눠 보낸다(Cloudflare 요청당 외부 호출 한도) — utils/routeLegs.ts
+    const reply = await requestRouteLegs(pending, ['WALK', 'TRANSIT', 'DRIVE']);
+    if (!reply.ok) {
       markLegsFailed(pending.map((p) => p.id));
       // 실패해도 화면은 조용히 추정치를 유지하지만(원칙), 원인 진단을 위해 콘솔에는 남긴다 —
       // 서버 함수 로그(Vercel)는 사용자가 못 보므로, 흔한 원인(키 미설정/Routes API 미활성화)을
       // 여기서 바로 확인할 수 있게 응답 본문까지 찍는다.
-      console.error('[Route] /api/route-matrix 실패:', res.status, await res.text().catch(() => ''));
+      console.error('[Route] /api/route-matrix 실패:', reply.status, reply.text);
       return;
     }
-    const json = await res.json();
+    const json = reply.json;
     reportRouteError('Route', json);
     const results: Array<{ id: string; modes: Record<string, RealLeg> }> = json?.results ?? [];
     let got = false;

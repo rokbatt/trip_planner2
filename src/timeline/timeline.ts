@@ -78,7 +78,7 @@ import type { Database, StaySegment, TripDestination } from '../types/database';
 import { isLegCoolingDown, markLegsFailed, reportRouteError } from '../utils/legCooldown';
 import './timeline.css';
 import { parseISODate } from '../utils/dates';
-import { apiFetch } from '../utils/apiFetch';
+import { requestRouteLegs } from '../utils/routeLegs';
 import { escapeHtml } from '../utils/html';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -365,17 +365,14 @@ async function loadRealLegsForActiveDay(): Promise<void> {
   realLegPending = true;
   setLegLoading(true);
   try {
-    const res = await apiFetch('/api/route-matrix', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ legs: pending, modes: ['WALK', 'TRANSIT', 'DRIVE'] }),
-    });
-    if (!res.ok) {
+    // 12구간씩 나눠 보낸다(Cloudflare 요청당 외부 호출 한도) — utils/routeLegs.ts
+    const reply = await requestRouteLegs(pending, ['WALK', 'TRANSIT', 'DRIVE']);
+    if (!reply.ok) {
       markLegsFailed(pending.map((p) => p.id));
-      console.error('[Timeline] /api/route-matrix 실패:', res.status, await res.text().catch(() => ''));
+      console.error('[Timeline] /api/route-matrix 실패:', reply.status, reply.text);
       return;
     }
-    const json = await res.json();
+    const json = reply.json;
     reportRouteError('Timeline', json);
     const results: Array<{ id: string; modes: Record<string, RealLeg> }> = json?.results ?? [];
     let got = false;

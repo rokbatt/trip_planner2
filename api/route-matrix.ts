@@ -186,7 +186,9 @@ async function handleMatrix(req: VercelRequest, res: VercelResponse) {
 
 type Mode = 'WALK' | 'TRANSIT' | 'DRIVE';
 const ALL_MODES: Mode[] = ['WALK', 'TRANSIT', 'DRIVE'];
-const MAX_LEGS = 25;
+// 구간 × 이동수단마다 Google을 한 번씩 부른다. Cloudflare 무료 Worker는 요청당 외부 호출 50번까지라
+// 12구간(36번)으로 묶는다. 브라우저 쪽 src/utils/routeLegs.ts의 LEGS_PER_REQUEST와 같아야 한다.
+const MAX_LEGS = 12;
 
 interface Pt { lat: number; lng: number }
 interface LegReq { id: string; from: Pt; to: Pt }
