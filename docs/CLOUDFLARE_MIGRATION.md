@@ -35,18 +35,22 @@
 - [x] 🤖 PR-2 Worker 진입점 + `wrangler.jsonc`(assets `dist`, SPA fallback, `/api/*` 먼저 실행, `nodejs_compat`, cron, 캐시 헤더 `public/_headers`, 환율 캐시)
   - 로컬(`npx wrangler dev`)에서 확인: `/`·`/terms`·`/privacy` 200, 캐시 헤더 규칙, 없는 `/api/*` 404, 깨진 JSON 400
   - 로컬에서 확인 못 함: `node:dns`(작업 환경 네트워크가 막음) → 2단계 실제 배포에서 링크 미리보기로 확인
-- [ ] 🤖 PR-3 링크 미리보기 DNS 검사를 Workers에서도 되게(시험 결과에 따라)
+- [x] 🤖 PR-3 링크 미리보기 DNS 검사 — 시험 배포에서 링크 미리보기가 정상 동작해서 변경 불필요(2026-11-13)
 - [x] 🤖 PR-4 route-matrix 호출을 요청당 50번 아래로 나누기 (서버 12구간, 브라우저 `src/utils/routeLegs.ts`가 12구간씩 차례로 요청)
   - 2단계에서 다른 함수의 외부 호출 수도 실측(특히 관리자용 `backfill-photos`는 사진 여러 장을 한 요청에서 처리)
 - [x] 🤖 CI에 Worker 빌드 확인(`wrangler deploy --dry-run`) 추가
 
 ## 2단계. 시험 배포 (workers.dev 주소)
 
-- [ ] 👤 Cloudflare에서 Worker 만들고 GitHub 저장소 연결
-- [ ] 👤 빌드 변수 4개, 서버 비밀값 입력(값은 Vercel 환경 변수에서 복사)
-- [ ] 👤 Supabase Redirect URLs에 시험 주소 추가
-- [ ] 👤 Maps 브라우저 키 리퍼러에 시험 주소 추가
-- [ ] 👤🤖 화면별 시험: 로그인, 여행 목록·보드, 장소 검색·추가, 사진, 길찾기, 호텔 점수, 어시스턴트, 문서, 환율, 약관 페이지, 새로고침, PWA
+- [x] 👤 Cloudflare에서 Worker 만들고 GitHub 저장소 연결 (`mongsil`, `https://mongsil.samueloh555.workers.dev`)
+  - 첫 빌드는 잠금 파일(rollup 플랫폼 패키지 24개 누락)로 실패 → #269로 해결
+  - PR 브랜치 빌드는 `wrangler preview` 명령이 `previews` 설정을 요구해 실패(운영 영향 없음, 미해결·낮은 우선순위)
+- [x] 👤 빌드 변수 4개, 서버 비밀값 입력(값은 Vercel 환경 변수에서 복사)
+  - 비밀값은 **Runtime variables and secrets**(서버용), `VITE_` 4개는 **Build** 칸(빌드용). 이름 오타 주의(`SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `CRON_SECRET`)
+- [x] 👤 Supabase Redirect URLs에 시험 주소 추가
+- [x] 👤 Maps 브라우저 키 리퍼러에 시험 주소 추가
+- [x] 👤🤖 화면별 시험: 로그인, 지도, 초대 링크, 장소 검색·추가, 사진, 길찾기, 호텔 점수, 링크 미리보기, 어시스턴트, 환율, 문서 — 모두 이상 없음(사용자 확인, 2026-11-13)
+  - 아직 안 해 본 것: 약관 페이지(`/terms`, `/privacy`) 직접 열기, 새로고침, PWA 설치·업데이트
 - [ ] 🤖 CPU 시간·외부 호출 수 측정 → 무료로 충분한지 판단
 - [ ] 👤 유료(월 $5) 필요 여부 결정
 
