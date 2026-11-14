@@ -406,7 +406,7 @@ function shellHtml(): string {
       (Object.keys(SORT_LABEL) as SortMode[]).map((k) => '<option value="' + k + '">' + SORT_LABEL[k] + '</option>').join('') +
       '</select></label>',
     '          </div>',
-    '          <button type="button" class="ck-btn-primary" id="ck-add">' + IC.plus + '<span>항목 추가</span></button>',
+    '          <button type="button" class="ck-btn-primary" id="ck-add" aria-label="항목 추가">' + IC.plus + '<span>항목 추가</span></button>',
     '        </div>',
     '        <div class="ck-filter-note" id="ck-filter-note"></div>',
     '        <div class="ck-list" id="ck-list" role="list" data-tour="checklist-list"></div>',
@@ -744,6 +744,7 @@ function renderReady(): void {
 
 /** 기본으로 보여줄 추천 개수 — 화면이 클수록 오른쪽 아래가 비지 않게 더 보여준다 */
 function suggestionPreview(): number {
+  if (window.innerWidth <= 768) return 2; // 폰은 세로가 길어도 한 번에 많이 펼치면 목록이 밀려난다
   const h = window.innerHeight;
   return h >= 980 ? 6 : h >= 840 ? 5 : 3;
 }
