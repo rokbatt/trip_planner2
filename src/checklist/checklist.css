@@ -826,23 +826,52 @@
 }
 
 @media (max-width: 768px) {
-  .ck-wrap { padding: 12px 12px 32px; }
-  .ck-card { padding: 14px; }
+  .ck-wrap { padding: 10px 12px 28px; }
+  .ck-grid { gap: 10px; }
+  .ck-card { padding: 12px 14px; }
   .ck-main { padding: 0; }
-  .ck-cats { padding: 14px 14px 10px; }
-  .ck-toolbar { padding: 0 14px 10px; }
-  .ck-toolbar-left { flex: 1; }
-  .ck-select-wrap { flex: 1; min-width: 0; }
-  .ck-select { max-width: none; width: 100%; }
-  .ck-toolbar .ck-btn-primary { width: 100%; }
-  .ck-row { grid-template-columns: 16px 22px minmax(0, 1fr) auto minmax(24px, auto); gap: 8px; padding: 11px 12px 11px 4px; }
+
+  /* 준비 현황 — 한 줄짜리 띠. 분류별 진행은 목록 위 탭(완료/전체)이 이미 보여주므로 타일은 접는다 */
+  .ck-ready { position: relative; padding: 12px 14px; }
+  .ck-ready-eyebrow { position: absolute; top: 12px; right: 14px; }
+  .ck-ready-eyebrow .ck-card-eyebrow { display: none; }
+  .ck-ready-top { margin-top: 0; gap: 12px; }
+  .ck-ring { width: 46px; height: 46px; }
+  .ck-ready-pct { font-size: 21px; }
+  .ck-ready-count { margin-top: 3px; }
+  .ck-ready-cats { display: none; }
+
+  /* 목록 도구줄 — 담당·정렬·추가를 한 줄에 */
+  .ck-cats { padding: 10px 12px 8px; }
+  .ck-toolbar { flex-wrap: nowrap; gap: 8px; padding: 0 12px 10px; }
+  .ck-toolbar-left { flex: 1; min-width: 0; flex-wrap: nowrap; }
+  .ck-select-wrap { flex: 1; min-width: 0; padding-left: 8px; }
+  .ck-select-label { display: none; }
+  .ck-select { max-width: none; width: 100%; padding-left: 0; }
+  .ck-toolbar .ck-btn-primary { flex-shrink: 0; width: 38px; height: 36px; padding: 0; border-radius: 9px; }
+  .ck-toolbar .ck-btn-primary span { display: none; }
+
+  .ck-row { grid-template-columns: 16px 22px minmax(0, 1fr) auto minmax(24px, auto); gap: 8px; padding: 9px 12px 9px 4px; }
   .ck-row-icon { display: none; }
   .ck-assignee { width: 24px; height: 24px; }
-  .ck-detail { padding: 0 12px 14px 54px; }
-  .ck-quick { padding: 12px 14px; }
-  .ck-ready-cats { grid-template-columns: 1fr 1fr; }
-  .ck-done-list { grid-template-columns: 1fr; }
-  .ck-must-list { grid-template-columns: 1fr; }
+  .ck-detail { padding: 0 12px 12px 54px; }
+  .ck-quick { padding: 10px 14px; }
+
+  /* 추천 · 꼭 확인 · 완료 — 한눈에 들어오게 촘촘하게 */
+  .ck-suggest { padding: 12px 14px; }
+  .ck-sugg { grid-template-columns: 24px minmax(0, 1fr) auto; gap: 8px; padding: 7px 0; }
+  .ck-sugg-icon { width: 24px; height: 24px; }
+  .ck-sugg-actions .ck-btn-small { padding: 5px 9px; }
+  .ck-must { padding: 12px 14px; }
+  .ck-must-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .ck-must-row { padding: 4px 4px 4px 8px; min-height: 36px; }
+  .ck-must-title { font-size: 11.5px; }
+  .ck-done-card { padding: 12px 0 12px 14px; }
+  .ck-done-card .ck-card-head { padding-right: 14px; }
+  /* 완료한 항목은 옆으로 넘겨 본다(세로로 쌓으면 화면을 3칸 더 차지한다) */
+  .ck-done-list { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 68%; overflow-x: auto; padding-right: 14px; scroll-snap-type: x proximity; scrollbar-width: none; }
+  .ck-done-list::-webkit-scrollbar { display: none; }
+  .ck-done-row { scroll-snap-align: start; }
   .ck-field-row { flex-direction: column; }
 
   .ck-sheet {
