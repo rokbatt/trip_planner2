@@ -61,21 +61,32 @@
 
 ## 3단계. 전환 준비
 
-- [ ] 🤖 cron 동작 확인(정리 작업 1회 수동 실행 후 결과 확인)
-- [ ] 🤖 개인정보 처리방침 위탁사 Vercel → Cloudflare, 약관 버전 올리기(연락처 이메일 변경과 한 PR)
-- [ ] 👤 전환 날짜 정하기(S2 2단계와 다른 날, 사용자가 적은 시간대)
+- [x] 🤖 cron 동작 확인 — 2026-11-14 03:00 UTC에 실행됨(`[cron] cleanup-search-cache 200`). 그때는 `SUPABASE_URL` 오타로 "Supabase 설정 없음"이라 건너뜀 → 오타 수정 뒤 다음 실행(11-15 03:00 UTC)에서 실제 정리 확인 필요
+- [x] 🤖 개인정보 처리방침 위탁사 Vercel → Cloudflare(+Google Gmail), 연락처 `help@mongsil2.com`, 약관·방침 버전 draft2 (#277, 전환 당일 병합)
+  - `help@mongsil2.com` → `mongsil2.help@gmail.com`: Cloudflare Email Routing(받기 전용), catch-all은 Drop
+- [x] 👤 전환 날짜: 2026-11-14(사용자 결정, 사용자가 본인·지인 몇 명뿐)
+- [x] 🤖 Gemini 지역 차단(`User location is not supported`) 해결 — Worker 실행 지역을 도쿄 인근으로 고정(#276, `placement.region = aws:ap-northeast-1`)
 
-## 4단계. 전환 (DNS)
+## 4단계. 전환 (DNS) — 2026-11-14 완료
 
-- [ ] 👤 Cloudflare DNS에서 Vercel을 가리키는 CNAME 2개(apex, www) 기록해 두고 삭제
-- [ ] 👤 Worker → Custom Domains에 `www.mongsil2.com`, `mongsil2.com` 추가(레코드는 Cloudflare가 자동 생성)
-- [ ] 👤 apex → www 리다이렉트 규칙
-- [ ] 👤🤖 전환 직후 시험(2단계 목록 그대로)
-- 롤백: Custom Domains 해제 → 기록해 둔 CNAME 2개 복구 → 몇 분 안에 Vercel로 돌아가요.
+- [x] 👤 Cloudflare DNS에서 Vercel을 가리키는 CNAME 2개(apex, www) 캡처 후 삭제
+- [x] 👤 Worker → Domains 탭 → Custom domain(Route 아님)에 `www.mongsil2.com`, `mongsil2.com` 추가
+- [x] 👤 Redirect Rule(Single Redirect, Wildcard): `https://mongsil2.com/*` → `https://www.mongsil2.com/${1}`, 301, 쿼리 유지
+- [x] 👤🤖 전환 직후 시험: 동의 창(새 버전), 로그인, 지도, 장소, 길찾기, AI, `/privacy` 내용, `mongsil2.com/terms` → `www` 이동, Metrics Invocations 증가 확인
+- 롤백(필요할 때): Worker Custom domains 2개 제거 → 캡처해 둔 CNAME 2개(DNS only) 복구 → 몇 분 안에 Vercel로 돌아가요. Vercel 프로젝트는 5단계 전까지 유지
 
-## 5단계. 정리 (2주 안정 후)
+## 남은 확인(전환과 별개)
 
-- [ ] 👤 `mongsil2.vercel.app` → `www.mongsil2.com` 리다이렉트, Vercel cron 끄기
-- [ ] 🤖 `vercel.json`, CI 함수 12개 검사 제거, `Claude.md` 배포 문구 갱신
-- [ ] 👤 Supabase·Maps 허용 목록에서 시험 주소 제거
+- [ ] 👤🤖 Gemini 유료 전환 뒤 새 문서를 AI로 읽혀 CPU 측정 → 무료 플랜(요청당 CPU 10ms)로 충분한지 판단, 필요하면 월 $5 결정(사용자)
+- [ ] 🤖 `cache-photo`, `destination-zones` 오류(2026-11-14 Observability) 원인 확인
+- [ ] 🤖 PR 브랜치 미리보기 빌드 실패(`wrangler preview`가 `previews` 설정 요구) 정리 — 운영 영향 없음
+- [ ] 🤖 여행 화면에서 모르는 메뉴 주소(`#trip/:id/privacy` 등)가 "다음 단계에서 구현 예정" 빈 화면을 보여 줌 → 기본 화면으로 이동하게
+- [ ] 🤖 11-15 03:00 UTC 정리 작업이 실제로 지웠는지 Observability에서 확인
+
+## 5단계. 정리 (2주 안정 후, 2026-11-28 무렵)
+
+- [ ] 👤 Vercel cron 끄기(지금은 Vercel과 Cloudflare가 같은 정리 작업을 둘 다 돌림 — 같은 오래된 행을 지우는 일이라 해는 없음)
+- [ ] 👤 `mongsil2.vercel.app` → `www.mongsil2.com` 리다이렉트 또는 Vercel 프로젝트 정리
+- [ ] 🤖 `vercel.json`, CI 함수 12개 검사 제거, `Claude.md` 배포·호스팅 문구 갱신
+- [ ] 👤 Supabase Redirect URLs·Maps 브라우저 키에서 시험 주소(`mongsil.samueloh555.workers.dev`) 제거
 - [ ] 🤖 첫 달 비용·오류 점검
