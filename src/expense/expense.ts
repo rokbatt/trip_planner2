@@ -1845,7 +1845,7 @@ export async function renderExpenseContent(container: HTMLElement, tripId: strin
     '<div class="ex-wrap">',
     '  <div class="ex-tabs" id="ex-tabs" data-tour="expense-tabs">' + tabsHtml() + '</div>',
     '  <div class="ex-tabpanel" id="ex-tabpanel"><div class="ex-placeholder-loading">불러오는 중...</div></div>',
-    '  <button type="button" class="ex-fab" id="ex-fab" aria-label="지출 추가">' + IC_PLUS + '</button>',
+    '  <button type="button" class="ex-fab" id="ex-fab" data-tour="expense-fab" aria-label="지출 추가">' + IC_PLUS + '</button>',
     '  <div class="ex-sheet-overlay" id="ex-sheet-overlay"></div>',
     '  <div class="ex-sheet" id="ex-sheet"></div>',
     '</div>',

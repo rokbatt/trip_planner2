@@ -18,6 +18,8 @@ import { esc } from './tour';
 export interface HelpContext {
   tripId: string | null;
   gate: string | null;
+  /** 폰 배치인가 — "전체 사용법"이 Companion부터 시작한다 */
+  phone: boolean;
   startTour: (tourId: string) => void;
   replayAll: () => void;
   replayWelcome: () => void;
@@ -83,7 +85,7 @@ export function openHelpCenter(ctx: HelpContext): void {
     '    </div>' +
     '    <h2 class="ob-help-heading" id="ob-help-heading">무엇을 도와드릴까요?</h2>' +
     '    <label class="ob-help-search">' + IC.search +
-    '      <input type="search" id="ob-help-q" placeholder="궁금한 기능을 검색해 보세요 (예: 숙소, 문서)" autocomplete="off" />' +
+    '      <input type="search" id="ob-help-q" placeholder="' + (ctx.phone ? '궁금한 기능을 검색해 보세요' : '궁금한 기능을 검색해 보세요 (예: 숙소, 문서)') + '" autocomplete="off" />' +
     '    </label>' +
     '  </header>' +
     '  <div class="ob-help-body" id="ob-help-body"></div>' +
@@ -144,7 +146,7 @@ export function openHelpCenter(ctx: HelpContext): void {
       '  <div class="ob-help-sec-label">다시 보기</div>' +
       '  <div class="ob-help-replays">' +
       '    <button type="button" class="ob-help-replay" data-replay="all"' + (inTrip ? '' : ' disabled') + '>' + IC.replay +
-      '      <span><b>전체 사용법 다시 보기</b><small>' + (inTrip ? 'IDEAS부터 페이지별 가이드를 차례로 볼 수 있어요' : '여행을 열면 실행할 수 있어요') + '</small></span></button>' +
+      '      <span><b>전체 사용법 다시 보기</b><small>' + (inTrip ? (ctx.phone ? 'Companion' : 'IDEAS') + '부터 페이지별 가이드를 차례로 볼 수 있어요' : '여행을 열면 실행할 수 있어요') + '</small></span></button>' +
       '    <button type="button" class="ob-help-replay" data-replay="page"' + (gateTour ? '' : ' disabled') + '>' + IC.replay +
       '      <span><b>현재 페이지 가이드 다시 실행</b><small>' + (gateTour ? esc(gateTour.label) : '이 화면에는 가이드가 없어요') + '</small></span></button>' +
       '    <button type="button" class="ob-help-replay" data-replay="welcome">' + IC.replay +

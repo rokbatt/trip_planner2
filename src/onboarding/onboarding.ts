@@ -4,10 +4,13 @@
  * 진입점(이 파일 밖에서 부르는 것)
  *   · onTripsShown()                — 내 여행 화면이 그려진 뒤(main.ts)
  *   · onGateRendered(tripId, gate)  — 워크스페이스 게이트 본문이 그려진 뒤(workspace.ts renderGate)
- *   · openHelp()                    — 헤더의 ? 버튼
+ *   · onPanelOpened()               — 오른쪽 채팅 패널이 열린 뒤(workspace.ts openDrawer)
+ *   · openHelp()                    — 헤더의 ? 버튼(폰 Companion은 상단 바의 ? 버튼)
  *
  * 규칙
- *   · **PC 전용**(폭 769px 이상). 폰에서는 아무것도 띄우지 않는다 — 폰 안내는 이번 범위 밖.
+ *   · PC와 폰 모두에서 동작한다. 폰(폭 768px 이하)에서는 같은 안내를 바닥 시트 모양으로 띄우고,
+ *     화면 구조가 다른 가이드는 폰 단계(`mobileSteps`)를 쓴다. 폰에서 여행을 열면 처음 보는 화면이
+ *     Companion이라 폰 사용자의 첫 가이드는 Companion 가이드다.
  *   · 처음 들어오면 환영 안내 → (시작하기를 누르면) 지금 화면의 가이드.
  *   · 페이지 가이드는 그 게이트에 **처음** 들어왔을 때 한 번 자동으로 뜬다. 가이드끼리는 따로 기록한다.
  *   · 어떻게 닫든(끝까지 보기·건너뛰기·종료·Esc·다른 화면으로 이동) 본 것으로 기록한다.
@@ -18,20 +21,30 @@
 import { store } from '../store';
 import { navigate } from '../router';
 import { loadState, markTourSeen, markWelcomeSeen, needsTour, needsWelcome, type KeyValueStore } from './onboardingStore';
-import { tourById, tourForGate, type TourDef } from './tourContent';
+import { recordIdFor, stepsFor, tourById, tourForGate, type TourDef } from './tourContent';
 import { isTourRunning, runTour, stopActiveTour, tourHasTargets, waitFor } from './tour';
 import { isWelcomeOpen, showWelcome } from './welcome';
 import { closeHelpCenter, isHelpOpen, openHelpCenter } from './help';
 import './onboarding.css';
 
-const DESKTOP_QUERY = '(min-width: 769px)';
+const PHONE_QUERY = '(max-width: 768px)';
 /** 게이트 본문이 그려진 뒤 가이드 대상이 나타나기까지 기다리는 최대 시간 */
 const TARGET_WAIT_MS = 3000;
-/** "전체 사용법 다시 보기" 순서 — 계획 흐름대로, 오른쪽 패널은 마지막 */
+/**
+ * "전체 사용법 다시 보기" 순서 — 계획 흐름대로, 오른쪽 패널은 마지막.
+ * 폰은 여행 중에 쓰는 Companion이 첫 화면이라 그걸 맨 앞에 둔다.
+ */
 const FULL_ORDER = ['ideas', 'stay', 'route', 'timeline', 'checklist', 'docs', 'notes', 'expense', 'links', 'assistant'];
+const FULL_ORDER_PHONE = ['companion', ...FULL_ORDER];
 
-function isDesktop(): boolean {
-  return window.matchMedia(DESKTOP_QUERY).matches;
+/** 폰 배치인가 — 워크스페이스가 폰 구조로 바뀌는 중단점(768px)과 같다 */
+function isPhone(): boolean {
+  return window.matchMedia(PHONE_QUERY).matches;
+}
+
+/** 이 가이드를 이 기기에서 이미 봤는가 */
+function tourNeeded(def: TourDef): boolean {
+  return needsTour(loadState(kv(), userId()), recordIdFor(def, isPhone()), def.version);
 }
 
 function userId(): string | null {
@@ -87,17 +100,24 @@ function startFromTrips(): void {
  * 도움말에서 직접 고른 가이드는 지금 것을 닫고 바로 띄운다.
  */
 async function runWhenReady(def: TourDef, mySeq: number, auto = false): Promise<boolean> {
-  const ok = await waitFor(() => seq !== mySeq || tourHasTargets(def) || def.steps.some((s) => !!s.prepare), TARGET_WAIT_MS);
+  // 기기는 띄우는 순간 기준으로 정한다(기다리는 사이 창 크기가 바뀔 수 있다)
+  const ok = await waitFor(() => {
+    if (seq !== mySeq) return true;
+    const steps = stepsFor(def, isPhone());
+    return tourHasTargets(steps) || steps.some((s) => !!s.prepare);
+  }, TARGET_WAIT_MS);
   if (seq !== mySeq || !ok) return false;
   // 레이아웃(지도·이미지)이 자리 잡을 시간을 조금 준다
   await new Promise((r) => setTimeout(r, 250));
   if (seq !== mySeq || isWelcomeOpen() || isHelpOpen()) return false;
   if (auto && isTourRunning()) return false;
+  const phone = isPhone();
   const handle = runTour(def, {
     chainLabel: chain ? '전체 사용법' : undefined,
+    steps: stepsFor(def, phone),
     onEnd: (reason) => {
-      // 자동 실행이든 다시 보기든, 어떻게 닫았든 본 것으로 기록한다
-      markTourSeen(kv(), userId(), def.id, def.version);
+      // 자동 실행이든 다시 보기든, 어떻게 닫았든 본 것으로 기록한다(폰 단계는 따로)
+      markTourSeen(kv(), userId(), recordIdFor(def, phone), def.version);
       if (chain) {
         if (reason === 'close') chain = null;
         else advanceChain();
@@ -135,7 +155,7 @@ function advanceChain(): void {
 
 function replayAll(): void {
   if (!currentLoc().tripId) return;
-  chain = FULL_ORDER.filter((id) => !!tourById(id));
+  chain = (isPhone() ? FULL_ORDER_PHONE : FULL_ORDER).filter((id) => !!tourById(id));
   advanceChain();
 }
 
@@ -158,7 +178,7 @@ export async function onTripsShown(): Promise<void> {
   const mySeq = ++seq;
   pending = null;
   chain = null;
-  if (!isDesktop() || !userId()) return;
+  if (!userId()) return;
   if (!needsWelcome(loadState(kv(), userId()))) return;
   if (!(await waitForConsentClosed(mySeq)) || isWelcomeOpen()) return;
   openWelcome(startFromTrips);
@@ -166,7 +186,7 @@ export async function onTripsShown(): Promise<void> {
 
 export async function onGateRendered(tripId: string, gate: string): Promise<void> {
   const mySeq = ++seq;
-  if (!isDesktop() || !userId()) return;
+  if (!userId()) return;
   // 처음 여는 워크스페이스는 본문을 다 그린 뒤에 화면에 붙는다(main.ts) — 붙을 때까지 기다린다
   await waitFor(() => seq !== mySeq || !!document.querySelector('.ws-page #ws-body'), TARGET_WAIT_MS);
   if (seq !== mySeq) return;
@@ -198,7 +218,7 @@ export async function onGateRendered(tripId: string, gate: string): Promise<void
     return;
   }
 
-  if (def && needsTour(state, def.id, def.version) && !isTourRunning()) {
+  if (def && tourNeeded(def) && !isTourRunning()) {
     await runWhenReady(def, mySeq, true);
   }
 }
@@ -208,10 +228,10 @@ export async function onGateRendered(tripId: string, gate: string): Promise<void
  * 게이트와 상관없는 가이드라 화면 번호(seq)를 올리지 않는다(올리면 기다리던 게이트 가이드가 취소된다).
  */
 export function onPanelOpened(): void {
-  if (!isDesktop() || !userId()) return;
+  if (!userId()) return;
   if (isTourRunning() || isWelcomeOpen() || isHelpOpen() || chain) return; // 도움말에서 실행한 가이드가 패널을 연 경우 포함
   const def = tourById('assistant');
-  if (!def || !needsTour(loadState(kv(), userId()), def.id, def.version)) return;
+  if (!def || !tourNeeded(def)) return;
   void runWhenReady(def, seq, true);
 }
 
@@ -219,7 +239,7 @@ export function openHelp(): void {
   if (isHelpOpen()) return closeHelpCenter();
   stopActiveTour('close');
   const loc = currentLoc();
-  openHelpCenter({ tripId: loc.tripId, gate: loc.gate, startTour, replayAll, replayWelcome });
+  openHelpCenter({ tripId: loc.tripId, gate: loc.gate, phone: isPhone(), startTour, replayAll, replayWelcome });
 }
 
 // 다른 화면으로 옮기면 돌던 가이드를 멈춘다(그 화면의 요소를 가리키고 있으므로).

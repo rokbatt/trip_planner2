@@ -167,6 +167,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     summary: '휴대폰으로 여행을 열면 나오는 화면이에요. 오늘 일정·지도·지갑·여행 탭이 있어요.',
     keywords: ['Companion', '컴패니언', '여행 중', '휴대폰', '모바일', '오늘', '길찾기', '도착'],
     gates: ['go'],
+    tour: 'companion',
     steps: [
       '휴대폰으로 여행을 열면 자동으로 Companion 화면이 나와요.',
       '오늘 탭에서 첫 일정과 이동 정보를 확인해요.',
