@@ -15,8 +15,12 @@ import { renderLogin } from './auth/auth';
 import { renderTripList } from './trips/trip-list';
 import { onTripsShown } from './onboarding/onboarding';
 import { clearDigestCache } from './assistant/digestCache';
+import { installChunkReloadGuard } from './utils/chunkReload';
 import { renderJoinPage, consumePendingInvite } from './trips/trip-join';
 import { renderWorkspace, findExistingWorkspace, switchGate, defaultGateFor } from './workspace/workspace';
+
+// 새 배포 직후 옛 탭이 사라진 화면 조각을 찾다 실패하면 한 번 새로고침한다(utils/chunkReload.ts)
+installChunkReloadGuard();
 
 // ─── 인증이 필요 없는 라우트 ───
 // join은 초대코드를 들고 온 비로그인 사용자도 접근해야 해서 public 처리
