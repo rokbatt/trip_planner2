@@ -75,6 +75,14 @@ function stableHash(input: string): string {
 // 못 읽는다(이 프로젝트는 api/에 Database 타입을 물리지 않으므로 느슨한 형태로 둔다).
 type SupabaseLike = SupabaseClient<any, 'public', any>;
 
+/** 서버가 Supabase에 접속하는 데 필요한데 비어 있는 환경 변수 이름(없으면 빈 배열) */
+export function missingSupabaseEnv(env: Record<string, string | undefined>): string[] {
+  const missing: string[] = [];
+  if (!(env.SUPABASE_URL || env.VITE_SUPABASE_URL)) missing.push('SUPABASE_URL');
+  if (!env.SUPABASE_SERVICE_ROLE_KEY) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+  return missing;
+}
+
 function makeSupabase(): SupabaseLike | null {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -1288,7 +1296,7 @@ async function handleDocDigest(req: VercelRequest, res: VercelResponse) {
   const supabase = makeSupabase();
   if (!supabase) {
     // 서비스 롤 키가 없으면 비공개 버킷에서 파일을 받아올 방법이 없다
-    res.status(500).json({ error: '문서 저장소 접근 설정이 안 돼 있어요(SUPABASE_SERVICE_ROLE_KEY).' });
+    res.status(500).json({ error: '문서 저장소 접근 설정이 안 돼 있어요(비어 있는 환경 변수: ' + missingSupabaseEnv(process.env).join(', ') + ').' });
     return;
   }
 
