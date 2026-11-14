@@ -13,6 +13,7 @@ import { onGateRendered, onPanelOpened, openHelp } from '../onboarding/onboardin
 import './workspace.css';
 import { parseISODate } from '../utils/dates';
 import { escapeHtml, safeHttpUrl } from '../utils/html';
+import { GATE_TITLES } from './gates';
 
 type Trip = Database['public']['Tables']['trips']['Row'];
 
@@ -70,18 +71,7 @@ const SUB_NAV: NavItem[] = [
   { key: 'links',     label: 'Links',     icon: IC.link },
 ];
 
-const GATE_TITLES: Record<string, string> = {
-  ideas: 'BRAINSTORM BOARD',
-  shortlist: 'CANDIDATE POOL',
-  route: 'ROUTE PLANNER',
-  timeline: 'TIMELINE',
-  go: 'TRAVEL COMPANION',
-  checklist: 'CHECKLIST',
-  expense: 'EXPENSE',
-  links: 'LINKS',
-  docs: 'DOCUMENTS',
-  notes: 'NOTES',
-};
+// 메뉴 이름 목록은 workspace/gates.ts(주소 검사와 같은 기준)
 
 type PanelTab = 'chat' | 'ai' | 'detail';
 
