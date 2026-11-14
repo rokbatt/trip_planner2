@@ -22,6 +22,7 @@ import {
   createDocUser,
   createDocument,
   clearUnlockedUser,
+  DOCS_LOCK_EVENT,
   dayDateRangeLabel,
   dayRangeLabel,
   deleteDocument,
@@ -96,6 +97,7 @@ let sheetOpen = false;
 /* ══════════════ 진입 / 정리 ══════════════ */
 
 export function teardownDocs(): void {
+  window.removeEventListener(DOCS_LOCK_EVENT, handleExternalLockChange);
   if (channel) {
     supabase.removeChannel(channel);
     channel = null;
@@ -159,6 +161,7 @@ export async function renderDocsContent(
   });
 
   subscribeRealtime(tripId);
+  window.addEventListener(DOCS_LOCK_EVENT, handleExternalLockChange);
   applyRequestedFocus(tripId);
   renderTab();
 }
@@ -179,6 +182,28 @@ function restoreUnlocked(): void {
   const savedId = getUnlockedUserId(currentTripId);
   unlockedUser = savedId ? docUsers.find((u) => u.id === savedId) ?? null : null;
   if (savedId && !unlockedUser) clearUnlockedUser(currentTripId);
+}
+
+/**
+ * 이 화면 밖(어시스턴트 패널)에서 잠금을 풀었을 때 — 저장된 잠금 상태가 화면의 것과 다르면 따라간다.
+ * 이 화면이 직접 풀거나 잠근 경우는 이미 unlockedUser를 바꿔 둔 뒤라 같아서 여기서 걸러진다.
+ */
+function handleExternalLockChange(e: Event): void {
+  const detail = (e as CustomEvent<{ tripId: string }>).detail;
+  if (!rootEl || !detail || detail.tripId !== currentTripId) return;
+  const savedId = getUnlockedUserId(currentTripId);
+  if ((unlockedUser?.id ?? null) === savedId) return;
+
+  const tripId = currentTripId;
+  unlockedUser = savedId ? docUsers.find((u) => u.id === savedId) ?? null : null;
+  const target = unlockedUser;
+  void (async () => {
+    const loaded = target ? await loadPersonalDocuments(tripId, target.id) : [];
+    if (tripId !== currentTripId || unlockedUser !== target) return; // 그 사이 화면이 바뀌었거나 또 잠금이 바뀌었다
+    personalDocs = loaded;
+    if (tab === 'documents') renderDocuments();
+    updateTabCounts();
+  })();
 }
 
 function subscribeRealtime(tripId: string): void {
