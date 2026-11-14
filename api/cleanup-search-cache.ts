@@ -4,8 +4,10 @@
  * GET /api/cleanup-search-cache (Vercel Cron이 vercel.json 스케줄대로 자동 호출, 매일 03:00 UTC)
  *
  * 왜 필요한가:
- * - hotel_infra_cache/hotel_score_cache는 키가 place_id 하나뿐이라 "실제 존재하는 숙소 수"만큼만
- *   늘어나 사실상 유한함.
+ * - hotel_infra_cache는 키가 place_id 하나뿐이라 "실제 존재하는 숙소 수"만큼만 늘어나 사실상 유한함.
+ * - hotel_score_cache는 키가 (place_id, 평균 이동시간 30분 구간, 도보권 장소 수 10단위) 조합이라
+ *   숙소마다 등장한 "이동 맥락" 종류만큼 늘어남 — 자유 입력은 아니지만 숙소 1개당 여러 행이
+ *   생길 수 있어 다른 캐시들처럼 정리 대상에 넣음(api/hotel-score.ts 참고).
  * - hotel_search_cache는 키가 (place_id, 검색어) 조합이라 "숙소 수 × 사용자가 입력하는 검색어
  *   종류"만큼 늘어남 — 상한이 없어 방치하면 Supabase 저장 용량을 계속 잠식함(Claude.md 3-5).
  * - updated_at 기준으로 오래된 행을 주기적으로 지워 크기를 억제하고, 오래돼서 실제와 달라졌을
@@ -36,6 +38,9 @@ interface VercelResponse {
 /** 캐시 키에 자유 입력(검색어 등)이 섞여 무한 증식 가능한 테이블만 여기 등록 */
 const CLEANUP_TARGETS: { table: string; retentionDays: number }[] = [
   { table: 'hotel_search_cache', retentionDays: 90 },
+  // 이동 맥락(평균 이동시간 구간·도보권 장소 수 버킷)이 키에 섞여 숙소 1개당 여러 행이 될 수 있음.
+  // hotel_search_cache와 같은 보존 기간으로 맞춰둠.
+  { table: 'hotel_score_cache', retentionDays: 90 },
   // AI 일정 추천 — 키에 "담은 장소 조합"이 들어가서 조합 수만큼 늘어날 수 있음.
   // 30일이면 "장소를 안 바꾸는 한 계속 캐시가 살아있다"는 사용자 기대에는 충분히 길고,
   // 오래된 추천(폐업/시즌 변화 반영 안 된)이 자연스럽게 갱신되는 효과도 있음.

@@ -17,6 +17,8 @@ create table if not exists hotel_infra_cache (
 );
 alter table hotel_infra_cache enable row level security;
 
+-- place_id 컬럼엔 실제 Google place_id가 아니라 "place_id:평균이동시간30분구간:도보권장소수10단위"
+-- 합성 키가 들어간다(api/hotel-score.ts) — 같은 숙소라도 이동 맥락이 다르면 별도 행으로 캐싱된다.
 create table if not exists hotel_score_cache (
   place_id   text primary key,
   result     jsonb not null,

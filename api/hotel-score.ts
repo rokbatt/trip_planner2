@@ -15,8 +15,15 @@
  * response: { score, grade, ratings: {이동편의성,관광접근성,편의시설,위치만족도,가성비}, cached }
  *
  * 흐름 (DB-first):
- * 1. hotel_score_cache(placeId 기준) 조회 — 있으면 Gemini 호출 안 함
- * 2. 없으면 Gemini로 "정형화된 채점표" 산출 → 검증 → 캐싱 → 반환
+ * 1. hotel_score_cache(placeId + 평균 이동시간 30분 구간 + 도보권 장소 수 10단위 조회)
+ *    조회 — 있으면 Gemini 호출 안 함
+ * 2. 없으면 Gemini로 "정형화된 채점표" 산출 → 검증 → 이동편의성 차감 → 캐싱 → 반환
+ *
+ * ※ place_id만 키로 쓰면 "같은 숙소인데 이번 여행에선 훨씬 멀리 있는 장소들을 담았다" 같은
+ *   맥락을 무시하고 전혀 다른 상황에서 나온 점수를 그대로 재생하게 된다. 그래서 캐시 키에
+ *   평균 이동시간(30분 구간)·도보권 장소 수(10단위)를 섞어서 맥락이 다르면 다시 채점한다
+ *   (Claude.md 3-5). 구간 폭이 있으니 place_id당 캐시 행 수는 여전히 유한하지만, 자유
+ *   입력은 아니어도 늘어날 수 있어 cleanup-search-cache.ts의 TTL 정리 대상에도 넣었다.
  *
  * ⚠️ 이 점수는 AI가 입력 정보(위치·평점·주변 시설 요약 등)를 바탕으로 평가한 값이며,
  *    실제 이용자 리뷰 점수가 아님. 화면에도 "AI 분석"으로 표기함.
@@ -186,11 +193,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const supabase = supabaseUrl && serviceKey ? createClient(supabaseUrl, serviceKey) : null;
 
-  if (supabase && placeId) {
+  // 캐시 키 — place_id만으로는 여행마다 다른 "평균 이동시간/도보권 장소 수"를 무시해서
+  // 전혀 다른 맥락의 점수가 재생된다. walkBracket은 아래 이동편의성 차감 공식과 완전히 같은
+  // 30분 구간(내림) 기준이라, 같은 구간이면 반드시 같은 차감·같은 점수가 캐시된다(경계에서
+  // 반올림 방식이 서로 다르면 어긋날 수 있어 일부러 같은 공식을 공유함). 300분 캡(vAvgWalk,
+  // 아래 Gemini 프롬프트용)은 여기엔 적용하지 않고 실제 평균 이동시간을 그대로 쓴다.
+  const rawAvgWalk = Number(nearby?.avgWalkMin);
+  const walkBracket = Number.isFinite(rawAvgWalk) && rawAvgWalk > 0 ? Math.floor(rawAvgWalk / 30) : 0;
+  const rawWalkable = Number(nearby?.walkableCount);
+  const walkableBucket = Number.isFinite(rawWalkable) && rawWalkable > 0 ? Math.round(rawWalkable / 10) * 10 : 0;
+  const cacheKey = placeId ? String(placeId) + ':' + walkBracket + ':' + walkableBucket : null;
+
+  if (supabase && cacheKey) {
     const { data: existing } = await supabase
       .from('hotel_score_cache')
       .select('result')
-      .eq('place_id', placeId)
+      .eq('place_id', cacheKey)
       .maybeSingle();
     if (existing?.result) {
       res.status(200).json({ ...existing.result, cached: true });
@@ -203,7 +221,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  // 캐시(placeId 기준, 모든 사용자 공유)를 새로 만들 땐 숙소 이름·주소를 Google에서 직접 확인한 값으로 쓴다.
+  // 캐시(placeId + 이동 맥락 기준, 같은 맥락이면 모든 사용자 공유)를 새로 만들 땐 숙소 이름·주소를 Google에서 직접 확인한 값으로 쓴다.
   // 화면이 보내는 나머지 값은 여행마다 다른 맥락이라 그대로 쓰되, 길이·범위를 제한한다.
   const verified = await lookupPlace(placeId, serverKey, true);
   const canCache = !!verified;
@@ -296,14 +314,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const ratings = {} as ScoreResult['ratings'];
   for (const k of RATING_KEYS) ratings[k] = clampInt(parsed?.ratings?.[k], 1, 5, 3);
+
+  // 평균 이동시간 30분 구간마다 이동편의성 0.5점 차감 — Gemini가 이 숫자를 프롬프트에서
+  // 이미 보고도 "정보가 부족하면 보수적으로" 채점하는 쪽으로 치우쳐서, 프롬프트 지시만으론
+  // 못 믿는다(원래 956분짜리 숙소가 88점 나온 사례). walkBracket은 위 캐시 키와 같은 공식.
+  if (walkBracket > 0) {
+    ratings['이동편의성'] = Math.max(1, Math.round((ratings['이동편의성'] - walkBracket * 0.5) * 2) / 2);
+  }
+
   const score = clampInt(parsed?.score, 0, 100, 60);
 
   const result: ScoreResult = { score, grade: gradeFor(score), ratings };
 
-  if (canCache && supabase && placeId) {
+  if (canCache && supabase && cacheKey) {
     const { error: upsertError } = await supabase
       .from('hotel_score_cache')
-      .upsert({ place_id: placeId, result, updated_at: new Date().toISOString() }, { onConflict: 'place_id' });
+      .upsert({ place_id: cacheKey, result, updated_at: new Date().toISOString() }, { onConflict: 'place_id' });
     if (upsertError) console.error('[hotel-score] 캐싱 실패(응답은 그대로 반환):', upsertError.message);
   }
 

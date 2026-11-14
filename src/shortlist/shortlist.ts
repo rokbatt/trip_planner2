@@ -5121,8 +5121,11 @@ async function runNearbySearch(body: HTMLElement, basecamp: Place): Promise<void
 }
 
 function buildEffRatingRow(label: string, stars: number): string {
-  const filled = IC_STAR.repeat(stars);
-  const empty = '<span class="sl-eff-star-empty">' + IC_STAR + '</span>'.repeat(Math.max(0, 5 - stars));
+  // 이동편의성은 평균 이동시간 30분 구간마다 0.5점씩 깎여 2.5 같은 반점 값이 올 수 있는데,
+  // 별 아이콘엔 반개 표시가 없어 가장 가까운 정수로 반올림해서 그린다(점수 자체는 그대로 둠).
+  const filledCount = Math.max(0, Math.min(5, Math.round(stars)));
+  const filled = IC_STAR.repeat(filledCount);
+  const empty = ('<span class="sl-eff-star-empty">' + IC_STAR + '</span>').repeat(Math.max(0, 5 - filledCount));
   return [
     '<div class="sl-eff-rating">',
     '  <span class="sl-eff-rating-label">' + escapeHtml(label) + '</span>',
