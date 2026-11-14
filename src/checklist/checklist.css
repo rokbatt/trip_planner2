@@ -645,6 +645,10 @@
 .ck-done-when { grid-area: when; font-size: 10.5px; color: var(--al-text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ── 오른쪽: 여행 전 꼭 확인하세요 — 유일하게 옅은 앰버 톤(주의) ── */
+/* 오른쪽 카드 배경 — 팔레트 안의 아주 옅은 톤만 쓴다(준비 현황=라운지 블루, 추천=라벤더, 꼭 확인=앰버).
+ * 색은 배경·테두리에만 입히고 글자·아이콘 색은 그대로라 대비는 흰 카드와 같다. */
+.ck-ready { background: #F3F8FE; border-color: rgba(47,134,214,0.22); }
+.ck-suggest { background: #F7F5FD; border-color: rgba(110,90,190,0.2); }
 .ck-must { background: #FFFCF6; border-color: rgba(214,170,90,0.24); }
 .ck-must { padding: 10px 16px 12px; }
 .ck-must-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; }
