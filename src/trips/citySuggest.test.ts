@@ -67,8 +67,13 @@ describe('suggestCities', () => {
     expect(names('방', ['방콕'])).not.toContain('방콕');
   });
 
-  it('도시를 이미 정확히 다 쳤고 다른 후보가 없으면 추천하지 않는다', () => {
-    expect(names('방콕')).toEqual([]);
+  it('도시 이름을 정확히 다 쳐도 그 도시가 계속 목록에 남는다', () => {
+    expect(names('방콕')).toEqual(['방콕']);
+    expect(names('삿포로')).toEqual(['삿포로']);
+    // 삿포로를 한 글자씩 완성해 가는 모든 단계에서 끊김 없이 후보로 남는다
+    for (const step of ['ㅅ', '사', '삿', '삿ㅍ', '삿포', '삿폴', '삿포로']) {
+      expect(names(step)).toContain('삿포로');
+    }
   });
 
   it('정확히 친 도시가 맨 위에 온다 — 표에서 더 먼저 나오는 긴 이름에 밀리지 않는다', () => {

@@ -67,6 +67,9 @@ function candidates(): Candidate[] {
  * ①이 따로 있는 이유: 첫 후보는 Enter 한 번으로 선택되는데, "인도"를 다 치고 Enter를 눌렀을 때
  * 표에서 먼저 나오는 "인도네시아"로 바뀌면 안 된다.
  *
+ * 도시 이름을 정확히 다 쳤을 때도 그 도시를 목록에 계속 보여준다 — 목록이 사라지면 "인식이 안 됐나"
+ * 싶어지고, 목록에서 고르는 동작(Enter·클릭)으로 "이 도시로 확정"했다는 걸 확인할 수 있어야 한다.
+ *
  * exclude에는 같은 칸에 이미 적어 둔 다른 도시를 넘긴다 — 방금 고른 도시를 또 추천하지 않기 위함.
  */
 export function suggestCities(query: string, exclude: string[] = [], limit = 6): CitySuggestion[] {
@@ -93,9 +96,6 @@ export function suggestCities(query: string, exclude: string[] = [], limit = 6):
     out.push({ name: c.name, en: c.en, code: c.code });
     if (out.length === limit) break;
   }
-
-  // 이미 그 도시를 정확히 다 쳤고 다른 후보도 없으면 더 추천할 게 없다
-  if (out.length === 1 && compact(out[0].name) === q) return [];
   return out;
 }
 
