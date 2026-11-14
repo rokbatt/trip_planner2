@@ -36,6 +36,8 @@ describe('planPersonalVault', () => {
 describe('personalNotice', () => {
   it('잠겨 있으면 PIN 안내', () => {
     expect(personalNotice('locked', 0)).toContain('PIN');
+    // 잠금은 어시스턴트 안에서 바로 푼다 — DOCUMENTS로 가라는 문구가 남아 있으면 안 된다
+    expect(personalNotice('locked', 0)).not.toContain('DOCUMENTS');
   });
   it('연결 안 된 보관함은 건너뛴 파일 수와 이유를 말한다', () => {
     expect(personalNotice('unlinked', 3)).toContain('3개');

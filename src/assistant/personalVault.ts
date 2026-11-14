@@ -54,7 +54,7 @@ export function planPersonalVault(input: {
 
 /** 어시스턴트 위에 띄울 안내 문장 — 없으면 null. skippedFiles = 읽지 못하고 건너뛴 파일 문서 수 */
 export function personalNotice(state: PersonalState, skippedFiles: number): string | null {
-  if (state === 'locked') return '개인 문서 보관함이 잠겨 있어요. DOCUMENTS에서 PIN을 풀면 개인 문서도 함께 확인해요.';
+  if (state === 'locked') return '개인 문서 보관함이 잠겨 있어요. PIN을 풀면 개인 문서도 함께 확인해요.';
   if (state === 'unlinked') {
     return skippedFiles > 0
       ? '이 보관함은 구글 계정과 연결되지 않은 예전 보관함이라, 파일이 있는 개인 문서 ' + skippedFiles + '개는 읽을 수 없어요. (파일 없이 적어 둔 정보는 포함돼요)'
