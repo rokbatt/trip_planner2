@@ -12,8 +12,8 @@
  * 않도록 상수를 따로 둔다.
  */
 
-export const TERMS_VERSION = '2026-11-draft1';
-export const PRIVACY_VERSION = '2026-11-draft1';
+export const TERMS_VERSION = '2026-11-draft2';
+export const PRIVACY_VERSION = '2026-11-draft2';
 
 /** 동의 창에 나오는 항목 — 법이 "각각 따로" 받으라고 하는 것들을 한 줄씩 나눠 둔다. */
 export interface ConsentItem {

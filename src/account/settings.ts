@@ -16,7 +16,7 @@ import { readLocalConsent } from './consentStore';
 import { deleteMyAccount, loadDeletionPreview, type DeletionPreview, type TripOutcome } from './accountStore';
 import { escapeHtml as esc } from '../utils/html';
 
-const SUPPORT_EMAIL = 'help@mongsil.app';
+const SUPPORT_EMAIL = 'help@mongsil2.com';
 
 
 function fmtDate(iso: string): string {
