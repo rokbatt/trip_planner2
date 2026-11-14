@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { searchHelp } from './helpSearch';
 import { HELP_ARTICLES, articlesForGate, articleById } from './helpContent';
-import { TOURS, tourById, tourForGate } from './tourContent';
+import { TOURS, tourById, tourForGate, stepsFor, recordIdFor } from './tourContent';
 
 const ids = (list: { id: string }[]) => list.map((a) => a.id);
 
@@ -52,16 +52,32 @@ describe('내용 정합성', () => {
   });
   it('가이드는 2~6단계, 게이트당 하나', () => {
     for (const t of TOURS) {
-      expect(t.steps.length, t.id).toBeGreaterThanOrEqual(2);
-      expect(t.steps.length, t.id).toBeLessThanOrEqual(6);
+      for (const steps of [t.steps, t.mobileSteps ?? t.steps]) {
+        expect(steps.length, t.id).toBeGreaterThanOrEqual(2);
+        expect(steps.length, t.id).toBeLessThanOrEqual(6);
+      }
     }
     const gates = TOURS.map((t) => t.gate).filter(Boolean);
     expect(new Set(gates).size).toBe(gates.length);
     expect(tourForGate('shortlist')?.id).toBe('stay');
-    expect(tourForGate('go')).toBeNull(); // Companion은 이번 범위 밖(PC 전용)
+    expect(tourForGate('go')?.id).toBe('companion'); // 폰에서 여행을 열면 처음 보는 화면
     // Assistant 가이드는 게이트에 붙지 않는다 — 채팅 패널을 처음 열 때 뜬다
     expect(tourById('assistant')?.gate).toBeUndefined();
     expect(tourById('assistant')?.steps.length).toBe(2);
+  });
+  it('폰 단계 — 폰 단계를 둔 가이드만 폰에서 바뀌고, 본 기록도 따로 남긴다', () => {
+    const ideas = tourById('ideas')!;
+    expect(stepsFor(ideas, true)).toBe(ideas.mobileSteps);
+    expect(stepsFor(ideas, false)).toBe(ideas.steps);
+    expect(recordIdFor(ideas, true)).toBe('ideas:m');
+    expect(recordIdFor(ideas, false)).toBe('ideas');
+    // Companion은 원래 폰 화면이라 PC·폰이 같은 단계·같은 기록
+    const comp = tourById('companion')!;
+    expect(stepsFor(comp, true)).toBe(comp.steps);
+    expect(recordIdFor(comp, true)).toBe('companion');
+    // IDEAS 폰 단계는 PC 전용 게이트 열 대신 폰의 게이트 탭을 가리킨다
+    expect(ideas.mobileSteps!.map((x) => x.target)).toContain('brainstorm-mtabs');
+    expect(ideas.mobileSteps!.map((x) => x.target)).not.toContain('brainstorm-gates');
   });
   it('FAQ에는 지원 상태가 붙어 있다', () => {
     for (const a of HELP_ARTICLES.filter((x) => x.category === 'faq')) expect(a.status, a.id).toBeTruthy();
