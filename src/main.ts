@@ -18,6 +18,7 @@ import { clearDigestCache } from './assistant/digestCache';
 import { installChunkReloadGuard } from './utils/chunkReload';
 import { renderJoinPage, consumePendingInvite } from './trips/trip-join';
 import { renderWorkspace, findExistingWorkspace, switchGate, defaultGateFor } from './workspace/workspace';
+import { isKnownGate } from './workspace/gates';
 
 // 새 배포 직후 옛 탭이 사라진 화면 조각을 찾다 실패하면 한 번 새로고침한다(utils/chunkReload.ts)
 installChunkReloadGuard();
@@ -49,7 +50,9 @@ addRoute('trip', async (params) => {
 
   // 게이트를 생략한 주소(#trip/:id)는 정식 주소로 고쳐 쓴다 — 폰이면 Companion, PC면 IDEAS.
   // 주소를 바꿔둬야 새로고침·뒤로가기·공유가 전부 같은 화면을 가리킨다(replace라 히스토리는 안 쌓임).
-  if (!params.subPath && tripId) {
+  // 모르는 메뉴 이름(#trip/:id/privacy 같은 오타·손으로 고친 주소)도 같은 방법으로 기본 화면으로 보낸다.
+  // 예전엔 "다음 단계에서 구현 예정"이라는 빈 화면이 떠서 미완성 기능처럼 보였다.
+  if (tripId && !isKnownGate(params.subPath)) {
     navigate('trip/' + tripId + '/' + defaultGateFor(window.innerWidth), { replace: true });
     return;
   }
