@@ -4,7 +4,7 @@
  * ⚠️ 이 문서는 **코드가 실제로 하는 일을 근거로 쓴 초안**이지 법률 자문이 아니다.
  *    공개 전에 반드시 변호사 검토를 받아야 한다. 특히:
  *      - 개인정보보호법 제30조의 필수 기재사항 충족 여부
- *      - 제28조의8 국외이전 고지·동의 요건 (Google/Supabase/Vercel이 해외 사업자)
+ *      - 제28조의8 국외이전 고지·동의 요건 (Google/Supabase/Cloudflare가 해외 사업자)
  *      - 유료화·제휴 수수료를 붙이는 순간 전자상거래법상 표시 의무와 청약철회 규정
  *
  * 내용은 실제 구현을 감사해서 쓴 것이다(수집 항목 = 실제 테이블/버킷, 국외이전 =
@@ -28,10 +28,11 @@ function blank(label: string): string {
 /** 이 서비스가 외부로 데이터를 보내는 곳 — api/*.ts와 src/supabase.ts 기준 */
 const SUBPROCESSORS: Array<[string, string, string]> = [
   ['Supabase', '데이터베이스 · 파일 보관 · 로그인 처리', '싱가포르 등 프로젝트 생성 시 선택한 리전'],
-  ['Vercel', '웹사이트 호스팅 및 서버리스 함수 실행', '미국 등'],
+  ['Cloudflare', '웹사이트 호스팅, 서버 기능 실행, 도메인 관리 및 문의 메일 전달', '미국 등 (전 세계 데이터센터)'],
   ['Google (OAuth)', '구글 계정 로그인 확인', '미국 등'],
   ['Google (Maps · Places · Routes)', '장소 검색, 지도 표시, 이동 시간 계산', '미국 등'],
   ['Google (Gemini)', '숙소 리뷰 요약, 일정 초안, 장소 설명 생성', '미국 등'],
+  ['Google (Gmail)', '고객 문의 메일 수신·답변', '미국 등'],
 ];
 
 function shell(title: string, updated: string, body: string): HTMLElement {
@@ -209,7 +210,7 @@ function termsBody(): string {
       <p>${blank('회사명')} · ${blank('대표자')}<br>
       사업자등록번호 ${blank('000-00-00000')}<br>
       주소 ${blank('주소')}<br>
-      이메일 <a href="mailto:help@mongsil.app">help@mongsil.app</a></p>
+      이메일 <a href="mailto:help@mongsil2.com">help@mongsil2.com</a></p>
     </section>
   `;
 }
@@ -346,7 +347,7 @@ function privacyBody(): string {
         <strong>탈퇴 전에 알아 두세요</strong>
         정산이 끝나지 않은 공동 지출이 있으면 탈퇴 후 결제자가 “탈퇴한 멤버”가 되어 남은 사람들의 정산에서 빠질 수 있습니다.
         또한 오래전에 올린 개인 문서 중 계정과 연결되지 않은 것은 자동으로 지워지지 않을 수 있으니, 탈퇴 전에 직접 삭제해 주세요.
-        화면에서 탈퇴할 수 없는 경우 <a href="mailto:help@mongsil.app">help@mongsil.app</a>으로 요청해 주시면 확인 후 처리해 드립니다.
+        화면에서 탈퇴할 수 없는 경우 <a href="mailto:help@mongsil2.com">help@mongsil2.com</a>으로 요청해 주시면 확인 후 처리해 드립니다.
       </div>
     </section>
 
@@ -392,7 +393,7 @@ function privacyBody(): string {
       <ol class="lg-ol">
         <li>이용자는 자신의 개인정보에 대해 열람, 정정, 삭제, 처리정지를 요구할 수 있습니다.</li>
         <li>여행 이름·일정·지출 등 대부분의 정보는 서비스 화면에서 직접 수정하거나 삭제할 수 있습니다.</li>
-        <li>그 밖의 요청은 <a href="mailto:help@mongsil.app">help@mongsil.app</a>으로 보내 주시면 지체 없이 처리합니다.</li>
+        <li>그 밖의 요청은 <a href="mailto:help@mongsil2.com">help@mongsil2.com</a>으로 보내 주시면 지체 없이 처리합니다.</li>
         <li>법정대리인이나 위임받은 자를 통해서도 권리를 행사할 수 있습니다.</li>
       </ol>
     </section>
@@ -423,7 +424,7 @@ function privacyBody(): string {
     <section class="lg-sec">
       <h2>10. 개인정보 보호책임자</h2>
       <p>${blank('성명')} · ${blank('직책')}<br>
-      이메일 <a href="mailto:help@mongsil.app">help@mongsil.app</a></p>
+      이메일 <a href="mailto:help@mongsil2.com">help@mongsil2.com</a></p>
       <p class="lg-note">개인정보 처리와 관련한 문의, 불만, 피해 구제는 위 연락처로 접수해 주시면
       지체 없이 답변해 드립니다.</p>
     </section>
