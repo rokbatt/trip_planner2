@@ -84,12 +84,19 @@ async function navigation(req) {
   }
 }
 
+// 저장해도 되는 응답인가. Cloudflare 정적 파일 서비스는 없는 주소(예: 새 배포로 사라진 옛 /assets/x.js)에
+// 404 대신 index.html을 200으로 돌려준다(SPA 대체 응답). 그걸 그대로 저장하면 그 파일 이름에 HTML이 박혀
+// 새 버전이 설치될 때까지 계속 "스크립트가 아니라 HTML" 오류가 난다. 그래서 HTML은 저장하지 않는다.
+function okToCache(res) {
+  return res.ok && !(res.headers.get('content-type') || '').toLowerCase().includes('text/html');
+}
+
 async function cacheFirst(req) {
   const cache = await caches.open(SHELL);
   const hit = await cache.match(req);
   if (hit) return hit;
   const res = await fetch(req);
-  if (res.ok) cache.put(req, res.clone());
+  if (okToCache(res)) cache.put(req, res.clone());
   return res;
 }
 
@@ -97,7 +104,7 @@ async function staleWhileRevalidate(req) {
   const cache = await caches.open(SHELL);
   const hit = await cache.match(req);
   const network = fetch(req)
-    .then((res) => { if (res.ok) cache.put(req, res.clone()); return res; })
+    .then((res) => { if (okToCache(res)) cache.put(req, res.clone()); return res; })
     .catch(() => undefined);
   return hit || (await network) || Response.error();
 }
