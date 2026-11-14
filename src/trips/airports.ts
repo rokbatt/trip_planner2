@@ -246,6 +246,11 @@ function lookup(city: string): AirportInfo | null {
   return CITY_TO_AIRPORT[compact] ?? null;
 }
 
+/** 표에 등록된 도시를 등록 순서 그대로 — 목적지 자동완성(citySuggest.ts)의 후보 목록. */
+export function airportCityEntries(): Array<{ name: string; code: string; en: string }> {
+  return Object.entries(CITY_TO_AIRPORT).map(([name, info]) => ({ name, code: info.code, en: info.en }));
+}
+
 /** 여행지 이름 → IATA 코드. 표에 없으면 기존 동작대로 앞 3글자를 대문자로 자른다. */
 export function toAirportCode(city: string): string {
   const info = lookup(city);

@@ -3,6 +3,7 @@ import { store } from '../store';
 import { createDestination } from './destinations';
 import { mountAirportPicker } from './airportPicker';
 import type { AirportValue } from './airportPicker';
+import { attachCityAutocomplete } from './cityAutocomplete';
 import './trip-create.css';
 
 const ICON_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6L18 18M6 18L18 6"/></svg>';
@@ -72,6 +73,8 @@ export function openCreateTripModal(onCreated: () => void): void {
 
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('open'));
+
+  attachCityAutocomplete(overlay.querySelector('#tc-city') as HTMLInputElement);
 
   const arrivalPicker = mountAirportPicker(overlay.querySelector('#tc-arrival-mount') as HTMLElement, {
     label: '입국',
@@ -186,11 +189,18 @@ async function handleSubmit(
     const metaAvatar = user.user_metadata && user.user_metadata.avatar_url;
     const metaPicture = user.user_metadata && user.user_metadata.picture;
 
-    // 트리거가 owner를 trip_members에 이미 추가했을 수 있으므로 upsert로 충돌(409) 없이
-    // 넘어가되, ignoreDuplicates는 쓰지 않는다 — 이미 있는 행이면 트리거가 만든 이름/아바타
-    // 없는 placeholder일 수 있으므로, 여기서 실제 프로필 정보(display_name/avatar_url)로
-    // 덮어써야 한다. (ignoreDuplicates:true였을 때는 이미 있는 행을 그대로 두고 조용히
-    // 넘어가서, 트리거가 만든 이름/아바타 없는 행이 계속 남아 프로필 사진이 "?"로 보였음)
+    // 트리거가 owner를 trip_members에 이미 추가했을 수 있으므로 "없을 때만 넣기"
+    // (ignoreDuplicates = ON CONFLICT DO NOTHING)로 멤버 행이 있다는 것만 보장한다.
+    //
+    // 여기서 덮어쓰기(DO UPDATE)를 하면 안 된다 — 이미 있는 행을 고치는 경로는 trip_members의
+    // UPDATE 정책을 통과해야 하는데, 통과 못 하면 Postgres가 조용히 건너뛰지 않고
+    // "new row violates row-level security policy (USING expression)"로 요청 전체를
+    // 실패시킨다. 그러면 트립은 이미 만들어졌는데 화면에는 "만들지 못했어요"가 뜨고, 아래의
+    // 여행지/항공편 저장도 통째로 건너뛰게 된다.
+    //
+    // 트리거가 만든 행에 이름/아바타가 비어 있으면 트립에 들어갈 때 workspace.ts의
+    // ensureOwnMemberProfile이 채운다(그 UPDATE가 통하려면
+    // supabase/trip_members_self_profile.sql의 정책이 필요).
     //
     // ⚠️ trip_destinations를 만들기 **전에** 반드시 먼저 실행해야 한다 — trip_destinations의
     // RLS 정책이 "이 트립의 trip_members에 내가 있어야" insert를 허용하는데, 트리거가 아직
@@ -204,7 +214,7 @@ async function handleSubmit(
         display_name: metaFullName || metaName || user.email || '나',
         avatar_url: metaAvatar || metaPicture || null,
       },
-      { onConflict: 'trip_id,user_id' }
+      { onConflict: 'trip_id,user_id', ignoreDuplicates: true }
     );
 
     if (memberError) throw memberError;
