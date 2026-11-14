@@ -1,0 +1,26 @@
+/* ============================================================
+   목적지 도시 자동완성 드롭다운 — 공항 자동완성(.apk-ac, airportPicker.css)과 같은 톤.
+   ============================================================ */
+
+.cac-wrap { position: relative; }
+
+.cac-list {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
+  background: #fff; border: 1px solid #CDEBFB; border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(11,42,92,0.16); padding: 4px;
+}
+
+.cac-item {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  width: 100%; padding: 8px 10px; border: none; background: none; border-radius: 7px;
+  cursor: pointer; text-align: left; font-family: inherit;
+}
+/* :hover가 아니라 .active 하나로만 강조 — 키보드로 고른 줄과 마우스가 올라간 줄이
+   동시에 두 줄 강조되지 않게 (mouseenter가 .active를 옮긴다) */
+.cac-item.active { background: #EAF6FD; }
+
+.cac-main { font-size: 13px; font-weight: 700; color: #0B2A5C; }
+.cac-sub {
+  font-size: 10.5px; color: #64748B; letter-spacing: 0.04em;
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
