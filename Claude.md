@@ -91,7 +91,7 @@ Shortlist 3단계 세부 컨셉:
 ### 3-5. 캐시 테이블을 새로 만들 땐 "키의 카디널리티"를 반드시 따진다
 - 캐시 키가 `place_id`처럼 **유한 집합**(실제 존재하는 숙소/장소 수만큼만 늘어남)이면 정리 로직 없이도 안전함
 - 캐시 키에 **검색어·자유 입력 텍스트**가 섞여 있으면(예: `(place_id, query)`) 사실상 무한정 늘어날 수 있음 → 반드시 다음을 함께 만든다:
-  1. `updated_at` 기준 정리(TTL) 배치 — Vercel Cron(`vercel.json`의 `crons`)으로 오래된 행 주기적 삭제 (예: `api/cleanup-search-cache.ts`, 90일 기준)
+  1. `updated_at` 기준 정리(TTL) 배치 — 매일 도는 정리 작업(`api/cleanup-search-cache.ts`, Cloudflare Worker cron)의 대상 목록에 더해 오래된 행 주기적 삭제 (90일 기준)
   2. 정리 쿼리가 빠르게 돌도록 `updated_at`에 인덱스
   3. 새 캐시 테이블이 같은 문제(자유 입력 키)를 가지면 기존 정리 함수의 대상 목록에 추가만 하면 되도록 설계(테이블별 정리 함수를 매번 새로 만들지 않기)
 - 캐싱 upsert가 실패해도(용량 초과 등) 기능 자체는 죽지 않게 — 캐시는 항상 "있으면 좋고 없어도 동작"이어야 함(에러를 그냥 로그만 남기고 API 응답은 정상 반환)
@@ -112,14 +112,15 @@ Shortlist 3단계 세부 컨셉:
 - 사용자가 문구를 직접 지정하면 그대로 쓴다(동의 창은 사용자가 통째로 써서 준 문구를 따랐다). 후보 제시는 지정하지 않았을 때만.
 - **사실·법적 필수 문구는 문체를 이유로 지우지 않는다** — 예: 동의 거부 권리와 불이익 고지, "AI가 분석한 값" 표기, "추정" 표기.
 
-### 3-7. Vercel 서버리스 함수는 Hobby 플랜 12개 한도를 넘기지 않는다
-- `api/*.ts` 파일 하나 = 서버리스 함수 하나. **배포당 12개**를 넘으면 빌드가 아니라 "배포" 단계에서
-  실패함(`No more than 12 Serverless Functions can be added to a Deployment on the Hobby plan.`) —
-  로컬 `tsc`/`vite build`는 전부 통과하는데 Vercel에서만 실패해서 원인 파악이 헷갈리기 쉬움
-- 새 API 엔드포인트가 필요하면 먼저 `ls api/*.ts | wc -l`로 현재 개수를 확인
-- 12개에 가깝거나 넘으면 새 파일을 만들지 말고, 역할이 비슷한 기존 파일에 합쳐서(요청 바디 형태로
-  분기) 엔드포인트 수를 늘리지 않는다 — 예: `route-matrix.ts`가 1×N 매트릭스 조회와 구간별 모드
-  비교를 요청 바디의 `legs` 필드 유무로 분기해서 한 파일로 처리
+### 3-7. 서버 함수(`api/*.ts`)를 늘릴 때
+- 운영은 **Cloudflare Workers**다(2026-11-14 전환, 4장). `api/*.ts`는 Vercel 형식(`handler(req, res)`) 그대로이고
+  `worker/vercelAdapter.ts`가 Worker에서 실행한다. **새 파일을 만들면 `worker/routes.ts`의 주소 표에도 한 줄 더한다**
+  (빠뜨리면 `routes.test.ts`가 실패한다).
+- Vercel은 되돌리기용으로 5단계 정리(`docs/CLOUDFLARE_MIGRATION.md`) 전까지 남겨 둔다. 그동안은 Vercel Hobby의
+  **배포당 함수 12개 한도**도 그대로 지킨다(CI가 검사한다). 새 엔드포인트는 먼저 비슷한 기존 파일에 요청 바디 분기
+  (`kind` 등)로 합치는 걸 우선한다 — 예: `route-matrix.ts`가 매트릭스 조회와 구간 비교를 `legs` 유무로 분기
+- Workers 무료 플랜의 **요청 하나당 한도**를 의식한다: CPU 시간 10ms, 외부 호출 50번. 외부 호출을 반복하는 작업은
+  묶음 크기를 정해 나눈다(예: 구간 길찾기 12구간씩 — 서버 `MAX_LEGS`와 `src/utils/routeLegs.ts`가 같은 숫자)
 
 ---
 
@@ -127,12 +128,27 @@ Shortlist 3단계 세부 컨셉:
 
 - **프론트엔드**: Vite + TypeScript (바닐라, 프레임워크 없음), 각 게이트가 `src/{module}/module.ts` + `module.css`로 독립 모듈화
 - **백엔드/DB**: Supabase (Postgres + RLS + Storage + Realtime)
-- **배포**: Vercel (서버리스 함수는 `api/*.ts`)
+- **배포**: Cloudflare Workers (Static Assets + Worker 1개, `wrangler.jsonc`). GitHub `main`에 병합하면 Workers Builds가
+  자동 배포한다. 화면 파일은 Worker를 거치지 않고 바로 나가고, `/api/*`만 Worker가 받는다. 운영 주소 `www.mongsil2.com`
+  (루트 `mongsil2.com`은 Cloudflare Redirect Rule로 www로 301). Vercel은 되돌리기용으로 5단계 전까지 유지
 - **지도**: Google Maps JavaScript API (`libraries=places`, `language=ko&region=KR` 필수)
 - **AI**: Gemini `gemini-2.5-flash-lite` (여행 추천/지역 생성 등에 제한적으로 사용)
 
-### Vercel 서버리스 함수 작성 규칙 (중요, 반복 발생한 버그)
+### 서버(Worker) 설정 규칙 — 바꾸기 전에 이유를 알 것
+- `worker/index.ts`가 진입점: `/api/<이름>` → 핸들러, 매일 정리 작업(`scheduled`, 03:00 UTC). `run_worker_first`는 `/api/*`만
+  (화면 파일까지 Worker를 거치면 무료 요청 수를 소모한다). 없는 주소는 `index.html`(SPA fallback) — `/terms`·`/privacy`도 이걸로 열린다
+- 캐시 헤더는 `public/_headers`(규칙이 겹치면 값이 이어 붙으니 `! Cache-Control`로 지우고 단다)
+- `placement`(실행 지역)를 **도쿄 인근으로 고정**해 둔 이유: Gemini가 일부 지역(예: 홍콩)에서 온 요청을
+  "User location is not supported"로 거절한다. 지우면 AI 기능이 전부 멈출 수 있다
+- 없는 화면 조각 파일도 `index.html`(HTML)로 대답되므로, 서비스워커는 HTML을 파일로 저장하지 않고 앱은 조각 불러오기에
+  실패하면 한 번 새로고침한다(`utils/chunkReload.ts`)
+- 환경 변수: 서버 비밀값은 Worker **Runtime variables and secrets**에 **Secret**으로, `VITE_` 4개는 **Build** 변수로 넣는다
+  (이름이 한 글자만 틀려도 그 기능이 조용히 꺼진다). `keep_vars: true`라 배포가 대시보드 변수를 지우지 않는다
+- 로그는 Cloudflare **Observability**. 실패한 `/api` 요청은 `[worker] … colo=…` 한 줄이 남는다
+
+### 서버 함수 작성 규칙 (Vercel 롤백 기간까지)
 - **각 `api/*.ts` 파일은 완전히 자립형(self-contained)이어야 함** — 로컬 `lib/`를 import하면 Vercel 배포 시 `ERR_MODULE_NOT_FOUND` 발생
+  (Cloudflare는 한 번에 묶어서 괜찮지만, Vercel을 정리하기 전까지는 지킨다)
 - 공통 로직(사진 재호스팅 등)은 각 파일에 인라인으로 중복 작성
 - 클라이언트 키(referrer 제한)와 서버 키(`GOOGLE_MAPS_SERVER_KEY`, 무제한)는 반드시 분리해서 사용
 
@@ -1001,7 +1017,7 @@ Cloud Console에서 하루 Routes API 671건(오류율 100%), Places API(New) 15
   수 있어 그 경우 매번 과금될 수 있었다.
 **고친 것**
 - 서버: 첫 호출로 먼저 확인하고 401/403/429면 **거기서 멈춘다**(75건 → 1건). 응답에 `error: {status, message}`를
-  실어 브라우저 콘솔에 원인이 바로 보이게 한다(`reportRouteError`) — Vercel 로그를 안 봐도 된다.
+  실어 브라우저 콘솔에 원인이 바로 보이게 한다(`reportRouteError`) — 서버 로그를 안 봐도 된다.
 - 클라이언트: 실패한 구간은 10분간 다시 묻지 않는다(`utils/legCooldown.ts`). ROUTE의 "실측" 버튼은 직접
   누른 것이라 건너뛰고 다시 시도한다. shortlist는 (숙소·장소·이동수단)별로 받은 값/실패를 기억한다.
 - 지도 탐색: 목록·상세 사진은 **화면에 25% 이상 보일 때만** 받는다(IntersectionObserver). 목록 20장 →
@@ -1414,6 +1430,7 @@ AI 없이 정적 데이터에서 비교한다. 띄어쓰기를 지우고 비교�
   서버 키(`GOOGLE_MAPS_SERVER_KEY`)는 **리퍼러 제한을 걸지 않고** API 제한(Places(New)·Routes)만 건다 — 서버 요청에는 리퍼러가 없어
   제한을 걸면 전부 거절된다. `GOOGLE_ROUTES_API_KEY`가 있으면 서버 키보다 우선하므로 따로 둘 때는 같은 규칙을 지킨다.
 - 브라우저로 나가는 건 `VITE_` 변수뿐이다. service role 키·Gemini 키·`ADMIN_SECRET`·`CRON_SECRET`은 서버 함수에서만 쓴다.
+  값을 넣는 곳은 Cloudflare Worker 대시보드다(4장 "서버(Worker) 설정 규칙").
   **DB에 Google 키가 붙은 주소를 저장하지 않는다** — 사진은 우리 Storage 주소만 저장한다.
 - Gemini 키는 **유료 등급**이어야 한다(무료 등급은 입력이 제품 개선에 쓰일 수 있고, 문서·여권이 들어간다).
 - 콘솔 설정(리퍼러·API 제한·예산 알림), 키 교체·폐기, 운영 SQL 실행, 결제·요금 변경은 **사용자가 직접 하거나 먼저 확인받는다.**
@@ -1449,12 +1466,14 @@ AI 없이 정적 데이터에서 비교한다. 띄어쓰기를 지우고 비교�
   속성에는 따옴표까지 이스케이프하고, 링크·이미지 주소는 `http(s)`만 허용한다.
 
 ### 오류 감지
-운영 오류를 사용자가 말해 줘야 아는 상태다. 함수 12개 한도와 비용을 고려해 가벼운 순서로: 예산 알림·할당량 → 클라이언트 오류를
-Supabase 테이블에 기록 → 외부 업타임 모니터.
+서버 오류는 Cloudflare Observability(로그·Metrics)에서 볼 수 있다. 다만 누가 봐야 안다 — 가벼운 순서로 더한다:
+Google 예산 알림·API별 할당량 상한 → 클라이언트 오류를 Supabase 테이블에 기록 → 외부 업타임 모니터.
 
 ### 상업화 전 필수
-- Vercel Hobby는 상업 이용이 제한되는 것으로 알고 있다(약관 확인 필요) — 유료화하면 Pro로 올리며 함수 12개 한도도 풀린다.
-- 약관·방침은 초안(`draft1`)이고 사업자 정보가 비어 있다 → 확정하고 버전을 올린다(5-8).
+- 호스팅은 Cloudflare Workers 무료 플랜(상업 이용 가능, 사용자 확인). 요청당 CPU 10ms를 넘는 작업이 생기면 월 $5 유료 플랜을
+  사용자가 정한다 — 가장 무거운 문서 AI 읽기는 아직 측정 전이다(Gemini 유료 전환 뒤).
+- 약관·방침은 초안(`draft2`)이고 사업자 정보가 비어 있다 → 확정하고 버전을 올린다(5-8). 연락처는 `help@mongsil2.com`
+  (Cloudflare Email Routing으로 운영 Gmail에 전달, 받기 전용).
 - **가격·요금제·랜딩 문구는 사용자가 정한다.** Claude는 API 원가에 근거한 후보만 제안한다.
 - 유료화에 필요한 것: 통신판매업 신고, 결제(PG), 환불·청약철회 정책, 푸터 사업자 정보, 방침에 결제 위탁사 추가.
 - 홍보 문구에 없는 기능을 쓰지 않는다(3-1).
@@ -1463,7 +1482,8 @@ Supabase 테이블에 기록 → 외부 업타임 모니터.
 - **치명**: 서버 함수 로그인 확인 — 앱은 토큰을 보낸다(`apiFetch`). 서버 확인은 2026-11-19 이후 켠다. 그때까지는
   토큰 없는 요청이 하루 상한도 거치지 않는다
 - **높음**: 오류 감지 수단 없음
-- **중간**: 초대 코드 강화 / 보안 헤더(CSP 등) / Places 필드 등급·자동완성 세션 정리 / 자유 입력 캐시의 정리 대상 누락 /
+- **높음**: Gemini 키 유료 등급 전환(위 "키와 비밀값") / Cloudflare 이전 5단계 정리(`docs/CLOUDFLARE_MIGRATION.md`, 2026-11-28 무렵)
+- **중간**: `cache-photo`·`destination-zones` 오류 원인(2026-11-14 로그) / 초대 코드 강화 / 보안 헤더(CSP 등) / Places 필드 등급·자동완성 세션 정리 / 자유 입력 캐시의 정리 대상 누락 /
   외부 호출 타임아웃 / 의존성 취약점 / Google 장소 정보 보관 범위(Places 약관 확인)
 - 해결됨(2026-11): 사진 재호스팅의 서버 키 노출, 문서 AI 경로 검증, 속성값 XSS(`utils/html.ts`), 링크 미리보기 SSRF,
   공유 캐시에 요청자 값 저장(장소 ID로 Google에서 확인한 값만 캐싱)
@@ -1500,6 +1520,18 @@ src/
   offline/auth.ts                    ← 오프라인 로그인 유지 (세션 저장소 + 남은 로그인 기록)
   offline/docs.ts, idb.ts, status.ts ← 서류 저장 / IndexedDB / 오프라인 상태
   pwa/sw-template.js                 ← 서비스워커 원본 (빌드 때 vite.config.ts swPlugin이 dist/sw.js로)
+  utils/chunkReload.ts               ← 새 배포 뒤 옛 탭의 화면 조각 오류 → 한 번 새로고침
+  utils/routeLegs.ts                 ← 구간 길찾기를 12구간씩 나눠 요청 (Workers 요청당 외부 호출 한도)
+  workspace/gates.ts                 ← 여행 화면 메뉴 이름 목록 — 모르는 이름은 기본 화면으로
+
+worker/                              ← Cloudflare Worker (4장 "서버(Worker) 설정 규칙")
+  index.ts                           ← 진입점: /api/* → 핸들러, 매일 정리 작업(scheduled)
+  vercelAdapter.ts                   ← Request ↔ Vercel식 req/res 변환 (api 파일을 고치지 않고 실행)
+  routes.ts                          ← /api/<이름> → api/<이름>.ts 주소 표 (새 api 파일은 여기에도)
+  edgeCache.ts, edgeNote.ts          ← s-maxage 응답 캐시(환율) / 실패 요청 로그(colo)
+wrangler.jsonc                       ← Worker 설정: 정적 파일, /api 우선, cron, 실행 지역, keep_vars
+public/_headers                      ← 정적 파일 캐시 헤더
+docs/CLOUDFLARE_MIGRATION.md         ← 이전 체크리스트·남은 일(5단계 정리)
 
 supabase/
   api_usage.sql                      ← 사용자당 하루 사용량 + 관리자·예외 목록(app_roles) (5-11)
@@ -1530,7 +1562,7 @@ supabase/
   utils/travelEstimate.ts            ← 이동시간·거리·요금·체류시간 계산의 단일 기준 (Route/Timeline 공용, 5-3 참고)
   types/database.ts                  ← Supabase 테이블 타입
 
-api/                                  ← Vercel 서버리스 함수 (각각 완전 자립형)
+api/                                  ← 서버 함수 (Vercel 형식, Cloudflare Worker가 실행. 각각 완전 자립형)
   monthly-picks.ts                   ← AI 월별 추천 (Gemini + DB 캐싱)
   cache-photo.ts                     ← Google 사진 재호스팅 (Supabase Storage)
   destination-zones.ts               ← 큐레이션 우선 → AI 폴백, 숙박 생활권 목록
@@ -1538,7 +1570,7 @@ api/                                  ← Vercel 서버리스 함수 (각각 완
   exchange-rate.ts                   ← Frankfurter 환율 프록시 (CORS 회피)
   nearby-infra.ts                    ← 숙소 주변 편의시설 (고정 카테고리, Places+Routes API + DB 캐싱)
   nearby-search.ts                   ← 숙소 근처 자유 검색어 (Text Search + Routes API + DB 캐싱)
-  cleanup-search-cache.ts            ← Vercel Cron: 자유 입력 캐시 테이블 TTL 정리 (3-5 참고)
+  cleanup-search-cache.ts            ← 매일 정리 작업: 자유 입력 캐시 테이블 TTL 정리 (3-5 참고, Worker cron)
   hotel-score.ts                     ← 여행 효율 점수 (Gemini 정형 채점 + DB 캐싱)
   ai.ts                              ← Gemini 기능 묶음. body의 kind로 분기 (3-7의 12개 한도 때문에 한 파일)
                                         kind 생략|'hotel-review' → AI 리뷰 요약 (Google Search 그라운딩)
@@ -1549,8 +1581,8 @@ api/                                  ← Vercel 서버리스 함수 (각각 완
                                         kind 'doc-qa'            → Assistant 질의응답 (5-6 참고)
 ```
 
-> **Gemini 기능을 새로 추가할 땐 `api/ai.ts`에 `kind`를 하나 더 만든다.** 새 파일을 만들면
-> 12개 한도(3-7)에 걸려 배포가 실패한다. 반대로 함수 슬롯이 더 필요해지면
+> **Gemini 기능을 새로 추가할 땐 `api/ai.ts`에 `kind`를 하나 더 만든다.** Vercel 롤백 기간에는 새 파일이
+> 12개 한도(3-7)에 걸려 Vercel 배포가 실패한다. 반대로 함수 슬롯이 더 필요해지면
 > monthly-picks / destination-zones / hotel-score도 같은 방식으로 여기 합칠 수 있다.
 
 ---
@@ -1565,8 +1597,8 @@ api/                                  ← Vercel 서버리스 함수 (각각 완
    - 장소별 예상 비용: `trip_expenses`와 연결(지금은 근거 데이터가 없어 표시하지 않음)
 3. **Mobile(Companion)** — 4개 탭 전부 모바일 전용으로 구현됨(5-4): TODAY 히어로,
    원터치 길찾기, 실시간 도착 기록(`trip_stop_progress`), 지갑(숫자패드), MORE(숙소·체크리스트
-   `trip_checklist`·예약 링크), TIMELINE 가로 스와이프 페이저, PWA 설치, 오프라인(5-4 "오프라인"). 서버가 필요한 기능(푸시·ics)은 `api/*.ts`가 이미
-   12개 상한이라 **Supabase Edge Functions로 뺀다**(3-7). `trip_stop_progress.sql`과
+   `trip_checklist`·예약 링크), TIMELINE 가로 스와이프 페이저, PWA 설치, 오프라인(5-4 "오프라인"). 서버가 필요한 기능(푸시·ics)은 Vercel 정리(5단계) 뒤에는
+   `api/*.ts`에 더할 수 있다(그 전엔 12개 상한, 3-7). `trip_stop_progress.sql`과
    `trip_checklist.sql` 마이그레이션을 Supabase에서 실행해야 각 기능이 저장된다(안 해도 앱은
    정상 동작 — 해당 기능만 조용히 접힌다). 로드맵은 `docs/MOBILE_STRATEGY.md`
 4. **DOCUMENTS & NOTES 게이트** — 구현됨(5-5). `supabase/trip_documents.sql`을 Supabase에서
@@ -1595,8 +1627,9 @@ api/                                  ← Vercel 서버리스 함수 (각각 완
 - [ ] hover를 쓴다면 클릭으로 만든 선택 상태를 덮어쓰지 않는 "일시적 미리보기"로만 쓰고 있는가, 명시적 해제 수단이 있는가 (3-3)
 - [ ] 공항 메타포·디자인 시스템 톤을 깨지 않는가
 - [ ] 동의·탈퇴·결제·오류 같은 진지한 화면 문구는 담백하게 썼는가, 랜딩 문구는 요청 없이 건드리지 않았는가 (3-6)
-- [ ] 로그인 없이 볼 수 있는 공개 페이지를 새로 만들면 `src/seo/seoFiles.ts`의 `PUBLIC_PATHS`(사이트맵)에 더했는가, 경로형 주소가 필요하면 `vercel.json` rewrites도 더했는가
-- [ ] 새 Vercel 서버리스 함수(`api/*.ts`)를 추가한다면 전체 개수가 Hobby 플랜 한도(12개)를 넘지 않는가 — 넘으면 배포 자체가 실패함 (3-7)
+- [ ] 로그인 없이 볼 수 있는 공개 페이지를 새로 만들면 `src/seo/seoFiles.ts`의 `PUBLIC_PATHS`(사이트맵)에 더했는가, 경로형 주소는 Cloudflare가 `index.html`로 열어 준다(Vercel 롤백 기간엔 `vercel.json` rewrites도 더한다)
+- [ ] 새 서버 함수(`api/*.ts`)를 추가한다면 `worker/routes.ts`에 등록했는가, Vercel 롤백 기간의 12개 한도를 넘지 않는가,
+      요청 하나에서 외부 호출 50번·CPU 10ms를 넘을 일이 없는가 (3-7)
 - [ ] 수정 후 `npx tsc --noEmit && npx vite build && npm test`로 검증했는가
       (PR을 올리면 `.github/workflows/ci.yml`이 같은 걸 다시 돌린다 — 로컬에서 먼저 보는 게 빠를 뿐)
 - [ ] `expenseModel.ts`(돈)나 `travelEstimate.ts`(시간)의 계산을 건드렸다면, 옆의 `*.test.ts`가
@@ -1620,7 +1653,10 @@ api/                                  ← Vercel 서버리스 함수 (각각 완
 - 작업은 브랜치에 커밋 후 PR을 만든다.
 - **PR을 만들면, CI(체크)가 전부 통과하고 `main`과 충돌이 없는 상태(clean)라면 리뷰 없이 바로 merge까지 자동으로 진행한다.** 사용자에게 매번 "머지할까요?"라고 재확인하지 않는다.
 - CI가 실패했거나 충돌(conflict)이 있으면 자동 머지하지 않고 원인을 설명한다.
-- 배포는 Vercel Git 연동으로 자동 처리되므로(= `main` push 시 Production 배포), 머지 후 별도 배포 명령은 필요 없다.
+- 배포는 Cloudflare Workers Builds가 자동으로 한다(`main` 병합 → `www.mongsil2.com`). 머지 후 별도 배포 명령은 필요 없다.
+  Vercel도 롤백용으로 같은 커밋을 배포하지만 운영 주소와는 연결돼 있지 않다.
+- PR 브랜치의 `Workers Builds: mongsil` 검사는 미리보기 명령(`wrangler preview`) 설정 문제로 실패한다(알려진 문제, 운영 무관).
+  병합 판단은 `타입체크 · 빌드` CI 기준이다.
 - 키 교체·콘솔 설정·운영 SQL 실행·결제 관련 변경은 코드 PR과 별개로 **사용자에게 먼저 확인**받는다(5-11). 개인정보·약관·가격 문구도 사용자가 정한다.
 
 <!-- push 테스트: 2026-07-18 -->
