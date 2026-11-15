@@ -197,7 +197,7 @@ export const TOURS: TourDef[] = [
       { target: 'companion-nav', title: '길찾기는 한 번에', body: '누르면 Google 지도가 열리고 지금 위치에서 길을 안내해요. 카드를 누르면 장소 상세가 열려요.' },
       { target: 'companion-track', title: '도착 기록', body: '장소에 도착하면 도착을 눌러 주세요. 남은 일정 시각이 실제 시각에 맞춰 다시 계산돼요.' },
       { target: 'companion-geo', title: '위치 기반 체크인', body: '켜 두면 일정 장소에 도착할 때 자동으로 도착을 기록해요.' },
-      { target: 'companion-tabs', title: '오늘 · 지도 · 지갑 · 여행', body: '지도에서는 주변 장소를 찾고, 지갑에서는 예약 서류와 지출을 관리해요. 출발 전에 지갑에서 서류를 저장해 두면 인터넷이 없어도 열려요.' },
+      { target: 'companion-tabs', title: '일정 · 주변 · 지갑 · 회화 · 여행', body: '주변에서는 내 위치 근처 장소를 바로 찾고, 지갑에서는 예약 서류와 지출을 관리해요. 회화에서는 그날 일정에 맞는 기초 회화를 들어요. 출발 전에 지갑에서 서류를 저장해 두면 인터넷이 없어도 열려요.' },
     ],
   },
   {

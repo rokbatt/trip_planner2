@@ -135,6 +135,7 @@ import { escapeHtml, safeHttpUrl } from '../utils/html';
 import { openHelp } from '../onboarding/onboarding';
 import { directionsUrl, originChoices, type DirPoint, type Origin, type TravelHint } from './directions';
 import { readReceiptPhoto, toDraft, chargedRate, MAX_PHOTOS_PER_IMPORT, type PhotoDraft } from './receiptImport';
+import { PHRASES, LANG_LABEL, SPEECH_LANG, SITUATION_LABEL, languageForDestination, situationsForDay, type Situation } from './phrasebook';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type Trip = Database['public']['Tables']['trips']['Row'];
@@ -155,6 +156,8 @@ const IC = {
   transit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="14" rx="2"/><path d="M4 11h16M8 21l2-4h4l2 4M8 7h.01M16 7h.01"/></svg>',
   taxi: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M5 17a2 2 0 1 0 4 0M15 17a2 2 0 1 0 4 0M5 17l1.5-5h11L19 17M8 12V8h8v4"/></svg>',
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></svg>',
+  speaker: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg>',
   camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
   share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7M16 6l-4-4-4 4M12 2v13"/></svg>',
   more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>',
@@ -227,7 +230,7 @@ const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
  * 하나도 버리지 않고 아래로 들어갔다 — TIMELINE(DAY 페이저)과 MORE(숙소·체크리스트)는
  * `trip`(여행) 탭 안으로, 지출 지갑은 `wallet`(지갑) 탭의 한 섹션으로 옮겼다.
  */
-type MbTab = 'today' | 'map' | 'wallet' | 'trip';
+type MbTab = 'today' | 'map' | 'wallet' | 'talk' | 'trip';
 /** 여행 탭 안의 두 화면 — 예전 TIMELINE / MORE */
 type TripSub = 'days' | 'info';
 type PdTab = 'overview' | 'guide' | 'reviews';
@@ -360,6 +363,9 @@ let savedDocs = new Map<string, string>();
 let docSaving: { done: number; total: number } | null = null;
 /** 지갑 안내 한 줄(오프라인이라 못 연 서류 등) */
 let walletNotice = '';
+/** 회화 탭 — 보고 있는 DAY(null이면 오늘, 여행 전이면 지금 고른 DAY) / 그날 상황만 vs 전체 */
+let talkDayIdx: number | null = null;
+let talkShowAll = false;
 /** 사진으로 추가 — 읽는 중 진행(몇 장 중 몇 장) / 확인 대기 중인 초안 */
 let photoBusy: { done: number; total: number } | null = null;
 let photoDrafts: PhotoDraft[] | null = null;
@@ -988,10 +994,93 @@ function fmtSavedAt(ms: number): string {
   return sameDay ? hm : (d.getMonth() + 1) + '월 ' + d.getDate() + '일 ' + hm;
 }
 
+/* ══════════════ 회화 탭 — 그날 일정에 맞춘 기초 회화 ══════════════
+ * 문장은 phrasebook.ts의 고정 목록(원칙 3-1). DAY를 넘기며 미리 보거나 복습한다.
+ * 발음은 한글 근사치이고, 정확한 소리는 휴대폰 음성 읽기로 듣는다(API 비용 없음).
+ */
+function talkIndex(): number {
+  if (talkDayIdx != null && days[talkDayIdx]) return talkDayIdx;
+  const t = todayDayIndex();
+  return t >= 0 ? t : Math.min(activeDayIndex, Math.max(0, days.length - 1));
+}
+
+function canSpeak(): boolean {
+  return typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
+}
+
+function talkTabHtml(): string {
+  const idx = talkIndex();
+  const day = days[idx] ?? null;
+  const lang = languageForDestination(day?.destName ?? tripDestName());
+  if (!lang) {
+    return '<div class="mb-day-empty"><p class="mb-day-empty-title">국내 여행이에요</p><p class="mb-day-empty-sub">해외 여행지에서 쓸 기초 회화를 여기서 보여 드려요.</p></div>';
+  }
+  const sits: Situation[] = talkShowAll || !day
+    ? (Object.keys(PHRASES) as Situation[])
+    : situationsForDay(day.stops.map((s) => s.cat));
+  const speak = canSpeak();
+  return [
+    '<section class="mb-talk">',
+    day
+      ? '<div class="mb-talk-nav">' +
+        '<button class="mb-talk-arrow" data-talkday="' + (idx - 1) + '"' + (idx <= 0 ? ' disabled' : '') + ' aria-label="이전 DAY">' + IC.back + '</button>' +
+        '<div class="mb-talk-day"><b>' + escapeHtml(day.label) + '</b><span>' + escapeHtml(day.destName ?? tripDestName()) + (day.date ? ' · ' + escapeHtml(dateLabel(day.date)) : '') + '</span></div>' +
+        '<button class="mb-talk-arrow is-next" data-talkday="' + (idx + 1) + '"' + (idx >= days.length - 1 ? ' disabled' : '') + ' aria-label="다음 DAY">' + IC.back + '</button>' +
+        '</div>'
+      : '',
+    '<div class="mb-talk-meta">',
+    '  <span class="mb-talk-lang">' + escapeHtml(LANG_LABEL[lang.lang]) + '</span>',
+    '  <div class="mb-talk-toggle">',
+    '    <button class="' + (talkShowAll ? '' : 'active') + '" data-talkall="0">이날 일정에 맞춰</button>',
+    '    <button class="' + (talkShowAll ? 'active' : '') + '" data-talkall="1">전체</button>',
+    '  </div>',
+    '</div>',
+    lang.fallback ? '<p class="mb-talk-note">이 여행지의 현지어 문장은 아직 없어요. 여행지에서 통하는 영어로 보여 드려요.</p>' : '',
+    lang.lang === 'th' ? '<p class="mb-talk-note">태국어는 말끝에 남자는 "캅", 여자는 "카"를 붙여요. 아래 문장은 "캅"으로 적었어요.</p>' : '',
+    sits
+      .map((sit) =>
+        '<div class="mb-talk-sec"><h3 class="mb-talk-sec-title">' + escapeHtml(SITUATION_LABEL[sit]) + '</h3>' +
+        PHRASES[sit]
+          .map((p, i) => {
+            const pair = p.t[lang.lang];
+            if (!pair) return '';
+            return (
+              '<div class="mb-talk-card">' +
+              '<div class="mb-talk-ko">' + escapeHtml(p.ko) + '</div>' +
+              '<div class="mb-talk-local" lang="' + SPEECH_LANG[lang.lang] + '">' + escapeHtml(pair[0]) + '</div>' +
+              '<div class="mb-talk-say">' + escapeHtml(pair[1]) + '</div>' +
+              (speak ? '<button class="mb-talk-play" data-say="' + sit + ':' + i + '" aria-label="소리 듣기">' + IC.speaker + '</button>' : '') +
+              '</div>'
+            );
+          })
+          .join('') +
+        '</div>'
+      )
+      .join(''),
+    speak ? '' : '<p class="mb-talk-note">이 브라우저는 소리 읽기를 지원하지 않아요.</p>',
+    '</section>',
+  ].join('');
+}
+
+function sayPhrase(key: string): void {
+  if (!canSpeak()) return;
+  const [sit, i] = key.split(':');
+  const day = days[talkIndex()] ?? null;
+  const lang = languageForDestination(day?.destName ?? tripDestName());
+  const pair = lang ? PHRASES[sit as Situation]?.[Number(i)]?.t[lang.lang] : null;
+  if (!lang || !pair) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(pair[0]);
+  u.lang = SPEECH_LANG[lang.lang];
+  u.rate = 0.85;
+  window.speechSynthesis.speak(u);
+}
+
 function tabBodyHtml(): string {
   if (activeTab === 'today') return todayTabHtml();
   if (activeTab === 'map') return mapTabHtml();
   if (activeTab === 'wallet') return walletTabHtml();
+  if (activeTab === 'talk') return talkTabHtml();
   return tripSub === 'days' ? allDaysTabHtml() : moreTabHtml();
 }
 
@@ -1016,7 +1105,7 @@ function topBarHtml(): string {
 
   // 화면 제목은 탭마다 다르다. TODAY는 날짜 띠가 바로 아래에 있어서 상단에 DAY 피커를 또 두지 않는다.
   if (activeTab !== 'today') {
-    const title = activeTab === 'wallet' ? '지갑' : activeTab === 'map' ? '주변' : tripSub === 'info' ? '여행 정보' : '전체 일정';
+    const title = activeTab === 'wallet' ? '지갑' : activeTab === 'map' ? '주변' : activeTab === 'talk' ? '회화' : tripSub === 'info' ? '여행 정보' : '전체 일정';
     return [
       brandRow,
       '<div class="mb-daybar"><span class="mb-screen-title">' + title + '</span></div>',
@@ -1063,6 +1152,7 @@ function tabBarHtml(): string {
     // 여행 중 가장 자주 여는 곳 — "지도"가 아니라 "주변"으로 부른다(열면 바로 주변 검색)
     { key: 'map', label: '주변', icon: IC.search },
     { key: 'wallet', label: '지갑', icon: IC.wallet },
+    { key: 'talk', label: '회화', icon: IC.chat },
     { key: 'trip', label: '여행', icon: IC.bag },
   ];
   return (
@@ -4964,6 +5054,19 @@ function bind(): void {
 
   // ── WALLET ──
   root.querySelector('#mb-wal-add')?.addEventListener('click', () => openPad());
+  // ── 회화 ──
+  root.querySelectorAll('[data-talkday]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const n = Number((btn as HTMLElement).dataset.talkday);
+      if (days[n]) { talkDayIdx = n; render(); }
+    });
+  });
+  root.querySelectorAll('[data-talkall]').forEach((btn) => {
+    btn.addEventListener('click', () => { talkShowAll = (btn as HTMLElement).dataset.talkall === '1'; render(); });
+  });
+  root.querySelectorAll('[data-say]').forEach((btn) => {
+    btn.addEventListener('click', () => sayPhrase((btn as HTMLElement).dataset.say!));
+  });
   // ── 지갑: 사진으로 추가 ──
   root.querySelector('#mb-wal-photo-in')?.addEventListener('change', (e) => {
     const input = e.target as HTMLInputElement;
