@@ -133,6 +133,7 @@ import './mobile.css';
 import { apiFetch } from '../utils/apiFetch';
 import { escapeHtml, safeHttpUrl } from '../utils/html';
 import { openHelp } from '../onboarding/onboarding';
+import { directionsUrl, originChoices, type DirPoint, type Origin, type TravelHint } from './directions';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type Trip = Database['public']['Tables']['trips']['Row'];
@@ -250,6 +251,8 @@ let placeById = new Map<string, Place>();
 
 /** 열려 있는 장소 상세의 stop key (null이면 목록 화면) */
 let detailKey: string | null = null;
+/** 출발지 바꾸기 시트가 열린 상세의 정류지 키(한 번에 하나) */
+let originOpenFor: string | null = null;
 let detailTab: PdTab = 'overview';
 /** 상세 스크롤 위치 — 화면을 다시 그려도 돌려놓는다(닫으면 잊는다) */
 let pdShownKey: string | null = null;
@@ -611,11 +614,59 @@ async function copyToClipboard(text: string, btn: HTMLElement): Promise<void> {
  * 이 정류지로 "들어오는" 구간에 사용자가 직접 지정한 이동수단이 있으면 힌트로 같이 넘긴다 —
  * 없으면 Google Maps가 알아서 고른다.
  */
-function directionsHref(stop: TlStop): string {
-  const dest = stop.lat != null && stop.lng != null ? stop.lat + ',' + stop.lng : stop.name;
-  const mode =
-    stop.travelMode === 'WALK' ? 'walking' : stop.travelMode === 'TRANSIT' ? 'transit' : stop.travelMode === 'TAXI' ? 'driving' : null;
-  return 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(dest) + (mode ? '&travelmode=' + mode : '');
+function directionsHref(stop: TlStop, origin?: Origin): string {
+  return directionsUrl(dirPointOf(stop), travelHintOf(stop), origin);
+}
+
+function dirPointOf(stop: TlStop): DirPoint {
+  return { name: stop.name, lat: stop.lat, lng: stop.lng };
+}
+
+function travelHintOf(stop: TlStop): TravelHint {
+  return stop.travelMode === 'WALK' ? 'walking' : stop.travelMode === 'TRANSIT' ? 'transit' : stop.travelMode === 'TAXI' ? 'driving' : null;
+}
+
+/** 상세 화면의 출발지 후보 — 현재 위치(기본) · 그날 숙소 · 바로 앞 일정 장소 */
+function originChoicesFor(stopKey: string): Origin[] {
+  const found = findStop(stopKey);
+  if (!found) return [{ kind: 'here' }];
+  const { stop, index, day } = found;
+  const prevStop = index > 0 ? day.stops[index - 1] : null;
+  const seg = staySegmentOn(day.date ?? null);
+  const stay = seg ? stayPlaceOf(seg) : null;
+  return originChoices({
+    dest: dirPointOf(stop),
+    prev: prevStop ? dirPointOf(prevStop) : null,
+    stay: stay ? { name: stay.name, lat: stay.lat, lng: stay.lng } : null,
+  });
+}
+
+/** 출발지 바꾸기 시트 — 고른 출발지는 그 한 번에만 쓴다(다음엔 다시 현재 위치) */
+function originSheetHtml(stopKey: string): string {
+  const choices = originChoicesFor(stopKey);
+  return [
+    '  <div class="mb-origin-sheet" role="dialog" aria-label="출발지 선택">',
+    '    <div class="mb-origin-title">어디서 출발하세요?</div>',
+    choices
+      .map((o, i) => {
+        const label = o.kind === 'here' ? '현재 위치' : o.kind === 'point' ? o.label : '';
+        const sub = o.kind === 'point' ? o.point.name : o.kind === 'here' ? '기본' : '';
+        return (
+          '    <button class="mb-origin-opt" data-origin="' + i + '">' +
+          '<span class="mb-origin-ic">' + (o.kind === 'here' ? IC.navigate : IC.pin) + '</span>' +
+          '<span class="mb-origin-main"><span class="mb-origin-label">' + escapeHtml(label) + '</span>' +
+          (sub ? '<span class="mb-origin-sub">' + escapeHtml(sub) + '</span>' : '') +
+          '</span></button>'
+        );
+      })
+      .join(''),
+    '    <form class="mb-origin-form" id="mb-origin-form">',
+    '      <input class="mb-origin-input" id="mb-origin-text" type="text" placeholder="출발지 직접 입력 (예: 역 이름, 주소)" enterkeyhint="go" />',
+    '      <button class="mb-origin-go" type="submit">길찾기</button>',
+    '    </form>',
+    '    <button class="mb-origin-cancel" id="mb-origin-cancel">닫기</button>',
+    '  </div>',
+  ].join('');
 }
 
 /* ══════════════ 진입점 ══════════════ */
@@ -4119,8 +4170,11 @@ function detailHtml(): string {
     '  </div>',
     // ── 하단 CTA — 이 화면에서 가장 중요한 동작 ──
     '  <div class="mb-pd-cta">',
+    originOpenFor === stop.key ? originSheetHtml(stop.key) : '',
     '    <a class="mb-pd-cta-btn" href="' + directionsHref(stop) + '" target="_blank" rel="noopener">' +
       IC.map + ' 지도 앱으로 길찾기</a>',
+    // 출발지는 기본이 현재 위치 — 바꿀 때만 시트를 연다
+    '    <button class="mb-origin-toggle" id="mb-origin-toggle">출발: 현재 위치 · <span>바꾸기</span></button>',
     '  </div>',
     '</div>',
   ].join('');
@@ -4669,6 +4723,7 @@ function bind(): void {
   // ── 상세 닫기 · 탭 ──
   root.querySelector('#mb-pd-close')?.addEventListener('click', () => {
     detailKey = null;
+    originOpenFor = null;
     pdScrollKeep = null;
     render();
   });
@@ -4701,6 +4756,35 @@ function bind(): void {
   root.querySelector('#mb-pd-share')?.addEventListener('click', () => { void sharePlace(); });
   root.querySelector('#mb-pd-share2')?.addEventListener('click', () => { void sharePlace(); });
   root.querySelector('#mb-pd-ticket')?.addEventListener('click', () => { void openTicketForDetail(); });
+
+  // ── 상세: 출발지 바꾸기(기본은 현재 위치, 고른 출발지는 한 번만) ──
+  root.querySelector('#mb-origin-toggle')?.addEventListener('click', () => {
+    originOpenFor = originOpenFor === detailKey ? null : detailKey;
+    render();
+  });
+  root.querySelector('#mb-origin-cancel')?.addEventListener('click', () => {
+    originOpenFor = null;
+    render();
+  });
+  const openWithOrigin = (origin: Origin) => {
+    const found = detailKey ? findStop(detailKey) : null;
+    if (!found) return;
+    window.open(directionsHref(found.stop, origin), '_blank', 'noopener');
+    originOpenFor = null;
+    render();
+  };
+  root.querySelectorAll('[data-origin]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!detailKey) return;
+      const o = originChoicesFor(detailKey)[Number((btn as HTMLElement).dataset.origin)];
+      if (o) openWithOrigin(o);
+    });
+  });
+  root.querySelector('#mb-origin-form')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = (root.querySelector('#mb-origin-text') as HTMLInputElement | null)?.value ?? '';
+    openWithOrigin(text.trim() ? { kind: 'text', text } : { kind: 'here' });
+  });
 
   // ── AI 브리핑 ──
   root.querySelectorAll('[data-brief]').forEach((btn) => {
