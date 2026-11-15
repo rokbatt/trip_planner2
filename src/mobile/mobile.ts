@@ -132,6 +132,7 @@ import type { Database, TripDestination, StaySegment, TripChecklistItem, TripLin
 import './mobile.css';
 import { apiFetch } from '../utils/apiFetch';
 import { escapeHtml, safeHttpUrl } from '../utils/html';
+import { openHelp } from '../onboarding/onboarding';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type Trip = Database['public']['Tables']['trips']['Row'];
@@ -141,6 +142,7 @@ type Trip = Database['public']['Tables']['trips']['Row'];
 const IC = {
   logo: '<svg viewBox="0 0 462 478" aria-hidden="true"><clipPath id="mb-pin"><path d="M236 39C132 39 49 119 49 219C49 278 83 326 125 375C163 419 206 460 225 474C231 478 241 478 247 474C266 460 309 419 347 375C389 326 424 278 424 219C424 119 340 39 236 39Z"/></clipPath><g clip-path="url(#mb-pin)"><path fill="#5F86F2" d="M35 25H440V218C393 235 365 268 324 286C279 306 244 294 207 275C168 255 145 238 128 238C100 238 78 257 62 286C43 257 35 239 35 210Z"/><path fill="#8DBCF0" d="M35 270C66 239 91 229 128 238C160 246 177 269 207 282C226 291 244 297 263 297C251 349 240 415 236 490H35Z"/><path fill="#4562E8" d="M440 176C399 192 371 219 342 244C311 270 282 291 246 293C269 313 296 328 326 331C367 335 402 318 440 298Z"/></g><circle cx="236.5" cy="218.5" r="76" fill="#FFF"/></svg>',
   bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 6-3 7-3 7h18s-3-1-3-7"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>',
+  help: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8 1c0 1.7-2.4 2.2-2.4 3.7"/><circle cx="12" cy="17.2" r="0.6" fill="currentColor"/></svg>',
   menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
   chevDown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
   chevRight: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
@@ -948,6 +950,8 @@ function topBarHtml(): string {
     // 폰에서 Companion은 앱 전체라 워크스페이스 헤더가 숨겨져 있다 — 여기서 PC 게이트로
     // 보내면 돌아올 길이 애매해진다. 그래서 나가는 길은 "다른 여행 고르기" 하나만 둔다.
     // (링크는 MORE 탭에 이미 있어서 종 아이콘은 없앴다 — 버튼 두 개가 할 일이 겹쳤다.)
+    // 도움말 센터(Companion 가이드 다시 보기 포함) — 폰에선 워크스페이스 헤더가 숨겨져 있어 여기 둔다
+    '    <button class="mb-icon-btn" id="mb-help" aria-label="도움말">' + IC.help + '</button>',
     '    <button class="mb-icon-btn" id="mb-trips" aria-label="다른 여행">' + IC.menu + '</button>',
     '  </div>',
     '</header>',
@@ -1004,7 +1008,7 @@ function tabBarHtml(): string {
     { key: 'trip', label: '여행', icon: IC.bag },
   ];
   return (
-    '<nav class="mb-tabs">' +
+    '<nav class="mb-tabs" data-tour="companion-tabs">' +
     items
       .map(
         (t) =>
@@ -1340,7 +1344,7 @@ function dateStripHtml(): string {
     .join('');
 
   return [
-    '<div class="mb-dates">',
+    '<div class="mb-dates" data-tour="companion-dates">',
     '  <div class="mb-dates-scroll" id="mb-dates-scroll">' + cells + '</div>',
     '  <button class="mb-date-cal" id="mb-daypick" aria-label="날짜 목록 열기">' + IC.calendar + '</button>',
     '</div>',
@@ -1521,7 +1525,7 @@ function geoBarHtml(day: TlDay): string {
           : '위치 확인 중…';
 
   return [
-    '<button class="mb-geo' + (geoOn ? ' is-on' : '') + (geoError ? ' is-err' : '') + '" id="mb-geo" role="switch" aria-checked="' + (geoOn ? 'true' : 'false') + '">',
+    '<button class="mb-geo' + (geoOn ? ' is-on' : '') + (geoError ? ' is-err' : '') + '" id="mb-geo" data-tour="companion-geo" role="switch" aria-checked="' + (geoOn ? 'true' : 'false') + '">',
     '  <span class="mb-geo-ic">' + IC.pin + '</span>',
     '  <span class="mb-geo-body">',
     '    <span class="mb-geo-title">위치 기반 체크인</span>',
@@ -1715,7 +1719,7 @@ function stopRowHtml(
     warn ? '      <div class="mb-row-warn">' + escapeHtml(hoursWarnText(warn)) + '</div>' : '',
     '    </div>',
     '    <div class="mb-row-acts">',
-    '      <a class="mb-row-nav" href="' + directionsHref(stop) + '" target="_blank" rel="noopener" data-nav="' + escapeHtml(stop.key) + '">' + IC.navigate + ' 길찾기</a>',
+    '      <a class="mb-row-nav" href="' + directionsHref(stop) + '" target="_blank" rel="noopener" data-tour="companion-nav" data-nav="' + escapeHtml(stop.key) + '">' + IC.navigate + ' 길찾기</a>',
     '      <span class="mb-row-detail">상세' + IC.chevRight + '</span>',
     '    </div>',
     '  </div>',
@@ -1786,7 +1790,7 @@ function trackHtml(stop: TlStop, prog: StopProgress | undefined): string {
   if (status === 'arrived') {
     const t = prog?.actualArriveAt ? fmtClock(prog.actualArriveAt) : '';
     return [
-      '<div class="mb-track">',
+      '<div class="mb-track" data-tour="companion-track">',
       '  <span class="mb-track-status">' + t + ' 도착</span>',
       '  <button class="mb-track-btn primary" data-depart="' + key + '">' + IC.check + '출발</button>',
       '  <button class="mb-track-undo" data-reset="' + key + '">되돌리기</button>',
@@ -1812,7 +1816,7 @@ function trackHtml(stop: TlStop, prog: StopProgress | undefined): string {
     ].join('');
   }
   return [
-    '<div class="mb-track">',
+    '<div class="mb-track" data-tour="companion-track">',
     '  <button class="mb-track-btn primary" data-arrive="' + key + '">' + IC.check + '도착</button>',
     '  <button class="mb-track-btn ghost" data-skip="' + key + '">건너뛰기</button>',
     '</div>',
@@ -4718,6 +4722,7 @@ function bind(): void {
   // ── 그 외 ──
   root.querySelector('#mb-goto-route')?.addEventListener('click', () => gotoGate('route'));
   root.querySelector('#mb-trips')?.addEventListener('click', () => navigate('trips'));
+  root.querySelector('#mb-help')?.addEventListener('click', () => openHelp());
   root.querySelector('#mb-geo')?.addEventListener('click', () => toggleGeo());
 
   // ── TODAY 히어로 ──

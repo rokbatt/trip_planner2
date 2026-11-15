@@ -21,6 +21,9 @@ import {
   DOCS_LOCK_EVENT,
   getUnlockedUserId,
   isStorageReady,
+  isValidPin,
+  setUnlockedUserId,
+  verifyPin,
   loadDocUsers,
   loadNotes,
   loadPersonalDocuments,
@@ -33,7 +36,7 @@ import {
 import { escapeHtml } from '../docs/docsIcons';
 import { requestAssistantAnswer, requestDocDigest } from './assistantClient';
 import type { AssistantSource } from './assistantClient';
-import type { TripDocument } from '../types/database';
+import type { TripDocUser, TripDocument } from '../types/database';
 import './assistant.css';
 import { clearTripDigests, lookupDigest, storeDigest } from './digestCache';
 import { personalNotice, planPersonalVault } from './personalVault';
@@ -64,6 +67,14 @@ let sourcesPromise: Promise<void> | null = null;
 /** 개인 문서 보관함 상태와, 읽지 못해 건너뛴 파일 문서 수(안내용) */
 let personalState: PersonalState = 'none';
 let personalSkippedFiles = 0;
+/** 이 계정에 연결된 내 보관함들 — 잠겨 있을 때 여기서 바로 PIN을 풀 수 있다(다른 사람 보관함은 다루지 않는다) */
+let myVaults: TripDocUser[] = [];
+/** 패널 안 PIN 입력 상태. 대화가 갱신돼 알림이 다시 그려져도 입력하던 내용이 사라지지 않게 모듈에 둔다 */
+let unlockOpen = false;
+let unlockVaultId: string | null = null;
+let unlockPin = '';
+let unlockError = '';
+let unlockBusy = false;
 /** 지금 자료에 개인 문서가 들어 있는지 — 다시 잠글 때 대화를 비울지 정한다 */
 let includedPersonal = false;
 /** 가장 최근에 시작한 불러오기 번호 — PIN을 풀거나 잠그는 사이에 시작한 옛 불러오기 결과가 덮어쓰지 못하게 */
@@ -80,6 +91,12 @@ export function renderAssistantPanel(container: HTMLElement, tripId: string): vo
     sourcesPromise = null;
     personalState = 'none';
     personalSkippedFiles = 0;
+    myVaults = [];
+    unlockOpen = false;
+    unlockVaultId = null;
+    unlockPin = '';
+    unlockError = '';
+    unlockBusy = false;
     includedPersonal = false;
     loadSeq++;
     sending = false;
@@ -140,6 +157,8 @@ async function loadSources(tripId: string): Promise<void> {
     sourcesFailedCount = stats.failed;
     personalState = plan.state;
     personalSkippedFiles = skippedFiles;
+    const myId = store.get('user')?.id ?? null;
+    myVaults = myId ? vaults.filter((v) => v.user_id === myId) : [];
     includedPersonal = personal.length > 0;
     // 진단용 — "매번 다시 읽는다"로 보일 때 실제로 어디서 왔는지 바로 보이게
     console.log(
@@ -349,10 +368,98 @@ function renderNotice(): void {
     return;
   }
   el.classList.add('is-visible');
-  el.innerHTML = '<span class="ws-ai-notice-text">' + escapeHtml(text) + '</span><button type="button" class="ws-ai-notice-btn" id="ws-ai-notice-go">DOCUMENTS로 가기</button>';
-  el.querySelector('#ws-ai-notice-go')?.addEventListener('click', () => {
-    window.dispatchEvent(new CustomEvent('mongsil:navigateGate', { detail: { tripId: currentTripId, gate: 'docs' } }));
+
+  // 잠겨 있으면 DOCUMENTS로 보내지 않고 여기서 바로 PIN을 받는다
+  const canUnlock = personalState === 'locked' && myVaults.length > 0;
+  if (!canUnlock) {
+    el.innerHTML = '<span class="ws-ai-notice-text">' + escapeHtml(text) + '</span><button type="button" class="ws-ai-notice-btn" id="ws-ai-notice-go">DOCUMENTS로 가기</button>';
+    el.querySelector('#ws-ai-notice-go')?.addEventListener('click', () => {
+      window.dispatchEvent(new CustomEvent('mongsil:navigateGate', { detail: { tripId: currentTripId, gate: 'docs' } }));
+    });
+    return;
+  }
+
+  const vaultId = unlockVaultId && myVaults.some((v) => v.id === unlockVaultId) ? unlockVaultId : myVaults[0].id;
+  const who = myVaults.length > 1
+    ? '<select class="ws-ai-unlock-who" id="ws-ai-unlock-who" aria-label="보관함 선택">' +
+      myVaults.map((v) => '<option value="' + v.id + '"' + (v.id === vaultId ? ' selected' : '') + '>' + escapeHtml(v.name) + '</option>').join('') +
+      '</select>'
+    : '<span class="ws-ai-unlock-name">' + escapeHtml(myVaults[0].name) + '</span>';
+
+  el.innerHTML = [
+    '<span class="ws-ai-notice-text">' + escapeHtml(text) + '</span>',
+    '<button type="button" class="ws-ai-notice-btn" id="ws-ai-unlock-toggle" aria-expanded="' + unlockOpen + '">' + (unlockOpen ? '닫기' : '잠금 풀기') + '</button>',
+    unlockOpen
+      ? '<form class="ws-ai-unlock" id="ws-ai-unlock-form" novalidate>' + who +
+        '<input class="ws-ai-unlock-pin" id="ws-ai-unlock-pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="PIN 4자리" aria-label="PIN" value="' + escapeHtml(unlockPin) + '"' + (unlockBusy ? ' disabled' : '') + ' />' +
+        '<button type="submit" class="ws-ai-unlock-submit" id="ws-ai-unlock-submit"' + (unlockBusy ? ' disabled' : '') + '>확인</button></form>' +
+        (unlockError ? '<div class="ws-ai-unlock-error" role="alert">' + escapeHtml(unlockError) + '</div>' : '')
+      : '',
+  ].join('');
+
+  el.querySelector('#ws-ai-unlock-toggle')?.addEventListener('click', () => {
+    unlockOpen = !unlockOpen;
+    unlockPin = '';
+    unlockError = '';
+    renderNotice();
+    if (unlockOpen) (el.querySelector('#ws-ai-unlock-pin') as HTMLInputElement | null)?.focus();
   });
+  if (!unlockOpen) return;
+
+  const pinEl = el.querySelector('#ws-ai-unlock-pin') as HTMLInputElement;
+  const whoEl = el.querySelector('#ws-ai-unlock-who') as HTMLSelectElement | null;
+  pinEl.addEventListener('input', () => {
+    pinEl.value = pinEl.value.replace(/\D/g, '').slice(0, 4);
+    unlockPin = pinEl.value;
+    if (unlockError) {
+      unlockError = '';
+      el.querySelector('.ws-ai-unlock-error')?.remove();
+    }
+  });
+  whoEl?.addEventListener('change', () => {
+    unlockVaultId = whoEl.value;
+    unlockPin = '';
+    unlockError = '';
+    pinEl.value = '';
+    el.querySelector('.ws-ai-unlock-error')?.remove();
+    pinEl.focus();
+  });
+  el.querySelector('#ws-ai-unlock-form')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    void submitUnlock(whoEl?.value ?? vaultId);
+  });
+}
+
+/** 패널 안에서 PIN 확인 — 맞으면 잠금 해제 이벤트가 나가고, 그걸 받은 handleLockChange가 개인 문서를 새로 불러온다 */
+async function submitUnlock(vaultId: string): Promise<void> {
+  if (unlockBusy) return;
+  const vault = myVaults.find((v) => v.id === vaultId);
+  if (!vault) return;
+  if (!isValidPin(unlockPin)) {
+    unlockError = 'PIN 4자리를 입력해주세요.';
+    renderNotice();
+    (rootEl?.querySelector('#ws-ai-unlock-pin') as HTMLInputElement | null)?.focus();
+    return;
+  }
+
+  unlockBusy = true;
+  renderNotice();
+  const tripId = currentTripId;
+  const ok = await verifyPin(vault, unlockPin);
+  unlockBusy = false;
+  if (tripId !== currentTripId) return; // 확인하는 사이 다른 여행으로 바뀌었다
+
+  if (!ok) {
+    unlockPin = '';
+    unlockError = 'PIN이 일치하지 않아요.';
+    renderNotice();
+    (rootEl?.querySelector('#ws-ai-unlock-pin') as HTMLInputElement | null)?.focus();
+    return;
+  }
+  unlockOpen = false;
+  unlockPin = '';
+  unlockError = '';
+  setUnlockedUserId(tripId, vault.id);
 }
 
 function sourceSummaryLabel(): string {

@@ -696,6 +696,7 @@ function gateLabelOf(key: string): string {
 function buildMobileTabs(): HTMLElement {
   const nav = document.createElement('div');
   nav.className = 'bd-mtabs';
+  nav.dataset.tour = 'brainstorm-mtabs'; // 폰 IDEAS 가이드의 "게이트별로 보기" 단계
   nav.setAttribute('role', 'tablist');
   nav.setAttribute('aria-label', '게이트');
   const countOf = (mood: string | null) =>

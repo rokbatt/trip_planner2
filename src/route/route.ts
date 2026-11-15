@@ -1345,7 +1345,7 @@ function buildPageHtml(): string {
     '    <button type="button" class="rt-mmode-btn" role="tab" data-rtmode="plan">' + IC_LIST + '일정 보기</button>',
     '    <button type="button" class="rt-mmode-btn" role="tab" data-rtmode="map">' + IC_MAPFOLD + '지도 보기</button>',
     '  </div>',
-    '  <button type="button" class="rt-madd" id="rt-madd">' + IC_PLUS + ' 장소 추가 · 지도에서 고르기</button>',
+    '  <button type="button" class="rt-madd" id="rt-madd" data-tour="route-madd">' + IC_PLUS + ' 장소 추가 · 지도에서 고르기</button>',
 
     '  <div class="rt-main" id="rt-main">',
     '    <div class="rt-map-col">',

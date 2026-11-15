@@ -12,7 +12,11 @@
  *     실제 동작은 tour.ts의 PREPARE 표에 있다.
  *   · 내용을 크게 바꾸면 그 가이드의 `version`을 올린다 → 이미 본 사람에게도 한 번 더 뜬다.
  *   · `prepare`가 화면을 바꿨다면(예: 채팅 탭 → Assistant 탭) 가이드가 끝날 때 원래대로 돌려놓는다.
- *   · 폰(Companion) 가이드는 이번 범위가 아니다(PC 전용 구현).
+ *   · **폰(폭 768px 이하)** 에서는 같은 가이드를 바닥 시트 모양으로 띄운다. 폰 화면 구조가 PC와 달라
+ *     대상·문구가 바뀌는 가이드만 `mobileSteps`를 따로 둔다(IDEAS 게이트 탭, ROUTE 일정/지도 전환,
+ *     Expense ＋ 버튼). 없으면 `steps`를 그대로 쓴다. 폰 단계를 본 기록은 `<id>:m`으로 따로 남긴다
+ *     — PC에서 본 IDEAS 가이드와 폰의 IDEAS 가이드는 가리키는 버튼이 다르기 때문이다.
+ *   · Companion(`go`)은 원래 폰 화면이라 하나의 단계로 PC·폰 모두 쓴다.
  */
 
 export interface TourStepContent {
@@ -34,6 +38,8 @@ export interface TourDef {
   gate?: string;
   version: number;
   steps: TourStepContent[];
+  /** 폰에서 쓸 단계 — 폰 화면 구조가 달라 대상·문구가 바뀌는 가이드에만 둔다 */
+  mobileSteps?: TourStepContent[];
 }
 
 export const TOURS: TourDef[] = [
@@ -51,6 +57,18 @@ export const TOURS: TourDef[] = [
         fallback: { target: 'brainstorm-inbox', title: '게이트로 분류', body: '새 카드는 대기 중에 들어가요. 원하는 게이트로 끌어다 놓아 분류하세요.' },
       },
       { target: 'brainstorm-gates', title: 'VISIT · FOOD · ACTIVITY · STAY', body: 'STAY 게이트에 넣은 장소는 숙소 후보가 되고, 나머지는 동선을 짜는 재료가 돼요.' },
+      { target: 'brainstorm-monthly-picks', title: '이번 달 추천', body: '여행지와 이번 달에 맞춘 추천이에요. ＋를 누르면 대기 목록에 담겨요.' },
+      { target: 'brainstorm-map', title: '위치 한눈에', body: '모은 장소를 게이트 색깔별로 지도에서 볼 수 있어요. 숙소 후보가 모이면 STAY로 넘어가요.' },
+    ],
+    mobileSteps: [
+      { target: 'brainstorm-search', title: '장소 체크인', body: '장소 이름을 입력하면 Google에서 찾아 사진·평점과 함께 저장해요. 링크나 메모도 그대로 넣을 수 있어요.' },
+      {
+        target: 'brainstorm-suggest',
+        title: '게이트로 분류',
+        body: '새 카드는 대기에 들어가요. 제안을 적용하거나, 카드의 ⋮ 메뉴에서 옮길 게이트를 골라요.',
+        fallback: { target: 'brainstorm-inbox', title: '게이트로 분류', body: '새 카드는 대기에 들어가요. 카드의 ⋮ 메뉴에서 옮길 게이트를 골라요.' },
+      },
+      { target: 'brainstorm-mtabs', title: '게이트별로 보기', body: '탭을 눌러 대기·VISIT·FOOD·ACTIVITY·STAY 장소를 따로 봐요. STAY에 넣은 장소는 숙소 후보가 돼요.' },
       { target: 'brainstorm-monthly-picks', title: '이번 달 추천', body: '여행지와 이번 달에 맞춘 추천이에요. ＋를 누르면 대기 목록에 담겨요.' },
       { target: 'brainstorm-map', title: '위치 한눈에', body: '모은 장소를 게이트 색깔별로 지도에서 볼 수 있어요. 숙소 후보가 모이면 STAY로 넘어가요.' },
     ],
@@ -80,6 +98,14 @@ export const TOURS: TourDef[] = [
       { target: 'route-library', title: '장소 담기', body: 'IDEAS에서 모은 장소가 여기 있어요. ＋를 누르면 선택한 날에 담겨요.' },
       { target: 'route-plan', title: '순서와 시각', body: '1번은 확정한 숙소예요. 카드를 끌어 순서를 바꾸고, 꼭 지킬 시각은 직접 입력하세요.' },
       { target: 'route-refine', title: '동선 다듬기', body: '순서 정리를 누르면 이동이 짧은 순서로 바꿔 줘요. 이동시간은 추정치라, 실제 경로 보기로 실측값을 받아 볼 수 있어요.' },
+      { target: 'route-to-timeline', title: '시간표로', body: '동선이 정리되면 TIMELINE에서 시간 단위로 다듬어요.' },
+    ],
+    mobileSteps: [
+      { target: 'route-need-stay', title: '숙소 먼저', body: 'STAY에서 숙소를 먼저 확정해 주세요. 확정한 숙소가 하루의 출발점이 돼요.' },
+      { target: 'route-days', title: '날짜 고르기', body: '날짜마다 동선을 따로 만들어요. 옆으로 넘겨 다른 날을 골라요.' },
+      { target: 'route-plan', title: '순서 바꾸기', body: '1번은 확정한 숙소예요. 카드를 꾹 눌러 위아래로 끌면 순서를 바꿀 수 있어요.' },
+      { target: 'route-madd', title: '장소 담기', body: '누르면 지도 보기로 바뀌고, IDEAS에서 모은 장소를 ＋로 이 날에 담을 수 있어요. 위의 탭으로 일정과 지도를 오가요.' },
+      { target: 'route-refine', title: '동선 다듬기', body: '순서 정리를 누르면 이동이 짧은 순서로 바꿔 줘요. 이동시간은 추정치예요.' },
       { target: 'route-to-timeline', title: '시간표로', body: '동선이 정리되면 TIMELINE에서 시간 단위로 다듬어요.' },
     ],
   },
@@ -143,6 +169,11 @@ export const TOURS: TourDef[] = [
       { target: 'expense-quickadd', title: '지출 기록', body: '현지 통화로 입력하면 원화로 환산해서 저장해요. 공동 지출이면 각자 낼 금액이 계산돼요.' },
       { target: 'expense-settle', title: '누가 누구에게', body: '결제를 마친 공동 지출을 바탕으로 누가 누구에게 얼마를 보내면 되는지 알려 줘요.' },
     ],
+    mobileSteps: [
+      { target: 'expense-tabs', title: '예산부터 정산까지', body: '예산 요약 · 지출 내역 · 정산 · 동행 · 설정 탭이 있어요. 예산은 설정 탭에서 정해요.' },
+      { target: 'expense-fab', title: '지출 기록', body: '＋를 누르면 지출을 바로 기록할 수 있어요. 현지 통화로 넣으면 원화로 환산되고, 공동 지출이면 각자 낼 금액이 계산돼요.' },
+      { target: 'expense-settle', title: '누가 누구에게', body: '결제를 마친 공동 지출을 바탕으로 누가 누구에게 얼마를 보내면 되는지 알려 줘요.' },
+    ],
   },
   {
     id: 'links',
@@ -152,6 +183,21 @@ export const TOURS: TourDef[] = [
     steps: [
       { target: 'links-list', title: '채팅 링크 모음', body: '채팅에 보낸 링크가 자동으로 분류되어 여기 모여요. 링크를 추가하려면 채팅에 보내 주세요.' },
       { target: 'links-groups', title: '나만의 묶음', body: '링크를 주제별 그룹에 담아 두면 나중에 다시 찾기 쉬워요.' },
+    ],
+  },
+  {
+    // Companion — 여행 중 휴대폰 화면. 폰에서 여행을 열면 처음 뜨는 화면이라 폰 사용자의 첫 가이드가 된다.
+    // 도착 기록 단계는 여행 당일, 그날 다룰 일정이 있을 때만 보인다(그 밖엔 대상이 없어 자동으로 빠진다).
+    id: 'companion',
+    label: 'Companion',
+    gate: 'go',
+    version: 1,
+    steps: [
+      { target: 'companion-dates', title: '날짜 고르기', body: '날짜를 누르면 그날 일정을 봐요. 달력 버튼을 누르면 모든 날짜를 한 번에 볼 수 있어요.' },
+      { target: 'companion-nav', title: '길찾기는 한 번에', body: '누르면 Google 지도가 열리고 지금 위치에서 길을 안내해요. 카드를 누르면 장소 상세가 열려요.' },
+      { target: 'companion-track', title: '도착 기록', body: '장소에 도착하면 도착을 눌러 주세요. 남은 일정 시각이 실제 시각에 맞춰 다시 계산돼요.' },
+      { target: 'companion-geo', title: '위치 기반 체크인', body: '켜 두면 일정 장소에 도착할 때 자동으로 도착을 기록해요.' },
+      { target: 'companion-tabs', title: '오늘 · 지도 · 지갑 · 여행', body: '지도에서는 주변 장소를 찾고, 지갑에서는 예약 서류와 지출을 관리해요. 출발 전에 지갑에서 서류를 저장해 두면 인터넷이 없어도 열려요.' },
     ],
   },
   {
@@ -185,4 +231,14 @@ export function tourById(id: string): TourDef | null {
 export function tourForGate(gate: string | null | undefined): TourDef | null {
   if (!gate) return null;
   return TOURS.find((t) => t.gate === gate) ?? null;
+}
+
+/** 이 기기에서 쓸 단계 — 폰이고 폰 단계가 따로 있으면 그것을 쓴다 */
+export function stepsFor(def: TourDef, phone: boolean): TourStepContent[] {
+  return phone && def.mobileSteps ? def.mobileSteps : def.steps;
+}
+
+/** 본 기록을 남길 이름 — 폰 단계를 따로 둔 가이드는 폰에서 본 것을 따로 기록한다 */
+export function recordIdFor(def: TourDef, phone: boolean): string {
+  return phone && def.mobileSteps ? def.id + ':m' : def.id;
 }

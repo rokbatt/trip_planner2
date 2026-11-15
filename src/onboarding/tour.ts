@@ -24,6 +24,8 @@ export interface TourOptions {
   onEnd: (reason: TourEndReason) => void;
   /** 여러 페이지를 이어서 보는 중이면 "건너뛰기"가 다음 페이지로 넘어간다 — 버튼 문구만 바꾼다 */
   chainLabel?: string;
+  /** 이 기기에서 쓸 단계(폰이면 mobileSteps) — 없으면 def.steps */
+  steps?: TourStepContent[];
 }
 
 export interface TourHandle {
@@ -47,6 +49,8 @@ const PREPARE: Record<NonNullable<TourStepContent['prepare']>, () => (() => void
 const MARGIN = 12; // 화면 가장자리와 설명 상자 사이
 const GAP = 14; // 대상과 설명 상자 사이
 const PAD = 6; // 강조 상자가 대상보다 큰 정도
+/** 이 폭 이하면 폰 배치(바닥 시트) — 워크스페이스가 폰 구조로 바뀌는 중단점과 같다 */
+const PHONE_MAX = 768;
 
 function q(target: string): HTMLElement | null {
   return document.querySelector<HTMLElement>('[data-tour="' + target + '"]');
@@ -69,8 +73,12 @@ function clipRect(el: HTMLElement): { top: number; left: number; bottom: number;
   let left = 0;
   let bottom = window.innerHeight;
   let right = window.innerWidth;
-  for (let a = el.parentElement; a && a !== document.body && a !== document.documentElement; a = a.parentElement) {
+  // 화면에 고정된(position: fixed) 상자 안의 요소는 그 바깥 조상에게 잘리지 않는다 — 고정 상자까지만 본다.
+  // (폰의 채팅 패널이 그렇다: 헤더 아래부터 시작하는 본문 영역 안에 있지만 화면 전체를 덮는다)
+  let stopAfterFixed = getComputedStyle(el).position === 'fixed';
+  for (let a = el.parentElement; a && !stopAfterFixed && a !== document.body && a !== document.documentElement; a = a.parentElement) {
     const cs = getComputedStyle(a);
+    if (cs.position === 'fixed') stopAfterFixed = true; // 이 상자 자신의 넘침은 보고, 그 위로는 올라가지 않는다
     // display: contents는 상자가 없어 아무것도 잘라내지 않는다(좁은 화면에서 열을 풀 때 쓰인다)
     if (cs.display === 'contents' || (cs.overflowX === 'visible' && cs.overflowY === 'visible')) continue;
     const r = a.getBoundingClientRect();
@@ -99,8 +107,8 @@ function availableAtStart(step: TourStepContent): boolean {
 }
 
 /** 가이드를 시작할 수 있는가(보여줄 단계가 하나라도 있는가) — 자동 실행 전 대기용 */
-export function tourHasTargets(def: TourDef): boolean {
-  return def.steps.some((s) => !!resolveNow(s));
+export function tourHasTargets(steps: TourStepContent[]): boolean {
+  return steps.some((s) => !!resolveNow(s));
 }
 
 function waitFor(fn: () => boolean, timeoutMs: number): Promise<boolean> {
@@ -129,7 +137,7 @@ export function stopActiveTour(reason: TourEndReason = 'close'): void {
 export function runTour(def: TourDef, opts: TourOptions): TourHandle | null {
   active?.stop('close');
 
-  const steps = def.steps.filter(availableAtStart);
+  const steps = (opts.steps ?? def.steps).filter(availableAtStart);
   if (!steps.length) return null;
 
   const root = document.createElement('div');
@@ -221,7 +229,14 @@ export function runTour(def: TourDef, opts: TourOptions): TourHandle | null {
     let x: number;
     let y: number;
     let side: string;
-    if (right + GAP + tw <= vw - MARGIN) {
+    if (vw <= PHONE_MAX) {
+      // 폰 — 설명 상자는 화면 폭에 맞춘 바닥 시트다(CSS가 폭을 정한다). 대상 아래 → 위 순서로 자리를 찾고,
+      // 둘 다 모자라면(대상이 화면 대부분) 화면 바닥에 붙인다. 엄지가 닿는 곳에 버튼이 오게.
+      x = (vw - tw) / 2;
+      if (bottom + GAP + th <= vh - MARGIN) { side = 'below'; y = bottom + GAP; }
+      else if (top - GAP - th >= MARGIN) { side = 'above'; y = top - GAP - th; }
+      else { side = 'inside'; y = vh - th - MARGIN; }
+    } else if (right + GAP + tw <= vw - MARGIN) {
       side = 'right'; x = right + GAP; y = cy - th / 2;
     } else if (left - GAP - tw >= MARGIN) {
       side = 'left'; x = left - GAP - tw; y = cy - th / 2;

@@ -315,6 +315,8 @@ function buildSidebar(trip: Trip, activeGate: string): string {
     '  </div>',
     '  <div class="ws-nav-divider"></div>',
     subItems,
+    // 폰 전용 — 폰 헤더엔 ? 버튼을 둘 자리가 없어(좁은 폭에서 화면 이름이 두 줄로 밀린다) 메뉴 안에 둔다
+    '<button class="ws-nav-item ws-nav-help" id="ws-nav-help">' + IC.help + '<span class="ws-nav-label">도움말</span></button>',
     '</div>',
     '<div class="ws-sidebar-footer">',
     '  <button class="ws-invite-btn" id="ws-invite">' + IC.invite + ' 멤버 초대</button>',
@@ -609,6 +611,11 @@ function bindEvents(page: HTMLElement, tripId: string): void {
   });
 
   page.querySelector('#ws-help-btn')?.addEventListener('click', () => openHelp());
+  page.querySelector('#ws-nav-help')?.addEventListener('click', () => {
+    sidebar.classList.remove('mobile-open');
+    overlay?.classList.remove('visible');
+    openHelp();
+  });
 
   page.querySelector('#ws-share-btn')?.addEventListener('click', () => {
     const trip = store.get('currentTrip');

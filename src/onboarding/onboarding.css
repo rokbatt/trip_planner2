@@ -1,5 +1,5 @@
 /* ============================================================
-   온보딩 · 페이지 가이드 · 도움말 센터 — PC 전용(폭 769px 이상)
+   온보딩 · 페이지 가이드 · 도움말 센터 — PC 기본, 맨 아래에 폰(768px 이하) 배치
    기존 Deep Navy(#0B2A5C) / Sky Blue(#79BDF8 · #2F86D6) 톤을 그대로 쓴다.
    ============================================================ */
 
@@ -489,7 +489,99 @@
   .ob-tour-spot, .ob-tour-tip, .ob-help, .ob-help-scrim { transition: none; }
 }
 
-/* PC 전용 — 폰 화면에는 진입점도 보이지 않는다(폰 레이아웃 변경 없음) */
+/* 사이드바의 "도움말" — 폰에서만 보인다(PC는 헤더 ? 버튼) */
+.ws-nav-help { display: none !important; }
+
+/* ══════════════ 폰(768px 이하) ══════════════
+   PC 창을 줄이는 게 아니라 한 손 사용에 맞춘다 — 창은 바닥 시트, 버튼은 엄지 닿는 곳에 크게(44px),
+   글은 한 단계 크게. 아이폰 홈 막대 자리(safe-area)를 비운다. */
 @media (max-width: 768px) {
-  .ob-help-btn { display: none !important; }
+  /* 워크스페이스 헤더 ? 버튼은 폰에서 숨기고 메뉴(☰) 안의 "도움말"로 대신한다 — 좁은 폭에서
+     화면 이름·날짜가 두 줄로 밀리는 것을 막는다. 내 여행 상단의 ? 버튼은 자리가 넉넉해 그대로 둔다. */
+  .ws-header-right .ob-help-btn { display: none; }
+  .ws-nav-help { display: flex !important; }
+
+  /* 환영 안내 → 바닥 시트 */
+  .ob-welcome-overlay { align-items: flex-end; padding: 0; }
+  .ob-welcome {
+    width: 100%;
+    max-height: 92dvh;
+    padding: 30px 20px calc(16px + env(safe-area-inset-bottom));
+    border-radius: 22px 22px 0 0;
+    animation: ob-sheet-up 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .ob-welcome::before {
+    /* 시트 손잡이 */
+    content: '';
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    width: 36px;
+    height: 4px;
+    margin-left: -18px;
+    border-radius: 2px;
+    background: rgba(130, 150, 170, 0.35);
+  }
+  .ob-welcome-x { top: 12px; right: 10px; width: 40px; height: 40px; }
+  .ob-welcome-title { font-size: 22px; padding-right: 28px; }
+  .ob-welcome-intro { font-size: 14.5px; }
+  .ob-welcome-flow { grid-template-columns: 1fr; gap: 8px; margin-top: 20px; }
+  /* 단계 카드는 가로 한 줄(아이콘 | 글) — 세로로 셋을 쌓아도 한 화면에 들어오게 */
+  .ob-flow-item {
+    display: grid;
+    grid-template-columns: 36px 1fr;
+    column-gap: 12px;
+    padding: 14px;
+  }
+  .ob-flow-icon { grid-row: 1 / span 4; }
+  .ob-flow-step { margin-top: 0; font-size: 14.5px; }
+  .ob-flow-body { font-size: 13px; }
+  .ob-flow-gates { display: none; } /* 폰에선 게이트 이름보다 한 화면에 들어오는 게 먼저 */
+  .ob-flow-title { margin-top: 2px; }
+  /* 버튼은 시트 바닥에 붙인다 — 작은 폰에서 내용이 길어 스크롤돼도 시작하기·건너뛰기가 항상 보이게 */
+  .ob-welcome-actions {
+    position: sticky;
+    bottom: calc(-16px - env(safe-area-inset-bottom));
+    margin: 16px -20px calc(-16px - env(safe-area-inset-bottom));
+    padding: 10px 20px calc(12px + env(safe-area-inset-bottom));
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0), #fff 14px);
+    flex-direction: column-reverse;
+    gap: 4px;
+  }
+  .ob-welcome-actions .ob-btn { width: 100%; height: 48px; font-size: 15px; }
+  .ob-welcome-actions .ob-btn-ghost { border-color: transparent; background: transparent; height: 44px; }
+
+  /* 페이지 가이드 설명 상자 — 화면 폭에 맞춘 카드(위치는 tour.ts가 대상 아래/위/바닥으로 정한다) */
+  .ob-tour-tip {
+    width: calc(100vw - 24px);
+    max-width: 480px;
+    padding: 16px 16px 12px;
+    border-radius: 18px;
+    box-shadow: 0 12px 40px rgba(11, 42, 92, 0.28);
+  }
+  .ob-tour-title { font-size: 17px; }
+  .ob-tour-body { font-size: 14.5px; line-height: 1.6; }
+  .ob-tour-x { width: 40px; height: 40px; margin: -10px -10px -10px 0; }
+  .ob-tour-foot { margin-top: 14px; }
+  .ob-tour-nav .ob-btn { height: 44px; min-width: 76px; padding: 0 16px; font-size: 14px; border-radius: 12px; }
+  .ob-tour-skip { padding: 12px 8px 12px 0; font-size: 13.5px; }
+
+  /* 도움말 센터 — 화면 전체 */
+  .ob-help { width: 100vw; box-shadow: none; }
+  .ob-help-head { padding: calc(14px + env(safe-area-inset-top)) 16px 14px; }
+  .ob-help-x { width: 40px; height: 40px; margin-right: -8px; }
+  .ob-help-heading { font-size: 21px; }
+  .ob-help-search { height: 46px; }
+  .ob-help-search input { font-size: 16px; } /* 16px 미만이면 iOS가 입력할 때 화면을 확대한다 */
+  .ob-help-body { padding: 16px 16px calc(28px + env(safe-area-inset-bottom)); }
+  .ob-help-row { padding: 14px; min-height: 56px; }
+  .ob-help-tourbtn { height: 46px; font-size: 14px; }
+  .ob-help-replay { padding: 14px; min-height: 56px; }
+  .ob-help-back { padding: 8px 6px; margin-bottom: 8px; }
+}
+
+@keyframes ob-sheet-up { from { transform: translateY(100%); } to { transform: none; } }
+
+@media (max-width: 768px) and (prefers-reduced-motion: reduce) {
+  .ob-welcome { animation: none; }
 }
