@@ -1643,6 +1643,29 @@
 .mb-ex-chip svg { width: 15px; height: 15px; flex: none; }
 .mb-ex-chip.active { background: var(--mb-sky); border-color: transparent; color: var(--mb-on-sky); }
 
+/* 급할 때 줄 — 편의점·약국·ATM·환전소. 4개를 한 줄에 같은 폭으로, 엄지로 누르기 쉽게 */
+.mb-ex-quick {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.mb-ex-qbtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 52px;
+  border: 1px solid var(--mb-line-soft);
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface-2);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mb-ink-2);
+}
+.mb-ex-qbtn svg { width: 18px; height: 18px; }
+.mb-ex-qbtn.active { background: var(--mb-sky); border-color: transparent; color: var(--mb-on-sky); }
+
 /* 지도 위: 검색창 + 필터 */
 .mb-ex-search {
   position: absolute;

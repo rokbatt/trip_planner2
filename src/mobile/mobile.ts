@@ -1010,7 +1010,7 @@ function topBarHtml(): string {
 
   // 화면 제목은 탭마다 다르다. TODAY는 날짜 띠가 바로 아래에 있어서 상단에 DAY 피커를 또 두지 않는다.
   if (activeTab !== 'today') {
-    const title = activeTab === 'wallet' ? '지갑' : activeTab === 'map' ? '지도' : tripSub === 'info' ? '여행 정보' : '전체 일정';
+    const title = activeTab === 'wallet' ? '지갑' : activeTab === 'map' ? '주변' : tripSub === 'info' ? '여행 정보' : '전체 일정';
     return [
       brandRow,
       '<div class="mb-daybar"><span class="mb-screen-title">' + title + '</span></div>',
@@ -1053,8 +1053,9 @@ function weatherChipHtml(): string {
 
 function tabBarHtml(): string {
   const items: Array<{ key: MbTab; label: string; icon: string }> = [
-    { key: 'today', label: '오늘', icon: IC.home },
-    { key: 'map', label: '지도', icon: IC.map },
+    { key: 'today', label: '일정', icon: IC.home },
+    // 여행 중 가장 자주 여는 곳 — "지도"가 아니라 "주변"으로 부른다(열면 바로 주변 검색)
+    { key: 'map', label: '주변', icon: IC.search },
     { key: 'wallet', label: '지갑', icon: IC.wallet },
     { key: 'trip', label: '여행', icon: IC.bag },
   ];
@@ -2139,7 +2140,8 @@ let exMarkerById = new Map<string, any>();
 
 /* ── 주변 탐색 상태 ── */
 type MapView = 'plan' | 'explore';
-let mapView: MapView = 'plan';
+// 주변 탭을 열면 바로 주변 검색부터 보인다. 일정 지도는 칩 하나로 남긴다
+let mapView: MapView = 'explore';
 let exCat: ExploreCat = 'food';
 /** 검색어 검색 중이면 그 검색어(카테고리 대신) */
 let exQuery = '';
@@ -2304,15 +2306,28 @@ function mapTabHtml(): string {
   ].join('');
 }
 
-/** 보기 고르기 — 일정 | 맛집 | 카페 | 관광지 | 숙소 | 편의시설 | 전체 (가로 스크롤) */
+/** 급할 때 찾는 것 — 주변 탭 둘째 줄 빠른 버튼(이 근처 둘러보기와 같은 검색) */
+const QUICK_NEAR: NearbyKey[] = ['convenience', 'pharmacy', 'atm', 'exchange'];
+
+/**
+ * 보기 고르기 — 1줄: 맛집 | 카페 | 관광지 | 편의시설 | 숙소 | 전체 | 일정 지도 (가로 스크롤)
+ *             2줄: 편의점 · 약국 · ATM · 환전소 (급할 때 한 번에)
+ */
 function mapChipsHtml(): string {
   const chip = (key: string, label: string, icon: string, active: boolean) =>
     '<button class="mb-ex-chip' + (active ? ' active' : '') + '" data-mapview="' + key + '">' + icon + '<span>' + label + '</span></button>';
   return [
     '<div class="mb-ex-chips" role="tablist">',
-    chip('plan', '일정', IC.route, mapView === 'plan'),
     // "이 근처" 칩(환전소 등)으로 넘어온 검색이면 위 칩은 아무것도 켜지 않는다 — 그 칩의 검색이 아니다
     EXPLORE_CATS.map((c) => chip(c.key, c.label, EX_ICON[c.key], mapView === 'explore' && !exQuery && !exNear && exCat === c.key)).join(''),
+    chip('plan', '일정 지도', IC.route, mapView === 'plan'),
+    '</div>',
+    '<div class="mb-ex-quick" aria-label="급할 때">',
+    QUICK_NEAR.map((k) => {
+      const d = nearbyDef(k);
+      const on = mapView === 'explore' && !exQuery && exNear === k;
+      return '<button class="mb-ex-qbtn' + (on ? ' active' : '') + '" data-mapnear="' + k + '">' + NEAR_ICON[k] + '<span>' + escapeHtml(d.label) + '</span></button>';
+    }).join(''),
     '</div>',
   ].join('');
 }
@@ -4640,6 +4655,8 @@ function bind(): void {
       render();
       if (tab === 'wallet') { void ensureExpenseCtx(); void ensureWalletDocs(); }
       if (tab === 'trip' && tripSub === 'info') void ensureMoreCtx();
+      // 주변 탭을 처음 열면 현재 위치에서 바로 찾는다(한 번만 — 다시 들어오면 마지막 결과를 그대로 보여 준다)
+      if (tab === 'map' && mapView === 'explore' && !exSearchedAt && !exLoading) void runExploreSearch();
       // 다른 탭으로 나가면 지도 인스턴스를 버린다 — 다시 들어오면 새로 붙인다
       if (tab !== 'map') teardownMap();
     });
@@ -4930,6 +4947,16 @@ function bind(): void {
       exCat = v as ExploreCat;
       exNear = null;
       exQuery = '';
+      void runExploreSearch(exSearchedAt && !exMoved ? exSearchedAt : undefined, exSearchedAt && !exMoved ? exCenterLabel : undefined);
+    });
+  });
+  root.querySelectorAll('[data-mapnear]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      mapView = 'explore';
+      exNear = (btn as HTMLElement).dataset.mapnear as NearbyKey;
+      exQuery = '';
+      exAnchor = null;
+      exSort = 'distance';
       void runExploreSearch(exSearchedAt && !exMoved ? exSearchedAt : undefined, exSearchedAt && !exMoved ? exCenterLabel : undefined);
     });
   });
