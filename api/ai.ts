@@ -297,6 +297,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (kind === 'place-brief') return handlePlaceBrief(req, res);
   if (kind === 'doc-digest') return handleDocDigest(req, res);
   if (kind === 'doc-qa') return handleDocQA(req, res);
+  if (kind === 'receipt-read') return handleReceiptRead(req, res);
   return handleHotelReview(req, res);
 }
 
@@ -1503,4 +1504,135 @@ async function handleDocQA(req: VercelRequest, res: VercelResponse) {
 
   await writePlanCache(supabase, cacheKey, 'doc-qa', result);
   res.status(200).json({ ...result, cached: false });
+}
+
+
+/* ══════════════════ 영수증·결제 화면 읽기 (지갑 "사진으로 추가") ══════════════════
+ * 사진 한 장(영수증, 카드 결제 알림, 트래블월렛·토스 이용내역 캡처)에서 결제 건을 뽑는다.
+ * - 사진은 **저장하지 않는다**. Gemini로 보내 읽기만 하고 결과(가게·금액·통화·날짜)만 돌려준다.
+ * - 저장은 사용자가 화면에서 확인·수정한 뒤 기존 지출 저장 경로로 한다(원칙 3-1: AI 값을 바로 넣지 않음).
+ * - 영수증·결제 화면에는 개인정보가 담기므로 Gemini **유료 등급**에서만 켠다 →
+ *   환경 변수 RECEIPT_AI_ENABLED=true일 때만 동작(5-11).
+ */
+
+const RECEIPT_CATEGORIES = ['FLIGHT', 'STAY', 'TRANSPORT', 'FOOD', 'ACTIVITY', 'SHOPPING', 'ETC'] as const;
+const RECEIPT_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
+/** base64 길이 상한(약 1MB 이미지) — 화면에서 줄여 보내므로 넉넉하다. Worker CPU(요청당 10ms)도 고려 */
+const RECEIPT_MAX_BASE64 = 1_400_000;
+const RECEIPT_MAX_ENTRIES = 20;
+
+export interface ReceiptEntry {
+  title: string;
+  amount: number;
+  currency: string | null;
+  date: string | null;
+  category: (typeof RECEIPT_CATEGORIES)[number];
+  /** 화면에 원화 청구액이 같이 보이면 그 값(카드 앱 캡처 등). 없으면 null */
+  krwCharged: number | null;
+}
+
+/** Gemini가 돌려준 값을 믿지 않고 형식·범위를 다시 거른다 — 모르는 값은 지어내지 않고 null */
+export function sanitizeReceiptEntries(raw: unknown): ReceiptEntry[] {
+  const list = Array.isArray((raw as any)?.entries) ? (raw as any).entries : [];
+  const out: ReceiptEntry[] = [];
+  for (const e of list) {
+    if (out.length >= RECEIPT_MAX_ENTRIES) break;
+    const amount = Number(e?.amount);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 1e9) continue;
+    const title = String(e?.title ?? '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    const cur = typeof e?.currency === 'string' ? e.currency.trim().toUpperCase() : '';
+    const date = typeof e?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(e.date) ? e.date : null;
+    const cat = RECEIPT_CATEGORIES.includes(e?.category) ? e.category : 'ETC';
+    const krw = Number(e?.krwCharged);
+    out.push({
+      title: title || '지출',
+      amount: Math.round(amount * 100) / 100,
+      currency: /^[A-Z]{3}$/.test(cur) ? cur : null,
+      date,
+      category: cat,
+      krwCharged: Number.isFinite(krw) && krw > 0 && krw <= 1e10 ? Math.round(krw) : null,
+    });
+  }
+  return out;
+}
+
+const RECEIPT_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    entries: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          title: { type: 'STRING' },
+          amount: { type: 'NUMBER' },
+          currency: { type: 'STRING', nullable: true },
+          date: { type: 'STRING', nullable: true },
+          category: { type: 'STRING', enum: [...RECEIPT_CATEGORIES] },
+          krwCharged: { type: 'NUMBER', nullable: true },
+        },
+        required: ['title', 'amount', 'category'],
+      },
+    },
+  },
+  required: ['entries'],
+};
+
+async function handleReceiptRead(req: VercelRequest, res: VercelResponse) {
+  if (process.env.RECEIPT_AI_ENABLED !== 'true') {
+    res.status(503).json({ error: '사진으로 지출 읽기는 아직 준비 중이에요. 직접 입력해 주세요.', disabled: true });
+    return;
+  }
+  const body = (req.body ?? {}) as Record<string, any>;
+  const mimeType = String(body.mimeType ?? '');
+  const base64 = typeof body.image === 'string' ? body.image : '';
+  const hintCurrency = typeof body.currency === 'string' && /^[A-Z]{3}$/.test(body.currency) ? body.currency : null;
+  if (!RECEIPT_MIME.has(mimeType) || !base64 || base64.length > RECEIPT_MAX_BASE64 || !/^[A-Za-z0-9+/=]+$/.test(base64.slice(0, 200))) {
+    res.status(400).json({ error: '사진 형식이 올바르지 않거나 너무 커요.' });
+    return;
+  }
+
+  // 로그인한 사람만 — 비용이 드는 AI 호출이다
+  const token = bearerToken(req.headers?.authorization);
+  const supabase = makeSupabase();
+  if (!token || !supabase) {
+    res.status(401).json({ error: '로그인이 필요해요.' });
+    return;
+  }
+  const { data: authData, error: authError } = await supabase.auth.getUser(token);
+  if (authError || !authData?.user?.id) {
+    res.status(401).json({ error: '로그인이 만료됐어요. 다시 로그인해 주세요.' });
+    return;
+  }
+
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    res.status(500).json({ error: 'GEMINI_API_KEY가 설정되지 않았어요.' });
+    return;
+  }
+  if (!(await spendDailyQuota(req, 'ai'))) {
+    res.status(429).json({ error: QUOTA_EXCEEDED_MESSAGE, quotaExceeded: true });
+    return;
+  }
+
+  const prompt = [
+    '이 사진은 여행 중 결제 기록이에요: 영수증, 카드 결제 알림, 또는 결제 앱(트래블월렛·토스 등)의 이용내역 화면.',
+    '보이는 결제 건을 모두 뽑아 entries에 넣으세요. 이용내역처럼 여러 건이면 건마다 하나씩.',
+    '규칙:',
+    '- title: 가게·상품 이름(사진에 적힌 이름 그대로, 너무 길면 줄이기)',
+    '- amount: 실제로 낸 금액(합계). 영수증이면 품목이 아니라 최종 합계',
+    '- currency: 통화 기호·표기로 판단한 ISO 코드(예: ¥→JPY, ฿→THB, €→EUR, 원→KRW). 확실하지 않으면 null' +
+      (hintCurrency ? ' (이 여행의 현지 통화는 ' + hintCurrency + '일 가능성이 높음)' : ''),
+    '- date: 결제 날짜가 보이면 YYYY-MM-DD, 없으면 null',
+    '- category: FOOD(식당·카페), TRANSPORT(교통·택시), STAY(숙소), ACTIVITY(입장권·투어), SHOPPING(쇼핑), FLIGHT(항공), 그 밖 ETC',
+    '- krwCharged: 화면에 원화 청구 금액이 따로 보이면 그 숫자, 없으면 null',
+    '사진에 없는 값은 절대 지어내지 말고 null로 두세요. 결제 건이 없으면 entries를 빈 배열로.',
+  ].join('\n');
+
+  const { data, error } = await callGeminiJson('gemini-2.5-flash-lite', geminiKey, prompt, RECEIPT_SCHEMA, { mimeType, base64 });
+  if (error) {
+    res.status(502).json({ error });
+    return;
+  }
+  res.status(200).json({ entries: sanitizeReceiptEntries(data) });
 }

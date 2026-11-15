@@ -134,6 +134,7 @@ import { apiFetch } from '../utils/apiFetch';
 import { escapeHtml, safeHttpUrl } from '../utils/html';
 import { openHelp } from '../onboarding/onboarding';
 import { directionsUrl, originChoices, type DirPoint, type Origin, type TravelHint } from './directions';
+import { readReceiptPhoto, toDraft, chargedRate, MAX_PHOTOS_PER_IMPORT, type PhotoDraft } from './receiptImport';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type Trip = Database['public']['Tables']['trips']['Row'];
@@ -154,6 +155,7 @@ const IC = {
   transit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="14" rx="2"/><path d="M4 11h16M8 21l2-4h4l2 4M8 7h.01M16 7h.01"/></svg>',
   taxi: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M5 17a2 2 0 1 0 4 0M15 17a2 2 0 1 0 4 0M5 17l1.5-5h11L19 17M8 12V8h8v4"/></svg>',
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
   share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7M16 6l-4-4-4 4M12 2v13"/></svg>',
   more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>',
   bulb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3Z"/></svg>',
@@ -358,6 +360,10 @@ let savedDocs = new Map<string, string>();
 let docSaving: { done: number; total: number } | null = null;
 /** 지갑 안내 한 줄(오프라인이라 못 연 서류 등) */
 let walletNotice = '';
+/** 사진으로 추가 — 읽는 중 진행(몇 장 중 몇 장) / 확인 대기 중인 초안 */
+let photoBusy: { done: number; total: number } | null = null;
+let photoDrafts: PhotoDraft[] | null = null;
+let photoSaving = false;
 /** 앱 안 서류 보기 — 오프라인 저장본을 여는 화면 */
 let docViewer: { url: string; type: string; title: string; file: OfflineDocFile } | null = null;
 
@@ -3342,8 +3348,130 @@ function walletMoneyHtml(): string {
     '  <button class="mb-wal-add" id="mb-wal-add">' + IC.plus + ' 지출 추가</button>',
     '  <button class="mb-wal-calc" id="mb-wal-calc">' + IC.swap + ' 얼마예요?</button>',
     '</div>',
+    // 영수증·결제 알림·이용내역 캡처를 골라 한 번에 — 고른 사진만 쓰고 앨범 전체 권한은 묻지 않는다
+    '<label class="mb-wal-photo' + (photoBusy ? ' is-busy' : '') + '">' +
+      (photoBusy ? '<span class="mb-spinner"></span>사진 읽는 중 ' + photoBusy.done + '/' + photoBusy.total : IC.camera + ' 영수증·결제 캡처로 추가') +
+      '<input type="file" id="mb-wal-photo-in" accept="image/*" multiple hidden' + (photoBusy ? ' disabled' : '') + ' />' +
+    '</label>',
+    photoDraftsHtml(),
     '</section>',
   ].join('');
+}
+
+/** 사진에서 읽은 지출 — 저장 전에 확인·수정하는 목록(AI 값을 바로 넣지 않는다, 원칙 3-1) */
+function photoDraftsHtml(): string {
+  if (!photoDrafts) return '';
+  if (!photoDrafts.length) {
+    return '<section class="mb-pdr"><p class="mb-pdr-empty">사진에서 결제 내역을 찾지 못했어요. 직접 입력해 주세요.</p>' +
+      '<button class="mb-pdr-cancel" id="mb-pdr-cancel">닫기</button></section>';
+  }
+  const catOpts = (sel: string) =>
+    (Object.keys(CATEGORY_META) as ExpenseCategory[])
+      .map((c) => '<option value="' + c + '"' + (c === sel ? ' selected' : '') + '>' + escapeHtml(CATEGORY_META[c].label) + '</option>')
+      .join('');
+  const n = photoDrafts.filter((d) => d.include).length;
+  return [
+    '<section class="mb-pdr">',
+    '  <h3 class="mb-pdr-title">사진에서 읽은 지출 ' + photoDrafts.length + '건</h3>',
+    '  <p class="mb-pdr-sub">AI가 읽은 값이에요. 확인하고 틀린 곳은 고쳐 주세요.</p>',
+    photoDrafts
+      .map((d, i) =>
+        [
+          '  <div class="mb-pdr-row' + (d.include ? '' : ' is-off') + '">',
+          '    <label class="mb-pdr-inc"><input type="checkbox" data-pdr="' + i + '" data-f="include"' + (d.include ? ' checked' : '') + ' /></label>',
+          '    <div class="mb-pdr-fields">',
+          '      <input class="mb-pdr-in is-title" data-pdr="' + i + '" data-f="title" value="' + escapeHtml(d.title) + '" maxlength="60" />',
+          '      <div class="mb-pdr-line">',
+          '        <input class="mb-pdr-in is-amt" data-pdr="' + i + '" data-f="amount" inputmode="decimal" value="' + d.amount + '" />',
+          '        <input class="mb-pdr-in is-cur" data-pdr="' + i + '" data-f="currency" maxlength="3" value="' + escapeHtml(d.currency) + '" />',
+          '        <input class="mb-pdr-in is-date" type="date" data-pdr="' + i + '" data-f="date" value="' + escapeHtml(d.date) + '" />',
+          '      </div>',
+          '      <div class="mb-pdr-line">',
+          '        <select class="mb-pdr-in" data-pdr="' + i + '" data-f="category">' + catOpts(d.category) + '</select>',
+          '        <select class="mb-pdr-in" data-pdr="' + i + '" data-f="splitMode">' +
+            '<option value="SHARED"' + (d.splitMode === 'SHARED' ? ' selected' : '') + '>같이 나눠요</option>' +
+            '<option value="PERSONAL"' + (d.splitMode === 'PERSONAL' ? ' selected' : '') + '>내 것만</option></select>',
+          '      </div>',
+          d.krwCharged != null && d.currency !== 'KRW'
+            ? '      <p class="mb-pdr-note">원화 청구액 ' + fmtKRW(d.krwCharged) + '을 기준으로 환산해요</p>'
+            : '',
+          '    </div>',
+          '  </div>',
+        ].join('')
+      )
+      .join(''),
+    '  <div class="mb-pdr-acts">',
+    '    <button class="mb-pdr-cancel" id="mb-pdr-cancel">취소</button>',
+    '    <button class="mb-pdr-save" id="mb-pdr-save"' + (n && !photoSaving ? '' : ' disabled') + '>' +
+      (photoSaving ? '<span class="mb-spinner"></span>저장 중…' : n + '건 저장') + '</button>',
+    '  </div>',
+    '</section>',
+  ].join('');
+}
+
+/** 고른 사진을 차례로 읽는다 — 동시에 보내지 않는다(AI 분당 한도·하루 상한을 아끼려고) */
+async function importPhotos(files: File[]): Promise<void> {
+  if (!files.length || photoBusy) return;
+  const list = files.slice(0, MAX_PHOTOS_PER_IMPORT);
+  walletNotice = files.length > list.length ? '한 번에 ' + MAX_PHOTOS_PER_IMPORT + '장까지 읽어요. 앞의 ' + MAX_PHOTOS_PER_IMPORT + '장만 읽었어요.' : '';
+  photoBusy = { done: 0, total: list.length };
+  render();
+  const drafts: PhotoDraft[] = [];
+  for (const f of list) {
+    const r = await readReceiptPhoto(f, padCurrency === 'KRW' ? null : padCurrency);
+    if (r.ok) r.entries.forEach((e) => drafts.push(toDraft(e, padCurrency, todayISO())));
+    else {
+      walletNotice = r.error;
+      if (r.disabled) break; // 기능이 꺼져 있으면 나머지도 같은 결과
+    }
+    photoBusy = { done: photoBusy.done + 1, total: list.length };
+    render();
+  }
+  photoBusy = null;
+  photoDrafts = drafts.length || !walletNotice ? drafts : null;
+  render();
+}
+
+/** 확인한 초안을 저장 — 사람이 직접 넣은 지출과 같은 규칙(결제 완료·낸 사람=나·나눌 사람=전원) */
+async function savePhotoDrafts(): Promise<void> {
+  if (!expenseCtx || !photoDrafts || photoSaving) return;
+  const picked = photoDrafts.filter((d) => d.include && d.amount > 0 && /^[A-Z]{3}$/.test(d.currency));
+  if (!picked.length) return;
+  photoSaving = true;
+  render();
+  const me = store.get('user')?.id ?? null;
+  const allIds = new Set(expenseCtx.members.map((m) => m.user_id));
+  try {
+    const payloads = [];
+    for (const d of picked) {
+      payloads.push(
+        await buildExpensePayload(expenseCtx, {
+          category: d.category,
+          title: d.title || CATEGORY_META[d.category].label,
+          amount: d.amount,
+          currency: d.currency,
+          expenseDate: d.date || todayISO(),
+          isPaid: true,
+          splitMode: d.splitMode,
+          payer: me,
+          split: d.splitMode === 'PERSONAL' && me ? new Set([me]) : allIds,
+          memo: null,
+          manualRate: chargedRate(d),
+        })
+      );
+    }
+    const { error } = await supabase.from('trip_expenses').insert(payloads);
+    if (error) throw new Error(error.message);
+    photoDrafts = null;
+    walletNotice = picked.length + '건을 저장했어요.';
+    await reloadExpenses();
+  } catch (e) {
+    console.error('[Mobile] 사진 지출 저장 실패:', e);
+    walletNotice = '저장하지 못했어요. 잠시 후 다시 시도해 주세요.';
+  } finally {
+    photoSaving = false;
+    render();
+  }
 }
 
 /** 정산은 한 줄 요약만 — 자세한 건 PC에서 (모바일에서 필요한 건 "얼마 주고받나" 하나) */
@@ -4836,6 +4964,33 @@ function bind(): void {
 
   // ── WALLET ──
   root.querySelector('#mb-wal-add')?.addEventListener('click', () => openPad());
+  // ── 지갑: 사진으로 추가 ──
+  root.querySelector('#mb-wal-photo-in')?.addEventListener('change', (e) => {
+    const input = e.target as HTMLInputElement;
+    const files = Array.from(input.files ?? []);
+    input.value = '';
+    void importPhotos(files);
+  });
+  root.querySelectorAll('[data-pdr]').forEach((el) => {
+    // 입력 중에는 다시 그리지 않는다(포커스·키보드 유지) — 값만 초안에 반영
+    el.addEventListener('change', () => {
+      const i = Number((el as HTMLElement).dataset.pdr);
+      const f = (el as HTMLElement).dataset.f as keyof PhotoDraft;
+      const d = photoDrafts?.[i];
+      if (!d) return;
+      const input = el as HTMLInputElement;
+      if (f === 'include') d.include = input.checked;
+      else if (f === 'amount') { const v = Number(input.value.replace(/,/g, '')); if (Number.isFinite(v) && v > 0) d.amount = v; }
+      else if (f === 'currency') d.currency = input.value.trim().toUpperCase();
+      else if (f === 'title') d.title = input.value.trim().slice(0, 60);
+      else if (f === 'date') d.date = input.value;
+      else if (f === 'category') d.category = input.value as ExpenseCategory;
+      else if (f === 'splitMode') d.splitMode = input.value as PhotoDraft['splitMode'];
+      if (f === 'include' || f === 'currency') render();
+    });
+  });
+  root.querySelector('#mb-pdr-cancel')?.addEventListener('click', () => { photoDrafts = null; render(); });
+  root.querySelector('#mb-pdr-save')?.addEventListener('click', () => { void savePhotoDrafts(); });
   root.querySelector('#mb-wal-pc')?.addEventListener('click', () => gotoGate('expense'));
   root.querySelector('#mb-wal-settle')?.addEventListener('click', () => gotoGate('expense'));
 
