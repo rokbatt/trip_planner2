@@ -1533,6 +1533,67 @@
 }
 .mb-pd-cta-btn svg { width: 18px; height: 18px; }
 
+/* 출발지 — 기본은 현재 위치. 바꿀 때만 CTA 위로 시트가 열린다 */
+.mb-origin-toggle {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px;
+  background: none;
+  border: 0;
+  color: var(--mb-muted);
+  font-size: 13px;
+  text-align: center;
+}
+.mb-origin-toggle span { color: var(--mb-sky); font-weight: 700; text-decoration: underline; }
+.mb-origin-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 12px;
+  border: 1px solid var(--mb-line);
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface);
+}
+.mb-origin-title { font-size: 14px; font-weight: 700; color: var(--mb-ink); margin-bottom: 2px; }
+.mb-origin-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 10px;
+  border: 1px solid var(--mb-line-soft);
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-surface-2);
+  text-align: left;
+}
+.mb-origin-ic svg { width: 18px; height: 18px; color: var(--mb-sky); }
+.mb-origin-main { display: flex; flex-direction: column; min-width: 0; }
+.mb-origin-label { font-size: 14px; font-weight: 700; color: var(--mb-ink); }
+.mb-origin-sub { font-size: 12px; color: var(--mb-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mb-origin-form { display: flex; gap: 6px; }
+.mb-origin-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--mb-line);
+  border-radius: var(--mb-radius-sm);
+  font-size: 16px; /* 16px 미만이면 아이폰이 입력할 때 화면을 확대한다 */
+}
+.mb-origin-go {
+  flex: none;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--mb-radius-sm);
+  background: var(--mb-sky);
+  color: #FFFFFF;
+  font-weight: 700;
+}
+.mb-origin-cancel { padding: 8px; background: none; border: 0; color: var(--mb-muted); font-size: 13px; }
+
 /* ══════════════ 지도 탭 ══════════════ */
 
 .mb-map-wrap { display: flex; flex-direction: column; gap: 12px; }
