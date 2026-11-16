@@ -298,6 +298,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (kind === 'doc-digest') return handleDocDigest(req, res);
   if (kind === 'doc-qa') return handleDocQA(req, res);
   if (kind === 'receipt-read') return handleReceiptRead(req, res);
+  if (kind === 'photo-spots') return handlePhotoSpots(req, res);
   return handleHotelReview(req, res);
 }
 
@@ -1635,4 +1636,126 @@ async function handleReceiptRead(req: VercelRequest, res: VercelResponse) {
     return;
   }
   res.status(200).json({ entries: sanitizeReceiptEntries(data) });
+}
+
+
+/* ══════════════════ 인생샷 장소 추천 (주변 탭 "인생샷") ══════════════════
+ * Gemini가 웹 검색(그라운딩)으로 이 근처의 사진 명소를 찾아 이름·이유·출처를 준다.
+ * - 이름은 **후보**일 뿐이다. 화면이 Google 장소 검색으로 실제로 있는지 다시 확인하고, 못 찾은 이름은 버린다(원칙 3-1).
+ * - 웹 검색은 비싼 호출이라 좌표(약 1km 단위)+키워드로 14일 캐시하고, 로그인·하루 AI 상한을 거친다(원칙 3-2).
+ */
+
+export interface PhotoSpot {
+  name: string;
+  reason: string;
+}
+
+/** "###SPOTS###" 아래 "- 이름 | 이유" 줄을 읽는다. 형식이 틀린 줄은 버리고 최대 6곳 */
+export function parsePhotoSpots(text: string): PhotoSpot[] {
+  const idx = text.indexOf('###SPOTS###');
+  const body = idx >= 0 ? text.slice(idx + '###SPOTS###'.length) : text;
+  const out: PhotoSpot[] = [];
+  const seen = new Set<string>();
+  for (const raw of body.split('\n')) {
+    const line = raw.trim();
+    if (!line.startsWith('-')) continue;
+    const [namePart, ...rest] = line.replace(/^-+\s*/, '').split('|');
+    const name = (namePart ?? '').replace(/\*\*/g, '').trim().slice(0, 80);
+    const reason = rest.join('|').replace(/\*\*/g, '').trim().slice(0, 80);
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    out.push({ name, reason });
+    if (out.length >= 6) break;
+  }
+  return out;
+}
+
+async function handlePhotoSpots(req: VercelRequest, res: VercelResponse) {
+  const body = (req.body ?? {}) as Record<string, any>;
+  const lat = Number(body.lat);
+  const lng = Number(body.lng);
+  const city = String(body.city ?? '').trim().slice(0, 60);
+  const keyword = String(body.keyword ?? '').trim().slice(0, 40);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    res.status(400).json({ error: '위치가 올바르지 않아요.' });
+    return;
+  }
+
+  const supabase = makeSupabase();
+  const token = bearerToken(req.headers?.authorization);
+  if (!token || !supabase) {
+    res.status(401).json({ error: '로그인이 필요해요.' });
+    return;
+  }
+  const { data: authData, error: authError } = await supabase.auth.getUser(token);
+  if (authError || !authData?.user?.id) {
+    res.status(401).json({ error: '로그인이 만료됐어요. 다시 로그인해 주세요.' });
+    return;
+  }
+
+  // 약 1km 단위로 묶어 같은 동네·같은 키워드는 다시 검색하지 않는다
+  const cacheKey = 'photo-spots:' + lat.toFixed(2) + ',' + lng.toFixed(2) + ':' + keyword.toLowerCase();
+  const cached = await readPlanCache(supabase, cacheKey);
+  if (cached) {
+    res.status(200).json({ ...cached, cached: true });
+    return;
+  }
+
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    res.status(500).json({ error: 'GEMINI_API_KEY가 설정되지 않았어요.' });
+    return;
+  }
+  if (!(await spendDailyQuota(req, 'ai'))) {
+    res.status(429).json({ error: QUOTA_EXCEEDED_MESSAGE, quotaExceeded: true });
+    return;
+  }
+
+  const prompt = [
+    '여행자가 지금 이 근처에서 "인생샷"(인스타그램에 올릴 만큼 사진이 잘 나오는 곳)을 찍을 장소를 찾고 있어요.',
+    '위치: 위도 ' + lat.toFixed(4) + ', 경도 ' + lng.toFixed(4) + (city ? ' (' + city + ')' : ''),
+    keyword ? '찾는 분위기·키워드: ' + keyword : '',
+    '웹 검색으로 이 위치에서 대략 3km 안에 있는, 실제로 사진 명소로 알려진 장소를 최대 6곳 찾아 주세요.',
+    '규칙:',
+    '- 장소 이름은 Google 지도에서 검색되는 공식 이름(현지어 또는 영어)으로',
+    '- 이유는 한국어 40자 이내로, 왜 사진이 잘 나오는지(배경·시간대 등)',
+    '- 실제로 존재하는지 확실하지 않은 곳은 넣지 마세요',
+    '형식(다른 말 없이):',
+    '###SPOTS###',
+    '- 장소 이름 | 이유',
+  ].filter(Boolean).join('\n');
+
+  let geminiRes: Response;
+  try {
+    geminiRes = await fetch(GEMINI_ENDPOINT + 'gemini-2.5-flash-lite:generateContent?key=' + geminiKey, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], tools: [{ google_search: {} }] }),
+    });
+  } catch {
+    res.status(502).json({ error: 'AI 응답을 받지 못했어요. 잠시 후 다시 시도해 주세요.' });
+    return;
+  }
+  if (!geminiRes.ok) {
+    console.error('[ai] photo-spots Gemini 실패 (' + geminiRes.status + '):', (await geminiRes.text()).slice(0, 2000));
+    res.status(502).json({ error: geminiFailMessage(geminiRes.status) });
+    return;
+  }
+  const data: any = await geminiRes.json();
+  const cand = data?.candidates?.[0];
+  const text: string = Array.isArray(cand?.content?.parts)
+    ? cand.content.parts.map((p: any) => p?.text).filter((t: any) => typeof t === 'string').join('\n')
+    : '';
+  const spots = parsePhotoSpots(text);
+
+  const seen = new Set<string>();
+  const sources = (Array.isArray(cand?.groundingMetadata?.groundingChunks) ? cand.groundingMetadata.groundingChunks : [])
+    .map((c: any) => c?.web)
+    .filter((w: any) => typeof w?.uri === 'string' && /^https:\/\//.test(w.uri) && !seen.has(w.uri) && seen.add(w.uri))
+    .slice(0, 5)
+    .map((w: any) => ({ title: String(w.title ?? safeHostname(w.uri)).slice(0, 80), uri: w.uri }));
+
+  const result = { spots, sources };
+  if (spots.length) await writePlanCache(supabase, cacheKey, 'photo-spots', result);
+  res.status(200).json(result);
 }

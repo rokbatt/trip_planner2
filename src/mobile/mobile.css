@@ -1666,6 +1666,13 @@
 .mb-ex-qbtn svg { width: 18px; height: 18px; }
 .mb-ex-qbtn.active { background: var(--mb-sky); border-color: transparent; color: var(--mb-on-sky); }
 
+/* 인생샷 — 카드에 AI 설명 한 줄, 목록 아래 출처 */
+.mb-ex-spot { display: flex; align-items: flex-start; gap: 4px; margin-top: 3px; font-size: 12.5px; color: var(--mb-ink-2); }
+.mb-ex-spot svg { width: 14px; height: 14px; flex: none; margin-top: 2px; color: var(--mb-sky); }
+.mb-ex-spotsrc { margin-top: 6px; font-size: 12px; color: var(--mb-muted); }
+.mb-ex-spotsrc p { margin: 4px 0; }
+.mb-ex-spotsrc a { color: var(--mb-sky); }
+
 /* 지도 위: 검색창 + 필터 */
 .mb-ex-search {
   position: absolute;
