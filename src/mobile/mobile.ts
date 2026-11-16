@@ -135,6 +135,7 @@ import { escapeHtml, safeHttpUrl } from '../utils/html';
 import { openHelp } from '../onboarding/onboarding';
 import { directionsUrl, originChoices, type DirPoint, type Origin, type TravelHint } from './directions';
 import { readReceiptPhoto, toDraft, chargedRate, MAX_PHOTOS_PER_IMPORT, type PhotoDraft } from './receiptImport';
+import { searchPhotoSpots, instagramTagUrl, type SpotInfo, type SpotSource } from './photoSpots';
 import { PHRASES, LANG_LABEL, SPEECH_LANG, SITUATION_LABEL, languageForDestination, situationsForDay, type Situation } from './phrasebook';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -2238,6 +2239,12 @@ let exMarkerById = new Map<string, any>();
 type MapView = 'plan' | 'explore';
 // 주변 탭을 열면 바로 주변 검색부터 보인다. 일정 지도는 칩 하나로 남긴다
 let mapView: MapView = 'explore';
+/** 주변 탭 "인생샷" 모드 — AI가 찾고 Google 장소로 확인한 사진 명소 */
+let exPhoto = false;
+/** 인생샷 키워드(야경·노을 등) — 인생샷 모드에서 검색창에 쓴 말 */
+let photoKeyword = '';
+let spotInfo = new Map<string, SpotInfo>();
+let spotSources: SpotSource[] = [];
 let exCat: ExploreCat = 'food';
 /** 검색어 검색 중이면 그 검색어(카테고리 대신) */
 let exQuery = '';
@@ -2359,7 +2366,13 @@ async function runExploreSearch(where?: { lat: number; lng: number }, label?: st
 
   const radius = exFilters.radius;
   try {
-    if (exQuery) exResults = await searchText(searchKey('text', exQuery, center, radius), exQuery, center, radius);
+    if (exPhoto && !exQuery) {
+      const r = await searchPhotoSpots(center, tripDestName(), photoKeyword);
+      exResults = r.places;
+      spotInfo = r.info;
+      spotSources = r.sources;
+      exSort = 'distance';
+    } else if (exQuery) exResults = await searchText(searchKey('text', exQuery, center, radius), exQuery, center, radius);
     else if (exNear) exResults = await searchNearbyKind(exNear, center, radius);
     else exResults = await searchNearbyCat(searchKey('cat', exCat, center, radius), exCat, center, radius);
     // 일정 장소가 아닌 곳을 기준으로 찾았으면 "그 장소 기준"을 푼다(거리도 다시 내 위치에서)
@@ -2371,7 +2384,11 @@ async function runExploreSearch(where?: { lat: number; lng: number }, label?: st
     markerSig = '';
   } catch (e) {
     console.error('[Explore] 검색 실패:', e);
-    exError = offlineState().offline ? '오프라인이라 주변 장소를 찾을 수 없어요.' : '주변 장소를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.';
+    exError = offlineState().offline
+      ? '오프라인이라 주변 장소를 찾을 수 없어요.'
+      : exPhoto && e instanceof Error && e.message
+        ? e.message
+        : '주변 장소를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.';
   } finally {
     exLoading = false;
     render();
@@ -2414,14 +2431,15 @@ function mapChipsHtml(): string {
     '<button class="mb-ex-chip' + (active ? ' active' : '') + '" data-mapview="' + key + '">' + icon + '<span>' + label + '</span></button>';
   return [
     '<div class="mb-ex-chips" role="tablist">',
+    chip('photo', '인생샷', IC.camera, mapView === 'explore' && exPhoto && !exQuery),
     // "이 근처" 칩(환전소 등)으로 넘어온 검색이면 위 칩은 아무것도 켜지 않는다 — 그 칩의 검색이 아니다
-    EXPLORE_CATS.map((c) => chip(c.key, c.label, EX_ICON[c.key], mapView === 'explore' && !exQuery && !exNear && exCat === c.key)).join(''),
+    EXPLORE_CATS.map((c) => chip(c.key, c.label, EX_ICON[c.key], mapView === 'explore' && !exQuery && !exNear && !exPhoto && exCat === c.key)).join(''),
     chip('plan', '일정 지도', IC.route, mapView === 'plan'),
     '</div>',
     '<div class="mb-ex-quick" aria-label="급할 때">',
     QUICK_NEAR.map((k) => {
       const d = nearbyDef(k);
-      const on = mapView === 'explore' && !exQuery && exNear === k;
+      const on = mapView === 'explore' && !exQuery && !exPhoto && exNear === k;
       return '<button class="mb-ex-qbtn' + (on ? ' active' : '') + '" data-mapnear="' + k + '">' + NEAR_ICON[k] + '<span>' + escapeHtml(d.label) + '</span></button>';
     }).join(''),
     '</div>',
@@ -2472,8 +2490,8 @@ function exploreHtml(): string {
   const overlay = [
     '<form class="mb-ex-search" id="mb-ex-form" role="search">',
     '  <span class="mb-ex-search-ic">' + IC.search + '</span>',
-    '  <input id="mb-ex-q" type="search" enterkeyhint="search" autocomplete="off" placeholder="' + (exCenterLabel === '현재 위치' || !exCenterLabel ? '현재 위치에서 검색하기' : '이 근처에서 검색하기') + '" value="' + escapeHtml(exQuery) + '" />',
-    exQuery ? '  <button type="button" class="mb-ex-clear" id="mb-ex-clear" aria-label="검색어 지우기">' + IC.close + '</button>' : '',
+    '  <input id="mb-ex-q" type="search" enterkeyhint="search" autocomplete="off" placeholder="' + (exPhoto ? '인생샷 분위기로 찾기 (예: 야경, 노을, 카페)' : exCenterLabel === '현재 위치' || !exCenterLabel ? '현재 위치에서 검색하기' : '이 근처에서 검색하기') + '" value="' + escapeHtml(exPhoto ? photoKeyword : exQuery) + '" />',
+    (exPhoto ? photoKeyword : exQuery) ? '  <button type="button" class="mb-ex-clear" id="mb-ex-clear" aria-label="검색어 지우기">' + IC.close + '</button>' : '',
     '</form>',
     '<button class="mb-ex-filter-btn' + (nFilter ? ' on' : '') + '" id="mb-ex-filter" aria-label="필터">' + IC.sliders + (nFilter ? '<b>' + nFilter + '</b>' : '<span>필터</span>') + '</button>',
     exMoved && !exLoading ? '<button class="mb-ex-again" id="mb-ex-again">' + IC.refresh + '이 지역에서 다시 검색</button>' : '',
@@ -2483,7 +2501,7 @@ function exploreHtml(): string {
   const status = exLoading
     ? '<span class="mb-spinner"></span>찾는 중…'
     : exSearchedAt
-      ? escapeHtml(exCenterLabel) + ' 기준 · ' + (exQuery ? '"' + escapeHtml(exQuery) + '" ' : escapeHtml(exNear ? nearbyDef(exNear).label : catDef(exCat).label) + ' ') + list.length + '곳' + (list.length !== exResults.length ? ' (필터 ' + (exResults.length - list.length) + '곳 숨김)' : '')
+      ? escapeHtml(exCenterLabel) + ' 기준 · ' + (exQuery ? '"' + escapeHtml(exQuery) + '" ' : escapeHtml(exPhoto ? '인생샷' + (photoKeyword ? ' · ' + photoKeyword : '') : exNear ? nearbyDef(exNear).label : catDef(exCat).label) + ' ') + list.length + '곳' + (list.length !== exResults.length ? ' (필터 ' + (exResults.length - list.length) + '곳 숨김)' : '')
       : '';
 
   return [
@@ -2502,6 +2520,13 @@ function exploreHtml(): string {
       ? '<div class="mb-day-empty"><p class="mb-day-empty-title">' + (exResults.length ? '필터에 맞는 곳이 없어요' : '주변에서 찾지 못했어요') + '</p><p class="mb-day-empty-sub">' + (exResults.length ? '필터를 줄여 보세요.' : '반경을 넓히거나 다른 검색어로 찾아보세요.') + '</p></div>'
       : '',
     '<div class="mb-ex-list" id="mb-ex-list">' + list.map(exCardHtml).join('') + '</div>',
+    exPhoto && list.length
+      ? '<div class="mb-ex-spotsrc"><p>인생샷 이유는 AI가 웹 검색으로 요약한 내용이에요. 장소·사진은 Google 정보예요.</p>' +
+        (spotSources.length
+          ? '<p>참고한 글: ' + spotSources.map((s) => { const u = safeHttpUrl(s.uri); return u ? '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(s.title) + '</a>' : ''; }).filter(Boolean).join(' · ') + '</p>'
+          : '') +
+        '</div>'
+      : '',
     list.length ? '<p class="mb-ex-src">장소 정보 · 사진: Google. 거리는 직선거리예요 — 실제 도보·차량 시간은 상세에서 확인할 수 있어요.</p>' : '',
   ].join('');
 }
@@ -2533,6 +2558,7 @@ function exCardHtml(p: ExplorePlace): string {
       : '',
     meta.length ? '    <span class="mb-ex-meta">' + meta.join(' · ') + '</span>' : '',
     meta2.length ? '    <span class="mb-ex-meta">' + meta2.join(' · ') + '</span>' : '',
+    exPhoto && spotInfo.get(p.id)?.reason ? '    <span class="mb-ex-spot">' + IC.camera + '<span>' + escapeHtml(spotInfo.get(p.id)!.reason) + '</span></span>' : '',
     p.reservable === true ? '    <span class="mb-ex-resv">' + IC.calendar + '예약 가능 (Google 정보)</span>' : '',
     '  </span>',
     isSavedPlace(p.id) ? '  <span class="mb-ex-saved" aria-label="저장됨">' + IC.heartFill + '</span>' : '',
@@ -2603,6 +2629,8 @@ function exDetailHtml(): string {
     '        <a class="mb-exd-act" href="' + escapeHtml(d?.mapsUrl ?? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(p.name) + '&query_place_id=' + encodeURIComponent(p.id)) + '" target="_blank" rel="noopener">' + IC.map + '<span>Google 지도</span></a>',
     '        <a class="mb-exd-act" href="https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(p.lat + ',' + p.lng) + '&destination_place_id=' + encodeURIComponent(p.id) + '" target="_blank" rel="noopener">' + IC.navigate + '<span>길찾기</span></a>',
     d?.website ? '        <a class="mb-exd-act" href="' + escapeHtml(d.website) + '" target="_blank" rel="noopener">' + IC.ext + '<span>웹사이트</span></a>' : '',
+    // 인생샷 — 인스타그램은 위치 검색 API가 없어 장소 이름 해시태그 화면을 연다
+    instagramTagUrl(p.name) ? '        <a class="mb-exd-act" href="' + escapeHtml(instagramTagUrl(p.name)!) + '" target="_blank" rel="noopener">' + IC.camera + '<span>인스타그램</span></a>' : '',
     '      </div>',
     exNotice ? '      <p class="mb-ex-notice">' + escapeHtml(exNotice) + '</p>' : '',
     // 예약 — Google은 "예약을 받는 곳인지"만 알려준다. 예약 가능 시간은 없으니 만들지 않는다.
@@ -5202,9 +5230,11 @@ function bind(): void {
       const v = (btn as HTMLElement).dataset.mapview!;
       if (v === 'plan') { mapView = 'plan'; exDetailId = null; render(); return; }
       mapView = 'explore';
-      exCat = v as ExploreCat;
       exNear = null;
       exQuery = '';
+      exPhoto = v === 'photo';
+      photoKeyword = '';
+      if (!exPhoto) exCat = v as ExploreCat;
       void runExploreSearch(exSearchedAt && !exMoved ? exSearchedAt : undefined, exSearchedAt && !exMoved ? exCenterLabel : undefined);
     });
   });
@@ -5212,6 +5242,7 @@ function bind(): void {
     btn.addEventListener('click', () => {
       mapView = 'explore';
       exNear = (btn as HTMLElement).dataset.mapnear as NearbyKey;
+      exPhoto = false;
       exQuery = '';
       exAnchor = null;
       exSort = 'distance';
@@ -5223,12 +5254,19 @@ function bind(): void {
     const q = ((root.querySelector('#mb-ex-q') as HTMLInputElement | null)?.value ?? '').trim();
     (root.querySelector('#mb-ex-q') as HTMLInputElement | null)?.blur();
     if (!q) return;
-    exQuery = q.slice(0, 60);
     const c = mapInstance?.getCenter?.();
+    if (exPhoto) {
+      // 인생샷 모드에서는 검색어가 "분위기·키워드"다(야경, 노을, 카페…) — 장소 이름 검색이 아니다
+      photoKeyword = q.slice(0, 40);
+      void runExploreSearch(exMoved && c ? { lat: c.lat(), lng: c.lng() } : exSearchedAt ?? undefined, exMoved ? '지도 중심' : exSearchedAt ? exCenterLabel : undefined);
+      return;
+    }
+    exQuery = q.slice(0, 60);
     void runExploreSearch(exMoved && c ? { lat: c.lat(), lng: c.lng() } : exSearchedAt ?? undefined, exMoved ? '지도 중심' : exSearchedAt ? exCenterLabel : undefined);
   });
   root.querySelector('#mb-ex-clear')?.addEventListener('click', () => {
     exQuery = '';
+    photoKeyword = '';
     void runExploreSearch(exSearchedAt ?? undefined, exSearchedAt ? exCenterLabel : undefined);
   });
   root.querySelector('#mb-ex-again')?.addEventListener('click', () => {

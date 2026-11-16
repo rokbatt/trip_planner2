@@ -374,7 +374,8 @@ function privacyBody(): string {
       </ul>
       <p class="lg-note">인공지능 기능(숙소 요약·일정 초안·장소 설명)에는 여행지, 날짜, 장소 이름,
       이용자가 적은 메모 등 <strong>해당 요청에 필요한 여행 정보만</strong> 전달되며,
-      이름·이메일·계정 식별자는 함께 보내지 않습니다.</p>
+      이름·이메일·계정 식별자는 함께 보내지 않습니다. 주변 탭의 인생샷 추천을 쓰면 <strong>현재 위치(또는 지도에서 고른 곳)의 좌표</strong>와
+      입력한 키워드가 근처 사진 명소를 찾기 위해 함께 전달됩니다.</p>
       <div class="lg-warn">
         <strong>AI 어시스턴트와 문서</strong>
         AI 어시스턴트를 쓰면 <strong>올린 문서 파일 자체와 메모의 내용</strong>이 질문에 답하기 위해 Google Gemini로 전달되고,
