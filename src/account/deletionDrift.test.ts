@@ -43,6 +43,7 @@ const LEFT_TO_SAFETY_NET: Record<string, string> = {
   places: 'added_by 만 있고 사람 이름 사본이 없다 — FK가 있으면 비우고, 없으면 의미 없는 id 로 남는다',
   trip_link_groups: 'created_by 만 있고 이름 사본이 없다',
   user_consents: '계정 삭제 시 on delete cascade 로 같이 지워진다',
+  push_subscriptions: '계정 삭제 시 on delete cascade 로 같이 지워진다(이름 사본 없음)',
 };
 
 describe('delete_my_account.sql 이 스키마를 따라가는가', () => {

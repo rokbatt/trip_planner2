@@ -133,6 +133,7 @@ import './mobile.css';
 import { apiFetch } from '../utils/apiFetch';
 import { escapeHtml, safeHttpUrl } from '../utils/html';
 import { openHelp } from '../onboarding/onboarding';
+import { currentPushSupport, isPushOn, enablePush, disablePush, sendTestPush } from '../pwa/push';
 import { directionsUrl, originChoices, type DirPoint, type Origin, type TravelHint } from './directions';
 import { readReceiptPhoto, toDraft, chargedRate, MAX_PHOTOS_PER_IMPORT, type PhotoDraft } from './receiptImport';
 import { searchPhotoSpots, instagramTagUrl, type SpotInfo, type SpotSource } from './photoSpots';
@@ -3986,8 +3987,89 @@ function moreTabHtml(): string {
     tripHeadHtml(),
     traveling ? stay + check : check + stay,
     bookingLinksHtml(),
+    pushSecHtml(),
     moreLinksHtml(),
   ].join('');
+}
+
+/* ── 휴대폰 알림 (src/pwa/push.ts) ── */
+
+/** null = 아직 확인 전 */
+let pushOn: boolean | null = null;
+let pushBusy = false;
+
+function refreshPushState(): void {
+  if (pushOn !== null) return;
+  pushOn = false;
+  void isPushOn().then((on) => { pushOn = on; if (on) render(); }).catch(() => undefined);
+}
+
+function pushSecHtml(): string {
+  const support = currentPushSupport();
+  if (support === 'ok') refreshPushState();
+  const denied = support === 'ok' && typeof Notification !== 'undefined' && Notification.permission === 'denied';
+  let sub: string;
+  if (support === 'no-key') sub = '준비 중이에요';
+  else if (support === 'ios-install') sub = '아이폰은 사파리 공유 버튼 → "홈 화면에 추가" 후, 그 아이콘으로 연 앱에서 켤 수 있어요';
+  else if (support === 'unsupported') sub = '이 브라우저는 알림을 지원하지 않아요';
+  else if (denied) sub = '알림이 차단돼 있어요. 휴대폰 설정에서 이 앱의 알림을 허용해 주세요';
+  else if (pushBusy) sub = '처리 중…';
+  else if (pushOn) sub = '켜짐 · 누르면 이 휴대폰 알림을 꺼요';
+  else sub = '날씨·일행 호출 같은 여행 소식을 이 휴대폰으로 받아요';
+
+  const can = support === 'ok' && !denied && !pushBusy;
+  const row = (id: string, label: string, text: string, enabled: boolean, badge = '') =>
+    '<button class="mb-more-row" id="' + id + '"' + (enabled ? '' : ' disabled') + '>' +
+    '<span class="mb-more-row-ic">' + IC.bell + '</span>' +
+    '<div class="mb-more-row-main">' +
+    '<div class="mb-more-row-label">' + escapeHtml(label) + badge + '</div>' +
+    '<div class="mb-more-row-sub">' + escapeHtml(text) + '</div>' +
+    '</div>' +
+    '</button>';
+  return [
+    '<section class="mb-more-sec">',
+    '  <div class="mb-more-list">',
+    row('mb-push-toggle', '휴대폰 알림', sub, can, pushOn ? ' <span class="mb-push-on">ON</span>' : ''),
+    pushOn && support === 'ok' ? row('mb-push-test', '시험 알림 보내기', '이 휴대폰으로 알림이 오는지 확인해요', !pushBusy) : '',
+    '  </div>',
+    '</section>',
+  ].join('');
+}
+
+async function togglePush(): Promise<void> {
+  if (pushBusy) return;
+  pushBusy = true;
+  render();
+  try {
+    if (pushOn) {
+      await disablePush();
+      pushOn = false;
+      showToast('이 휴대폰 알림을 껐어요.');
+    } else {
+      const r = await enablePush();
+      if (r === 'on') { pushOn = true; showToast('알림을 켰어요. "시험 알림 보내기"로 확인해 보세요.'); }
+      else if (r === 'denied') showToast('알림 권한을 허용해야 받을 수 있어요.');
+      else if (r === 'no-table') showToast('알림 기능을 준비 중이에요. 잠시 뒤 다시 시도해 주세요.');
+      else if (r === 'unsupported') showToast('이 브라우저는 알림을 지원하지 않아요.');
+      else showToast('알림을 켜지 못했어요. 잠시 뒤 다시 시도해 주세요.');
+    }
+  } finally {
+    pushBusy = false;
+    render();
+  }
+}
+
+async function testPush(): Promise<void> {
+  if (pushBusy) return;
+  pushBusy = true;
+  render();
+  try {
+    const r = await sendTestPush();
+    showToast(r.ok ? '보냈어요. 몇 초 안에 알림이 와요.' : r.message);
+  } finally {
+    pushBusy = false;
+    render();
+  }
 }
 
 /** 여행 요약 한 줄 — 어디로, 언제, 며칠 남았나. 전부 trips/destinations에 이미 있는 값이다. */
@@ -5132,6 +5214,8 @@ function bind(): void {
   root.querySelector('#mb-more-plan')?.addEventListener('click', () => gotoGate('route'));
   root.querySelector('#mb-more-expense')?.addEventListener('click', () => gotoGate('expense'));
   root.querySelector('#mb-more-account')?.addEventListener('click', () => navigate('settings'));
+  root.querySelector('#mb-push-toggle')?.addEventListener('click', () => void togglePush());
+  root.querySelector('#mb-push-test')?.addEventListener('click', () => void testPush());
 
   root.querySelectorAll('[data-copy]').forEach((btn) => {
     btn.addEventListener('click', () => { void copyToClipboard((btn as HTMLElement).dataset.copy!, btn as HTMLElement); });

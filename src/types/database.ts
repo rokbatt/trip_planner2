@@ -850,6 +850,30 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['user_consents']['Insert']>;
         Relationships: [];
       };
+
+      /* 휴대폰 알림 구독 — supabase/push_subscriptions.sql (없어도 앱은 동작한다) */
+      push_subscriptions: {
+        Row: {
+          id: string;
+          user_id: string;
+          endpoint: string;
+          p256dh: string;
+          auth: string;
+          created_at: string;
+          last_ok_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          endpoint: string;
+          p256dh: string;
+          auth: string;
+          created_at?: string;
+          last_ok_at?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['push_subscriptions']['Insert']>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {

@@ -140,6 +140,10 @@ Shortlist 3단계 세부 컨셉:
 - 캐시 헤더는 `public/_headers`(규칙이 겹치면 값이 이어 붙으니 `! Cache-Control`로 지우고 단다)
 - `placement`(실행 지역)를 **도쿄 인근으로 고정**해 둔 이유: Gemini가 일부 지역(예: 홍콩)에서 온 요청을
   "User location is not supported"로 거절한다. 지우면 AI 기능이 전부 멈출 수 있다
+- 휴대폰 알림 `/api/notify`는 `api/` 파일이 아니라 **Worker 안에서 바로** 처리한다(`worker/notify.ts`, 12개 한도 회피).
+  발송은 `worker/webpush.ts`(VAPID 서명 + RFC 8291 암호화, 외부 라이브러리 없음). 구독은 `push_subscriptions`(본인 줄만, RLS).
+  비밀값 `VAPID_PRIVATE_KEY`는 서버 Secret, 공개 키는 서버 `VAPID_PUBLIC_KEY`와 빌드 `VITE_VAPID_PUBLIC_KEY` 두 곳에 같은 값.
+  아이폰은 홈 화면에 추가한 앱에서만 받는다
 - 없는 화면 조각 파일도 `index.html`(HTML)로 대답되므로, 서비스워커는 HTML을 파일로 저장하지 않고 앱은 조각 불러오기에
   실패하면 한 번 새로고침한다(`utils/chunkReload.ts`)
 - 환경 변수: 서버 비밀값은 Worker **Runtime variables and secrets**에 **Secret**으로, `VITE_` 4개는 **Build** 변수로 넣는다
@@ -1080,7 +1084,7 @@ Supabase가 네트워크 오류를 "재시도할 오류"로 보고 **요청마�
 **한계:** 처음 한 번은 온라인으로 열어야 한다. iOS는 오래 안 쓰면 저장소를 비울 수 있다.
 날씨·AI 설명·지도는 새로 못 받는다. 대기열 쓰기가 서버에서 거절되면 조용히 버려진다(로그만 남김).
 
-푸시·날씨처럼 서버가 필요한 기능은 `api/*.ts`가 이미 12개 상한이라 Edge Function으로 뺀다(3-7).
+푸시·날씨처럼 서버가 필요한 기능은 `api/*.ts`가 이미 12개 상한이라 Worker 안에서 처리한다(`worker/notify.ts`, 4장).
 편집(순서 변경·이동수단 선택)은 **일부러 안 만든다**(PC의 몫). 모바일 채팅도 없다 — MORE에서
 PC의 LINKS로 넘긴다.
 
@@ -1562,6 +1566,7 @@ worker/                              ← Cloudflare Worker (4장 "서버(Worker)
   vercelAdapter.ts                   ← Request ↔ Vercel식 req/res 변환 (api 파일을 고치지 않고 실행)
   routes.ts                          ← /api/<이름> → api/<이름>.ts 주소 표 (새 api 파일은 여기에도)
   edgeCache.ts, edgeNote.ts          ← s-maxage 응답 캐시(환율) / 실패 요청 로그(colo)
+  notify.ts, webpush.ts              ← /api/notify 휴대폰 알림(Worker 전용 주소) / 웹 푸시 암호화·서명
 wrangler.jsonc                       ← Worker 설정: 정적 파일, /api 우선, cron, 실행 지역, keep_vars
 public/_headers                      ← 정적 파일 캐시 헤더
 docs/CLOUDFLARE_MIGRATION.md         ← 이전 체크리스트·남은 일(5단계 정리)

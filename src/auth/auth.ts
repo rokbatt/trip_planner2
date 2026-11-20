@@ -24,6 +24,12 @@ export async function signInWithGoogle(): Promise<void> {
 }
 
 export async function signOut(): Promise<void> {
+  // 공용 기기에서 다음 사람에게 내 알림이 오지 않게 이 기기 알림 구독을 먼저 끊는다(로그인 상태여야 줄을 지울 수 있다).
+  // 오래 걸리면 기다리지 않는다.
+  await Promise.race([
+    import('../pwa/push').then((m) => m.dropPushOnSignOut()).catch(() => undefined),
+    new Promise((r) => setTimeout(r, 3000)),
+  ]);
   const { error } = await supabase.auth.signOut();
   if (error) console.error('로그아웃 실패:', error.message);
   store.set('user', null);
