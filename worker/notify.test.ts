@@ -102,3 +102,68 @@ describe('safeAppPath', () => {
     expect(safeAppPath(undefined)).toBe('/');
   });
 });
+
+describe('/api/notify 어디야·위치', () => {
+  const TRIP = '11111111-1111-4111-8111-111111111111';
+  const ME = '22222222-2222-4222-8222-222222222222';
+  const FRIEND = '33333333-3333-4333-8333-333333333333';
+  const STRANGER = '44444444-4444-4444-8444-444444444444';
+
+  async function setup(memberIds: string[]) {
+    const env = await vapidEnv();
+    const keys = await deviceKeys();
+    const pushed: string[] = [];
+    const subsFor: string[] = [];
+    const f = async (url: string, init: RequestInit = {}) => {
+      if (url.endsWith('/auth/v1/user')) return Response.json({ id: ME });
+      if (url.includes('/rest/v1/trip_members')) {
+        return Response.json(memberIds.map((id) => ({ user_id: id, display_name: id === ME ? '성현\n짱' : '친구' })));
+      }
+      if (url.includes('/rest/v1/push_subscriptions?select=')) {
+        subsFor.push(decodeURIComponent(url));
+        return Response.json([{ id: 's1', endpoint: 'https://fcm.googleapis.com/fcm/send/f', ...keys }]);
+      }
+      if (url.startsWith('https://fcm.googleapis.com/')) { pushed.push(String(init.body ? 'x' : '')); return new Response(null, { status: 201 }); }
+      return new Response(null, { status: 204 });
+    };
+    return { env, f, pushed, subsFor };
+  }
+
+  it('같은 여행 일행에게만 "어디야?"를 보낸다', async () => {
+    const ok = await setup([ME, FRIEND]);
+    const res = await handleNotify(post({ kind: 'where', tripId: TRIP, to: FRIEND }), ok.env, ok.f);
+    expect(res.status).toBe(200);
+    expect(ok.subsFor[0]).toContain('user_id=eq.' + FRIEND);
+
+    const no = await setup([ME]);
+    expect((await handleNotify(post({ kind: 'where', tripId: TRIP, to: STRANGER }), no.env, no.f)).status).toBe(403);
+    expect(no.pushed).toHaveLength(0);
+  });
+
+  it('형식이 틀린 id·나 자신·이상한 좌표는 거부', async () => {
+    const s = await setup([ME, FRIEND]);
+    expect((await handleNotify(post({ kind: 'where', tripId: 'x', to: FRIEND }), s.env, s.f)).status).toBe(400);
+    expect((await handleNotify(post({ kind: 'where', tripId: TRIP, to: ME }), s.env, s.f)).status).toBe(400);
+    expect((await handleNotify(post({ kind: 'here', tripId: TRIP, to: FRIEND, lat: 200, lng: 0 }), s.env, s.f)).status).toBe(400);
+    expect((await handleNotify(post({ kind: 'here', tripId: TRIP, to: FRIEND, lat: 'a', lng: 0 }), s.env, s.f)).status).toBe(400);
+    expect((await handleNotify(post({ kind: 'here', tripId: TRIP, to: FRIEND, lat: 13.75, lng: 100.5 }), s.env, s.f)).status).toBe(200);
+  });
+
+  it('연타는 막는다', async () => {
+    const s = await setup([ME, FRIEND]);
+    const seen = new Set<string>();
+    const limiter = { first: async (k: string) => (seen.has(k) ? false : (seen.add(k), true)) };
+    expect((await handleNotify(post({ kind: 'where', tripId: TRIP, to: FRIEND }), s.env, s.f, limiter)).status).toBe(200);
+    expect((await handleNotify(post({ kind: 'where', tripId: TRIP, to: FRIEND }), s.env, s.f, limiter)).status).toBe(429);
+  });
+});
+
+describe('appLink · cleanName', () => {
+  it('Companion 주소에 쿼리를 붙이고 이름은 한 줄로 짧게', async () => {
+    const { appLink, cleanName } = await import('./notify');
+    expect(appLink('t1', { where_from: 'u', where_name: '성현 짱' })).toBe('/?where_from=u&where_name=%EC%84%B1%ED%98%84+%EC%A7%B1#trip/t1/go');
+    expect(cleanName('성현\n짱')).toBe('성현 짱');
+    expect(cleanName('  ')).toBe('일행');
+    expect(cleanName('가'.repeat(40))).toHaveLength(20);
+  });
+});

@@ -13,7 +13,7 @@ import { runVercelHandler } from './vercelAdapter';
 import { CLEANUP_HANDLER, findApiHandler } from './routes';
 import { withEdgeCache, type EdgeCache } from './edgeCache';
 import { edgeNote } from './edgeNote';
-import { handleNotify, type NotifyEnv } from './notify';
+import { handleNotify, type NotifyEnv, type Limiter } from './notify';
 
 interface Env extends NotifyEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
@@ -33,6 +33,21 @@ function notFound(): Response {
   });
 }
 
+/**
+ * 짧은 연타 막기 — Cloudflare 캐시에 잠깐 표시를 남긴다. 데이터센터마다 따로라 완벽하진 않지만
+ * 같은 사람이 같은 휴대폰으로 연달아 누르는 경우(대부분)는 막는다. DB 표를 늘리지 않으려고 이렇게 했다.
+ */
+function cacheLimiter(cache: EdgeCache): Limiter {
+  return {
+    async first(key, seconds) {
+      const req = new Request('https://limit.internal/' + encodeURIComponent(key));
+      if (await cache.match(req)) return false;
+      await cache.put(req, new Response('1', { headers: { 'cache-control': 'max-age=' + seconds } }));
+      return true;
+    },
+  };
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: Ctx): Promise<Response> {
     const url = new URL(request.url);
@@ -40,7 +55,8 @@ export default {
     if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
       // 휴대폰 알림은 api/ 파일이 아니라 Worker 안에서 처리한다(worker/notify.ts 머리말)
       if (url.pathname === '/api/notify' || url.pathname === '/api/notify/') {
-        const res = await handleNotify(request, env);
+        const edge = typeof caches !== 'undefined' ? caches.default : undefined;
+        const res = await handleNotify(request, env, undefined, edge ? cacheLimiter(edge) : undefined);
         const note = edgeNote(request, res.status);
         if (note) console.warn(note);
         return res;
