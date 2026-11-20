@@ -134,6 +134,7 @@ import { apiFetch } from '../utils/apiFetch';
 import { escapeHtml, safeHttpUrl } from '../utils/html';
 import { openHelp } from '../onboarding/onboarding';
 import { currentPushSupport, isPushOn, enablePush, disablePush, sendTestPush } from '../pwa/push';
+import { takeWhereParams, askWhere, sendHere, positionOnce, agoLabel, type WhereIncoming } from './where';
 import { directionsUrl, originChoices, type DirPoint, type Origin, type TravelHint } from './directions';
 import { readReceiptPhoto, toDraft, chargedRate, MAX_PHOTOS_PER_IMPORT, type PhotoDraft } from './receiptImport';
 import { searchPhotoSpots, instagramTagUrl, type SpotInfo, type SpotSource } from './photoSpots';
@@ -409,6 +410,9 @@ export function teardownMobile(): void {
   closeDocViewer();
   walletNotice = '';
   docSaving = null;
+  whereIn = null;
+  whereBusy = false;
+  whereMembersAsked = false;
   unsubscribeRoutePlan();
   resetRouteStorageProbe();
   unsubscribeStopProgress();
@@ -719,6 +723,10 @@ export async function renderMobileContent(host: HTMLElement, tripId: string): Pr
 
   render();
 
+  // 알림("어디야?"·위치)을 눌러 열렸으면 그 시트를 띄운다
+  const incoming = takeWhereParams();
+  if (incoming) { whereIn = incoming; render(); }
+
   subscribeRoutePlan(tripId, scheduleRemoteReload);
   subscribeStopProgress(tripId, () => { void loadProgressForActiveDay(); });
   void loadRealLegsForActiveDay();
@@ -968,6 +976,7 @@ function appHtml(): string {
     activeTab === 'map' && exDraft ? exFilterHtml() : '',
     daySheetOpen ? daySheetHtml() : '',
     padOpen ? padSheetHtml() : '',
+    whereIn ? whereSheetHtml(whereIn) : '',
   ].join('');
 }
 
@@ -3988,6 +3997,7 @@ function moreTabHtml(): string {
     traveling ? stay + check : check + stay,
     bookingLinksHtml(),
     pushSecHtml(),
+    whereSecHtml(),
     moreLinksHtml(),
   ].join('');
 }
@@ -4034,6 +4044,110 @@ function pushSecHtml(): string {
     '  </div>',
     '</section>',
   ].join('');
+}
+
+/* ── "어디야?" (src/mobile/where.ts) ── */
+
+let whereIn: WhereIncoming | null = null;
+let whereBusy = false;
+/** 일행 목록을 한 번만 불러 본다(실패해도 화면을 그릴 때마다 다시 부르지 않게) */
+let whereMembersAsked = false;
+
+/** 일행 목록 + "어디야?" 버튼. 멤버는 지갑과 같은 데이터(expenseCtx)를 쓴다 */
+function whereSecHtml(): string {
+  if (!expenseCtx) {
+    // 그리는 도중에 다시 그리지 않도록 다음 틱에 부른다
+    if (!whereMembersAsked) { whereMembersAsked = true; queueMicrotask(() => void ensureExpenseCtx()); }
+    return '';
+  }
+  const me = store.get('user')?.id ?? null;
+  const others = expenseCtx.members.filter((m) => m.user_id !== me);
+  if (!others.length) return '';
+  return [
+    '<section class="mb-more-sec">',
+    '  <div class="mb-where-head">일행 · 어디야?</div>',
+    '  <div class="mb-more-list">',
+    others
+      .map(
+        (m) =>
+          '<div class="mb-more-row mb-where-row">' +
+          '<span class="mb-more-row-ic">' + IC.pin + '</span>' +
+          '<div class="mb-more-row-main"><div class="mb-more-row-label">' + escapeHtml(m.display_name || '일행') + '</div>' +
+          '<div class="mb-more-row-sub">누르면 이 사람 휴대폰에 알림이 가요</div></div>' +
+          '<button class="mb-where-btn" data-whereask="' + escapeHtml(m.user_id) + '"' + (whereBusy ? ' disabled' : '') + '>어디야?</button>' +
+          '</div>'
+      )
+      .join(''),
+    '  </div>',
+    '  <p class="mb-where-note">상대가 알림을 누르고 "보내기"를 눌러야 위치가 와요. 위치는 저장하지 않아요.</p>',
+    '</section>',
+  ].join('');
+}
+
+function whereSheetHtml(w: WhereIncoming): string {
+  const body =
+    w.kind === 'ask'
+      ? [
+          '  <div class="mb-sheet-title">' + escapeHtml(w.name) + '님이 "어디야?"</div>',
+          '  <p class="mb-where-desc">지금 위치를 <strong>한 번만</strong> 보내요. 계속 따라가지 않고, 서버에 저장하지도 않아요.</p>',
+          '  <button class="mb-where-main" id="mb-where-send"' + (whereBusy ? ' disabled' : '') + '>' + (whereBusy ? '위치 확인 중…' : '내 위치 보내기') + '</button>',
+          '  <button class="mb-where-sub" id="mb-where-close">나중에</button>',
+        ]
+      : [
+          '  <div class="mb-sheet-title">' + escapeHtml(w.name) + '님 위치 · ' + escapeHtml(agoLabel(w.at)) + '</div>',
+          '  <p class="mb-where-desc">지금 내 위치에서 출발하는 길찾기를 열어요.</p>',
+          '  <a class="mb-where-main" target="_blank" rel="noopener" href="' +
+            escapeHtml(directionsUrl({ name: w.name + '님 위치', lat: w.lat, lng: w.lng })) + '">길찾기</a>',
+          '  <a class="mb-where-sub" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&amp;query=' +
+            w.lat + ',' + w.lng + '">지도에서 보기</a>',
+          '  <button class="mb-where-sub" id="mb-where-close">닫기</button>',
+        ];
+  return [
+    '<div class="mb-sheet-back" id="mb-where-back"></div>',
+    '<div class="mb-sheet mb-where-sheet" role="dialog" aria-label="어디야">',
+    '  <div class="mb-sheet-grip"></div>',
+    ...body,
+    '</div>',
+  ].join('');
+}
+
+async function onAskWhere(to: string): Promise<void> {
+  if (whereBusy || !currentTripId) return;
+  whereBusy = true;
+  render();
+  const name = expenseCtx?.members.find((m) => m.user_id === to)?.display_name || '일행';
+  try {
+    const r = await askWhere(currentTripId, to);
+    if (!r.ok) showToast(r.message);
+    else if (!r.sent) showToast(name + '님이 아직 알림을 켜지 않았어요. 여행 정보 → 휴대폰 알림을 켜 달라고 해 주세요.');
+    else showToast(name + '님에게 "어디야?"를 보냈어요.');
+  } finally {
+    whereBusy = false;
+    render();
+  }
+}
+
+async function onSendHere(): Promise<void> {
+  if (whereBusy || !whereIn || whereIn.kind !== 'ask' || !currentTripId) return;
+  const ask = whereIn;
+  whereBusy = true;
+  render();
+  try {
+    let pos: { lat: number; lng: number };
+    try {
+      pos = await positionOnce();
+    } catch {
+      showToast('위치를 가져오지 못했어요. 위치 권한을 허용해 주세요.');
+      return;
+    }
+    const r = await sendHere(currentTripId, ask.fromId, pos.lat, pos.lng);
+    if (!r.ok) showToast(r.message);
+    else if (!r.sent) showToast(ask.name + '님이 알림을 꺼 두어서 보내지 못했어요.');
+    else { whereIn = null; showToast(ask.name + '님에게 위치를 보냈어요.'); }
+  } finally {
+    whereBusy = false;
+    render();
+  }
 }
 
 async function togglePush(): Promise<void> {
@@ -5216,6 +5330,13 @@ function bind(): void {
   root.querySelector('#mb-more-account')?.addEventListener('click', () => navigate('settings'));
   root.querySelector('#mb-push-toggle')?.addEventListener('click', () => void togglePush());
   root.querySelector('#mb-push-test')?.addEventListener('click', () => void testPush());
+  root.querySelectorAll('[data-whereask]').forEach((b) =>
+    b.addEventListener('click', () => void onAskWhere((b as HTMLElement).dataset.whereask!))
+  );
+  root.querySelector('#mb-where-send')?.addEventListener('click', () => void onSendHere());
+  const closeWhere = () => { if (!whereBusy) { whereIn = null; render(); } };
+  root.querySelector('#mb-where-close')?.addEventListener('click', closeWhere);
+  root.querySelector('#mb-where-back')?.addEventListener('click', closeWhere);
 
   root.querySelectorAll('[data-copy]').forEach((btn) => {
     btn.addEventListener('click', () => { void copyToClipboard((btn as HTMLElement).dataset.copy!, btn as HTMLElement); });

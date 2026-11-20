@@ -4,8 +4,12 @@
  * api/ 폴더에 파일을 만들지 않고 Worker에서 바로 처리한다. Vercel 무료 플랜의 서버 함수 12개 한도를
  * 넘기지 않기 위해서다(5단계에서 Vercel을 정리하면 이 제약은 없어진다).
  *
- * 지금 하는 일: { kind: 'test' } → 로그인한 본인이 알림을 켠 기기 전부에 시험 알림 1건.
- * 다음 PR(날씨·"어디야?")에서 같은 발송 함수 sendToUser()를 쓴다.
+ * 종류
+ *   { kind: 'test' }                       → 로그인한 본인 기기 전부에 시험 알림
+ *   { kind: 'where', tripId, to }          → 같은 여행 일행에게 "어디야?" (누르면 위치를 한 번 보낼지 묻는 화면)
+ *   { kind: 'here', tripId, to, lat, lng } → 물어본 사람에게 내 위치 한 번 (누르면 길찾기)
+ * 위치는 서버에 저장하지 않는다 — 암호화된 알림 안에만 실려 상대 기기로 간다.
+ * where·here는 보내는 사람과 받는 사람이 **둘 다 그 여행 멤버**일 때만 보낸다.
  *
  * 비밀값: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT
  * (Cloudflare 대시보드 → Worker → Settings → Variables and Secrets). 코드에 쓰지 않는다.
@@ -59,6 +63,25 @@ export function safeAppPath(url: string | undefined): string {
   return url.slice(0, 300);
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const isUuid = (v: unknown): v is string => typeof v === 'string' && UUID.test(v);
+
+/** 같은 요청을 짧은 시간에 되풀이하지 못하게 — 처음이면 true. 없으면(로컬·시험) 항상 true */
+export interface Limiter {
+  first(key: string, seconds: number): Promise<boolean>;
+}
+
+/** 알림 안에 실을 이름 — 줄바꿈 없애고 짧게 */
+export function cleanName(v: string | null | undefined): string {
+  const t = (v ?? '').replace(/\s+/g, ' ').trim().slice(0, 20);
+  return t || '일행';
+}
+
+/** 앱 안 주소 + 쿼리. 해시 라우트(#trip/:id/go) 앞에 붙여 Companion 화면이 읽는다(src/mobile/where.ts) */
+export function appLink(tripId: string, params: Record<string, string>): string {
+  return '/?' + new URLSearchParams(params).toString() + '#trip/' + tripId + '/go';
+}
+
 export class Db {
   constructor(private base: string, private key: string, private f: FetchLike) {}
 
@@ -80,6 +103,15 @@ export class Db {
     const res = await this.f(this.base + q, { headers: this.headers() });
     if (!res.ok) return null;
     return (await res.json()) as { id: string; endpoint: string; p256dh: string; auth: string }[];
+  }
+
+  /** 그 여행에서 이 사람들이 멤버인지 + 표시 이름 */
+  async members(tripId: string, userIds: string[]): Promise<Map<string, string | null> | null> {
+    const q = '/rest/v1/trip_members?select=user_id,display_name&trip_id=eq.' + tripId + '&user_id=in.(' + userIds.join(',') + ')';
+    const res = await this.f(this.base + q, { headers: this.headers() });
+    if (!res.ok) return null;
+    const rows = (await res.json()) as { user_id: string; display_name: string | null }[];
+    return new Map(rows.map((r) => [r.user_id, r.display_name]));
   }
 
   async remove(ids: string[]): Promise<void> {
@@ -128,7 +160,12 @@ export async function sendToUser(
   return { sent: sent.length, gone: gone.length, failed: results.length - sent.length - gone.length, devices: subs.length };
 }
 
-export async function handleNotify(request: Request, env: NotifyEnv, f: FetchLike = (i, init) => fetch(i, init)): Promise<Response> {
+export async function handleNotify(
+  request: Request,
+  env: NotifyEnv,
+  f: FetchLike = (i, init) => fetch(i, init),
+  limiter?: Limiter
+): Promise<Response> {
   if (request.method !== 'POST') return json(405, { error: 'Method not allowed' });
 
   const miss = missingNotifyEnv(env);
@@ -140,9 +177,9 @@ export async function handleNotify(request: Request, env: NotifyEnv, f: FetchLik
   const m = /^Bearer\s+(\S+)$/i.exec(request.headers.get('authorization') ?? '');
   if (!m) return json(401, { error: '로그인이 필요해요.' });
 
-  let body: { kind?: unknown } = {};
+  let body: { kind?: unknown; tripId?: unknown; to?: unknown; lat?: unknown; lng?: unknown } = {};
   try {
-    body = (await request.json()) as { kind?: unknown };
+    body = (await request.json()) as typeof body;
   } catch {
     return json(400, { error: '요청 형식이 올바르지 않아요.' });
   }
@@ -156,6 +193,49 @@ export async function handleNotify(request: Request, env: NotifyEnv, f: FetchLik
 
   if (body.kind === 'test') {
     const r = await sendToUser(db, uid, { title: '몽실이 알림', body: '알림이 잘 와요. 여행 중 소식을 여기로 알려 드릴게요.', url: '/', tag: 'test' }, vapid, f);
+    if (!r) return json(503, { error: '알림 저장소가 아직 준비되지 않았어요.', code: 'no_table' });
+    return json(200, r);
+  }
+
+  if (body.kind === 'where' || body.kind === 'here') {
+    const { tripId, to } = body;
+    if (!isUuid(tripId) || !isUuid(to) || to === uid) return json(400, { error: '받는 사람이 올바르지 않아요.' });
+    let lat = 0;
+    let lng = 0;
+    if (body.kind === 'here') {
+      lat = Number(body.lat);
+      lng = Number(body.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+        return json(400, { error: '위치가 올바르지 않아요.' });
+      }
+    }
+
+    const mem = await db.members(tripId, [uid, to]);
+    if (!mem) return json(503, { error: '잠시 뒤 다시 시도해 주세요.' });
+    if (!mem.has(uid) || !mem.has(to)) return json(403, { error: '같은 여행 일행에게만 보낼 수 있어요.' });
+
+    // 같은 사람에게 연달아 누르는 것 막기("어디야?" 30초, 위치 10초)
+    const wait = body.kind === 'where' ? 30 : 10;
+    if (limiter && !(await limiter.first(body.kind + ':' + uid + ':' + to, wait))) {
+      return json(429, { error: '방금 보냈어요. 잠시 뒤 다시 눌러 주세요.' });
+    }
+
+    const name = cleanName(mem.get(uid));
+    const msg: PushMessage =
+      body.kind === 'where'
+        ? {
+            title: name + '님이 "어디야?"',
+            body: '눌러서 지금 위치를 한 번 보내 주세요.',
+            url: appLink(tripId, { where_from: uid, where_name: name }),
+            tag: 'where-' + uid,
+          }
+        : {
+            title: name + '님 위치가 왔어요',
+            body: '눌러서 바로 길찾기',
+            url: appLink(tripId, { here_lat: lat.toFixed(6), here_lng: lng.toFixed(6), here_name: name, here_at: String(Date.now()) }),
+            tag: 'here-' + uid,
+          };
+    const r = await sendToUser(db, to, msg, vapid, f);
     if (!r) return json(503, { error: '알림 저장소가 아직 준비되지 않았어요.', code: 'no_table' });
     return json(200, r);
   }

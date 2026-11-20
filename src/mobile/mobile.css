@@ -3692,3 +3692,35 @@
   .mb-sheet,
   .mb-sheet-back { animation: none !important; transition: none !important; }
 }
+
+/* ══════════════ "어디야?" ══════════════ */
+.mb-where-head { padding: 0 4px 6px; font-size: 12px; font-weight: 700; color: var(--mb-muted); }
+.mb-where-row { cursor: default; }
+.mb-where-btn {
+  flex: none;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mb-btn-fg);
+  background: var(--mb-btn-bg);
+}
+.mb-where-btn:disabled { opacity: 0.5; }
+.mb-where-note { margin: 8px 4px 0; font-size: 11.5px; color: var(--mb-muted); line-height: 1.5; }
+.mb-where-sheet { gap: 8px; }
+.mb-where-desc { margin: 0 0 6px; font-size: 13px; color: var(--mb-ink); line-height: 1.55; }
+.mb-where-main,
+.mb-where-sub {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.mb-where-main { color: var(--mb-btn-fg); background: var(--mb-btn-bg); }
+.mb-where-main:disabled { opacity: 0.6; }
+.mb-where-sub { color: var(--mb-ink); background: var(--mb-fill-subtle); }
