@@ -6,6 +6,7 @@
  *   캐시 헤더는 public/_headers (vercel.json headers와 같은 규칙).
  * - /api/*: run_worker_first로 여기 fetch()에 먼저 오고, api/*.ts 핸들러를 변환 층으로 실행한다.
  * - 매일 정리 작업: scheduled() — vercel.json crons와 같은 시각(03:00 UTC).
+ * - 매시 정각: 날씨 알림(worker/weatherAlert.ts) — 현지 저녁 8시인 여행지만 보낸다.
  *
  * 환경 변수는 nodejs_compat + 호환 날짜 2025-04-01 이후라 api 파일의 process.env로 그대로 들어간다.
  */
@@ -14,6 +15,7 @@ import { CLEANUP_HANDLER, findApiHandler } from './routes';
 import { withEdgeCache, type EdgeCache } from './edgeCache';
 import { edgeNote } from './edgeNote';
 import { handleNotify, type NotifyEnv, type Limiter } from './notify';
+import { runWeatherAlerts } from './weatherAlert';
 
 interface Env extends NotifyEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
@@ -48,6 +50,9 @@ function cacheLimiter(cache: EdgeCache): Limiter {
   };
 }
 
+/** wrangler.jsonc triggers.crons의 매시 실행 — 문자열이 정확히 같아야 한다 */
+const WEATHER_CRON = '0 * * * *';
+
 export default {
   async fetch(request: Request, env: Env, ctx: Ctx): Promise<Response> {
     const url = new URL(request.url);
@@ -76,7 +81,16 @@ export default {
     return env.ASSETS.fetch(request);
   },
 
-  async scheduled(_controller: unknown, env: Env, ctx: Ctx): Promise<void> {
+  async scheduled(controller: { cron?: string; scheduledTime?: number }, env: Env, ctx: Ctx): Promise<void> {
+    // 매시 정각: 날씨 알림(현지 저녁 8시인 여행지만 보낸다, worker/weatherAlert.ts)
+    if (controller?.cron === WEATHER_CRON) {
+      ctx.waitUntil(
+        runWeatherAlerts(env, controller.scheduledTime ?? Date.now())
+          .then((r) => console.log('[cron] weather', JSON.stringify(r)))
+          .catch((e) => console.error('[cron] weather 실패', e))
+      );
+      return;
+    }
     const headers: Record<string, string> = {};
     if (env.CRON_SECRET) headers.authorization = 'Bearer ' + env.CRON_SECRET;
     const request = new Request('https://cron.internal/api/cleanup-search-cache', { headers });
