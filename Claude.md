@@ -135,7 +135,8 @@ Shortlist 3단계 세부 컨셉:
 - **AI**: Gemini `gemini-2.5-flash-lite` (여행 추천/지역 생성 등에 제한적으로 사용)
 
 ### 서버(Worker) 설정 규칙 — 바꾸기 전에 이유를 알 것
-- `worker/index.ts`가 진입점: `/api/<이름>` → 핸들러, 매일 정리 작업(`scheduled`, 03:00 UTC). `run_worker_first`는 `/api/*`만
+- `worker/index.ts`가 진입점: `/api/<이름>` → 핸들러, 매일 정리 작업(`scheduled`, 03:00 UTC), 매시 정각 날씨 알림
+  (`worker/weatherAlert.ts`, 일정의 여행지 기준·현지 저녁 8시만 발송, 한 번에 여행 6개까지 — 외부 호출 50번 한도). `run_worker_first`는 `/api/*`만
   (화면 파일까지 Worker를 거치면 무료 요청 수를 소모한다). 없는 주소는 `index.html`(SPA fallback) — `/terms`·`/privacy`도 이걸로 열린다
 - 캐시 헤더는 `public/_headers`(규칙이 겹치면 값이 이어 붙으니 `! Cache-Control`로 지우고 단다)
 - `placement`(실행 지역)를 **도쿄 인근으로 고정**해 둔 이유: Gemini가 일부 지역(예: 홍콩)에서 온 요청을
@@ -1567,6 +1568,7 @@ worker/                              ← Cloudflare Worker (4장 "서버(Worker)
   routes.ts                          ← /api/<이름> → api/<이름>.ts 주소 표 (새 api 파일은 여기에도)
   edgeCache.ts, edgeNote.ts          ← s-maxage 응답 캐시(환율) / 실패 요청 로그(colo)
   notify.ts, webpush.ts              ← /api/notify 휴대폰 알림(Worker 전용 주소) / 웹 푸시 암호화·서명
+  weatherAlert.ts                    ← 매시 cron: 현지 저녁 8시 여행지에 내일 날씨 알림
 wrangler.jsonc                       ← Worker 설정: 정적 파일, /api 우선, cron, 실행 지역, keep_vars
 public/_headers                      ← 정적 파일 캐시 헤더
 docs/CLOUDFLARE_MIGRATION.md         ← 이전 체크리스트·남은 일(5단계 정리)
