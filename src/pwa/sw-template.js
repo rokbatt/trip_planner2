@@ -13,6 +13,8 @@
  *   · /api/*             : 건드리지 않는다(항상 네트워크)
  *   · 장소 사진           : Supabase Storage 공개 사진만 저장(최대 400장). 지도 타일 등 다른 이미지는
  *                          저장하지 않는다(Google 지도는 약관상 저장 불가)
+ *   · 휴대폰 알림(push) : 서버(worker/notify.ts)가 보낸 {title, body, url, tag}를 알림으로 띄우고,
+ *                          누르면 열려 있는 앱 창을 그 주소로 옮긴다(없으면 새로 연다)
  * 여행 데이터(일정·장소·서류 목록)는 여기서 다루지 않는다 — 앱 쪽 offline/restCache.ts가
  * IndexedDB에 저장한다. 사용자별 데이터라 로그아웃 때 지울 수 있어야 하기 때문이다.
  */
@@ -132,3 +134,37 @@ async function trim(cache) {
   if (keys.length <= IMG_MAX) return;
   await Promise.all(keys.slice(0, keys.length - IMG_MAX).map((k) => cache.delete(k)));
 }
+
+// ── 휴대폰 알림 ──
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = { body: event.data ? event.data.text() : '' }; }
+  const title = typeof data.title === 'string' && data.title ? data.title : '몽실이';
+  const url = typeof data.url === 'string' && data.url.startsWith('/') && !data.url.startsWith('//') ? data.url : '/';
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: typeof data.body === 'string' ? data.body : '',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      tag: typeof data.tag === 'string' ? data.tag : undefined,
+      data: { url },
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(
+    (async () => {
+      const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const w of wins) {
+        if (new URL(w.url).origin !== self.location.origin) continue;
+        await w.focus();
+        if (url !== '/') { try { await w.navigate(url); } catch { /* 다른 창 상태면 그대로 둔다 */ } }
+        return;
+      }
+      await self.clients.openWindow(url);
+    })()
+  );
+});

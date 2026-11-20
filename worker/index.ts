@@ -13,8 +13,9 @@ import { runVercelHandler } from './vercelAdapter';
 import { CLEANUP_HANDLER, findApiHandler } from './routes';
 import { withEdgeCache, type EdgeCache } from './edgeCache';
 import { edgeNote } from './edgeNote';
+import { handleNotify, type NotifyEnv } from './notify';
 
-interface Env {
+interface Env extends NotifyEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
   CRON_SECRET?: string;
 }
@@ -37,6 +38,13 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
+      // 휴대폰 알림은 api/ 파일이 아니라 Worker 안에서 처리한다(worker/notify.ts 머리말)
+      if (url.pathname === '/api/notify' || url.pathname === '/api/notify/') {
+        const res = await handleNotify(request, env);
+        const note = edgeNote(request, res.status);
+        if (note) console.warn(note);
+        return res;
+      }
       const handler = findApiHandler(url.pathname);
       if (!handler) return notFound();
       const run = () => runVercelHandler(handler, request);
