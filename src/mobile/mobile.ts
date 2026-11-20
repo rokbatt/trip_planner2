@@ -412,6 +412,7 @@ export function teardownMobile(): void {
   docSaving = null;
   whereIn = null;
   whereBusy = false;
+  menuOpen = false;
   whereMembersAsked = false;
   unsubscribeRoutePlan();
   resetRouteStorageProbe();
@@ -977,6 +978,7 @@ function appHtml(): string {
     daySheetOpen ? daySheetHtml() : '',
     padOpen ? padSheetHtml() : '',
     whereIn ? whereSheetHtml(whereIn) : '',
+    menuOpen ? menuSheetHtml() : '',
   ].join('');
 }
 
@@ -1104,12 +1106,13 @@ function topBarHtml(): string {
     '<header class="mb-top">',
     '  <div class="mb-brand"><span class="mb-brand-mark">' + IC.logo + '</span>몽실이</div>',
     '  <div class="mb-top-actions">',
-    // 폰에서 Companion은 앱 전체라 워크스페이스 헤더가 숨겨져 있다 — 여기서 PC 게이트로
-    // 보내면 돌아올 길이 애매해진다. 그래서 나가는 길은 "다른 여행 고르기" 하나만 둔다.
-    // (링크는 MORE 탭에 이미 있어서 종 아이콘은 없앴다 — 버튼 두 개가 할 일이 겹쳤다.)
+    // 폰에서 Companion은 앱 전체라 워크스페이스 헤더가 숨겨져 있다. 예전엔 ☰가 곧바로 여행 목록으로
+    // 나가 버려서 설정할 곳이 없었다 — 지금은 메뉴 시트(menuSheetHtml)를 연다.
     // 도움말 센터(Companion 가이드 다시 보기 포함) — 폰에선 워크스페이스 헤더가 숨겨져 있어 여기 둔다
+    // 홈: 어느 탭에 있든 "오늘 일정" 첫 화면으로. 메뉴: 설정·바로가기 모음(다른 여행 고르기는 메뉴 안에)
+    '    <button class="mb-icon-btn" id="mb-home" aria-label="홈">' + IC.home + '</button>',
     '    <button class="mb-icon-btn" id="mb-help" aria-label="도움말">' + IC.help + '</button>',
-    '    <button class="mb-icon-btn" id="mb-trips" aria-label="다른 여행">' + IC.menu + '</button>',
+    '    <button class="mb-icon-btn" id="mb-menu" aria-label="메뉴">' + IC.menu + '</button>',
     '  </div>',
     '</header>',
   ].join('');
@@ -4046,6 +4049,109 @@ function pushSecHtml(): string {
   ].join('');
 }
 
+/* ── 메뉴(☰) — 홈·바로가기·설정·PC 기능·계정을 한 곳에 ── */
+
+let menuOpen = false;
+
+type MenuKey = 'home' | 'days' | 'info' | 'push' | 'geo' | 'where' | 'chat' | 'plan' | 'expense' | 'help' | 'account' | 'trips';
+
+function menuSheetHtml(): string {
+  const support = currentPushSupport();
+  if (support === 'ok') refreshPushState();
+  const pushLabel = support === 'ok' ? (pushOn ? 'ON' : 'OFF') : support === 'ios-install' ? '홈 화면 설치 필요' : '사용 불가';
+  const row = (key: MenuKey, icon: string, label: string, sub = '', state = '') =>
+    '<button class="mb-menu-row" data-menu="' + key + '">' +
+    '<span class="mb-menu-ic">' + icon + '</span>' +
+    '<span class="mb-menu-main"><span class="mb-menu-label">' + escapeHtml(label) + '</span>' +
+    (sub ? '<span class="mb-menu-sub">' + escapeHtml(sub) + '</span>' : '') + '</span>' +
+    (state ? '<span class="mb-menu-state' + (state === 'ON' ? ' is-on' : '') + '">' + escapeHtml(state) + '</span>' : '<span class="mb-menu-chev">' + IC.chevRight + '</span>') +
+    '</button>';
+  const group = (title: string, rows: string[]) =>
+    '<div class="mb-menu-group"><div class="mb-menu-gtitle">' + title + '</div>' + rows.join('') + '</div>';
+  return [
+    '<div class="mb-sheet-back" id="mb-menu-back"></div>',
+    '<div class="mb-sheet mb-menu" role="dialog" aria-label="메뉴">',
+    '  <div class="mb-sheet-grip"></div>',
+    '  <div class="mb-menu-head"><span class="mb-sheet-title">' + escapeHtml(currentTrip?.name || tripDestName()) + '</span>',
+    '    <button class="mb-icon-btn" id="mb-menu-close" aria-label="닫기">' + IC.close + '</button></div>',
+    '  <div class="mb-menu-body">',
+    group('바로 가기', [
+      row('home', IC.home, '홈', '오늘 일정 첫 화면'),
+      row('days', IC.route, '전체 일정', 'DAY별 동선 한눈에'),
+      row('info', IC.bag, '여행 정보', '숙소 · 준비물 · 예약 링크'),
+    ]),
+    group('설정', [
+      row('push', IC.bell, '휴대폰 알림', '날씨 · 일행 호출을 이 휴대폰으로', pushLabel),
+      row('geo', IC.navigate, '도착 자동 기록', '위치로 일정 장소 도착을 기록', geoOn ? 'ON' : 'OFF'),
+      row('where', IC.pin, '일행 · 어디야?', '일행에게 위치 물어보기'),
+    ]),
+    group('PC 화면에서 더 하기', [
+      row('chat', IC.chat, '채팅 · 공유 링크'),
+      row('plan', IC.route, '일정 편집', '순서 · 이동수단 변경'),
+      row('expense', IC.wallet, '전체 지출 · 예산'),
+    ]),
+    group('계정', [
+      row('help', IC.help, '도움말 · 사용 안내'),
+      row('account', IC.lock, '계정 · 개인정보 · 탈퇴', '로그아웃, 약관'),
+      row('trips', IC.menu, '다른 여행 보기', '내 여행 목록으로'),
+    ]),
+    '  </div>',
+    '</div>',
+  ].join('');
+}
+
+/** 홈 — 일정 탭, 여행 중이면 오늘 DAY, 맨 위 */
+function goHome(): void {
+  menuOpen = false;
+  daySheetOpen = false;
+  activeTab = 'today';
+  tripSub = 'days';
+  const today = todayDayIndex();
+  if (today >= 0) activeDayIndex = today;
+  teardownMap();
+  render();
+  container?.querySelector('.mb-scroll')?.scrollTo({ top: 0 });
+}
+
+function openTripSub(sub: TripSub): void {
+  menuOpen = false;
+  activeTab = 'trip';
+  tripSub = sub;
+  teardownMap();
+  render();
+  if (sub === 'info') void ensureMoreCtx();
+  container?.querySelector('.mb-scroll')?.scrollTo({ top: 0 });
+}
+
+function onMenu(key: MenuKey): void {
+  switch (key) {
+    case 'home': goHome(); return;
+    case 'days': openTripSub('days'); return;
+    case 'info': openTripSub('info'); return;
+    case 'where':
+      openTripSub('info');
+      // 일행 목록은 여행 정보 아래쪽에 있다 — 다 그려진 뒤 그 자리로
+      setTimeout(() => container?.querySelector('.mb-where-head')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+      return;
+    case 'push': {
+      const support = currentPushSupport();
+      if (support !== 'ok') {
+        showToast(support === 'ios-install' ? '아이폰은 사파리 공유 → "홈 화면에 추가" 후 그 앱에서 켤 수 있어요.' : '이 기기에서는 알림을 쓸 수 없어요.');
+        return;
+      }
+      void togglePush();
+      return;
+    }
+    case 'geo': toggleGeo(); return;
+    case 'chat': menuOpen = false; gotoGate('links'); return;
+    case 'plan': menuOpen = false; gotoGate('route'); return;
+    case 'expense': menuOpen = false; gotoGate('expense'); return;
+    case 'help': menuOpen = false; render(); openHelp(); return;
+    case 'account': menuOpen = false; navigate('settings'); return;
+    case 'trips': menuOpen = false; navigate('trips'); return;
+  }
+}
+
 /* ── "어디야?" (src/mobile/where.ts) ── */
 
 let whereIn: WhereIncoming | null = null;
@@ -5264,7 +5370,14 @@ function bind(): void {
 
   // ── 그 외 ──
   root.querySelector('#mb-goto-route')?.addEventListener('click', () => gotoGate('route'));
-  root.querySelector('#mb-trips')?.addEventListener('click', () => navigate('trips'));
+  root.querySelector('#mb-home')?.addEventListener('click', () => goHome());
+  root.querySelector('#mb-menu')?.addEventListener('click', () => { menuOpen = true; render(); });
+  const closeMenu = () => { menuOpen = false; render(); };
+  root.querySelector('#mb-menu-close')?.addEventListener('click', closeMenu);
+  root.querySelector('#mb-menu-back')?.addEventListener('click', closeMenu);
+  root.querySelectorAll('[data-menu]').forEach((b) =>
+    b.addEventListener('click', () => onMenu((b as HTMLElement).dataset.menu as MenuKey))
+  );
   root.querySelector('#mb-help')?.addEventListener('click', () => openHelp());
   root.querySelector('#mb-geo')?.addEventListener('click', () => toggleGeo());
 
