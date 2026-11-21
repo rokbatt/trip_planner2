@@ -861,6 +861,8 @@ export interface Database {
           auth: string;
           created_at: string;
           last_ok_at: string | null;
+          /** 날씨 알림도 받을지 — supabase/push_weather_optout.sql (없으면 undefined, 받는 것으로 본다) */
+          weather?: boolean;
         };
         Insert: {
           id?: string;
@@ -870,6 +872,7 @@ export interface Database {
           auth: string;
           created_at?: string;
           last_ok_at?: string | null;
+          weather?: boolean;
         };
         Update: Partial<Database['public']['Tables']['push_subscriptions']['Insert']>;
         Relationships: [];

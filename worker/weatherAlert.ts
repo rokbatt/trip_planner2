@@ -191,7 +191,7 @@ export async function runWeatherAlerts(env: NotifyEnv, nowMs = Date.now(), f: Fe
     const members = (await mres.json()) as { user_id: string }[];
     let any = false;
     for (const mem of members) {
-      const r = await sendToUser(db, mem.user_id, { ...msg, url: '/#trip/' + tripId + '/go', tag: 'weather-' + tripId }, vapid, f);
+      const r = await sendToUser(db, mem.user_id, { ...msg, url: '/#trip/' + tripId + '/go', tag: 'weather-' + tripId }, vapid, f, { weatherOnly: true });
       if (r?.sent) { out.devices += r.sent; any = true; }
     }
     if (any) out.sentTrips++;

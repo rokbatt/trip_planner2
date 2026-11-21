@@ -167,3 +167,24 @@ describe('appLink · cleanName', () => {
     expect(cleanName('가'.repeat(40))).toHaveLength(20);
   });
 });
+
+describe('날씨 알림 끈 기기 빼기', () => {
+  it('weather=is.true로 읽고, 칸이 없으면(400) 조건 없이 다시 읽는다', async () => {
+    const { Db } = await import('./notify');
+    const asked: string[] = [];
+    const db = new Db('https://db.x', 'k', async (url: string) => {
+      asked.push(url);
+      return url.includes('weather=is.true') ? new Response('{"code":"42703"}', { status: 400 }) : Response.json([]);
+    });
+    expect(await db.subscriptions('u1', true)).toEqual([]);
+    expect(asked).toHaveLength(2);
+    expect(asked[1]).not.toContain('weather');
+
+    const asked2: string[] = [];
+    const db2 = new Db('https://db.x', 'k', async (url: string) => (asked2.push(url), Response.json([])));
+    await db2.subscriptions('u1', true);
+    await db2.subscriptions('u1');
+    expect(asked2[0]).toContain('weather=is.true');
+    expect(asked2[1]).not.toContain('weather');
+  });
+});
