@@ -188,6 +188,9 @@ const IC = {
   lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
   calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3 10 14"/><path d="M21 3 14.5 21l-4.5-7-7-4.5z"/></svg>',
+  people: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19.5c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="16.8" cy="9.2" r="2.5"/><path d="M15.6 14.6c2.6-.3 4.5 1.3 5 4.4"/></svg>',
+  share2: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M7.5 7.5 12 3l4.5 4.5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>',
   sliders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>',
   locate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="7.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22"/></svg>',
@@ -229,13 +232,19 @@ const MODE_ICON: Record<TravelMode, string> = { WALK: IC.walk, TRANSIT: IC.trans
 const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
 
 /**
- * 하단 탭 네 개. 레퍼런스 디자인(오늘·지도·지갑·여행)에 맞춰 재구성했고, 기존 화면은
- * 하나도 버리지 않고 아래로 들어갔다 — TIMELINE(DAY 페이저)과 MORE(숙소·체크리스트)는
- * `trip`(여행) 탭 안으로, 지출 지갑은 `wallet`(지갑) 탭의 한 섹션으로 옮겼다.
+ * 하단 탭 다섯 개 — 탭 하나가 "여행 중 떠오르는 질문" 하나를 맡는다(2026-11 정보 구조 개편).
+ *   today  일정 : 오늘 뭐 하지?      → 하루 / 전체 / 지도 (일정 보기는 전부 여기, 그날 밤 숙소 포함)
+ *   map    주변 : 근처에 뭐 있지?    → 장소 탐색만(급할 때·카테고리·인생샷)
+ *   wallet 지갑 : 돈·예약은?         → 지출 / 서류 (자주 쓰는 지출이 먼저)
+ *   talk   회화 : 뭐라고 말하지?
+ *   crew   일행 : 같이 간 사람들은?  → 어디야? · 함께 챙길 준비물 · 초대 · 채팅
+ * 설정·계정·PC로 넘기는 기능은 메뉴(☰) 한 곳에만 둔다 — 같은 버튼이 여러 곳에 있으면 찾기 더 어렵다.
  */
-type MbTab = 'today' | 'map' | 'wallet' | 'talk' | 'trip';
-/** 여행 탭 안의 두 화면 — 예전 TIMELINE / MORE */
-type TripSub = 'days' | 'info';
+type MbTab = 'today' | 'map' | 'wallet' | 'talk' | 'crew';
+/** 일정 탭 안의 세 화면 — 하루(타임라인) / 전체(DAY 페이저) / 지도(그날 핀) */
+type PlanSub = 'day' | 'all' | 'map';
+/** 지갑 탭 안의 두 화면 */
+type WalletSub = 'money' | 'docs';
 type PdTab = 'overview' | 'guide' | 'reviews';
 
 /* ══════════════ 모듈 상태 ══════════════ */
@@ -249,8 +258,8 @@ let allDestinations: TripDestination[] = [];
 let days: TlDay[] = [];
 let activeDayIndex = 0;
 let activeTab: MbTab = 'today';
-/** 여행 탭 안에서 보고 있는 화면 (예전 TIMELINE / MORE) */
-let tripSub: TripSub = 'days';
+let planSub: PlanSub = 'day';
+let walletSub: WalletSub = 'money';
 
 /** 숙소 구간(체크인~체크아웃)과 그 숙소 Place를 찾기 위한 조회표 — 둘 다 loadDayModel이 이미
  *  돌려주는 값이라 MORE 탭 때문에 따로 조회하지 않는다(원칙 3-2). */
@@ -445,7 +454,8 @@ export function teardownMobile(): void {
   datesCenteredFor = -1;
   datesScrollLeft = 0;
   activeTab = 'today';
-  tripSub = 'days';
+  planSub = 'day';
+  walletSub = 'money';
   detailKey = null;
   detailTab = 'overview';
   placeBriefs = new Map();
@@ -958,14 +968,25 @@ function render(): void {
   centerActiveDate();
 
   // 지도는 마크업이 DOM에 올라온 뒤에야 붙일 수 있다
-  if (activeTab === 'map' && !detailKey) void mountMap();
+  if (mapMode()) void mountMap();
+}
+
+/**
+ * 지금 화면에 지도가 있나 — 주변 탭(탐색)과 일정 탭의 지도 보기(그날 핀)가 **지도 하나를 같이 쓴다**.
+ * 두 화면을 오가면 지도를 새로 만들지 않고 마커만 바꾼다. 둘 다 아니면 null(지도를 버린다).
+ */
+function mapMode(): 'plan' | 'explore' | null {
+  if (detailKey) return null;
+  if (activeTab === 'today' && planSub === 'map') return 'plan';
+  if (activeTab === 'map') return 'explore';
+  return null;
 }
 
 function appHtml(): string {
   if (detailKey) return detailHtml();
   // TIMELINE은 세로로 흐르지 않는다 — 가로 페이저가 남은 높이를 다 쓰고, 세로 스크롤은
   // 페이지 안쪽이 맡는다(축이 달라 서로 싸우지 않는다)
-  const scrollCls = 'mb-scroll' + (activeTab === 'trip' && tripSub === 'days' && days.some((d) => d.stops.length) ? ' is-pager' : '');
+  const scrollCls = 'mb-scroll' + (activeTab === 'today' && planSub === 'all' && days.some((d) => d.stops.length) ? ' is-pager' : '');
   return [
     topBarHtml(),
     offlineBarHtml(),
@@ -1090,84 +1111,72 @@ function sayPhrase(key: string): void {
 }
 
 function tabBodyHtml(): string {
-  if (activeTab === 'today') return todayTabHtml();
+  if (activeTab === 'today') return planTabHtml();
   if (activeTab === 'map') return mapTabHtml();
   if (activeTab === 'wallet') return walletTabHtml();
   if (activeTab === 'talk') return talkTabHtml();
-  return tripSub === 'days' ? allDaysTabHtml() : moreTabHtml();
+  return crewTabHtml();
+}
+
+/** 탭 안의 화면 전환(세그먼트) — 일정(하루·전체·지도)과 지갑(지출·서류)이 같은 모양을 쓴다 */
+function segHtml(attr: string, items: Array<[string, string]>, active: string, tour = ''): string {
+  return (
+    '<div class="mb-trip-seg" role="tablist"' + (tour ? ' data-tour="' + tour + '"' : '') + '>' +
+    items
+      .map(([v, label]) =>
+        '<button class="mb-trip-seg-btn' + (v === active ? ' active' : '') + '" role="tab" aria-selected="' + (v === active) + '" ' + attr + '="' + v + '">' + label + '</button>'
+      )
+      .join('') +
+    '</div>'
+  );
+}
+
+/* ── 일정 탭: 하루 / 전체 / 지도 ── */
+
+function planTabHtml(): string {
+  const seg = segHtml('data-plansub', [['day', '하루'], ['all', '전체'], ['map', '지도']], planSub, 'companion-plan-seg');
+  if (planSub === 'all') return seg + allDaysTabHtml();
+  if (planSub === 'map') return seg + '<div class="mb-map-wrap">' + dateStripHtml() + planMapHtml() + '</div>';
+  return seg + todayTabHtml();
 }
 
 /* ── 상단 바 ── */
 
+/**
+ * 한 줄: 로고 · 화면 제목 · 홈 · 메뉴. 예전엔 브랜드 줄 + 제목 줄 + 여행지·날짜 줄의 세 줄이었다 —
+ * 여행지·날짜·날씨는 일정 탭의 요약 카드가 이미 보여 줘서 겹쳤고, 휴대폰 화면의 위쪽 80px을 먹었다.
+ * 일정 탭의 제목은 여행 이름, 다른 탭은 탭 이름이다. 도움말은 메뉴 안으로 옮겼다.
+ */
 function topBarHtml(): string {
-  const day = activeDay();
-  const isToday = day?.date === todayISO();
-  const brandRow = [
+  const title =
+    activeTab === 'today' ? currentTrip?.name || tripDestName()
+    : activeTab === 'map' ? '주변'
+    : activeTab === 'wallet' ? '지갑'
+    : activeTab === 'talk' ? '회화'
+    : '일행';
+  return [
     '<header class="mb-top">',
-    '  <div class="mb-brand"><span class="mb-brand-mark">' + IC.logo + '</span>몽실이</div>',
+    '  <div class="mb-top-title"><span class="mb-brand-mark">' + IC.logo + '</span><h1 class="mb-top-h">' + escapeHtml(title) + '</h1></div>',
     '  <div class="mb-top-actions">',
-    // 폰에서 Companion은 앱 전체라 워크스페이스 헤더가 숨겨져 있다. 예전엔 ☰가 곧바로 여행 목록으로
-    // 나가 버려서 설정할 곳이 없었다 — 지금은 메뉴 시트(menuSheetHtml)를 연다.
-    // 도움말 센터(Companion 가이드 다시 보기 포함) — 폰에선 워크스페이스 헤더가 숨겨져 있어 여기 둔다
-    // 홈: 어느 탭에 있든 "오늘 일정" 첫 화면으로. 메뉴: 설정·바로가기 모음(다른 여행 고르기는 메뉴 안에)
-    '    <button class="mb-icon-btn" id="mb-home" aria-label="홈">' + IC.home + '</button>',
-    '    <button class="mb-icon-btn" id="mb-help" aria-label="도움말">' + IC.help + '</button>',
-    '    <button class="mb-icon-btn" id="mb-menu" aria-label="메뉴">' + IC.menu + '</button>',
+    // 홈: 어느 탭에 있든 일정 · 하루 · 오늘로. 메뉴: 알림·위치 설정, PC 기능, 도움말, 계정, 다른 여행
+    '    <button class="mb-icon-btn" id="mb-home" aria-label="홈 (오늘 일정)">' + IC.home + '</button>',
+    '    <button class="mb-icon-btn" id="mb-menu" aria-label="메뉴" data-tour="companion-menu">' + IC.menu + '</button>',
     '  </div>',
     '</header>',
   ].join('');
-
-  // 화면 제목은 탭마다 다르다. TODAY는 날짜 띠가 바로 아래에 있어서 상단에 DAY 피커를 또 두지 않는다.
-  if (activeTab !== 'today') {
-    const title = activeTab === 'wallet' ? '지갑' : activeTab === 'map' ? '주변' : activeTab === 'talk' ? '회화' : tripSub === 'info' ? '여행 정보' : '전체 일정';
-    return [
-      brandRow,
-      '<div class="mb-daybar"><span class="mb-screen-title">' + title + '</span></div>',
-      '<div class="mb-daymeta">',
-      '  <span class="mb-date">' + escapeHtml(tripDestName()) + ' · 여행 전체</span>',
-      '</div>',
-    ].join('');
-  }
-
-  // 여행 **전체** 제목(위)과 **이 날** 머무는 도시(아래)를 다른 줄에 둔다 — "방콕·푸켓"이
-  // 제목인지 오늘 위치인지 헷갈리지 않게. 날씨는 받았을 때만 붙는다(원칙 3-1).
-  const dest = day?.destName ?? tripDestName();
-  const date = dateShort(day?.date ?? null);
-  return [
-    brandRow,
-    '<div class="mb-daybar"><span class="mb-screen-title">' + escapeHtml(currentTrip?.name || tripDestName()) + '</span></div>',
-    '<div class="mb-daymeta">',
-    dest ? '  <span class="mb-meta-item mb-meta-dest">' + IC.pin + escapeHtml(dest) + '</span>' : '',
-    date ? '  <span class="mb-meta-item mb-date">' + escapeHtml(date) + '</span>' : '',
-    weatherChipHtml(),
-    '</div>',
-  ].join('');
-}
-
-/**
- * 날씨 한 조각. **못 받았으면 빈 문자열** — 자리를 비워 두지 "—"나 기본값을 찍지 않는다(원칙 3-1).
- * 오늘은 지금 기온, 다른 날은 그날 최고/최저를 보여준다. 둘을 같은 모양으로 찍으면
- * 내일 칸의 숫자를 "지금 기온"으로 읽게 되므로 표기를 일부러 다르게 둔다.
- */
-function weatherChipHtml(): string {
-  if (!weather) return '';
-  const text =
-    weather.kind === 'now'
-      ? weather.tempC + '° ' + weather.label
-      : weather.maxC + '° / ' + weather.minC + '° ' + weather.label;
-  return '  <span class="mb-meta-item mb-wx">' + WX_ICON[weather.icon] + escapeHtml(text) + '</span>';
 }
 
 /* ── 하단 탭 ── */
 
 function tabBarHtml(): string {
   const items: Array<{ key: MbTab; label: string; icon: string }> = [
-    { key: 'today', label: '일정', icon: IC.home },
+    // 집 모양은 상단 홈 버튼 하나만 쓴다 — 일정 탭은 달력
+    { key: 'today', label: '일정', icon: IC.calendar },
     // 여행 중 가장 자주 여는 곳 — "지도"가 아니라 "주변"으로 부른다(열면 바로 주변 검색)
     { key: 'map', label: '주변', icon: IC.search },
     { key: 'wallet', label: '지갑', icon: IC.wallet },
     { key: 'talk', label: '회화', icon: IC.chat },
-    { key: 'trip', label: '여행', icon: IC.bag },
+    { key: 'crew', label: '일행', icon: IC.people },
   ];
   return (
     '<nav class="mb-tabs" data-tour="companion-tabs">' +
@@ -1461,6 +1470,10 @@ function daySummaryCardHtml(day: TlDay): string {
   const meta = [(isToday ? '오늘 일정 ' : '일정 ') + day.stops.length + '곳'];
   if (docs > 0) meta.push('예약 서류 ' + docs + '건');
   const date = dateLong(day.date);
+  // 날씨는 이 날 것만 받는다(loadWeatherForActiveDay) — 못 받았으면 줄을 그리지 않는다(원칙 3-1)
+  const wx = weather
+    ? WX_ICON[weather.icon] + escapeHtml(weather.kind === 'now' ? '지금 ' + weather.tempC + '° ' + weather.label : weather.maxC + '° / ' + weather.minC + '° ' + weather.label)
+    : '';
 
   return [
     '<section class="mb-sum' + (photo ? '' : ' no-photo') + '">',
@@ -1470,6 +1483,7 @@ function daySummaryCardHtml(day: TlDay): string {
     '    <h2 class="mb-sum-title">' + escapeHtml(title) + '</h2>',
     date ? '    <p class="mb-sum-date">' + escapeHtml(date) + '</p>' : '',
     '    <p class="mb-sum-meta">' + IC.calendar + escapeHtml(meta.join(' · ')) + '</p>',
+    wx ? '    <p class="mb-sum-meta mb-sum-wx">' + wx + '</p>' : '',
     '  </div>',
     '</section>',
   ].join('');
@@ -1526,6 +1540,7 @@ function todayTabHtml(): string {
       '  <p class="mb-day-empty-title">이 날은 아직 일정이 없어요</p>',
       '  <p class="mb-day-empty-sub">PC의 ROUTE에서 일정을 채우면 여기에 나타나요.</p>',
       '</div>',
+      stayCardHtml(day.date),
     ].join('');
   }
 
@@ -1579,6 +1594,8 @@ function todayTabHtml(): string {
     '</div>',
     reorderHintHtml(day),
     '<div class="mb-thread">' + rows.join('') + '</div>',
+    // 하루의 끝은 숙소다 — "오늘 밤 어디서 자지?"를 일정 바로 아래에서 답한다(예전엔 여행 탭 깊숙이 있었다)
+    stayCardHtml(day.date),
     sourceNoteHtml(day, s),
     // 하단 "다음 일정까지" 바 — 지금 상태를 알 때만 뜬다
     nowState ? nextUpBarHtml(nowState, s) : '',
@@ -2000,19 +2017,9 @@ function trackHtml(stop: TlStop, prog: StopProgress | undefined): string {
  * "멈춘 뒤 어느 페이지인지" 읽어 상태에 반영하는 것뿐이다(아래 bindPager).
  */
 
-/**
- * 여행 탭 안의 두 화면 전환 — 전체 일정 / 여행 정보(숙소·준비물·예약 링크).
- * 이 스위치가 없으면 여행 정보 화면은 열 방법이 없다(PR #209 이후 한동안 그랬다).
- */
-function tripSegHtml(): string {
-  const btn = (sub: TripSub, label: string) =>
-    '<button class="mb-trip-seg-btn' + (tripSub === sub ? ' active' : '') + '" data-tripsub="' + sub + '">' + label + '</button>';
-  return '<div class="mb-trip-seg" role="tablist">' + btn('days', '전체 일정') + btn('info', '여행 정보') + '</div>';
-}
-
 function allDaysTabHtml(): string {
   if (!days.some((d) => d.stops.length)) {
-    return tripSegHtml() + emptyHtml('일정이 아직 없어요', 'PC에서 ROUTE로 동선을 먼저 만들어 주세요.');
+    return emptyHtml('일정이 아직 없어요', 'PC에서 ROUTE로 동선을 먼저 만들어 주세요.');
   }
   const t = todayISO();
 
@@ -2035,7 +2042,6 @@ function allDaysTabHtml(): string {
     .join('');
 
   return [
-    tripSegHtml(),
     tripProgressHtml(),
     '<div class="mb-tl-chips" id="mb-tl-chips">' + chips + '</div>',
     '<div class="mb-tl-pager" id="mb-tl-pager">' + days.map((d, i) => dayPageHtml(d, i)).join('') + '</div>',
@@ -2249,9 +2255,6 @@ let userDot: any = null;
 let exMarkerById = new Map<string, any>();
 
 /* ── 주변 탐색 상태 ── */
-type MapView = 'plan' | 'explore';
-// 주변 탭을 열면 바로 주변 검색부터 보인다. 일정 지도는 칩 하나로 남긴다
-let mapView: MapView = 'explore';
 /** 주변 탭 "인생샷" 모드 — AI가 찾고 Google 장소로 확인한 사진 명소 */
 let exPhoto = false;
 /** 인생샷 키워드(야경·노을 등) — 인생샷 모드에서 검색창에 쓴 말 */
@@ -2411,7 +2414,7 @@ async function runExploreSearch(where?: { lat: number; lng: number }, label?: st
 
 function fitExploreBounds(center: { lat: number; lng: number } | null): void {
   const g = (window as unknown as { google?: any }).google;
-  if (!g?.maps || !mapInstance || mapView !== 'explore') return;
+  if (!g?.maps || !mapInstance || mapMode() !== 'explore') return;
   const list = visibleResults();
   if (!list.length) { if (center) mapInstance.panTo(center); return; }
   const b = new g.maps.LatLngBounds();
@@ -2424,35 +2427,30 @@ function fitExploreBounds(center: { lat: number; lng: number } | null): void {
 /* ── 화면 ── */
 
 function mapTabHtml(): string {
-  return [
-    '<div class="mb-map-wrap">',
-    mapChipsHtml(),
-    mapView === 'plan' ? planMapHtml() : exploreHtml(),
-    '</div>',
-  ].join('');
+  return ['<div class="mb-map-wrap">', mapChipsHtml(), exploreHtml(), '</div>'].join('');
 }
 
 /** 급할 때 찾는 것 — 주변 탭 둘째 줄 빠른 버튼(이 근처 둘러보기와 같은 검색) */
 const QUICK_NEAR: NearbyKey[] = ['convenience', 'pharmacy', 'atm', 'exchange'];
 
 /**
- * 보기 고르기 — 1줄: 맛집 | 카페 | 관광지 | 편의시설 | 숙소 | 전체 | 일정 지도 (가로 스크롤)
+ * 보기 고르기 — 1줄: 인생샷 | 맛집 | 카페 | 관광지 | 편의시설 | 숙소 | 전체 (가로 스크롤)
  *             2줄: 편의점 · 약국 · ATM · 환전소 (급할 때 한 번에)
+ * 내 일정의 지도는 일정 탭 → 지도에 있다(주변은 "새로 찾기"만 맡는다).
  */
 function mapChipsHtml(): string {
   const chip = (key: string, label: string, icon: string, active: boolean) =>
     '<button class="mb-ex-chip' + (active ? ' active' : '') + '" data-mapview="' + key + '">' + icon + '<span>' + label + '</span></button>';
   return [
     '<div class="mb-ex-chips" role="tablist">',
-    chip('photo', '인생샷', IC.camera, mapView === 'explore' && exPhoto && !exQuery),
+    chip('photo', '인생샷', IC.camera, exPhoto && !exQuery),
     // "이 근처" 칩(환전소 등)으로 넘어온 검색이면 위 칩은 아무것도 켜지 않는다 — 그 칩의 검색이 아니다
-    EXPLORE_CATS.map((c) => chip(c.key, c.label, EX_ICON[c.key], mapView === 'explore' && !exQuery && !exNear && !exPhoto && exCat === c.key)).join(''),
-    chip('plan', '일정 지도', IC.route, mapView === 'plan'),
+    EXPLORE_CATS.map((c) => chip(c.key, c.label, EX_ICON[c.key], !exQuery && !exNear && !exPhoto && exCat === c.key)).join(''),
     '</div>',
     '<div class="mb-ex-quick" aria-label="급할 때">',
     QUICK_NEAR.map((k) => {
       const d = nearbyDef(k);
-      const on = mapView === 'explore' && !exQuery && !exPhoto && exNear === k;
+      const on = !exQuery && !exPhoto && exNear === k;
       return '<button class="mb-ex-qbtn' + (on ? ' active' : '') + '" data-mapnear="' + k + '">' + NEAR_ICON[k] + '<span>' + escapeHtml(d.label) + '</span></button>';
     }).join(''),
     '</div>',
@@ -2465,12 +2463,12 @@ function mapBoxHtml(extra = ''): string {
     : '<div class="mb-map-box"><div class="mb-map" id="mb-map">' + (mapLoading && !mapInstance ? '<span class="mb-spinner"></span>' : '') + '</div>' + extra + '</div>';
 }
 
-/** 일정 보기 — 예전 지도 탭 그대로(활성 DAY 핀 + 목록) */
+/** 일정 탭 → 지도 — 고른 DAY의 핀 + 목록(지도 인스턴스는 주변 탭과 같이 쓴다, mapMode) */
 function planMapHtml(): string {
   const day = activeDay();
   const pins = (day?.stops ?? []).filter((s) => s.lat != null && s.lng != null);
   if (!day || !day.stops.length) {
-    return '<div class="mb-day-empty"><p class="mb-day-empty-title">이 날은 일정이 없어요</p><p class="mb-day-empty-sub">위의 맛집·카페로 주변을 찾아보거나, PC에서 일정을 채워 주세요.</p></div>';
+    return '<div class="mb-day-empty"><p class="mb-day-empty-title">이 날은 일정이 없어요</p><p class="mb-day-empty-sub">위에서 다른 날을 고르거나, PC에서 일정을 채워 주세요.</p></div>';
   }
   if (!pins.length) {
     return '<div class="mb-day-empty"><p class="mb-day-empty-title">지도에 찍을 좌표가 없어요</p><p class="mb-day-empty-sub">정류지에 좌표가 저장되어 있어야 지도에 표시할 수 있어요.</p></div>';
@@ -2864,7 +2862,7 @@ async function shareExPlace(): Promise<void> {
 
 /** 지도를 띄우거나(처음) 다시 그린 자리에 옮겨 붙인다 — 렌더 직후 호출된다 */
 async function mountMap(): Promise<void> {
-  if (activeTab !== 'map' || !container || detailKey) return;
+  if (!mapMode() || !container) return;
   const slot = container.querySelector('#mb-map') as HTMLElement | null;
   if (!slot) return;
 
@@ -2878,7 +2876,7 @@ async function mountMap(): Promise<void> {
   mapError = '';
   try {
     await loadGoogleMapsScript();
-    if (activeTab !== 'map' || !container) return;
+    if (!mapMode() || !container) return;
     const live = container.querySelector('#mb-map') as HTMLElement | null;
     if (!live) return;
     const g = (window as unknown as { google?: any }).google;
@@ -2903,7 +2901,7 @@ async function mountMap(): Promise<void> {
     });
     // 지도를 움직이면 "이 지역에서 다시 검색"만 띄운다 — 자동으로 검색하지 않는다(비용)
     mapInstance.addListener('idle', () => {
-      if (mapView !== 'explore' || !exSearchedAt || exLoading) return;
+      if (mapMode() !== 'explore' || !exSearchedAt || exLoading) return;
       const c = mapInstance.getCenter();
       const moved = movedFar(exSearchedAt, { lat: c.lat(), lng: c.lng() }, exFilters.radius);
       if (moved !== exMoved) { exMoved = moved; render(); }
@@ -2911,7 +2909,7 @@ async function mountMap(): Promise<void> {
     markerSig = '';
     syncMapMarkers();
     // 일정 장소 상세에서 "지도에서 보기"로 처음 지도를 띄운 경우 — 결과가 보이게 맞춘다
-    if (mapView === 'explore' && exSearchedAt) fitExploreBounds(exSearchedAt);
+    if (mapMode() === 'explore' && exSearchedAt) fitExploreBounds(exSearchedAt);
   } catch (e) {
     // 지도를 못 띄워도 아래 목록과 길찾기는 그대로 쓸 수 있다 — 그래서 탭 전체를 죽이지 않는다
     console.error('[Mobile] 지도 로드 실패:', e);
@@ -2932,7 +2930,7 @@ function syncMapMarkers(): void {
   if (!g?.maps || !mapInstance) return;
   syncUserDot(g);
 
-  if (mapView === 'plan') {
+  if (mapMode() === 'plan') {
     const day = activeDay();
     const pins = (day?.stops ?? []).filter((s) => s.lat != null && s.lng != null);
     const sig = 'plan:' + (day?.destId ?? '') + ':' + (day?.dayIndex ?? '') + ':' + pins.map((p) => p.key).join('|');
@@ -2965,7 +2963,7 @@ function syncMapMarkers(): void {
 
 /** "이 근처"의 기준 일정 장소 — 남색 원 핀. 누르면 그 장소 상세로 돌아간다 */
 function syncAnchorMarker(g: any): void {
-  if (mapView !== 'explore' || !exAnchor) { anchorMarker?.setMap(null); anchorMarker = null; return; }
+  if (mapMode() !== 'explore' || !exAnchor) { anchorMarker?.setMap(null); anchorMarker = null; return; }
   const a = exAnchor;
   if (anchorMarker?.__key === a.stopKey) { anchorMarker.setMap(mapInstance); return; }
   anchorMarker?.setMap(null);
@@ -3125,7 +3123,8 @@ async function reloadExpenses(): Promise<void> {
   if (!currentTripId) return;
   try {
     expenseCtx = await loadExpenseCtx(currentTripId);
-    if (activeTab === 'wallet') render();
+    // 일행 탭도 멤버 목록을 이 데이터에서 읽는다
+    if (activeTab === 'wallet' || activeTab === 'crew') render();
   } catch (e) {
     console.error('[Mobile] 지출 새로고침 실패:', e);
   }
@@ -3303,16 +3302,18 @@ function walletDocsHtml(): string {
   return out.join('');
 }
 
+/**
+ * 지갑 — 지출 / 서류. 여행 중 지갑에서 가장 자주 하는 일은 "방금 쓴 돈 넣기"라 지출이 먼저다
+ * (예전엔 서류 목록 아래 맨 끝에 있어서 매번 스크롤해야 했다). 예약 링크는 예약 서류와 같은 성격이라 서류 쪽에 둔다.
+ */
 function walletTabHtml(): string {
+  const docN = walletDocsLoaded ? walletDocs.length : 0;
   return [
-    '<section class="mb-wd-head">',
-    '  <h2 class="mb-wd-h1">여행 지갑</h2>',
-    '  <p class="mb-wd-h2">예약 서류와 지출을 한곳에</p>',
-    '</section>',
+    segHtml('data-walletsub', [['money', '지출'], ['docs', '서류' + (docN ? ' ' + docN : '')]], walletSub),
     walletNotice ? '<p class="mb-wd-notice" role="alert">' + escapeHtml(walletNotice) + '</p>' : '',
-    offlineDocsHtml(),
-    walletDocsHtml(),
-    walletMoneyHtml(),
+    walletSub === 'docs'
+      ? offlineDocsHtml() + walletDocsHtml() + bookingLinksHtml()
+      : walletMoneyHtml(),
   ].join('');
 }
 
@@ -3454,7 +3455,6 @@ function walletMoneyHtml(): string {
 
   return [
     '<section class="mb-more-sec">',
-    '  <div class="mb-more-sec-head"><h4 class="mb-more-sec-title">지출</h4></div>',
     '<section class="mb-wal-hero">',
     '  <div class="mb-wal-hero-label">오늘 쓴 돈</div>',
     '  <div class="mb-wal-hero-value">' + fmtKRW(today) + '</div>',
@@ -3472,9 +3472,7 @@ function walletMoneyHtml(): string {
       ? '  <p class="mb-wal-note">환율을 못 받은 ' + unconverted + '건은 합계에서 빠졌어요.</p>'
       : '',
     '</section>',
-    settleLineHtml(ctx),
-    recentExpensesHtml(ctx),
-    // 여행 중 지갑에서 하는 일은 둘뿐이다 — 쓴 걸 넣거나, 얼마인지 보거나.
+    // 여행 중 지갑에서 하는 일은 둘뿐이다 — 쓴 걸 넣거나, 얼마인지 보거나. 그래서 합계 바로 아래에 둔다
     '<div class="mb-wal-acts">',
     '  <button class="mb-wal-add" id="mb-wal-add">' + IC.plus + ' 지출 추가</button>',
     '  <button class="mb-wal-calc" id="mb-wal-calc">' + IC.swap + ' 얼마예요?</button>',
@@ -3485,6 +3483,8 @@ function walletMoneyHtml(): string {
       '<input type="file" id="mb-wal-photo-in" accept="image/*" multiple hidden' + (photoBusy ? ' disabled' : '') + ' />' +
     '</label>',
     photoDraftsHtml(),
+    settleLineHtml(ctx),
+    recentExpensesHtml(ctx),
     '</section>',
   ].join('');
 }
@@ -3955,7 +3955,7 @@ async function reloadChecklist(): Promise<void> {
   const items = await loadChecklist(currentTripId);
   if (items == null) return;
   checklist = items;
-  if (activeTab === 'trip') render();
+  if (activeTab === 'crew') render();
 }
 
 /** 다른 멤버가 채팅에 예약 링크를 올리면 MORE에도 즉시 뜬다 (expenses와 같은 패턴) */
@@ -3981,28 +3981,7 @@ async function reloadLinks(): Promise<void> {
     .limit(50);
   if (error) return;
   tripLinks = ((data ?? []) as TripLink[]).filter((l) => BOOKING_LINK_CATEGORIES.has(l.category));
-  if (activeTab === 'trip') render();
-}
-
-function moreTabHtml(): string {
-  if (moreLoading && !moreLoaded) {
-    return '<div class="mb-wallet-loading"><span class="mb-spinner"></span>불러오는 중…</div>';
-  }
-
-  // 여행 중이면 숙소가, 여행 전이면 준비물이 먼저다 (섹션 주석 참고)
-  const traveling = todayDayIndex() >= 0;
-  const stay = stayCardHtml();
-  const check = checklistSecHtml();
-
-  return [
-    tripSegHtml(),
-    tripHeadHtml(),
-    traveling ? stay + check : check + stay,
-    bookingLinksHtml(),
-    pushSecHtml(),
-    whereSecHtml(),
-    moreLinksHtml(),
-  ].join('');
+  if (activeTab === 'wallet' && walletSub === 'docs') render();
 }
 
 /* ── 휴대폰 알림 (src/pwa/push.ts) ── */
@@ -4044,53 +4023,73 @@ async function toggleWeather(): Promise<void> {
   }
 }
 
-function pushSecHtml(): string {
+/** 휴대폰 알림을 켜고 끈다(이 기기). 메뉴와 일행 탭 안내 칸이 같이 쓴다 */
+async function togglePush(): Promise<void> {
+  if (pushBusy) return;
   const support = currentPushSupport();
-  if (support === 'ok') refreshPushState();
-  const denied = support === 'ok' && typeof Notification !== 'undefined' && Notification.permission === 'denied';
-  let sub: string;
-  if (support === 'no-key') sub = '준비 중이에요';
-  else if (support === 'ios-install') sub = '아이폰은 사파리 공유 버튼 → "홈 화면에 추가" 후, 그 아이콘으로 연 앱에서 켤 수 있어요';
-  else if (support === 'unsupported') sub = '이 브라우저는 알림을 지원하지 않아요';
-  else if (denied) sub = '알림이 차단돼 있어요. 휴대폰 설정에서 이 앱의 알림을 허용해 주세요';
-  else if (pushBusy) sub = '처리 중…';
-  else if (pushOn) sub = '켜짐 · 누르면 이 휴대폰 알림을 꺼요';
-  else sub = '날씨·일행 호출 같은 여행 소식을 이 휴대폰으로 받아요';
-
-  const can = support === 'ok' && !denied && !pushBusy;
-  const row = (id: string, label: string, text: string, enabled: boolean, badge = '') =>
-    '<button class="mb-more-row" id="' + id + '"' + (enabled ? '' : ' disabled') + '>' +
-    '<span class="mb-more-row-ic">' + IC.bell + '</span>' +
-    '<div class="mb-more-row-main">' +
-    '<div class="mb-more-row-label">' + escapeHtml(label) + badge + '</div>' +
-    '<div class="mb-more-row-sub">' + escapeHtml(text) + '</div>' +
-    '</div>' +
-    '</button>';
-  return [
-    '<section class="mb-more-sec">',
-    '  <div class="mb-more-list">',
-    row('mb-push-toggle', '휴대폰 알림', sub, can, pushOn ? ' <span class="mb-push-on">ON</span>' : ''),
-    pushOn && support === 'ok' ? row('mb-push-test', '시험 알림 보내기', '이 휴대폰으로 알림이 오는지 확인해요', !pushBusy) : '',
-    pushOn && support === 'ok'
-      ? row('mb-push-weather', '날씨 알림', weatherPref === false ? '꺼짐 · 누르면 다시 받아요' : '켜짐 · 여행지 저녁 8시에 내일 날씨, 누르면 꺼요', !pushBusy, weatherPref === false ? '' : ' <span class="mb-push-on">ON</span>')
-      : '',
-    '  </div>',
-    '</section>',
-  ].join('');
+  if (support !== 'ok') {
+    showToast(support === 'ios-install' ? '아이폰은 사파리 공유 → "홈 화면에 추가" 후 그 아이콘으로 연 앱에서 켤 수 있어요.' : support === 'no-key' ? '알림 기능을 준비 중이에요.' : '이 브라우저는 알림을 지원하지 않아요.');
+    return;
+  }
+  if (!pushOn && typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+    showToast('알림이 차단돼 있어요. 휴대폰 설정에서 이 앱의 알림을 허용해 주세요.');
+    return;
+  }
+  pushBusy = true;
+  render();
+  try {
+    if (pushOn) {
+      await disablePush();
+      pushOn = false;
+      showToast('이 휴대폰 알림을 껐어요.');
+    } else {
+      const r = await enablePush();
+      if (r === 'on') {
+        pushOn = true;
+        weatherPref = await getWeatherPref().catch(() => null);
+        showToast('알림을 켰어요. 메뉴의 "시험 알림 보내기"로 확인해 보세요.');
+      } else if (r === 'denied') showToast('알림 권한을 허용해야 받을 수 있어요.');
+      else if (r === 'no-table') showToast('알림 기능을 준비 중이에요. 잠시 뒤 다시 시도해 주세요.');
+      else if (r === 'unsupported') showToast('이 브라우저는 알림을 지원하지 않아요.');
+      else showToast('알림을 켜지 못했어요. 잠시 뒤 다시 시도해 주세요.');
+    }
+  } finally {
+    pushBusy = false;
+    render();
+  }
 }
 
-/* ── 메뉴(☰) — 홈·바로가기·설정·PC 기능·계정을 한 곳에 ── */
+async function testPush(): Promise<void> {
+  if (pushBusy) return;
+  pushBusy = true;
+  render();
+  try {
+    const r = await sendTestPush();
+    showToast(r.ok ? '보냈어요. 몇 초 안에 알림이 와요.' : r.message);
+  } finally {
+    pushBusy = false;
+    render();
+  }
+}
+
+/* ── 메뉴(☰) — 설정 · PC 기능 · 도움말 · 계정만. 화면 이동은 하단 탭과 홈 버튼이 맡는다 ── */
 
 let menuOpen = false;
 
-type MenuKey = 'home' | 'days' | 'info' | 'push' | 'weather' | 'geo' | 'where' | 'chat' | 'plan' | 'expense' | 'help' | 'account' | 'trips';
+type MenuKey = 'push' | 'weather' | 'test' | 'geo' | 'plan' | 'expense' | 'docs' | 'help' | 'account' | 'trips';
 
 function menuSheetHtml(): string {
   const support = currentPushSupport();
   if (support === 'ok') refreshPushState();
-  const pushLabel = support === 'ok' ? (pushOn ? 'ON' : 'OFF') : support === 'ios-install' ? '홈 화면 설치 필요' : '사용 불가';
-  const row = (key: MenuKey, icon: string, label: string, sub = '', state = '') =>
-    '<button class="mb-menu-row" data-menu="' + key + '">' +
+  const denied = support === 'ok' && typeof Notification !== 'undefined' && Notification.permission === 'denied';
+  const pushState = support === 'ok' ? (denied ? '차단됨' : pushOn ? 'ON' : 'OFF') : support === 'ios-install' ? '설치 필요' : support === 'no-key' ? '준비 중' : '사용 불가';
+  const pushSub =
+    support === 'ios-install' ? '아이폰은 홈 화면에 추가한 앱에서만 받아요'
+    : denied ? '휴대폰 설정에서 이 앱의 알림을 허용해 주세요'
+    : '날씨 · 일행의 "어디야?"를 이 휴대폰으로';
+  const on = support === 'ok' && pushOn === true;
+  const row = (key: MenuKey, icon: string, label: string, sub = '', state = '', disabled = false) =>
+    '<button class="mb-menu-row" data-menu="' + key + '"' + (disabled ? ' disabled' : '') + '>' +
     '<span class="mb-menu-ic">' + icon + '</span>' +
     '<span class="mb-menu-main"><span class="mb-menu-label">' + escapeHtml(label) + '</span>' +
     (sub ? '<span class="mb-menu-sub">' + escapeHtml(sub) + '</span>' : '') + '</span>' +
@@ -4102,82 +4101,62 @@ function menuSheetHtml(): string {
     '<div class="mb-sheet-back" id="mb-menu-back"></div>',
     '<div class="mb-sheet mb-menu" role="dialog" aria-label="메뉴">',
     '  <div class="mb-sheet-grip"></div>',
-    '  <div class="mb-menu-head"><span class="mb-sheet-title">' + escapeHtml(currentTrip?.name || tripDestName()) + '</span>',
-    '    <button class="mb-icon-btn" id="mb-menu-close" aria-label="닫기">' + IC.close + '</button></div>',
+    '  <div class="mb-menu-head">',
+    '    <div class="mb-menu-trip"><span class="mb-menu-trip-label">지금 여행</span><span class="mb-menu-trip-name">' + escapeHtml(currentTrip?.name || tripDestName()) + '</span></div>',
+    '    <button class="mb-menu-switch" data-menu="trips">다른 여행</button>',
+    '    <button class="mb-icon-btn" id="mb-menu-close" aria-label="닫기">' + IC.close + '</button>',
+    '  </div>',
     '  <div class="mb-menu-body">',
-    group('바로 가기', [
-      row('home', IC.home, '홈', '오늘 일정 첫 화면'),
-      row('days', IC.route, '전체 일정', 'DAY별 동선 한눈에'),
-      row('info', IC.bag, '여행 정보', '숙소 · 준비물 · 예약 링크'),
+    group('알림', [
+      row('push', IC.bell, '휴대폰 알림', pushSub, pushState, pushBusy),
+      row('weather', WX_ICON.sun, '날씨 알림', '여행지 저녁 8시 · 내일 날씨', on ? (weatherPref === false ? 'OFF' : 'ON') : '알림 꺼짐', pushBusy || !on),
+      on ? row('test', IC.send, '시험 알림 보내기', '이 휴대폰으로 알림이 오는지 확인', '', pushBusy) : '',
     ]),
-    group('설정', [
-      row('push', IC.bell, '휴대폰 알림', '날씨 · 일행 호출을 이 휴대폰으로', pushLabel),
-      row('weather', WX_ICON.sun, '날씨 알림', '여행지 저녁 8시 · 내일 날씨', support === 'ok' && pushOn ? (weatherPref === false ? 'OFF' : 'ON') : '알림 꺼짐'),
-      row('geo', IC.navigate, '도착 자동 기록', '위치로 일정 장소 도착을 기록', geoOn ? 'ON' : 'OFF'),
-      row('where', IC.pin, '일행 · 어디야?', '일행에게 위치 물어보기'),
+    group('위치', [
+      row('geo', IC.navigate, '도착 자동 기록', '일정 장소에 도착하면 위치로 기록', geoOn ? 'ON' : 'OFF'),
     ]),
     group('PC 화면에서 더 하기', [
-      row('chat', IC.chat, '채팅 · 공유 링크'),
-      row('plan', IC.route, '일정 편집', '순서 · 이동수단 변경'),
-      row('expense', IC.wallet, '전체 지출 · 예산'),
+      row('plan', IC.route, '일정 편집', '순서 · 이동수단 바꾸기'),
+      row('expense', IC.wallet, '지출 대시보드 · 예산', '차트 · 필터 · 예산 설정'),
+      row('docs', IC.doc, '예약 서류 올리기', '항공권 · 바우처 · 여권 사본'),
     ]),
-    group('계정', [
+    group('도움말 · 계정', [
       row('help', IC.help, '도움말 · 사용 안내'),
       row('account', IC.lock, '계정 · 개인정보 · 탈퇴', '로그아웃, 약관'),
-      row('trips', IC.menu, '다른 여행 보기', '내 여행 목록으로'),
     ]),
     '  </div>',
     '</div>',
   ].join('');
 }
 
-/** 홈 — 일정 탭, 여행 중이면 오늘 DAY, 맨 위 */
+/** 홈 — 일정 탭 · 하루 · (여행 중이면) 오늘 DAY · 맨 위 */
 function goHome(): void {
   menuOpen = false;
   daySheetOpen = false;
   activeTab = 'today';
-  tripSub = 'days';
+  planSub = 'day';
   const today = todayDayIndex();
+  const moved = today >= 0 && today !== activeDayIndex;
   if (today >= 0) activeDayIndex = today;
   teardownMap();
   render();
   container?.querySelector('.mb-scroll')?.scrollTo({ top: 0 });
-}
-
-function openTripSub(sub: TripSub): void {
-  menuOpen = false;
-  activeTab = 'trip';
-  tripSub = sub;
-  teardownMap();
-  render();
-  if (sub === 'info') void ensureMoreCtx();
-  container?.querySelector('.mb-scroll')?.scrollTo({ top: 0 });
+  if (moved) {
+    void loadRealLegsForActiveDay();
+    void loadProgressForActiveDay();
+    void loadWeatherForActiveDay();
+  }
 }
 
 function onMenu(key: MenuKey): void {
   switch (key) {
-    case 'home': goHome(); return;
-    case 'days': openTripSub('days'); return;
-    case 'info': openTripSub('info'); return;
-    case 'where':
-      openTripSub('info');
-      // 일행 목록은 여행 정보 아래쪽에 있다 — 다 그려진 뒤 그 자리로
-      setTimeout(() => container?.querySelector('.mb-where-head')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
-      return;
-    case 'push': {
-      const support = currentPushSupport();
-      if (support !== 'ok') {
-        showToast(support === 'ios-install' ? '아이폰은 사파리 공유 → "홈 화면에 추가" 후 그 앱에서 켤 수 있어요.' : '이 기기에서는 알림을 쓸 수 없어요.');
-        return;
-      }
-      void togglePush();
-      return;
-    }
+    case 'push': void togglePush(); return;
     case 'weather': void toggleWeather(); return;
+    case 'test': void testPush(); return;
     case 'geo': toggleGeo(); return;
-    case 'chat': menuOpen = false; gotoGate('links'); return;
     case 'plan': menuOpen = false; gotoGate('route'); return;
     case 'expense': menuOpen = false; gotoGate('expense'); return;
+    case 'docs': menuOpen = false; gotoGate('docs'); return;
     case 'help': menuOpen = false; render(); openHelp(); return;
     case 'account': menuOpen = false; navigate('settings'); return;
     case 'trips': menuOpen = false; navigate('trips'); return;
@@ -4191,25 +4170,73 @@ let whereBusy = false;
 /** 일행 목록을 한 번만 불러 본다(실패해도 화면을 그릴 때마다 다시 부르지 않게) */
 let whereMembersAsked = false;
 
-/** 일행 목록 + "어디야?" 버튼. 멤버는 지갑과 같은 데이터(expenseCtx)를 쓴다 */
-function whereSecHtml(): string {
+/* ── 일행 탭 ── */
+
+/**
+ * 일행 탭 — 같이 간 사람과 하는 일만 모은다.
+ *   1. 알림이 꺼져 있으면 맨 위에 한 줄 안내(알림이 있어야 "어디야?"를 받는다)
+ *   2. 일행 · 어디야?   3. 함께 챙길 준비물(모두가 보는 목록)   4. 초대 · 채팅
+ * 멤버 목록은 지갑과 같은 데이터(expenseCtx)를 쓴다 — 따로 조회하지 않는다(원칙 3-2).
+ */
+function crewTabHtml(): string {
+  return [crewPushCtaHtml(), crewMembersHtml(), moreLoading && !moreLoaded ? '' : checklistSecHtml(), crewLinksHtml()].join('');
+}
+
+function crewPushCtaHtml(): string {
+  const support = currentPushSupport();
+  if (support === 'ok') refreshPushState();
+  if (support === 'no-key' || support === 'unsupported' || (support === 'ok' && pushOn !== false)) return '';
+  const ios = support === 'ios-install';
+  const denied = !ios && typeof Notification !== 'undefined' && Notification.permission === 'denied';
+  const title = ios ? '홈 화면에 추가하면 알림을 받아요' : denied ? '알림이 차단돼 있어요' : '알림을 켜야 "어디야?"를 받아요';
+  const sub = ios
+    ? '사파리 공유 버튼 → "홈 화면에 추가" → 그 아이콘으로 열기'
+    : denied
+      ? '휴대폰 설정에서 이 앱의 알림을 허용하면 일행의 "어디야?"를 받아요'
+      : '일행이 위치를 물으면 이 휴대폰으로 알려 드려요';
+  return [
+    '<div class="mb-crew-cta">',
+    '  <span class="mb-crew-cta-ic">' + IC.bell + '</span>',
+    '  <div class="mb-crew-cta-main">',
+    '    <div class="mb-crew-cta-title">' + escapeHtml(title) + '</div>',
+    '    <div class="mb-crew-cta-sub">' + escapeHtml(sub) + '</div>',
+    '  </div>',
+    ios || denied ? '' : '  <button class="mb-crew-cta-btn" id="mb-crew-push"' + (pushBusy ? ' disabled' : '') + '>켜기</button>',
+    '</div>',
+  ].join('');
+}
+
+function crewMembersHtml(): string {
   if (!expenseCtx) {
     // 그리는 도중에 다시 그리지 않도록 다음 틱에 부른다
     if (!whereMembersAsked) { whereMembersAsked = true; queueMicrotask(() => void ensureExpenseCtx()); }
-    return '';
+    return expenseLoading ? '<div class="mb-wallet-loading"><span class="mb-spinner"></span>일행 불러오는 중…</div>' : '';
   }
   const me = store.get('user')?.id ?? null;
   const others = expenseCtx.members.filter((m) => m.user_id !== me);
-  if (!others.length) return '';
+  const head =
+    '  <div class="mb-more-sec-head"><h4 class="mb-more-sec-title">일행 · 어디야?</h4>' +
+    '<span class="mb-more-sec-note">나 포함 ' + expenseCtx.members.length + '명</span></div>';
+  if (!others.length) {
+    return [
+      '<section class="mb-more-sec">',
+      head,
+      '  <div class="mb-wd-empty">',
+      '    <div class="mb-wd-empty-title">아직 함께하는 일행이 없어요</div>',
+      '    <p class="mb-wd-empty-sub">초대 링크를 보내면 일정·지출·준비물을 같이 봐요.</p>',
+      '  </div>',
+      '</section>',
+    ].join('');
+  }
   return [
     '<section class="mb-more-sec">',
-    '  <div class="mb-where-head">일행 · 어디야?</div>',
+    head,
     '  <div class="mb-more-list">',
     others
       .map(
         (m) =>
           '<div class="mb-more-row mb-where-row">' +
-          '<span class="mb-more-row-ic">' + IC.pin + '</span>' +
+          '<span class="mb-crew-avatar">' + escapeHtml((m.display_name || '일행').slice(0, 1)) + '</span>' +
           '<div class="mb-more-row-main"><div class="mb-more-row-label">' + escapeHtml(m.display_name || '일행') + '</div>' +
           '<div class="mb-more-row-sub">누르면 이 사람 휴대폰에 알림이 가요</div></div>' +
           '<button class="mb-where-btn" data-whereask="' + escapeHtml(m.user_id) + '"' + (whereBusy ? ' disabled' : '') + '>어디야?</button>' +
@@ -4222,17 +4249,57 @@ function whereSecHtml(): string {
   ].join('');
 }
 
+/** 초대·채팅 — 같이 가는 사람을 부르는 길과, 나눈 이야기(PC 채팅)로 가는 길 */
+function crewLinksHtml(): string {
+  return [
+    '<section class="mb-more-sec">',
+    '  <div class="mb-more-list">',
+    '<button class="mb-more-row" id="mb-crew-invite">' +
+      '<span class="mb-more-row-ic">' + IC.share2 + '</span>' +
+      '<div class="mb-more-row-main"><div class="mb-more-row-label">일행 초대하기</div><div class="mb-more-row-sub">초대 링크를 메신저로 보내요</div></div>' +
+      '<span class="mb-more-row-chev">' + IC.chevRight + '</span></button>',
+    '<button class="mb-more-row" id="mb-more-chat">' +
+      '<span class="mb-more-row-ic">' + IC.chat + '</span>' +
+      '<div class="mb-more-row-main"><div class="mb-more-row-label">채팅 · 공유 링크</div><div class="mb-more-row-sub">같이 가는 사람들과 나눈 이야기 (PC 화면)</div></div>' +
+      '<span class="mb-more-row-chev">' + IC.chevRight + '</span></button>',
+    '  </div>',
+    '</section>',
+  ].join('');
+}
+
+/** 초대 링크 보내기 — 휴대폰이면 공유 시트, 아니면 복사 */
+async function shareInvite(): Promise<void> {
+  const code = currentTrip?.invite_code;
+  if (!code) { showToast('초대 코드를 찾을 수 없어요.'); return; }
+  const url = window.location.origin + '/#join/' + code;
+  const nav = navigator as Navigator & { share?: (d: { title?: string; text?: string; url?: string }) => Promise<void> };
+  if (nav.share) {
+    try {
+      await nav.share({ title: '몽실이 여행 초대', text: (currentTrip?.name || '여행') + '에 같이 가요', url });
+      return;
+    } catch (e) {
+      if ((e as { name?: string })?.name === 'AbortError') return; // 사용자가 닫음
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast('초대 링크를 복사했어요. 메신저에 붙여넣어 보내세요.');
+  } catch {
+    showToast('초대 코드: ' + code);
+  }
+}
+
 function whereSheetHtml(w: WhereIncoming): string {
   const body =
     w.kind === 'ask'
       ? [
-          '  <div class="mb-sheet-title">' + escapeHtml(w.name) + '님이 "어디야?"</div>',
+          '  <div class="mb-where-title">' + escapeHtml(w.name) + '님이 "어디야?"</div>',
           '  <p class="mb-where-desc">지금 위치를 <strong>한 번만</strong> 보내요. 계속 따라가지 않고, 서버에 저장하지도 않아요.</p>',
           '  <button class="mb-where-main" id="mb-where-send"' + (whereBusy ? ' disabled' : '') + '>' + (whereBusy ? '위치 확인 중…' : '내 위치 보내기') + '</button>',
           '  <button class="mb-where-sub" id="mb-where-close">나중에</button>',
         ]
       : [
-          '  <div class="mb-sheet-title">' + escapeHtml(w.name) + '님 위치 · ' + escapeHtml(agoLabel(w.at)) + '</div>',
+          '  <div class="mb-where-title">' + escapeHtml(w.name) + '님 위치 · ' + escapeHtml(agoLabel(w.at)) + '</div>',
           '  <p class="mb-where-desc">지금 내 위치에서 출발하는 길찾기를 열어요.</p>',
           '  <a class="mb-where-main" target="_blank" rel="noopener" href="' +
             escapeHtml(directionsUrl({ name: w.name + '님 위치', lat: w.lat, lng: w.lng })) + '">길찾기</a>',
@@ -4288,70 +4355,6 @@ async function onSendHere(): Promise<void> {
   }
 }
 
-async function togglePush(): Promise<void> {
-  if (pushBusy) return;
-  pushBusy = true;
-  render();
-  try {
-    if (pushOn) {
-      await disablePush();
-      pushOn = false;
-      showToast('이 휴대폰 알림을 껐어요.');
-    } else {
-      const r = await enablePush();
-      if (r === 'on') { pushOn = true; showToast('알림을 켰어요. "시험 알림 보내기"로 확인해 보세요.'); }
-      else if (r === 'denied') showToast('알림 권한을 허용해야 받을 수 있어요.');
-      else if (r === 'no-table') showToast('알림 기능을 준비 중이에요. 잠시 뒤 다시 시도해 주세요.');
-      else if (r === 'unsupported') showToast('이 브라우저는 알림을 지원하지 않아요.');
-      else showToast('알림을 켜지 못했어요. 잠시 뒤 다시 시도해 주세요.');
-    }
-  } finally {
-    pushBusy = false;
-    render();
-  }
-}
-
-async function testPush(): Promise<void> {
-  if (pushBusy) return;
-  pushBusy = true;
-  render();
-  try {
-    const r = await sendTestPush();
-    showToast(r.ok ? '보냈어요. 몇 초 안에 알림이 와요.' : r.message);
-  } finally {
-    pushBusy = false;
-    render();
-  }
-}
-
-/** 여행 요약 한 줄 — 어디로, 언제, 며칠 남았나. 전부 trips/destinations에 이미 있는 값이다. */
-function tripHeadHtml(): string {
-  const start = days.find((d) => d.date)?.date ?? null;
-  const end = [...days].reverse().find((d) => d.date)?.date ?? null;
-  const todayIdx = todayDayIndex();
-
-  let badge = '';
-  if (todayIdx >= 0) {
-    badge = '<span class="mb-more-badge is-live">여행 중 · ' + escapeHtml(days[todayIdx].label) + '</span>';
-  } else if (start) {
-    const left = daysBetween(todayISO(), start);
-    if (left > 0) badge = '<span class="mb-more-badge">D-' + left + '</span>';
-    else badge = '<span class="mb-more-badge">여행 완료</span>';
-  }
-
-  const range = start && end ? dateLabel(start) + ' – ' + dateLabel(end) : '';
-
-  return [
-    '<section class="mb-more-head">',
-    '  <div class="mb-more-head-top">',
-    '    <h2 class="mb-more-title">' + escapeHtml(currentTrip?.name || tripDestName()) + '</h2>',
-    badge,
-    '  </div>',
-    range ? '  <div class="mb-more-sub">' + escapeHtml(tripDestName()) + ' · ' + escapeHtml(range) + '</div>' : '',
-    '</section>',
-  ].join('');
-}
-
 /* ── 숙소 ── */
 
 /** 그날 밤 묵는 구간. end_date는 체크아웃 날이므로 "start ≤ 날짜 < end"가 숙박한 밤이다. */
@@ -4372,24 +4375,22 @@ function stayPlaceOf(seg: StaySegment): Place | null {
  * 오늘 밤(여행 전이면 첫날 밤) 묵는 숙소 하나. 확정된 숙소가 없으면 지어내지 않고
  * "아직 확정 안 됨"으로 남기고 PC의 STAY로 넘긴다(원칙 3-1).
  */
-function stayCardHtml(): string {
-  if (!staySegments.length) return '';
-
-  const todayIdx = todayDayIndex();
-  const refDate = todayIdx >= 0 ? todayISO() : days.find((d) => d.date)?.date ?? null;
-  const seg = staySegmentOn(refDate) ?? staySegments[0];
+/** 그 날 밤 묵는 숙소 카드 — 일정 탭 하루 화면 맨 아래. 그 밤에 걸린 숙소 구간이 없으면(마지막 날 등) 안 그린다 */
+function stayCardHtml(dateISO: string | null): string {
+  if (!staySegments.length || !dateISO) return '';
+  const seg = staySegmentOn(dateISO);
+  if (!seg) return '';
   const place = stayPlaceOf(seg);
-  const isTonight = todayIdx >= 0 && staySegmentOn(todayISO()) === seg;
+  const isTonight = dateISO === todayISO();
 
   const head =
     '  <div class="mb-more-sec-head">' +
-    '<h4 class="mb-more-sec-title">' + (isTonight ? '오늘 밤 숙소' : '숙소') + '</h4>' +
-    (staySegments.length > 1 ? '<span class="mb-more-sec-note">구간 ' + staySegments.length + '개</span>' : '') +
+    '<h4 class="mb-more-sec-title">' + (isTonight ? '오늘 밤 숙소' : '이날 밤 숙소') + '</h4>' +
     '</div>';
 
   if (!place) {
     return [
-      '<section class="mb-more-sec">',
+      '<section class="mb-more-sec mb-stay-sec">',
       head,
       '  <button class="mb-stay-card is-empty" id="mb-goto-stay">',
       '    <span class="mb-stay-ic">' + IC.bag + '</span>',
@@ -4416,7 +4417,7 @@ function stayCardHtml(): string {
     encodeURIComponent(place.lat != null && place.lng != null ? place.lat + ',' + place.lng : place.name);
 
   return [
-    '<section class="mb-more-sec">',
+    '<section class="mb-more-sec mb-stay-sec">',
     head,
     '  <div class="mb-stay-card">',
     '    <span class="mb-stay-ic">' + IC.bag + '</span>',
@@ -4476,7 +4477,7 @@ function checklistSecHtml(): string {
   return [
     '<section class="mb-more-sec">',
     '  <div class="mb-more-sec-head">',
-    '    <h4 class="mb-more-sec-title">준비 체크리스트</h4>',
+    '    <h4 class="mb-more-sec-title">함께 챙길 준비물</h4>',
     total ? '    <span class="mb-more-sec-note">' + done + ' / ' + total + '</span>' : '',
     '  </div>',
     total
@@ -4541,36 +4542,6 @@ function bookingLinksHtml(): string {
     tripLinks.length > 6
       ? '  <button class="mb-wal-more" id="mb-more-links">공유된 링크 전체 보기 ' + IC.chevRight + '</button>'
       : '',
-    '</section>',
-  ].join('');
-}
-
-/** PC로 넘기는 줄들 — 모바일에서 만들지 않기로 한 기능은 숨기지 말고 어디 있는지 알려준다 */
-function moreLinksHtml(): string {
-  const rows: Array<{ id: string; icon: string; label: string; sub: string }> = [
-    { id: 'mb-more-chat', icon: IC.bell, label: '채팅 · 공유 링크', sub: '같이 가는 사람들과 나눈 이야기' },
-    { id: 'mb-more-plan', icon: IC.route, label: '일정 편집', sub: '순서·이동수단 변경은 PC에서' },
-    { id: 'mb-more-expense', icon: IC.wallet, label: '전체 지출 · 예산 설정', sub: '차트와 필터가 있는 대시보드' },
-    // 폰에서는 이 화면이 앱 전체라 여기 말고는 로그아웃·탈퇴로 갈 길이 없다 (스토어 심사에서도 앱 안 탈퇴 경로를 요구한다)
-    { id: 'mb-more-account', icon: IC.lock, label: '계정 · 개인정보 · 탈퇴', sub: '로그아웃, 약관, 회원 탈퇴' },
-  ];
-  return [
-    '<section class="mb-more-sec">',
-    '  <div class="mb-more-list">',
-    rows
-      .map(
-        (r) =>
-          '<button class="mb-more-row" id="' + r.id + '">' +
-          '<span class="mb-more-row-ic">' + r.icon + '</span>' +
-          '<div class="mb-more-row-main">' +
-          '<div class="mb-more-row-label">' + escapeHtml(r.label) + '</div>' +
-          '<div class="mb-more-row-sub">' + escapeHtml(r.sub) + '</div>' +
-          '</div>' +
-          '<span class="mb-more-row-chev">' + IC.chevRight + '</span>' +
-          '</button>'
-      )
-      .join(''),
-    '  </div>',
     '</section>',
   ].join('');
 }
@@ -4931,7 +4902,6 @@ function openNearInMap(placeId?: string): void {
   exNotice = '';
   exDetailId = null;
   markerSig = '';
-  mapView = 'explore';
   activeTab = 'map';
   detailKey = null;
   render();
@@ -5223,6 +5193,20 @@ function applyPhotos(): void {
 
 /* ══════════════ 이벤트 ══════════════ */
 
+/**
+ * 탭·하위 화면을 연 뒤: 그 화면이 쓰는 데이터를 처음 한 번만 읽고(원칙 3-2), 지도가 없는 화면이면 지도를 버린다.
+ *   지갑·지출 → 지출 / 지갑·서류 → 서류 + 예약 링크 / 일행 → 멤버(지출 데이터에 있음) + 준비물
+ */
+function onTabShown(): void {
+  if (activeTab === 'wallet') {
+    void ensureExpenseCtx();
+    void ensureWalletDocs();
+    if (walletSub === 'docs') void ensureMoreCtx();
+  }
+  if (activeTab === 'crew') { void ensureExpenseCtx(); void ensureMoreCtx(); }
+  if (!mapMode()) teardownMap();
+}
+
 function bind(): void {
   if (!container) return;
   const root = container;
@@ -5233,21 +5217,25 @@ function bind(): void {
       const tab = (btn as HTMLElement).dataset.tab as MbTab;
       activeTab = tab;
       render();
-      if (tab === 'wallet') { void ensureExpenseCtx(); void ensureWalletDocs(); }
-      if (tab === 'trip' && tripSub === 'info') void ensureMoreCtx();
+      onTabShown();
       // 주변 탭을 처음 열면 현재 위치에서 바로 찾는다(한 번만 — 다시 들어오면 마지막 결과를 그대로 보여 준다)
-      if (tab === 'map' && mapView === 'explore' && !exSearchedAt && !exLoading) void runExploreSearch();
-      // 다른 탭으로 나가면 지도 인스턴스를 버린다 — 다시 들어오면 새로 붙인다
-      if (tab !== 'map') teardownMap();
+      if (tab === 'map' && !exSearchedAt && !exLoading) void runExploreSearch();
     });
   });
 
-  // ── 여행 탭 안 전환 (전체 일정 ↔ 여행 정보) ──
-  root.querySelectorAll('[data-tripsub]').forEach((btn) => {
+  // ── 탭 안 전환: 일정(하루·전체·지도), 지갑(지출·서류) ──
+  root.querySelectorAll('[data-plansub]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      tripSub = (btn as HTMLElement).dataset.tripsub as TripSub;
+      planSub = (btn as HTMLElement).dataset.plansub as PlanSub;
       render();
-      if (tripSub === 'info') void ensureMoreCtx(); // 여행 정보를 처음 열 때만 읽는다
+      onTabShown();
+    });
+  });
+  root.querySelectorAll('[data-walletsub]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      walletSub = (btn as HTMLElement).dataset.walletsub as WalletSub;
+      render();
+      onTabShown();
     });
   });
 
@@ -5274,6 +5262,7 @@ function bind(): void {
     btn.addEventListener('click', () => {
       activeDayIndex = Number((btn as HTMLElement).dataset.goday);
       activeTab = 'today';
+      planSub = 'day';
       render();
       void loadRealLegsForActiveDay();
       void loadProgressForActiveDay();
@@ -5410,7 +5399,6 @@ function bind(): void {
   root.querySelectorAll('[data-menu]').forEach((b) =>
     b.addEventListener('click', () => onMenu((b as HTMLElement).dataset.menu as MenuKey))
   );
-  root.querySelector('#mb-help')?.addEventListener('click', () => openHelp());
   root.querySelector('#mb-geo')?.addEventListener('click', () => toggleGeo());
 
   // ── TODAY 히어로 ──
@@ -5466,16 +5454,12 @@ function bind(): void {
   root.querySelector('#mb-wal-pc')?.addEventListener('click', () => gotoGate('expense'));
   root.querySelector('#mb-wal-settle')?.addEventListener('click', () => gotoGate('expense'));
 
-  // ── MORE ──
+  // ── 숙소 카드(일정 · 하루) · 예약 링크(지갑 · 서류) · 일행 ──
   root.querySelector('#mb-goto-stay')?.addEventListener('click', () => gotoGate('shortlist'));
   root.querySelector('#mb-more-links')?.addEventListener('click', () => gotoGate('links'));
   root.querySelector('#mb-more-chat')?.addEventListener('click', () => gotoGate('links'));
-  root.querySelector('#mb-more-plan')?.addEventListener('click', () => gotoGate('route'));
-  root.querySelector('#mb-more-expense')?.addEventListener('click', () => gotoGate('expense'));
-  root.querySelector('#mb-more-account')?.addEventListener('click', () => navigate('settings'));
-  root.querySelector('#mb-push-toggle')?.addEventListener('click', () => void togglePush());
-  root.querySelector('#mb-push-test')?.addEventListener('click', () => void testPush());
-  root.querySelector('#mb-push-weather')?.addEventListener('click', () => void toggleWeather());
+  root.querySelector('#mb-crew-invite')?.addEventListener('click', () => void shareInvite());
+  root.querySelector('#mb-crew-push')?.addEventListener('click', () => void togglePush());
   root.querySelectorAll('[data-whereask]').forEach((b) =>
     b.addEventListener('click', () => void onAskWhere((b as HTMLElement).dataset.whereask!))
   );
@@ -5579,8 +5563,6 @@ function bind(): void {
   root.querySelectorAll('[data-mapview]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const v = (btn as HTMLElement).dataset.mapview!;
-      if (v === 'plan') { mapView = 'plan'; exDetailId = null; render(); return; }
-      mapView = 'explore';
       exNear = null;
       exQuery = '';
       exPhoto = v === 'photo';
@@ -5591,7 +5573,6 @@ function bind(): void {
   });
   root.querySelectorAll('[data-mapnear]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      mapView = 'explore';
       exNear = (btn as HTMLElement).dataset.mapnear as NearbyKey;
       exPhoto = false;
       exQuery = '';
@@ -5628,7 +5609,7 @@ function bind(): void {
     void requestUserLoc().then((loc) => {
       if (loc) {
         mapInstance?.panTo(loc);
-        if (mapView === 'explore') void runExploreSearch(loc, '현재 위치');
+        if (mapMode() === 'explore') void runExploreSearch(loc, '현재 위치');
         else syncMapMarkers();
       } else {
         exNotice = userLocState === 'denied' ? '현재 위치를 사용할 수 없어요 — 브라우저 설정에서 위치 권한을 허용해 주세요.' : '현재 위치를 확인하지 못했어요.';
@@ -5684,7 +5665,7 @@ function bind(): void {
   reorderUnbind = null;
   const thread = root.querySelector('.mb-thread') as HTMLElement | null;
   const scroller = root.querySelector('.mb-scroll') as HTMLElement | null;
-  if (thread && scroller && activeTab === 'today' && !detailKey) {
+  if (thread && scroller && activeTab === 'today' && planSub === 'day' && !detailKey) {
     reorderUnbind = bindLongPressReorder({
       thread,
       scroller,
@@ -5747,12 +5728,13 @@ async function openTicketForDetail(): Promise<void> {
   if (!found) return;
   const tickets = ticketsForDay(found.day.dayNumber);
   if (tickets.length === 1) { await openDoc(tickets[0].id); return; }
-  if (tickets.length > 1) { detailKey = null; activeTab = 'wallet'; render(); void ensureWalletDocs(); return; }
-  // 한 건도 없으면 지갑으로 보내 직접 올리게 한다(빈 화면에 안내가 떠 있다)
+  if (tickets.length > 1) { detailKey = null; activeTab = 'wallet'; walletSub = 'docs'; render(); onTabShown(); return; }
+  // 한 건도 없으면 지갑 → 서류로 보내 직접 올리게 한다(빈 화면에 안내가 떠 있다)
   detailKey = null;
   activeTab = 'wallet';
+  walletSub = 'docs';
   render();
-  void ensureWalletDocs();
+  onTabShown();
 }
 
 async function sharePlace(): Promise<void> {

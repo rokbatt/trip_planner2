@@ -278,21 +278,26 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(8px + env(safe-area-inset-top)) 10px 0 18px;
+  gap: 8px;
+  padding: calc(6px + env(safe-area-inset-top)) 8px 8px 16px;
   flex: none;
 }
 
-/* 브랜드는 조용하게 — 본문보다 눈에 띄지 않는 크기와 색 */
-.mb-brand {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+/* 한 줄 머리: 로고 · 화면 제목. 제목이 길면(여행 이름) 말줄임 */
+.mb-top-title { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.mb-top-h {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
   color: var(--mb-ink);
 }
 .mb-brand-mark {
+  flex: none;
   display: grid;
   place-items: center;
   width: 26px;
@@ -317,32 +322,7 @@
 .mb-icon-btn:hover { background: var(--mb-fill-subtle); color: var(--mb-ink); }
 .mb-icon-btn svg { width: 20px; height: 20px; }
 
-/* 화면 제목 줄 */
-.mb-daybar { padding: 2px 18px 0; flex: none; }
 
-/* 제목 아래 한 줄: 여행지 │ 날짜 │ 날씨. 칸 사이는 얇은 세로선으로만 나눈다(캡슐 배지 없음) */
-.mb-daymeta {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  row-gap: 4px;
-  padding: 4px 18px 12px;
-  flex: none;
-  font-size: 13px;
-  color: var(--mb-muted);
-  font-variant-numeric: tabular-nums;
-}
-.mb-meta-item { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-.mb-meta-item + .mb-meta-item::before {
-  content: '';
-  width: 1px;
-  height: 11px;
-  margin: 0 9px;
-  background: var(--mb-line);
-}
-.mb-meta-dest { color: var(--mb-ink-2); font-weight: 600; }
-.mb-meta-dest svg { width: 14px; height: 14px; color: var(--mb-muted); }
-.mb-date { font-size: 13px; color: var(--mb-muted); font-variant-numeric: tabular-nums; }
 
 /* 오프라인 표시줄 — 지금 내용이 언제 기준인지. 경고처럼 빨갛게 하지 않는다(고장이 아니다) */
 .mb-offline {
@@ -700,8 +680,6 @@
 
 /* 날씨 — 받았을 때만 뜬다. 자리를 미리 비워 두지 않는다(없으면 줄이 짧아질 뿐).
    메타 줄의 한 칸이라 배경 없이 아이콘 + 글자만 */
-.mb-wx { color: var(--mb-ink-2); font-weight: 600; }
-.mb-wx svg { width: 15px; height: 15px; color: var(--mb-sky); }
 
 /* ══════════════ 오늘 화면 — 요약 카드 · 날짜 띠 · 일정 줄 ══════════════
  *
@@ -2120,9 +2098,6 @@
 
 /* ══════════════ 여행 지갑 — 예약 서류 ══════════════ */
 
-.mb-wd-head { padding: 2px 0 16px; }
-.mb-wd-h1 { font-size: 25px; font-weight: 700; letter-spacing: -0.02em; color: var(--mb-ink); }
-.mb-wd-h2 { margin-top: 4px; font-size: 13px; color: var(--mb-muted); }
 
 .mb-wd-list {
   display: flex;
@@ -2477,16 +2452,6 @@
 
 /* ══════════════ WALLET ══════════════ */
 
-/* 일정 화면의 DAY 선택 자리에 들어가는 화면 제목 — 같은 위치·같은 크기라 탭을 옮겨도
-   레이아웃이 흔들리지 않는다 */
-.mb-screen-title {
-  display: inline-block;
-  padding: 4px 0;
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: -0.01em;
-  color: var(--mb-ink);
-}
 
 .mb-wallet-loading {
   display: flex;
@@ -3727,8 +3692,22 @@
 
 /* ══════════════ 메뉴(☰) ══════════════ */
 .mb-menu { max-height: 86%; }
-.mb-menu-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; }
+.mb-menu-head { display: flex; align-items: center; gap: 8px; flex: none; }
+.mb-menu-trip { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.mb-menu-trip-label { font-size: 11px; font-weight: 700; color: var(--mb-muted); }
 .mb-menu-head .mb-sheet-title { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mb-menu-switch {
+  flex: none;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--mb-ink);
+  background: var(--mb-fill-subtle);
+}
+.mb-menu-row:disabled { cursor: default; }
+.mb-menu-row:disabled .mb-menu-label { color: var(--mb-muted); }
 .mb-menu-body { overflow-y: auto; min-height: 0; padding-bottom: 4px; }
 .mb-menu-group { margin-top: 12px; }
 .mb-menu-gtitle { padding: 0 4px 4px; font-size: 11.5px; font-weight: 700; color: var(--mb-muted); }
@@ -3752,3 +3731,60 @@
 .mb-menu-chev svg { width: 15px; height: 15px; }
 .mb-menu-state { flex: none; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; color: var(--mb-muted); background: var(--mb-fill-subtle); }
 .mb-menu-state.is-on { color: var(--mb-live-fg); background: var(--mb-brass-wash); }
+
+/* ══════════════ 정보 구조 개편(2026-11) ══════════════ */
+
+/* 요약 카드 둘째 줄: 그날 날씨(예전엔 머리 줄에 있었다) */
+.mb-sum-wx { margin-top: 4px; font-weight: 600; }
+
+/* 일정 · 하루 끝의 그날 밤 숙소 */
+.mb-stay-sec { margin-top: 18px; }
+
+/* 일행 탭: 알림이 꺼져 있을 때 맨 위 한 줄 안내 */
+.mb-crew-cta {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 12px 12px 14px;
+  border-radius: 14px;
+  background: var(--mb-sky-wash);
+}
+.mb-crew-cta-ic { display: grid; place-items: center; width: 32px; height: 32px; flex: none; border-radius: 10px; background: var(--mb-surface); color: var(--mb-sky); }
+.mb-crew-cta-ic svg { width: 17px; height: 17px; }
+.mb-crew-cta-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mb-crew-cta-title { font-size: 13.5px; font-weight: 700; color: var(--mb-ink); }
+.mb-crew-cta-sub { font-size: 11.5px; color: var(--mb-ink-2); line-height: 1.45; }
+.mb-crew-cta-btn {
+  flex: none;
+  min-height: 36px;
+  padding: 0 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mb-btn-fg);
+  background: var(--mb-btn-bg);
+}
+.mb-crew-cta-btn:disabled { opacity: 0.5; }
+.mb-crew-cta + .mb-more-sec { margin-top: 16px; }
+
+/* 일행 이름 머리글자 동그라미 */
+.mb-crew-avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mb-sky);
+  background: var(--mb-sky-wash);
+}
+
+/* 화면 맨 위(또는 탭 안 전환 바로 아래)의 첫 섹션은 위 여백을 줄인다 */
+.mb-scroll > .mb-more-sec:first-child { margin-top: 4px; }
+.mb-trip-seg + .mb-more-sec { margin-top: 4px; }
+.mb-menu-trip-name { font-size: 16px; font-weight: 800; letter-spacing: -0.01em; color: var(--mb-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mb-where-title { padding: 2px 4px 4px; font-size: 17px; font-weight: 800; letter-spacing: -0.01em; color: var(--mb-ink); }
+/* 일정 · 지도: 날짜 띠와 지도 사이는 지도 묶음 간격(12px)만 */
+.mb-map-wrap > .mb-dates { margin-bottom: 0; }

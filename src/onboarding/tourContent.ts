@@ -191,13 +191,16 @@ export const TOURS: TourDef[] = [
     id: 'companion',
     label: 'Companion',
     gate: 'go',
-    version: 1,
+    // 2: 탭 정보 구조 개편(일정 하루·전체·지도, 일행 탭, 메뉴에 설정 모음) — 이미 본 사람에게도 한 번 더 보여 준다.
+    //    단계는 6개까지라(helpSearch.test) 위치 체크인 단계는 뺐다 — 화면의 체크인 줄이 이름과 설명을 직접 보여 준다.
+    version: 2,
     steps: [
+      { target: 'companion-plan-seg', title: '하루 · 전체 · 지도', body: '일정 보기는 여기서 바꿔요. 하루 화면 맨 아래에는 그날 밤 숙소와 길찾기가 있어요.' },
       { target: 'companion-dates', title: '날짜 고르기', body: '날짜를 누르면 그날 일정을 봐요. 달력 버튼을 누르면 모든 날짜를 한 번에 볼 수 있어요.' },
       { target: 'companion-nav', title: '길찾기는 한 번에', body: '누르면 Google 지도가 열리고 지금 위치에서 길을 안내해요. 카드를 누르면 장소 상세가 열려요.' },
       { target: 'companion-track', title: '도착 기록', body: '장소에 도착하면 도착을 눌러 주세요. 남은 일정 시각이 실제 시각에 맞춰 다시 계산돼요.' },
-      { target: 'companion-geo', title: '위치 기반 체크인', body: '켜 두면 일정 장소에 도착할 때 자동으로 도착을 기록해요.' },
-      { target: 'companion-tabs', title: '일정 · 주변 · 지갑 · 회화 · 여행', body: '주변에서는 내 위치 근처 장소를 바로 찾고, 지갑에서는 예약 서류와 지출을 관리해요. 회화에서는 그날 일정에 맞는 기초 회화를 들어요. 출발 전에 지갑에서 서류를 저장해 두면 인터넷이 없어도 열려요.' },
+      { target: 'companion-tabs', title: '일정 · 주변 · 지갑 · 회화 · 일행', body: '일정은 하루·전체·지도로 보고, 주변에서는 내 위치 근처를 바로 찾아요. 지갑은 지출과 예약 서류, 일행에서는 "어디야?"와 함께 챙길 준비물을 다뤄요. 알림·계정 설정은 오른쪽 위 메뉴에 있어요.' },
+      { target: 'companion-menu', title: '메뉴', body: '휴대폰 알림 · 날씨 알림 · 도착 자동 기록 설정과 도움말 · 계정 · 다른 여행은 여기 있어요. 옆의 집 버튼은 언제든 오늘 일정으로 돌아가요.' },
     ],
   },
   {
