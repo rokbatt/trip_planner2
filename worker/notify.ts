@@ -97,9 +97,18 @@ export class Db {
     return typeof u?.id === 'string' ? u.id : null;
   }
 
-  async subscriptions(userId: string): Promise<{ id: string; endpoint: string; p256dh: string; auth: string }[] | null> {
+  /**
+   * 그 사람이 알림을 켠 기기들. weatherOnly면 "날씨 알림 끔" 기기를 뺀다.
+   * weather 칸이 아직 없으면(supabase/push_weather_optout.sql을 안 돌림) 그 조건 없이 다시 읽는다 — 그땐 끈 사람이 없다.
+   */
+  async subscriptions(userId: string, weatherOnly = false): Promise<{ id: string; endpoint: string; p256dh: string; auth: string }[] | null> {
     const q = '/rest/v1/push_subscriptions?select=id,endpoint,p256dh,auth&user_id=eq.' + encodeURIComponent(userId) +
       '&order=created_at.desc&limit=' + MAX_DEVICES;
+    if (weatherOnly) {
+      const res = await this.f(this.base + q + '&weather=is.true', { headers: this.headers() });
+      if (res.ok) return (await res.json()) as { id: string; endpoint: string; p256dh: string; auth: string }[];
+      if (res.status !== 400) return null;
+    }
     const res = await this.f(this.base + q, { headers: this.headers() });
     if (!res.ok) return null;
     return (await res.json()) as { id: string; endpoint: string; p256dh: string; auth: string }[];
@@ -137,11 +146,13 @@ export interface SendResult { sent: number; gone: number; failed: number; device
 /** 한 사람이 알림을 켠 기기 전부에 보낸다. 브라우저가 "구독 끝남(404/410)"이라 하면 그 줄을 지운다 */
 export async function sendToUser(
   db: Db,
-  userId: string, msg: PushMessage,
+  userId: string,
+  msg: PushMessage,
   vapid: VapidKeys,
-  f: FetchLike
+  f: FetchLike,
+  opts: { weatherOnly?: boolean } = {}
 ): Promise<SendResult | null> {
-  const subs = await db.subscriptions(userId);
+  const subs = await db.subscriptions(userId, opts.weatherOnly);
   if (!subs) return null;
   const payload = { title: msg.title.slice(0, 80), body: msg.body.slice(0, 240), url: safeAppPath(msg.url), tag: msg.tag };
   const results = await Promise.all(

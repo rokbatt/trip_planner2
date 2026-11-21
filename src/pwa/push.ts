@@ -147,3 +147,30 @@ export async function sendTestPush(): Promise<TestResult> {
     return { ok: false, message: '인터넷 연결을 확인해 주세요.' };
   }
 }
+
+/* ── 날씨 알림 켜기·끄기 (이 기기만) — supabase/push_weather_optout.sql ── */
+
+/** 이 기기가 날씨 알림을 받는지. 알림이 꺼져 있거나 칸이 아직 없으면 null */
+export async function getWeatherPref(): Promise<boolean | null> {
+  if (currentPushSupport() !== 'ok') return null;
+  const reg = await registration();
+  const sub = await reg?.pushManager.getSubscription();
+  if (!sub) return null;
+  const { data, error } = await supabase.from('push_subscriptions').select('weather').eq('endpoint', sub.endpoint).maybeSingle();
+  if (error || !data) return null;
+  const v = (data as { weather?: boolean }).weather;
+  return typeof v === 'boolean' ? v : null;
+}
+
+export type WeatherPrefResult = 'ok' | 'push-off' | 'not-ready' | 'error';
+
+export async function setWeatherPref(on: boolean): Promise<WeatherPrefResult> {
+  const reg = await registration();
+  const sub = await reg?.pushManager.getSubscription();
+  if (!sub) return 'push-off';
+  const { error } = await supabase.from('push_subscriptions').update({ weather: on }).eq('endpoint', sub.endpoint);
+  if (!error) return 'ok';
+  // 42703: 칸이 없다(SQL을 아직 안 돌림)
+  if (error.code === '42703' || /weather/.test(error.message)) return 'not-ready';
+  return 'error';
+}

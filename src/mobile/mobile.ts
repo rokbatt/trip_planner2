@@ -133,7 +133,7 @@ import './mobile.css';
 import { apiFetch } from '../utils/apiFetch';
 import { escapeHtml, safeHttpUrl } from '../utils/html';
 import { openHelp } from '../onboarding/onboarding';
-import { currentPushSupport, isPushOn, enablePush, disablePush, sendTestPush } from '../pwa/push';
+import { currentPushSupport, isPushOn, enablePush, disablePush, sendTestPush, getWeatherPref, setWeatherPref } from '../pwa/push';
 import { takeWhereParams, askWhere, sendHere, positionOnce, agoLabel, type WhereIncoming } from './where';
 import { directionsUrl, originChoices, type DirPoint, type Origin, type TravelHint } from './directions';
 import { readReceiptPhoto, toDraft, chargedRate, MAX_PHOTOS_PER_IMPORT, type PhotoDraft } from './receiptImport';
@@ -4011,10 +4011,37 @@ function moreTabHtml(): string {
 let pushOn: boolean | null = null;
 let pushBusy = false;
 
+/** 이 기기 날씨 알림 — null = 모름(알림 꺼짐·SQL 전). 서버는 모르면 보낸다 */
+let weatherPref: boolean | null = null;
+
 function refreshPushState(): void {
   if (pushOn !== null) return;
   pushOn = false;
-  void isPushOn().then((on) => { pushOn = on; if (on) render(); }).catch(() => undefined);
+  void isPushOn()
+    .then(async (on) => {
+      pushOn = on;
+      if (on) weatherPref = await getWeatherPref().catch(() => null);
+      if (on) render();
+    })
+    .catch(() => undefined);
+}
+
+async function toggleWeather(): Promise<void> {
+  if (pushBusy) return;
+  if (!pushOn) { showToast('먼저 휴대폰 알림을 켜 주세요.'); return; }
+  const next = weatherPref === false; // 모르면(기본 켜짐) 끄기
+  pushBusy = true;
+  render();
+  try {
+    const r = await setWeatherPref(next);
+    if (r === 'ok') { weatherPref = next; showToast(next ? '날씨 알림을 켰어요.' : '날씨 알림을 껐어요. 다른 알림은 그대로 와요.'); }
+    else if (r === 'not-ready') showToast('날씨 알림 설정을 준비 중이에요. 잠시 뒤 다시 시도해 주세요.');
+    else if (r === 'push-off') showToast('먼저 휴대폰 알림을 켜 주세요.');
+    else showToast('바꾸지 못했어요. 잠시 뒤 다시 시도해 주세요.');
+  } finally {
+    pushBusy = false;
+    render();
+  }
 }
 
 function pushSecHtml(): string {
@@ -4044,6 +4071,9 @@ function pushSecHtml(): string {
     '  <div class="mb-more-list">',
     row('mb-push-toggle', '휴대폰 알림', sub, can, pushOn ? ' <span class="mb-push-on">ON</span>' : ''),
     pushOn && support === 'ok' ? row('mb-push-test', '시험 알림 보내기', '이 휴대폰으로 알림이 오는지 확인해요', !pushBusy) : '',
+    pushOn && support === 'ok'
+      ? row('mb-push-weather', '날씨 알림', weatherPref === false ? '꺼짐 · 누르면 다시 받아요' : '켜짐 · 여행지 저녁 8시에 내일 날씨, 누르면 꺼요', !pushBusy, weatherPref === false ? '' : ' <span class="mb-push-on">ON</span>')
+      : '',
     '  </div>',
     '</section>',
   ].join('');
@@ -4053,7 +4083,7 @@ function pushSecHtml(): string {
 
 let menuOpen = false;
 
-type MenuKey = 'home' | 'days' | 'info' | 'push' | 'geo' | 'where' | 'chat' | 'plan' | 'expense' | 'help' | 'account' | 'trips';
+type MenuKey = 'home' | 'days' | 'info' | 'push' | 'weather' | 'geo' | 'where' | 'chat' | 'plan' | 'expense' | 'help' | 'account' | 'trips';
 
 function menuSheetHtml(): string {
   const support = currentPushSupport();
@@ -4082,6 +4112,7 @@ function menuSheetHtml(): string {
     ]),
     group('설정', [
       row('push', IC.bell, '휴대폰 알림', '날씨 · 일행 호출을 이 휴대폰으로', pushLabel),
+      row('weather', WX_ICON.sun, '날씨 알림', '여행지 저녁 8시 · 내일 날씨', support === 'ok' && pushOn ? (weatherPref === false ? 'OFF' : 'ON') : '알림 꺼짐'),
       row('geo', IC.navigate, '도착 자동 기록', '위치로 일정 장소 도착을 기록', geoOn ? 'ON' : 'OFF'),
       row('where', IC.pin, '일행 · 어디야?', '일행에게 위치 물어보기'),
     ]),
@@ -4142,6 +4173,7 @@ function onMenu(key: MenuKey): void {
       void togglePush();
       return;
     }
+    case 'weather': void toggleWeather(); return;
     case 'geo': toggleGeo(); return;
     case 'chat': menuOpen = false; gotoGate('links'); return;
     case 'plan': menuOpen = false; gotoGate('route'); return;
@@ -5443,6 +5475,7 @@ function bind(): void {
   root.querySelector('#mb-more-account')?.addEventListener('click', () => navigate('settings'));
   root.querySelector('#mb-push-toggle')?.addEventListener('click', () => void togglePush());
   root.querySelector('#mb-push-test')?.addEventListener('click', () => void testPush());
+  root.querySelector('#mb-push-weather')?.addEventListener('click', () => void toggleWeather());
   root.querySelectorAll('[data-whereask]').forEach((b) =>
     b.addEventListener('click', () => void onAskWhere((b as HTMLElement).dataset.whereask!))
   );
