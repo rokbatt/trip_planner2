@@ -71,6 +71,16 @@ export function normalizeNoteCategory(raw: string | null): NoteCategory {
 
 /* ══════════════ 마이그레이션 전 graceful degradation ══════════════ */
 
+/**
+ * 목록 로더(문서·메모·보관함)는 오류를 삼키고 빈 목록을 돌려준다(화면이 죽지 않게). 그래서 "정말 비었다"와
+ * "불러오다 실패했다"가 호출부에서 구분되지 않는다 — 다시 불러올 때마다 잘 쓰던 자료를 빈 목록으로 덮어쓰지 않도록,
+ * 실패 횟수를 세어 두고 호출부가 불러오기 전후로 비교한다. (테이블이 아직 없는 경우는 실패가 아니라 준비 전이다)
+ */
+let loadErrorCount = 0;
+export function getLoadErrorCount(): number {
+  return loadErrorCount;
+}
+
 /** trip_documents.sql을 아직 실행하지 않은 프로젝트인지 — 한 번 확인하면 기억해 둔다 */
 let storageReady: boolean | null = null;
 
@@ -206,6 +216,7 @@ export async function loadDocUsers(tripId: string): Promise<TripDocUser[]> {
   if (error) {
     if (markIfMissing(error)) return [];
     console.error('[Docs] 개인 문서 사용자 로드 실패:', error.message);
+    loadErrorCount += 1;
     return [];
   }
   storageReady = true;
@@ -269,6 +280,18 @@ export function getUnlockedUserId(tripId: string): string | null {
 
 /** 잠금을 풀거나 다시 잠갔을 때 알리는 이벤트 — 개인 문서를 쓰는 다른 화면(어시스턴트)이 새로 반영하게 한다 */
 export const DOCS_LOCK_EVENT = 'mongsil:docsLockChanged';
+
+/**
+ * 문서·메모를 만들거나 고치거나 지웠다는 신호 — 그 내용을 읽어 두는 화면(어시스턴트)이 자료를 새로 불러오게 한다.
+ * 메모 수정·삭제는 여행 id를 모르는 채 호출되므로 detail에 tripId를 싣지 않는다(받는 쪽은 지금 보는 여행으로 본다).
+ */
+export const DOCS_DATA_EVENT = 'mongsil:docsDataChanged';
+
+function announceDataChange(): void {
+  try {
+    window.dispatchEvent(new CustomEvent(DOCS_DATA_EVENT));
+  } catch { /* noop */ }
+}
 
 function announceLockChange(tripId: string, unlocked: boolean): void {
   try {
@@ -361,6 +384,7 @@ export async function loadSharedDocuments(tripId: string): Promise<TripDocument[
   if (error) {
     if (markIfMissing(error)) return [];
     console.error('[Docs] 공용 문서 로드 실패:', error.message);
+    loadErrorCount += 1;
     return [];
   }
   storageReady = true;
@@ -381,6 +405,7 @@ export async function loadPersonalDocuments(tripId: string, ownerId: string): Pr
   if (error) {
     if (markIfMissing(error)) return [];
     console.error('[Docs] 개인 문서 로드 실패:', error.message);
+    loadErrorCount += 1;
     return [];
   }
   storageReady = true;
@@ -484,6 +509,7 @@ export async function createDocument(tripId: string, draft: DocumentDraft): Prom
     console.error('[Docs] 문서 저장 실패:', error.message);
     return null;
   }
+  announceDataChange();
   return data as TripDocument;
 }
 
@@ -511,6 +537,7 @@ export async function updateDocument(
     console.error('[Docs] 문서 수정 실패:', error.message);
     return null;
   }
+  announceDataChange();
   return data as TripDocument;
 }
 
@@ -543,6 +570,7 @@ export async function moveDocumentScope(
   if (target === 'PERSONAL') {
     await supabase.from('trip_checklist').update({ linked_doc_id: null }).eq('linked_doc_id', doc.id);
   }
+  announceDataChange();
   return data as TripDocument;
 }
 
@@ -557,6 +585,7 @@ export async function deleteDocument(doc: TripDocument): Promise<boolean> {
     const { error: storageError } = await supabase.storage.from('trip-docs').remove([doc.file_path]);
     if (storageError) console.error('[Docs] 파일 삭제 실패:', storageError.message);
   }
+  announceDataChange();
   return true;
 }
 
@@ -573,6 +602,7 @@ export async function loadNotes(tripId: string): Promise<TripNote[]> {
   if (error) {
     if (markIfMissing(error)) return [];
     console.error('[Docs] 메모 로드 실패:', error.message);
+    loadErrorCount += 1;
     return [];
   }
   storageReady = true;
@@ -615,6 +645,7 @@ export async function createNote(tripId: string, draft: NoteDraft): Promise<Trip
     console.error('[Docs] 메모 저장 실패:', error.message);
     return null;
   }
+  announceDataChange();
   return data as TripNote;
 }
 
@@ -632,6 +663,7 @@ export async function updateNote(id: string, patch: Partial<NoteDraft>): Promise
     console.error('[Docs] 메모 수정 실패:', error.message);
     return null;
   }
+  announceDataChange();
   return data as TripNote;
 }
 
@@ -666,6 +698,7 @@ export async function deleteNote(id: string): Promise<boolean> {
     console.error('[Docs] 메모 삭제 실패:', error.message);
     return false;
   }
+  announceDataChange();
   return true;
 }
 

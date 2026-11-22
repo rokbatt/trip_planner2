@@ -18,7 +18,9 @@
  */
 
 import {
+  DOCS_DATA_EVENT,
   DOCS_LOCK_EVENT,
+  getLoadErrorCount,
   getUnlockedUserId,
   isStorageReady,
   isValidPin,
@@ -39,6 +41,7 @@ import type { AssistantSource } from './assistantClient';
 import type { TripDocUser, TripDocument } from '../types/database';
 import './assistant.css';
 import { clearTripDigests, lookupDigest, storeDigest } from './digestCache';
+import { composeFileDocDigest, needsSourceRefresh } from './docSource';
 import { personalNotice, planPersonalVault } from './personalVault';
 import type { PersonalState } from './personalVault';
 import { store } from '../store';
@@ -80,6 +83,11 @@ let includedPersonal = false;
 /** 가장 최근에 시작한 불러오기 번호 — PIN을 풀거나 잠그는 사이에 시작한 옛 불러오기 결과가 덮어쓰지 못하게 */
 let loadSeq = 0;
 let sending = false;
+/** 문서·메모를 고쳤다는 신호를 받았다 — 다음에 열거나 질문할 때 자료를 새로 불러온다 */
+let sourcesStale = false;
+let lastLoadedAt = 0;
+/** 신호가 없어도 이 시간이 지나면 다시 불러온다 — 다른 멤버가 고친 건 이 탭이 신호를 받지 못한다 */
+const SOURCES_MAX_AGE_MS = 60_000;
 
 export function renderAssistantPanel(container: HTMLElement, tripId: string): void {
   if (tripId !== currentTripId) {
@@ -100,6 +108,8 @@ export function renderAssistantPanel(container: HTMLElement, tripId: string): vo
     includedPersonal = false;
     loadSeq++;
     sending = false;
+    sourcesStale = false;
+    lastLoadedAt = 0;
   }
   rootEl = container;
   mountShell();
@@ -108,7 +118,14 @@ export function renderAssistantPanel(container: HTMLElement, tripId: string): vo
 
   if (!sourcesReady && !sourcesPromise) {
     sourcesPromise = loadSources(tripId);
+  } else if (sourcesReady && isRefreshDue()) {
+    // 이미 보여주던 자료는 그대로 두고 뒤에서 새로 불러온다(읽는 중 화면으로 되돌리지 않는다)
+    sourcesPromise = loadSources(tripId);
   }
+}
+
+function isRefreshDue(): boolean {
+  return needsSourceRefresh({ stale: sourcesStale, lastLoadedAt, now: Date.now(), maxAgeMs: SOURCES_MAX_AGE_MS });
 }
 
 export function teardownAssistantPanel(): void {
@@ -119,12 +136,15 @@ export function teardownAssistantPanel(): void {
 
 async function loadSources(tripId: string): Promise<void> {
   const seq = ++loadSeq;
+  // 시작할 때 내린다 — 불러오는 동안 또 고치면 신호가 다시 올라서 다음에 한 번 더 불러온다
+  sourcesStale = false;
   try {
     if (!isStorageReady()) {
       sources = [];
       return;
     }
 
+    const errorsBefore = getLoadErrorCount();
     const [shared, notes, vaults] = await Promise.all([loadSharedDocuments(tripId), loadNotes(tripId), loadDocUsers(tripId)]);
 
     // 개인 문서: 이 탭에서 PIN을 풀었고 내 계정에 연결된 보관함이면 전부, 연결이 비었거나 다른 계정이면 파일 없는 문서만
@@ -145,6 +165,9 @@ async function loadSources(tripId: string): Promise<void> {
         skippedFiles = all.length - personal.length;
       }
     }
+    // 로더는 실패해도 빈 목록을 주므로, 실패 횟수가 늘었으면 그 결과를 믿지 않는다(아래 catch가 이전 자료를 지킨다).
+    // 비싼 문서 요약 호출 전에 확인한다.
+    if (getLoadErrorCount() !== errorsBefore) throw new Error('문서·메모를 불러오지 못했어요');
     const docs = [...shared, ...personal];
 
     // 한꺼번에 보내지 않고 2개씩 — 문서가 많으면 질문 한 번에 Gemini 분당 한도(무료 등급 10회)를 넘었다.
@@ -182,9 +205,13 @@ async function loadSources(tripId: string): Promise<void> {
   } catch (e) {
     if (seq !== loadSeq) return;
     console.error('[Assistant] 자료 불러오기 실패:', (e as Error).message);
-    sources = [];
+    // 새로고침이 실패했을 때 잘 쓰고 있던 자료를 비우지 않는다 — 처음 불러오는 중일 때만 비운다
+    if (!sourcesReady) sources = [];
+    // 다음에 열거나 질문할 때 다시 시도한다(실패한 결과를 "최신"으로 60초 동안 믿지 않게)
+    sourcesStale = true;
   } finally {
     if (seq === loadSeq) {
+      lastLoadedAt = Date.now();
       sourcesReady = true;
       renderList();
       updateFormState();
@@ -213,6 +240,9 @@ function handleLockChange(e: Event): void {
 }
 
 window.addEventListener(DOCS_LOCK_EVENT, handleLockChange);
+
+/** 문서·메모를 만들거나 고치거나 지웠다 — 자료가 낡았다고 표시만 해 둔다(열거나 질문할 때 새로 불러온다) */
+window.addEventListener(DOCS_DATA_EVENT, () => { sourcesStale = true; });
 
 /** 순서를 지키며 최대 limit개씩만 동시에 처리한다 */
 async function mapWithLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -246,14 +276,20 @@ async function resolveDocSource(
     return { title: doc.title, category, kind: 'document', digest: parts.join(' · ') };
   }
 
-  const toSource = (facts: string[]): AssistantSource | null =>
-    facts.length ? { title: doc.title, category, kind: 'document', digest: facts.join('\n') } : null;
+  // 파일 요약만이 아니라 사용자가 직접 고쳐 쓴 세부내용·예약번호도 함께 준다(docSource.ts)
+  const toSource = (facts: string[]): AssistantSource | null => {
+    const digest = composeFileDocDigest(doc, facts);
+    return digest ? { title: doc.title, category, kind: 'document', digest } : null;
+  };
 
-  const local = lookupDigest(sessionStorage, tripId, doc.id, doc.updated_at, Date.now());
+  // 요약은 파일에서 뽑은 것이라 파일이 바뀔 때만 다시 만든다 — 설명·예약번호만 고친 것으로 다시 읽지 않는다
+  // (파일을 바꾸면 업로드 경로가 새로 생긴다)
+  const fileVersion = doc.file_path;
+  const local = lookupDigest(sessionStorage, tripId, doc.id, fileVersion, Date.now());
   if (local.hit) {
     if (local.facts === null) {
       stats.failed++;
-      return null;
+      return toSource([]);
     }
     stats.tab++;
     return toSource(local.facts);
@@ -271,14 +307,14 @@ async function resolveDocSource(
     if (result.cached) stats.server++;
     else stats.fresh++;
     const facts = result.readable ? result.facts : [];
-    storeDigest(sessionStorage, tripId, doc.id, doc.updated_at, facts, Date.now());
+    storeDigest(sessionStorage, tripId, doc.id, fileVersion, facts, Date.now());
     return toSource(facts);
   } catch (e) {
     console.error('[Assistant] 문서 분석 실패(' + doc.title + '):', (e as Error).message);
     stats.failed++;
     // 실패도 잠깐 기억한다 — 한도 초과일 때 새로고침마다 다시 몰리지 않게(10분 뒤 재시도)
-    storeDigest(sessionStorage, tripId, doc.id, doc.updated_at, null, Date.now());
-    return null;
+    storeDigest(sessionStorage, tripId, doc.id, fileVersion, null, Date.now());
+    return toSource([]);
   }
 }
 
@@ -292,7 +328,13 @@ async function ask(question: string): Promise<void> {
   updateFormState();
 
   try {
-    if (!sourcesReady && sourcesPromise) await sourcesPromise;
+    if (!sourcesReady && sourcesPromise) {
+      await sourcesPromise;
+    } else if (isRefreshDue()) {
+      // 문서·메모를 고친 뒤라면 답하기 전에 최신 내용으로 — 옛 요약으로 답하지 않게
+      sourcesPromise = loadSources(currentTripId);
+      await sourcesPromise;
+    }
     const result = await requestAssistantAnswer(currentTripId, question, sources);
     turns.push({ role: 'ai', text: result.answer, sources: result.usedTitles });
   } catch (e) {

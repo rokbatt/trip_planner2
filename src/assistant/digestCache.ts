@@ -4,7 +4,8 @@
  * 요약의 주 저장소는 여전히 서버(`ai_plan_cache`)다(다른 멤버가 만든 결과를 같이 쓰기 위해).
  * 여기는 "이 탭에서 이미 받은 것"만 sessionStorage에 붙들어 둔다 — 탭을 닫으면 사라지고,
  * 로그아웃하면 지운다(요약에 예약번호·편명이 들어 있다). 개인 문서 잠금 상태도 같은 sessionStorage 수명이다.
- * 문서가 수정되면(updated_at 변경) 그 문서만 다시 받는다. 실패는 잠깐만 기억해 새로고침마다 재시도하지 않는다.
+ * 버전 값(호출부가 파일 경로를 넘긴다)이 바뀌면 그 문서만 다시 받는다 — 설명·예약번호만 고친 건 다시 읽지 않는다.
+ * 실패는 잠깐만 기억해 새로고침마다 재시도하지 않는다.
  */
 
 export const DIGEST_CACHE_PREFIX = 'mongsil:assistantDigest:';
@@ -20,7 +21,7 @@ interface StorageLike {
 }
 
 interface Entry {
-  /** 문서의 updated_at — 다르면 문서가 바뀐 것 */
+  /** 요약이 뽑힌 시점의 버전 값(파일 경로) — 다르면 파일이 바뀐 것 */
   u: string;
   /** 요약 문장들. 빈 배열 = 읽었지만 쓸 내용 없음. null = 실패 */
   f: string[] | null;
