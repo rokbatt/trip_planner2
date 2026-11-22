@@ -1576,6 +1576,7 @@ worker/                              ← Cloudflare Worker (4장 "서버(Worker)
 wrangler.jsonc                       ← Worker 설정: 정적 파일, /api 우선, cron, 실행 지역, keep_vars
 public/_headers                      ← 정적 파일 캐시 헤더
 docs/CLOUDFLARE_MIGRATION.md         ← 이전 체크리스트·남은 일(5단계 정리)
+docs/COMMERCIAL_READINESS.md         ← 상업화 준비 체크리스트(안전·법·유료화·인프라)
 
 supabase/
   api_usage.sql                      ← 사용자당 하루 사용량 + 관리자·예외 목록(app_roles) (5-11)
