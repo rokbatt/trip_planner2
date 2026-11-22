@@ -1230,7 +1230,7 @@ async function handlePlaceBrief(req: VercelRequest, res: VercelResponse) {
  * 비싼 반면, 다른 한쪽은 텍스트만으로 충분하고 싸다. 섞으면 질문마다 파일을 다시 읽게 된다).
  *
  * 1) doc-digest — 문서 파일(PDF/이미지) 하나를 읽어 "질문에 답할 때 쓸 핵심 사실"만
- *    몇 줄로 뽑아 캐싱한다(문서당 1회, updated_at이 바뀌면 재생성). 파일이 없는 문서(제목/
+ *    몇 줄로 뽑아 캐싱한다(문서당 1회, 파일이 바뀌면 재생성 — 설명·예약번호만 고친 것은 클라이언트가 파일 요약과 함께 직접 보낸다). 파일이 없는 문서(제목/
  *    설명/예약번호만 있는 경우)는 클라이언트가 이 엔드포인트를 아예 부르지 않고 그 필드들을
  *    그대로 사실로 쓴다 — Gemini 호출이 필요 없다.
  * 2) doc-qa — 이미 뽑아둔 사실들(문서 digest + 메모 본문)을 질문과 함께 텍스트로만 보내
@@ -1345,7 +1345,9 @@ async function handleDocDigest(req: VercelRequest, res: VercelResponse) {
   }
 
   // ④ 확인을 통과한 뒤에만 캐시를 본다 — 앞에서 보면 문서 id만으로 남의 요약을 받아 갈 수 있다
-  const cacheKey = 'doc-digest:' + stableHash(doc.id + ':' + doc.updated_at);
+  // 키는 수정 시각이 아니라 **파일**(업로드 경로)이다 — 요약은 파일에서 뽑은 사실이라, 설명·예약번호만 고친 걸로
+  // 파일을 다시 읽으면(Gemini 호출·한도) 같은 결과를 다시 만들 뿐이다. 파일을 바꾸면 경로가 새로 생겨 다시 만든다.
+  const cacheKey = 'doc-digest:' + stableHash(doc.id + ':' + doc.file_path);
   const cached = await readPlanCache(supabase, cacheKey);
   if (cached) {
     res.status(200).json({ ...cached, cached: true });
@@ -1478,6 +1480,9 @@ async function handleDocQA(req: VercelRequest, res: VercelResponse) {
     '',
     '[질문]',
     question,
+    '',
+    '규칙: 자료 안에 "직접 입력한 정보"가 있으면 그건 여행자가 나중에 고쳐 적은 최신 내용이야.',
+    '같은 항목(시간·날짜·예약번호 등)이 파일에서 뽑은 내용과 다르면 직접 입력한 정보를 따라 답해.',
     '',
     '한국어로 간결하게 답하고(1~4문장), 답변에 실제로 사용한 자료의 제목들을 usedTitles 배열에 담아.',
     '사용한 자료가 없으면(모른다고 답한 경우) usedTitles는 빈 배열로 둬.',
