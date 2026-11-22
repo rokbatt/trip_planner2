@@ -75,24 +75,55 @@ export interface AssistantSource {
   digest: string;
 }
 
+export interface WebSource {
+  title: string;
+  uri: string;
+}
+
 export interface AssistantAnswer {
   answer: string;
   usedTitles: string[];
+  /** PRO 웹 검색 답변일 때 참고한 웹 페이지 */
+  webSources: WebSource[];
+  web: boolean;
 }
 
+/**
+ * 질문하기. `web`이면 문서·메모에 웹 검색을 더해 답한다(PRO 전용 — 서버가 다시 확인하고, 아니면 403).
+ */
 export async function requestAssistantAnswer(
   tripId: string,
   question: string,
-  sources: AssistantSource[]
+  sources: AssistantSource[],
+  web = false
 ): Promise<AssistantAnswer> {
-  const json = await postAi<{ answer?: string; usedTitles?: unknown[] }>({
+  const json = await postAi<{ answer?: string; usedTitles?: unknown[]; webSources?: unknown[]; web?: boolean }>({
     kind: 'doc-qa',
     tripId,
     question,
     sources,
+    ...(web ? { web: true } : {}),
   });
   return {
     answer: String(json.answer ?? ''),
     usedTitles: Array.isArray(json.usedTitles) ? json.usedTitles.map((t) => String(t)) : [],
+    webSources: Array.isArray(json.webSources)
+      ? json.webSources
+          .map((w: any) => ({ title: String(w?.title ?? ''), uri: String(w?.uri ?? '') }))
+          .filter((w) => /^https:\/\//.test(w.uri))
+      : [],
+    web: json.web === true,
   };
+}
+
+export type Plan = 'free' | 'pro';
+
+/** 내 요금제 — 화면 표시용(잠금·배지). 실제 허용은 서버가 기능마다 다시 확인한다. 실패하면 무료로 본다 */
+export async function fetchMyPlan(): Promise<Plan> {
+  try {
+    const json = await postAi<{ plan?: string }>({ kind: 'my-plan' });
+    return json.plan === 'pro' ? 'pro' : 'free';
+  } catch {
+    return 'free';
+  }
 }

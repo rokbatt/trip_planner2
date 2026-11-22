@@ -851,6 +851,28 @@ export interface Database {
         Relationships: [];
       };
 
+      /* 요금제 — supabase/user_plans.sql (없으면 모두 무료로 본다) */
+      user_plans: {
+        Row: {
+          user_id: string;
+          plan: string;
+          source: string;
+          expires_at: string | null;
+          note: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          plan?: string;
+          source?: string;
+          expires_at?: string | null;
+          note?: string | null;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['user_plans']['Insert']>;
+        Relationships: [];
+      };
+
       /* 휴대폰 알림 구독 — supabase/push_subscriptions.sql (없어도 앱은 동작한다) */
       push_subscriptions: {
         Row: {
