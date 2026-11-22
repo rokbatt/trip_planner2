@@ -297,6 +297,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (kind === 'place-brief') return handlePlaceBrief(req, res);
   if (kind === 'doc-digest') return handleDocDigest(req, res);
   if (kind === 'doc-qa') return handleDocQA(req, res);
+  if (kind === 'my-plan') return handleMyPlan(req, res);
   if (kind === 'receipt-read') return handleReceiptRead(req, res);
   if (kind === 'photo-spots') return handlePhotoSpots(req, res);
   return handleHotelReview(req, res);
@@ -1416,6 +1417,65 @@ async function handleDocDigest(req: VercelRequest, res: VercelResponse) {
   res.status(200).json({ ...result, cached: false });
 }
 
+/* ══════════════════ 요금제(무료 · PRO) ══════════════════
+ * PRO는 두 곳에서 온다:
+ *   1. app_roles(이메일) — admin · unlimited는 운영자·지인이라 PRO 기능도 쓴다
+ *   2. user_plans(사용자) — plan='pro'이고 만료 전(expires_at이 비었거나 미래). 지금은 관리자가 SQL로 넣고,
+ *      결제를 붙이면 결제 서버가 같은 표에 쓴다(source·expires_at 칸이 그 자리) — supabase/user_plans.sql
+ * 표가 아직 없거나 조회가 실패하면 **무료로 본다**(유료 기능을 실수로 열지 않는다).
+ */
+export type Plan = 'free' | 'pro';
+
+export function planFrom(
+  role: string | null | undefined,
+  row: { plan?: string | null; expires_at?: string | null } | null | undefined,
+  now: number = Date.now()
+): Plan {
+  if (role === 'admin' || role === 'unlimited') return 'pro';
+  if (row?.plan !== 'pro') return 'free';
+  if (row.expires_at && !(Date.parse(row.expires_at) > now)) return 'free';
+  return 'pro';
+}
+
+async function userPlan(sb: SupabaseLike, user: { id: string; email?: string | null }): Promise<Plan> {
+  const email = String(user.email ?? '').toLowerCase();
+  const [roleRes, planRes] = await Promise.all([
+    email ? sb.from('app_roles').select('role').eq('email', email).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    sb.from('user_plans').select('plan, expires_at').eq('user_id', user.id).maybeSingle(),
+  ]);
+  return planFrom((roleRes as any)?.data?.role ?? null, planRes.error ? null : (planRes.data as any));
+}
+
+/** 화면이 PRO 표시(잠금·배지)를 정하려고 묻는다. 실제 허용 여부는 기능마다 서버가 다시 확인한다 */
+async function handleMyPlan(req: VercelRequest, res: VercelResponse) {
+  const supabase = makeSupabase();
+  const token = bearerToken(req.headers?.authorization);
+  if (!supabase || !token) {
+    res.status(200).json({ plan: 'free' });
+    return;
+  }
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data?.user) {
+    res.status(200).json({ plan: 'free' });
+    return;
+  }
+  res.status(200).json({ plan: await userPlan(supabase, data.user) });
+}
+
+/** PRO 웹 검색 질문의 하루 상한 — 검색 1회마다 비용이 나서 일반 AI 상한(60)과 따로 센다 */
+export const WEB_QA_DAILY_LIMIT = 20;
+
+/** 웹 검색 답변 형식: ###ANSWER### 본문 / ###USED### 줄마다 "- 자료 제목" */
+export function parseWebAnswer(text: string): { answer: string; usedTitles: string[] } {
+  const a = text.indexOf('###ANSWER###');
+  const u = text.indexOf('###USED###');
+  const answer = (a >= 0 ? text.slice(a + 12, u > a ? u : undefined) : u >= 0 ? text.slice(0, u) : text).trim();
+  const usedTitles = u >= 0
+    ? text.slice(u + 10).split('\n').map((l) => l.replace(/^\s*[-*•]\s*/, '').trim()).filter((l) => l && l !== '없음').slice(0, 10)
+    : [];
+  return { answer: answer.slice(0, 2000), usedTitles };
+}
+
 const DOC_QA_SCHEMA = {
   type: 'OBJECT',
   properties: {
@@ -1441,6 +1501,10 @@ async function handleDocQA(req: VercelRequest, res: VercelResponse) {
 
   if (!question) {
     res.status(400).json({ error: 'question이 필요해요.' });
+    return;
+  }
+  if (body.web === true) {
+    await handleDocQAWeb(req, res, question.slice(0, 500), sources.slice(0, 40));
     return;
   }
   if (sources.length === 0) {
@@ -1509,6 +1573,127 @@ async function handleDocQA(req: VercelRequest, res: VercelResponse) {
   };
 
   await writePlanCache(supabase, cacheKey, 'doc-qa', result);
+  res.status(200).json({ ...result, cached: false });
+}
+
+
+/**
+ * PRO: 문서·메모 + 웹 검색으로 답한다. 문서에 있는 내용은 문서를 먼저 따르고, 없는 것(운영 시간·입장료·교통 등)만
+ * 웹에서 찾는다. 답에 웹 출처를 붙인다.
+ *   ① 로그인 ② PRO 확인(아니면 403 pro_required) ③ 하루 상한(web, 20회) ④ Gemini + google_search
+ * 개인정보: 문서 요약은 원래 Gemini로 가지만, **검색어에는 이름·예약번호 같은 개인정보를 넣지 말라**고 지시한다.
+ * 같은 날 같은 질문·같은 자료면 캐시를 쓴다(날짜를 키에 넣어 다음 날엔 새로 찾는다).
+ */
+async function handleDocQAWeb(
+  req: VercelRequest,
+  res: VercelResponse,
+  question: string,
+  sources: Array<{ title: string; category: string; kind: string; digest: string }>
+) {
+  const supabase = makeSupabase();
+  if (!supabase) {
+    res.status(500).json({ error: '서버 설정이 안 돼 있어요(비어 있는 환경 변수: ' + missingSupabaseEnv(process.env).join(', ') + ').' });
+    return;
+  }
+  const token = bearerToken(req.headers?.authorization);
+  if (!token) {
+    res.status(401).json({ error: '로그인이 필요해요.' });
+    return;
+  }
+  const { data: authData, error: authError } = await supabase.auth.getUser(token);
+  const user = authData?.user;
+  if (authError || !user) {
+    res.status(401).json({ error: '로그인이 만료됐어요. 다시 로그인해 주세요.' });
+    return;
+  }
+  if ((await userPlan(supabase, user)) !== 'pro') {
+    res.status(403).json({ error: '웹 검색 답변은 PRO 기능이에요.', code: 'pro_required' });
+    return;
+  }
+
+  const day = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10); // 한국 날짜
+  const cacheKey = 'doc-qa-web:' + day + ':' + stableHash(question + '||' + sources.map((s) => s.title + ':' + s.digest).join('||'));
+  const cached = await readPlanCache(supabase, cacheKey);
+  if (cached) {
+    res.status(200).json({ ...cached, cached: true });
+    return;
+  }
+
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    res.status(500).json({ error: 'GEMINI_API_KEY가 설정되지 않았어요.' });
+    return;
+  }
+  // 웹 검색은 비용이 커서 따로 센다(표가 없거나 오류면 막지 않는다 — 다른 상한과 같은 원칙)
+  const { data: allowed, error: quotaError } = await supabase.rpc('spend_api_quota', { p_user: user.id, p_kind: 'web', p_limit: WEB_QA_DAILY_LIMIT });
+  if (!quotaError && allowed === false) {
+    res.status(429).json({ error: '오늘 웹 검색 질문을 다 썼어요(하루 ' + WEB_QA_DAILY_LIMIT + '번). 내일 다시 이용해 주세요.', quotaExceeded: true });
+    return;
+  }
+
+  const sourceBlock = sources.length
+    ? sources
+        .map((s, i) => (i + 1) + '. [' + (s.kind === 'note' ? '메모' : '문서') + '] ' + s.title + (s.category ? ' (' + s.category + ')' : '') + '\n' + s.digest)
+        .join('\n\n')
+    : '(올린 문서·메모 없음)';
+  const prompt = [
+    '너는 여행자를 돕는 여행 비서야. 아래 [내 자료](여행자가 올린 문서·메모)와 웹 검색을 함께 써서 답해.',
+    '규칙:',
+    '- 예약 시각·예약번호·숙소처럼 [내 자료]에 있는 내용은 [내 자료]를 따른다. "직접 입력한 정보"가 있으면 그게 최신이다.',
+    '- [내 자료]에 없는 일반 정보(운영 시간·입장료·교통·날씨 경향·현지 팁 등)는 웹 검색으로 찾아 답한다.',
+    '- 웹에서 찾은 내용은 문장 끝에 "(웹)"을 붙인다. 확실하지 않으면 확인이 필요하다고 말한다. 지어내지 않는다.',
+    '- 검색어에는 사람 이름·예약번호·여권번호·연락처·이메일을 절대 넣지 않는다. 장소·도시·날짜 같은 일반 정보만 쓴다.',
+    '- 한국어로 간결하게(2~6문장).',
+    '',
+    '[내 자료]',
+    sourceBlock,
+    '',
+    '[질문]',
+    question,
+    '',
+    '형식(다른 말 없이):',
+    '###ANSWER###',
+    '답변',
+    '###USED###',
+    '- 답에 실제로 쓴 [내 자료] 제목(없으면 "없음")',
+  ].join('\n');
+
+  let geminiRes: Response;
+  try {
+    geminiRes = await fetch(GEMINI_ENDPOINT + 'gemini-2.5-flash-lite:generateContent?key=' + geminiKey, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], tools: [{ google_search: {} }] }),
+    });
+  } catch {
+    res.status(502).json({ error: 'AI 응답을 받지 못했어요. 잠시 후 다시 시도해 주세요.' });
+    return;
+  }
+  if (!geminiRes.ok) {
+    console.error('[ai] doc-qa-web Gemini 실패 (' + geminiRes.status + '):', (await geminiRes.text()).slice(0, 2000));
+    res.status(502).json({ error: geminiFailMessage(geminiRes.status) });
+    return;
+  }
+  const data: any = await geminiRes.json();
+  const cand = data?.candidates?.[0];
+  const text: string = Array.isArray(cand?.content?.parts)
+    ? cand.content.parts.map((p: any) => p?.text).filter((t: any) => typeof t === 'string').join('\n')
+    : '';
+  const parsed = parseWebAnswer(text);
+  if (!parsed.answer) {
+    res.status(502).json({ error: 'AI 응답을 해석하지 못했어요. 잠시 후 다시 시도해 주세요.' });
+    return;
+  }
+  // 실제로 보낸 자료 제목만 남긴다(AI가 지어낸 제목을 출처로 보여 주지 않게)
+  const known = new Set(sources.map((s) => s.title));
+  const seen = new Set<string>();
+  const webSources = (Array.isArray(cand?.groundingMetadata?.groundingChunks) ? cand.groundingMetadata.groundingChunks : [])
+    .map((c: any) => c?.web)
+    .filter((w: any) => typeof w?.uri === 'string' && /^https:\/\//.test(w.uri) && !seen.has(w.uri) && seen.add(w.uri))
+    .slice(0, 5)
+    .map((w: any) => ({ title: String(w.title ?? safeHostname(w.uri)).slice(0, 80), uri: w.uri }));
+  const result = { answer: parsed.answer, usedTitles: parsed.usedTitles.filter((t) => known.has(t)), webSources, web: true };
+  await writePlanCache(supabase, cacheKey, 'doc-qa-web', result);
   res.status(200).json({ ...result, cached: false });
 }
 

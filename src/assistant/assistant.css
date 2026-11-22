@@ -283,3 +283,30 @@
 .ws-ai-send-btn:hover { background: #0E3676; }
 .ws-ai-send-btn:disabled { background: #A8B7C7; cursor: not-allowed; }
 .ws-ai-send-btn svg { width: 16px; height: 16px; }
+
+/* ── PRO: 웹 검색 포함 스위치 ── */
+.ws-ai-web { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 14px 0; flex-shrink: 0; }
+.ws-ai-web-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px 5px 5px;
+  border: 1px solid rgba(130,150,170,0.25);
+  border-radius: 999px;
+  background: #FFFFFF;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0B2A5C;
+  cursor: pointer;
+}
+.ws-ai-web-knob { position: relative; width: 26px; height: 16px; border-radius: 999px; background: #CBD5E1; transition: background 160ms; }
+.ws-ai-web-knob::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #FFFFFF; transition: transform 160ms; }
+.ws-ai-web-toggle.is-on .ws-ai-web-knob { background: #2E86DE; }
+.ws-ai-web-toggle.is-on .ws-ai-web-knob::after { transform: translateX(10px); }
+.ws-ai-web-toggle.is-locked { color: #7A8CA3; }
+.ws-ai-pro { padding: 1px 6px; border-radius: 999px; font-size: 9.5px; font-weight: 800; letter-spacing: 0.04em; color: #FFFFFF; background: linear-gradient(135deg, #F59E0B, #F97316); }
+.ws-ai-web-hint { font-size: 11px; color: #64748B; line-height: 1.4; }
+.ws-ai-websrc { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.ws-ai-websrc-label { font-size: 10.5px; font-weight: 700; color: #64748B; }
+.ws-ai-websrc-link { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 8px; border-radius: 999px; font-size: 11px; color: #2563EB; background: #EFF6FF; text-decoration: none; }

@@ -36,8 +36,9 @@ import {
   normalizeNoteCategory,
 } from '../docs/docsStore';
 import { escapeHtml } from '../docs/docsIcons';
-import { requestAssistantAnswer, requestDocDigest } from './assistantClient';
-import type { AssistantSource } from './assistantClient';
+import { requestAssistantAnswer, requestDocDigest, fetchMyPlan } from './assistantClient';
+import type { AssistantSource, Plan, WebSource } from './assistantClient';
+import { safeHttpUrl } from '../utils/html';
 import type { TripDocUser, TripDocument } from '../types/database';
 import './assistant.css';
 import { clearTripDigests, lookupDigest, storeDigest } from './digestCache';
@@ -57,8 +58,19 @@ interface ChatTurn {
   role: 'user' | 'ai';
   text: string;
   sources?: string[];
+  /** PRO 웹 검색 답변이 참고한 웹 페이지 */
+  webSources?: WebSource[];
+  web?: boolean;
   error?: boolean;
 }
+
+/* ── PRO: 웹 검색 포함 ──
+ * 문서·메모에 없는 일반 정보(운영 시간·입장료·교통 등)를 웹에서 찾아 함께 답한다. 유료(PRO) 사용자만 —
+ * 무료 사용자는 스위치가 잠겨 보이고 눌러도 안내만 나온다. 서버(api/ai.ts handleDocQAWeb)가 다시 확인한다.
+ */
+let myPlan: Plan | null = null;
+let planAsked = false;
+let webOn = false;
 
 let rootEl: HTMLElement | null = null;
 let currentTripId = '';
@@ -115,6 +127,10 @@ export function renderAssistantPanel(container: HTMLElement, tripId: string): vo
   mountShell();
   renderList();
   updateFormState();
+  if (!planAsked) {
+    planAsked = true;
+    void fetchMyPlan().then((p) => { myPlan = p; updateFormState(); });
+  }
 
   if (!sourcesReady && !sourcesPromise) {
     sourcesPromise = loadSources(tripId);
@@ -335,8 +351,9 @@ async function ask(question: string): Promise<void> {
       sourcesPromise = loadSources(currentTripId);
       await sourcesPromise;
     }
-    const result = await requestAssistantAnswer(currentTripId, question, sources);
-    turns.push({ role: 'ai', text: result.answer, sources: result.usedTitles });
+    const useWeb = webOn && myPlan === 'pro';
+    const result = await requestAssistantAnswer(currentTripId, question, sources, useWeb);
+    turns.push({ role: 'ai', text: result.answer, sources: result.usedTitles, webSources: result.webSources, web: result.web });
   } catch (e) {
     turns.push({ role: 'ai', text: '답변을 가져오지 못했어요: ' + (e as Error).message, error: true });
   } finally {
@@ -355,12 +372,28 @@ function mountShell(): void {
     '  <div class="ws-ai-chat-list" id="ws-ai-list"></div>',
     '  <div class="ws-ai-notice" id="ws-ai-notice"></div>',
     '  <div class="ws-ai-disclaimer" id="ws-ai-disclaimer">AI가 문서·메모 내용을 바탕으로 정리한 답변이에요. 중요한 내용은 원본으로 다시 확인하세요.</div>',
+    '  <div class="ws-ai-web" id="ws-ai-web-row">',
+    '    <button type="button" class="ws-ai-web-toggle" id="ws-ai-web" role="switch" aria-checked="false">',
+    '      <span class="ws-ai-web-knob" aria-hidden="true"></span><span class="ws-ai-web-label">웹 검색 포함</span><span class="ws-ai-pro">PRO</span>',
+    '    </button>',
+    '    <span class="ws-ai-web-hint" id="ws-ai-web-hint"></span>',
+    '  </div>',
     '  <form class="ws-ai-input-form" id="ws-ai-form">',
     '    <input class="ws-ai-input" id="ws-ai-input" type="text" autocomplete="off" />',
     '    <button type="submit" class="ws-ai-send-btn" id="ws-ai-send">' + IC_SEND + '</button>',
     '  </form>',
     '</div>',
   ].join('\n');
+
+  rootEl.querySelector('#ws-ai-web')?.addEventListener('click', () => {
+    if (myPlan !== 'pro') {
+      const hint = rootEl?.querySelector('#ws-ai-web-hint') as HTMLElement | null;
+      if (hint) hint.textContent = myPlan === null ? '확인 중이에요…' : 'PRO 기능이에요. 문서에 없는 운영 시간·교통 같은 정보까지 웹에서 찾아 답해요.';
+      return;
+    }
+    webOn = !webOn;
+    updateFormState();
+  });
 
   const form = rootEl.querySelector('#ws-ai-form') as HTMLFormElement;
   form.addEventListener('submit', (e) => {
@@ -384,6 +417,15 @@ function updateFormState(): void {
     input.placeholder = sourcesReady ? '궁금한 걸 물어보세요' : '문서를 읽는 중…';
   }
   if (sendBtn) sendBtn.disabled = sending;
+  const webBtn = rootEl.querySelector('#ws-ai-web') as HTMLButtonElement | null;
+  if (webBtn) {
+    const on = webOn && myPlan === 'pro';
+    webBtn.classList.toggle('is-on', on);
+    webBtn.classList.toggle('is-locked', myPlan !== 'pro');
+    webBtn.setAttribute('aria-checked', String(on));
+    const hint = rootEl.querySelector('#ws-ai-web-hint') as HTMLElement | null;
+    if (hint && myPlan === 'pro') hint.textContent = on ? '문서 + 웹에서 찾아 답해요 (하루 20번)' : '';
+  }
   if (disclaimerEl) disclaimerEl.classList.toggle('is-visible', turns.length > 0);
 }
 
@@ -572,6 +614,17 @@ function turnHtml(t: ChatTurn): string {
         t.sources.map((s) => '<span class="ws-ai-source-chip">' + escapeHtml(s) + '</span>').join('') +
         '</div>'
       : '';
+  const webHtml =
+    t.webSources && t.webSources.length > 0
+      ? '<div class="ws-ai-websrc"><span class="ws-ai-websrc-label">웹 출처</span>' +
+        t.webSources
+          .map((w) => {
+            const u = safeHttpUrl(w.uri);
+            return u ? '<a class="ws-ai-websrc-link" href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(w.title || u) + '</a>' : '';
+          })
+          .join('') +
+        '</div>'
+      : t.web ? '<div class="ws-ai-websrc"><span class="ws-ai-websrc-label">웹 검색 포함 답변</span></div>' : '';
 
   return [
     '<div class="ws-ai-turn ai' + (t.error ? ' is-error' : '') + '">',
@@ -579,6 +632,7 @@ function turnHtml(t: ChatTurn): string {
     '  <div class="ws-ai-bubble-col">',
     '    <div class="ws-ai-bubble">' + escapeHtml(t.text) + '</div>',
     sourcesHtml,
+    webHtml,
     '  </div>',
     '</div>',
   ].join('');
