@@ -2,8 +2,9 @@
  * 가입 동의 기록 — 이 기기의 기록(localStorage)과 서버 기록(user_consents)을 함께 다룬다.
  *
  * 왜 둘 다인가
- *  - 동의는 **로그인 전에** 받아야 한다(구글 로그인으로 넘어가면 이미 계정이 만들어진다).
- *    그 시점엔 user id가 없으니 먼저 이 기기에 적어 두고, 로그인이 끝난 뒤 서버에 옮겨 적는다.
+ *  - 동의는 **로그인 직후, 서버에 기록이 없는 사람(새 가입자·약관 버전이 바뀐 사용자)에게만** 받는다(2026-11 변경).
+ *    예전엔 로그인 전에 받아 기기·브라우저마다 다시 물었다. 새 가입자가 동의하지 않으면 방금 만든 계정을 바로 지운다.
+ *  - 이 기기 기록은 "이 기기에서 이미 확인함" 표시다 — 서버에 다시 묻지 않게 한다.
  *  - 서버 기록(supabase/user_consents.sql)은 "누가 언제 어느 버전에 동의했나"의 증빙이다.
  *    그 SQL을 아직 안 돌렸어도 앱은 멈추지 않는다 — 기기 기록만으로 동의 창을 한 번만 보여 주고,
  *    서버 기록은 조용히 건너뛴다(앱 전반의 "없어도 동작" 원칙).
@@ -49,6 +50,21 @@ export function newConsentRecord(now: Date = new Date()): ConsentRecord {
 export function canClaimLocalConsent(rec: ConsentRecord | null, userId: string): boolean {
   if (!isCurrentConsent(rec)) return false;
   return !rec!.userId || rec!.userId === userId;
+}
+
+/** 방금 만든 계정인가(구글 로그인으로 계정이 생긴 지 10분 안) — 동의하지 않으면 지워도 되는 계정 */
+export const FRESH_SIGNUP_MS = 10 * 60 * 1000;
+export function isFreshSignup(createdAt: string | null | undefined, now: number = Date.now()): boolean {
+  const t = createdAt ? Date.parse(createdAt) : NaN;
+  return Number.isFinite(t) && now - t >= -60_000 && now - t < FRESH_SIGNUP_MS;
+}
+
+/**
+ * 로그인 직후 동의 창을 띄울지 — 서버에 기록이 **없다고 분명히 답했을 때**만.
+ * 서버를 못 읽었으면(표 없음·네트워크) 기존 사용자는 막지 않는다. 다만 방금 가입한 사람은 동의 없이 쓰게 둘 수 없어 묻는다.
+ */
+export function shouldAskConsent(server: ServerConsentState, fresh: boolean): boolean {
+  return server === 'missing' || (server === 'unavailable' && fresh);
 }
 
 /** 필수 항목이 전부 체크됐는가 */

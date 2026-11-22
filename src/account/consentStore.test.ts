@@ -177,3 +177,23 @@ describe('서버 기록 저장', () => {
     expect(await saveServerConsent('u1', newConsentRecord())).toBe('unavailable');
   });
 });
+
+describe('로그인 직후 동의 — 새 가입자만', () => {
+  it('isFreshSignup: 계정이 생긴 지 10분 안이면 새 가입', async () => {
+    const { isFreshSignup } = await import('./consentStore');
+    const now = Date.parse('2026-11-22T10:00:00Z');
+    expect(isFreshSignup('2026-11-22T09:58:00Z', now)).toBe(true);
+    expect(isFreshSignup('2026-11-22T09:45:00Z', now)).toBe(false);
+    expect(isFreshSignup('2026-01-01T00:00:00Z', now)).toBe(false);
+    expect(isFreshSignup(undefined, now)).toBe(false);
+    expect(isFreshSignup('nope', now)).toBe(false);
+  });
+  it('shouldAskConsent: 기록 없음이면 묻고, 확인 불가면 새 가입자만', async () => {
+    const { shouldAskConsent } = await import('./consentStore');
+    expect(shouldAskConsent('missing', false)).toBe(true);
+    expect(shouldAskConsent('missing', true)).toBe(true);
+    expect(shouldAskConsent('unavailable', true)).toBe(true);
+    expect(shouldAskConsent('unavailable', false)).toBe(false);
+    expect(shouldAskConsent('recorded', true)).toBe(false);
+  });
+});
