@@ -1,10 +1,10 @@
 /**
  * 가입 동의 창.
  *
- * 두 번 쓰인다.
- *  - signup  : "Google 계정으로 시작하기"를 눌렀을 때. 취소하면 로그인 자체를 안 한다.
- *  - regate  : 이미 로그인된 사용자가 (이 기능이 생기기 전에 가입했거나, 약관 버전이 올라서)
- *              동의 기록이 없을 때. 닫을 수 없고, 동의하거나 로그아웃하거나 둘 중 하나다.
+ * 로그인 **직후**, 서버에 동의 기록이 없는 사람에게만 뜬다(어느 기기에서든 한 번).
+ *  - welcome : 방금 가입한 사람. 동의하지 않으면 방금 만든 계정을 바로 지운다(정보를 남기지 않음).
+ *  - regate  : 기존 사용자인데 기록이 없을 때(이 기능 전 가입, 약관 버전 변경). 동의하지 않으면 로그아웃.
+ * 둘 다 닫을 수 없다 — 동의하거나, 거절하거나.
  *
  * 동의 항목은 legal/versions.ts의 CONSENT_ITEMS에서 읽는다. 항목을 더하거나 빼려면(예: 국외이전
  * 동의를 따로 받아야 한다는 법률 검토 결과가 나오면) 그 배열만 고치면 된다.
@@ -16,15 +16,17 @@ import {
   allRequiredChecked,
   canClaimLocalConsent,
   fetchServerConsent,
-  isCurrentConsent,
+  isFreshSignup,
   newConsentRecord,
+  shouldAskConsent,
   readLocalConsent,
   saveServerConsent,
   writeLocalConsent,
 } from './consentStore';
 import { signOut } from '../auth/auth';
+import { supabase } from '../supabase';
 
-type Mode = 'signup' | 'regate';
+type Mode = 'welcome' | 'regate';
 
 let regateOpen = false;
 
@@ -68,12 +70,12 @@ export function openConsentModal(mode: Mode): Promise<boolean> {
             <div><dt>이용 목적</dt><dd>로그인 및 여행 서비스 제공, 동행자와 정보 공유</dd></div>
             <div><dt>보유 기간</dt><dd>회원 탈퇴 시까지</dd></div>
           </dl>
-          <p>동의를 거부할 수 있으며, 거부하면 서비스를 이용할 수 없습니다.</p>
+          <p>동의를 거부할 수 있으며, 거부하면 서비스를 이용할 수 없습니다.${mode === 'welcome' ? ' 동의하지 않으면 방금 만들어진 계정과 받은 정보는 바로 삭제됩니다.' : ''}</p>
         </div>
 
         <div class="cs-actions">
           <button type="button" class="cs-btn cs-secondary" id="cs-cancel">
-            ${mode === 'signup' ? '취소' : '로그아웃'}
+            ${mode === 'welcome' ? '동의하지 않음' : '로그아웃'}
           </button>
           <button type="button" class="cs-btn cs-primary" id="cs-agree" disabled>동의하고 계속</button>
         </div>
@@ -93,10 +95,8 @@ export function openConsentModal(mode: Mode): Promise<boolean> {
     all.addEventListener('change', () => { boxes.forEach((b) => { b.checked = all.checked; }); refresh(); });
     boxes.forEach((b) => b.addEventListener('change', refresh));
 
-    const onKey = (e: KeyboardEvent) => {
-      // signup은 Esc로 닫을 수 있다. regate는 닫을 수 없다 — 동의 아니면 로그아웃이다.
-      if (e.key === 'Escape' && mode === 'signup') finish(false);
-    };
+    // 닫을 수 없다(Esc·바깥 누르기 없음) — 동의하거나 거절하거나 둘 중 하나다
+    const onKey = (_e: KeyboardEvent) => {};
     document.addEventListener('keydown', onKey);
 
     const finish = (result: boolean) => {
@@ -109,30 +109,16 @@ export function openConsentModal(mode: Mode): Promise<boolean> {
 
     overlay.querySelector('#cs-cancel')!.addEventListener('click', () => finish(false));
     agree.addEventListener('click', () => { if (!agree.disabled) finish(true); });
-    if (mode === 'signup') {
-      overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(false); });
-    }
 
     boxes[0]?.focus();
   });
 }
 
 /**
- * 로그인 버튼을 눌렀을 때 — 이 기기에서 지금 버전에 이미 동의했으면 바로 통과,
- * 아니면 창을 띄우고 동의하면 기기에 기록한다. false면 로그인을 시작하지 않는다.
- */
-export async function ensureConsentBeforeLogin(): Promise<boolean> {
-  if (isCurrentConsent(readLocalConsent())) return true;
-  const ok = await openConsentModal('signup');
-  if (ok) writeLocalConsent(newConsentRecord());
-  return ok;
-}
-
-/**
  * 로그인이 끝난 직후 — 서버에 동의 기록을 옮겨 적거나, 기록이 없는 기존 사용자에게 동의를 받는다.
  * 어떤 경우에도 예외를 던지지 않는다(여기서 앱이 멈추면 안 된다).
  */
-export async function syncConsentAfterLogin(user: { id: string }): Promise<void> {
+export async function syncConsentAfterLogin(user: { id: string; created_at?: string }): Promise<void> {
   try {
     const local = readLocalConsent();
 
@@ -156,13 +142,15 @@ export async function syncConsentAfterLogin(user: { id: string }): Promise<void>
       return;
     }
 
-    // 기록 없음(또는 확인 불가) — 동의를 받는다
+    const fresh = isFreshSignup(user.created_at);
+    if (!shouldAskConsent(server.state, fresh)) return;
     if (regateOpen) return;
     regateOpen = true;
     try {
-      const ok = await openConsentModal('regate');
+      const ok = await openConsentModal(fresh ? 'welcome' : 'regate');
       if (!ok) {
-        await signOut();
+        if (fresh) await discardFreshAccount();
+        else await signOut();
         return;
       }
       const rec = { ...newConsentRecord(), userId: user.id };
@@ -174,4 +162,19 @@ export async function syncConsentAfterLogin(user: { id: string }): Promise<void>
   } catch (e) {
     console.warn('[consent] 동의 확인 중 오류(앱 동작에는 영향 없음):', e);
   }
+}
+
+/**
+ * 새 가입자가 동의하지 않았을 때 — 방금 만들어진 계정을 지운다(탈퇴와 같은 서버 함수, 아직 여행·파일이 없다).
+ * 함수가 없거나 실패하면 로그아웃만 한다(계정은 남지만 동의 기록이 없어 다음 로그인 때 다시 묻는다).
+ */
+async function discardFreshAccount(): Promise<void> {
+  try {
+    const { error } = await supabase.rpc('delete_my_account');
+    if (error) console.warn('[consent] 새 계정 삭제 실패 — 로그아웃만 합니다:', error.message);
+  } catch (e) {
+    console.warn('[consent] 새 계정 삭제 실패 — 로그아웃만 합니다:', e);
+  }
+  try { localStorage.removeItem('mongsil:consent'); } catch { /* 저장소 차단 환경 */ }
+  await signOut();
 }
