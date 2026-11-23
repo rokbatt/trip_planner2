@@ -16,8 +16,9 @@ import { withEdgeCache, type EdgeCache } from './edgeCache';
 import { edgeNote } from './edgeNote';
 import { handleNotify, type NotifyEnv, type Limiter } from './notify';
 import { runWeatherAlerts } from './weatherAlert';
+import { requireLogin, type AuthEnv } from './auth';
 
-interface Env extends NotifyEnv {
+interface Env extends NotifyEnv, AuthEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
   CRON_SECRET?: string;
 }
@@ -58,6 +59,14 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
+      // 로그인 확인 — 토큰이 없거나 틀리면 여기서 401(worker/auth.ts). 관리·정리·알림 주소는 자체 확인
+      const edgeCache = typeof caches !== 'undefined' ? caches.default : undefined;
+      const denied = await requireLogin(request, env, edgeCache);
+      if (denied) {
+        const note = edgeNote(request, denied.status);
+        if (note) console.warn(note);
+        return denied;
+      }
       // 휴대폰 알림은 api/ 파일이 아니라 Worker 안에서 처리한다(worker/notify.ts 머리말)
       if (url.pathname === '/api/notify' || url.pathname === '/api/notify/') {
         const edge = typeof caches !== 'undefined' ? caches.default : undefined;

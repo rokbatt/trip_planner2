@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import worker from './index';
 
+/** 주소 연결만 보는 시험이라 로그인 확인은 끈다(API_AUTH=off). 로그인 확인 자체는 auth.test.ts와 아래 한 건이 본다 */
 function env() {
-  return { ASSETS: { fetch: vi.fn(async () => new Response('asset', { status: 200 })) }, CRON_SECRET: 'test-secret' };
+  return { ASSETS: { fetch: vi.fn(async () => new Response('asset', { status: 200 })) }, CRON_SECRET: 'test-secret', API_AUTH: 'off' };
 }
 
 describe('Worker fetch', () => {
@@ -23,6 +24,14 @@ describe('Worker fetch', () => {
   it('/api/<이름>은 해당 핸들러로 간다(GET이 아니면 405를 주는 exchange-rate로 확인)', async () => {
     const res = await worker.fetch(new Request('https://x.dev/api/exchange-rate', { method: 'POST' }), env(), { waitUntil: () => {} });
     expect(res.status).toBe(405);
+  });
+});
+
+describe('Worker 로그인 확인', () => {
+  it('켜져 있으면 토큰 없는 /api 요청은 핸들러에 닿기 전에 401', async () => {
+    const e = { ...env(), API_AUTH: undefined, SUPABASE_URL: 'https://db.example.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'svc' };
+    const res = await worker.fetch(new Request('https://x.dev/api/exchange-rate', { method: 'POST' }), e, { waitUntil: () => {} });
+    expect(res.status).toBe(401);
   });
 });
 
