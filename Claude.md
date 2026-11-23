@@ -3,6 +3,9 @@
 이 문서는 Claude Code가 이 프로젝트에서 작업할 때 최종 목표와 방향성을 잃지 않기 위한 참고 문서입니다.
 코드를 수정하기 전에 이 문서를 먼저 읽고, 여기 명시된 원칙과 어긋나는 변경은 하지 마세요.
 
+> **새 세션이 상업화·결제·서비스 개시 작업을 한다면** 이 문서 다음에 `docs/LAUNCH_HANDOFF.md`(인계: 일하는 방식·현재 상태·결정 대기·결제 설계안)와
+> `docs/COMMERCIAL_READINESS.md`(체크리스트)를 읽는다.
+
 ---
 
 ## 1. 이 프로젝트는 무엇인가
@@ -1552,6 +1555,29 @@ AI 없이 정적 데이터에서 비교한다. 띄어쓰기를 지우고 비교�
   공유 캐시에 요청자 값 저장(장소 ID로 Google에서 확인한 값만 캐싱)
 - 베이스 테이블(`trips`·`trip_members`·`places`·`places_db` 등)의 RLS 정의가 저장소 SQL에 없다 — 정책 SQL을 저장소에 남긴다.
 
+## 5-12. 알림 · 요금제(PRO) · 2026-11 추가 기능 (참고용)
+
+### 휴대폰 알림(웹 푸시)
+- 발송: `worker/webpush.ts`(VAPID 서명 + RFC 8291 암호화, 외부 라이브러리 없음, Mozilla 참조 구현과 바이트까지 같은지 시험) ·
+  `worker/notify.ts`(`/api/notify`, Worker 전용 주소). 구독: `push_subscriptions`(본인 줄만 RLS, 기기별 `weather` 칸)
+- 종류: 시험 알림 · **"어디야?"**(같은 여행 멤버끼리만, 받은 사람이 "보내기"를 눌러야 위치 한 번 전달, 위치는 저장하지 않음, 연타 30초/10초 제한) ·
+  **날씨 알림**(`worker/weatherAlert.ts`, 매시 cron, 일정의 여행지 기준 현지 20시에 내일 날씨, 한 번에 여행 6개)
+- 아이폰은 홈 화면에 추가한 앱에서만 받는다. 로그아웃하면 그 기기 구독을 끊는다
+
+### 요금제(무료 · PRO)
+- 판정은 서버 `api/ai.ts`의 `planFrom`/`userPlan` 한 곳: `app_roles`의 admin·unlimited → PRO, `user_plans.plan='pro'`이고 만료 전 → PRO,
+  **표가 없거나 조회 실패면 무료**(유료 기능을 실수로 열지 않는다). 화면 표시는 `kind:'my-plan'`, 실제 허용은 기능마다 서버가 다시 확인
+- `user_plans`는 본인 읽기만, 쓰기는 서버·관리자 SQL만 → 결제를 붙이면 결제 서버가 같은 표에 `source`·`expires_at`을 쓴다
+- PRO 기능 1호: AI 어시스턴트 **웹 검색 포함**(`doc-qa` + `web:true`, Gemini google_search, 하루 20번 `kind 'web'`, 같은 날 같은 질문 캐시,
+  검색어에 개인정보 넣지 말라는 지시, 답에 웹 출처)
+
+### 그 밖의 2026-11 기능 (위치)
+- 인생샷(주변 탭): `api/ai.ts` `photo-spots`(웹 검색 + Google 장소 확인, 14일 캐시) · `src/mobile/photoSpots.ts`
+- 영수증·결제 캡처로 지출 추가(지갑): `receipt-read` — **환경 변수 `RECEIPT_AI_ENABLED=true`일 때만** 동작(지금 꺼짐)
+- 회화(회화 탭): `src/mobile/phrasebook.ts` 고정 문장 + 음성 읽기(API 비용 없음)
+- 길찾기 출발지: 기본 현재 위치, 상세에서 숙소·이전 장소·직접 입력으로 바꿈(`src/mobile/directions.ts`)
+- 서버 로그인 확인(`worker/auth.ts`), 오류 감지(`utils/errorReport.ts`, `/api/health`) — 5-11 참고
+
 ## 6. 파일 구조
 
 ```
@@ -1593,11 +1619,13 @@ worker/                              ← Cloudflare Worker (4장 "서버(Worker)
   routes.ts                          ← /api/<이름> → api/<이름>.ts 주소 표 (새 api 파일은 여기에도)
   edgeCache.ts, edgeNote.ts          ← s-maxage 응답 캐시(환율) / 실패 요청 로그(colo)
   notify.ts, webpush.ts              ← /api/notify 휴대폰 알림(Worker 전용 주소) / 웹 푸시 암호화·서명
+  auth.ts                            ← /api/* 로그인 확인(입구 한 곳, API_AUTH=off 비상 스위치)
   weatherAlert.ts                    ← 매시 cron: 현지 저녁 8시 여행지에 내일 날씨 알림
 wrangler.jsonc                       ← Worker 설정: 정적 파일, /api 우선, cron, 실행 지역, keep_vars
 public/_headers                      ← 정적 파일 캐시 헤더
 docs/CLOUDFLARE_MIGRATION.md         ← 이전 체크리스트·남은 일(5단계 정리)
 docs/COMMERCIAL_READINESS.md         ← 상업화 준비 체크리스트(안전·법·유료화·인프라)
+docs/LAUNCH_HANDOFF.md               ← 서비스 개시·유료 결제 인계(새 세션 시작점)
 
 supabase/
   api_usage.sql                      ← 사용자당 하루 사용량 + 관리자·예외 목록(app_roles) (5-11)
