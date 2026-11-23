@@ -67,6 +67,10 @@ export default {
         if (note) console.warn(note);
         return denied;
       }
+      // 다운 감시(외부 업타임 서비스)용 — 서버가 살아 있는지만 답한다. 비밀값·DB를 건드리지 않는다
+      if (url.pathname === '/api/health') {
+        return new Response(JSON.stringify({ ok: true }), { headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
+      }
       // 휴대폰 알림은 api/ 파일이 아니라 Worker 안에서 처리한다(worker/notify.ts 머리말)
       if (url.pathname === '/api/notify' || url.pathname === '/api/notify/') {
         const edge = typeof caches !== 'undefined' ? caches.default : undefined;

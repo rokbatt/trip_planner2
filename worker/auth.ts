@@ -19,7 +19,7 @@ export interface AuthEnv {
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 /** 로그인 없이 들어올 수 있는 주소 — 각자 비밀값이나 자체 확인으로 지킨다 */
-export const AUTH_EXEMPT = new Set(['/api/cleanup-search-cache', '/api/backfill-photos', '/api/notify']);
+export const AUTH_EXEMPT = new Set(['/api/cleanup-search-cache', '/api/backfill-photos', '/api/notify', '/api/health']);
 
 const OK_TTL_SEC = 300;
 

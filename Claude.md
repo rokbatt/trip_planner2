@@ -1526,8 +1526,11 @@ AI 없이 정적 데이터에서 비교한다. 띄어쓰기를 지우고 비교�
   속성에는 따옴표까지 이스케이프하고, 링크·이미지 주소는 `http(s)`만 허용한다.
 
 ### 오류 감지
-서버 오류는 Cloudflare Observability(로그·Metrics)에서 볼 수 있다. 다만 누가 봐야 안다 — 가벼운 순서로 더한다:
-Google 예산 알림·API별 할당량 상한 → 클라이언트 오류를 Supabase 테이블에 기록 → 외부 업타임 모니터.
+- 서버 오류: Cloudflare Observability(로그·Metrics)
+- 화면 오류: `utils/errorReport.ts`가 처리 안 된 오류를 `client_errors`(supabase/client_errors.sql)에 남긴다. 탭당 같은 오류 1번·최대 10번,
+  이메일·토큰·주소의 ? 뒤는 가린다, 30일 뒤 매일 정리 작업이 지운다. 보는 SQL은 그 파일 아래 주석에 있다
+- 다운 감시: Worker `/api/health`(로그인 없이 `{ok:true}`)를 외부 업타임 서비스가 몇 분마다 부른다(설정은 사용자)
+- Google 예산 알림·API별 할당량 상한은 사용자가 콘솔에 둔다
 
 ### 상업화 전 필수
 - 호스팅은 Cloudflare Workers 무료 플랜(상업 이용 가능, 사용자 확인). 요청당 CPU 10ms를 넘는 작업이 생기면 월 $5 유료 플랜을
