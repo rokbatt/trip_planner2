@@ -31,7 +31,8 @@
 - [ ] 👤 Vercel 옛 주소 닫기 — `mongsil2.vercel.app/api/*`는 로그인 확인이 없어요(5단계 정리를 앞당기는 것을 권장)
 - [ ] 👤 **Gemini 유료 등급 전환** — 무료 등급은 입력이 제품 개선에 쓰일 수 있고, 문서·여권 사진이 들어가요
 - [ ] 👤 **Google Cloud 예산 알림 + API별 하루 할당량 상한** — 방법은 앞서 안내함. 설정했는지 확인 필요
-- [ ] 🤖 **오류 감지** — 앱 오류를 Supabase 표에 기록(SQL 파일 제공) + 외부 업타임 모니터(무료) 연결 안내
+- [x] 🤖 **오류 감지(코드)** — 앱 오류를 `client_errors`에 기록(30일 보관, 개인정보 가림), 다운 감시용 `/api/health`(11-23)
+- [ ] 👤 `supabase/client_errors.sql` 실행 + 외부 업타임 감시(예: UptimeRobot 무료)에 `https://www.mongsil2.com/api/health` 등록
 - [ ] 🤖 초대 코드 강화 — 지금 6자리·만료 없음 → 재발급·만료(DB 변경이라 SQL은 사용자 실행)
 - [ ] 🤖 보안 헤더 — `public/_headers`에 CSP·클릭재킹 방지 등
 - [ ] 🤖 외부 호출 타임아웃, 의존성 취약점 점검(`npm audit`)

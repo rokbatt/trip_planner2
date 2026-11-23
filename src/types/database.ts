@@ -851,6 +851,31 @@ export interface Database {
         Relationships: [];
       };
 
+      /* 앱 오류 기록 — supabase/client_errors.sql (없으면 기록을 건너뛴다) */
+      client_errors: {
+        Row: {
+          id: number;
+          user_id: string | null;
+          message: string;
+          stack: string | null;
+          path: string | null;
+          app_version: string | null;
+          user_agent: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          user_id?: string | null;
+          message: string;
+          stack?: string | null;
+          path?: string | null;
+          app_version?: string | null;
+          user_agent?: string | null;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['client_errors']['Insert']>;
+        Relationships: [];
+      };
+
       /* 요금제 — supabase/user_plans.sql (없으면 모두 무료로 본다) */
       user_plans: {
         Row: {

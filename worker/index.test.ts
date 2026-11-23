@@ -47,3 +47,12 @@ describe('Worker scheduled (매일 정리 작업)', () => {
     log.mockRestore();
   });
 });
+
+describe('다운 감시 주소', () => {
+  it('/api/health는 로그인 없이 ok', async () => {
+    const e = { ASSETS: { fetch: vi.fn() }, SUPABASE_URL: 'https://db.example.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'svc' };
+    const res = await worker.fetch(new Request('https://x.dev/api/health'), e as any, { waitUntil: () => {} });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+  });
+});
