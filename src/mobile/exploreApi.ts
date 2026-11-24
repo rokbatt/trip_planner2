@@ -70,10 +70,20 @@ export interface ExploreDetail {
   weekdayHours: string[] | null;
 }
 
-const LIST_FIELDS = [
+/*
+ * 요금 등급(Google Places API New — 요청한 필드 중 가장 높은 등급으로 청구된다):
+ *   목록에 평점·영업시간·가격대가 필요해서 Enterprise 등급은 피할 수 없다.
+ *   `isReservable`(예약 가능)은 그보다 한 단계 비싼 Enterprise + Atmosphere 등급이라 **목록에서는 받지 않는다**
+ *   (2026-11 원가 점검). 상세를 열면 받고(DETAIL_FIELDS), "예약 받는 곳" 필터를 켰을 때만 목록에서도 받는다.
+ */
+export const LIST_FIELDS = [
   'id', 'displayName', 'location', 'types', 'primaryType', 'primaryTypeDisplayName', 'formattedAddress',
-  'rating', 'userRatingCount', 'priceLevel', 'regularOpeningHours', 'utcOffsetMinutes', 'photos', 'isReservable',
+  'rating', 'userRatingCount', 'priceLevel', 'regularOpeningHours', 'utcOffsetMinutes', 'photos',
 ];
+/** "예약 받는 곳" 필터를 켰을 때만 — 예약 여부까지(Enterprise + Atmosphere) */
+export const LIST_FIELDS_RESV = [...LIST_FIELDS, 'isReservable'];
+const listFields = (resv: boolean) => (resv ? LIST_FIELDS_RESV : LIST_FIELDS);
+const resvKey = (key: string, resv: boolean) => (resv ? key + ':resv' : key);
 const DETAIL_FIELDS = [
   'nationalPhoneNumber', 'internationalPhoneNumber', 'websiteURI', 'googleMapsURI', 'editorialSummary',
   'reviews', 'photos', 'regularOpeningHours', 'utcOffsetMinutes', 'isReservable',
@@ -191,15 +201,16 @@ function remember(key: string, raw: any[]): ExplorePlace[] {
 }
 
 /** 카테고리 주변 검색 (Nearby Search). 실패하면 예외 — 화면이 "못 불러왔어요"를 띄운다 */
-export function searchNearbyCat(key: string, cat: ExploreCat, center: { lat: number; lng: number }, radius: number): Promise<ExplorePlace[]> {
-  return searchNearbyTypes(key, catDef(cat).includedTypes, center, radius);
+export function searchNearbyCat(key: string, cat: ExploreCat, center: { lat: number; lng: number }, radius: number, resv = false): Promise<ExplorePlace[]> {
+  return searchNearbyTypes(key, catDef(cat).includedTypes, center, radius, resv);
 }
 
-async function searchNearbyTypes(key: string, includedTypes: string[], center: { lat: number; lng: number }, radius: number): Promise<ExplorePlace[]> {
+async function searchNearbyTypes(key: string, includedTypes: string[], center: { lat: number; lng: number }, radius: number, resv = false): Promise<ExplorePlace[]> {
+  key = resvKey(key, resv);
   const cached = fromCache(key);
   if (cached) return cached;
   const Place = await placeClass();
-  const { places } = await withFieldRetry<{ places: any[] }>(LIST_FIELDS, (fields) =>
+  const { places } = await withFieldRetry<{ places: any[] }>(listFields(resv), (fields) =>
     Place.searchNearby({
       fields,
       locationRestriction: { center, radius },
@@ -211,11 +222,12 @@ async function searchNearbyTypes(key: string, includedTypes: string[], center: {
 }
 
 /** 검색어 검색인데 **반경 밖은 받지 않는다**(locationRestriction 사각형) — 환전소처럼 타입이 없는 것용 */
-async function searchTextWithin(key: string, query: string, center: { lat: number; lng: number }, radius: number): Promise<ExplorePlace[]> {
+async function searchTextWithin(key: string, query: string, center: { lat: number; lng: number }, radius: number, resv = false): Promise<ExplorePlace[]> {
+  key = resvKey(key, resv);
   const cached = fromCache(key);
   if (cached) return cached;
   const Place = await placeClass();
-  const { places } = await withFieldRetry<{ places: any[] }>(LIST_FIELDS, (fields) =>
+  const { places } = await withFieldRetry<{ places: any[] }>(listFields(resv), (fields) =>
     Place.searchByText({
       textQuery: query,
       fields,
@@ -230,21 +242,22 @@ async function searchTextWithin(key: string, query: string, center: { lat: numbe
  * 일정 장소 근처 검색("이 근처 둘러보기"와, 거기서 넘어간 지도 탐색) — 반경 안만, 가까운 순.
  * 지도 탐색의 카테고리 검색과 캐시 키가 겹치지 않게 `near-` 접두어를 붙인다(타입 구성이 다르다).
  */
-export async function searchNearbyKind(key: NearbyKey, center: { lat: number; lng: number }, radius: number): Promise<ExplorePlace[]> {
+export async function searchNearbyKind(key: NearbyKey, center: { lat: number; lng: number }, radius: number, resv = false): Promise<ExplorePlace[]> {
   const def = nearbyDef(key);
   const cacheKey = searchKey(def.query ? 'text' : 'cat', 'near-' + key, center, radius);
   const list = def.query
-    ? (await searchTextWithin(cacheKey, def.query, center, radius)).map((p) => ({ ...p, cat: def.cat }))
-    : await searchNearbyTypes(cacheKey, def.types ?? [], center, radius);
+    ? (await searchTextWithin(cacheKey, def.query, center, radius, resv)).map((p) => ({ ...p, cat: def.cat }))
+    : await searchNearbyTypes(cacheKey, def.types ?? [], center, radius, resv);
   return withinRadius(list, center, radius);
 }
 
 /** 검색어 검색 (Text Search) — 지금 기준 위치 근처를 우선한다 */
-export async function searchText(key: string, query: string, center: { lat: number; lng: number }, radius: number): Promise<ExplorePlace[]> {
+export async function searchText(key: string, query: string, center: { lat: number; lng: number }, radius: number, resv = false): Promise<ExplorePlace[]> {
+  key = resvKey(key, resv);
   const cached = fromCache(key);
   if (cached) return cached;
   const Place = await placeClass();
-  const { places } = await withFieldRetry<{ places: any[] }>(LIST_FIELDS, (fields) =>
+  const { places } = await withFieldRetry<{ places: any[] }>(listFields(resv), (fields) =>
     Place.searchByText({
       textQuery: query,
       fields,
