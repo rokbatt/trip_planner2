@@ -7,7 +7,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../utils/googleMaps', () => ({ loadGoogleMapsScript: async () => undefined }));
 
-import { withFieldRetry, searchNearbyKind } from './exploreApi';
+import { withFieldRetry, searchNearbyKind, LIST_FIELDS, LIST_FIELDS_RESV } from './exploreApi';
 
 const KNOWN = new Set(['id', 'displayName', 'isReservable']);
 function fakeRequest(fields: string[]): Promise<string[]> {
@@ -75,4 +75,19 @@ describe('searchNearbyKind', () => {
     await searchNearbyKind('cafe', center, 1000);
     expect(calls.length).toBe(before + 1);
   });
+
+  it('목록은 예약 가능 여부(가장 비싼 등급)를 받지 않는다 — "예약 받는 곳" 필터를 켰을 때만, 따로 캐시', async () => {
+    expect(LIST_FIELDS).not.toContain('isReservable');
+    expect(LIST_FIELDS_RESV).toContain('isReservable');
+    const spot = { lat: center.lat + 0.01, lng: center.lng };
+    await searchNearbyKind('cafe', spot, 500);
+    expect(calls[calls.length - 1]?.req.fields).not.toContain('isReservable');
+    const before = calls.length;
+    await searchNearbyKind('cafe', spot, 500, true); // 같은 자리라도 필드가 달라 새로 부른다
+    expect(calls.length).toBe(before + 1);
+    expect(calls[calls.length - 1]?.req.fields).toContain('isReservable');
+    await searchNearbyKind('cafe', spot, 500, true);
+    expect(calls.length).toBe(before + 1); // 필터 켠 결과도 캐시
+  });
 });
+

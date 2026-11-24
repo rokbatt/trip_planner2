@@ -2403,9 +2403,9 @@ async function runExploreSearch(where?: { lat: number; lng: number }, label?: st
       spotInfo = r.info;
       spotSources = r.sources;
       exSort = 'distance';
-    } else if (exQuery) exResults = await searchText(searchKey('text', exQuery, center, radius), exQuery, center, radius);
-    else if (exNear) exResults = await searchNearbyKind(exNear, center, radius);
-    else exResults = await searchNearbyCat(searchKey('cat', exCat, center, radius), exCat, center, radius);
+    } else if (exQuery) exResults = await searchText(searchKey('text', exQuery, center, radius), exQuery, center, radius, exFilters.reservable);
+    else if (exNear) exResults = await searchNearbyKind(exNear, center, radius, exFilters.reservable);
+    else exResults = await searchNearbyCat(searchKey('cat', exCat, center, radius), exCat, center, radius, exFilters.reservable);
     // 일정 장소가 아닌 곳을 기준으로 찾았으면 "그 장소 기준"을 푼다(거리도 다시 내 위치에서)
     if (exAnchor && (exAnchor.lat !== center.lat || exAnchor.lng !== center.lng)) exAnchor = null;
     exSearchedAt = center;
@@ -3085,6 +3085,21 @@ function drawMapMarkers(pins: TlStop[]): void {
 
   if (pins.length > 1) (mapInstance as any).fitBounds(bounds, 48);
   else if (pins.length === 1) mapInstance.panTo(pins[0]);
+}
+
+/**
+ * 지도 탭을 잠시 떠날 때 — 지도 객체와 그 화면 요소는 그대로 두고(다시 붙이면 mountMap이 재사용), 표시 상태만 지운다.
+ * 지도 객체를 새로 만들 때마다 Google이 "지도 불러오기" 1건으로 청구하므로, 탭을 오갈 때마다 만들지 않는다.
+ * 화면 자체를 떠날 때(다른 여행·PC 화면)는 teardownMap으로 다 버린다.
+ */
+function parkMap(): void {
+  clearMarkers();
+  userDot?.setMap(null);
+  userDot = null;
+  markerSig = '';
+  exDetailId = null;
+  exDayPicker = false;
+  exDraft = null;
 }
 
 function teardownMap(): void {
@@ -4167,7 +4182,7 @@ function goHome(): void {
   const today = todayDayIndex();
   const moved = today >= 0 && today !== activeDayIndex;
   if (today >= 0) activeDayIndex = today;
-  teardownMap();
+  parkMap(); // 지도 객체는 남겨 둔다(다시 만들면 지도 불러오기가 또 청구된다)
   render();
   container?.querySelector('.mb-scroll')?.scrollTo({ top: 0 });
   if (moved) {
@@ -5263,7 +5278,8 @@ function onTabShown(): void {
     if (walletSub === 'docs') void ensureMoreCtx();
   }
   if (activeTab === 'crew') { void ensureExpenseCtx(); void ensureMoreCtx(); }
-  if (!mapMode()) teardownMap();
+  // 지도 탭을 떠나도 지도 자체는 남겨 둔다 — 돌아올 때 새로 만들면 지도 불러오기(Dynamic Maps)가 또 청구된다
+  if (!mapMode()) parkMap();
 }
 
 function bind(): void {
@@ -5718,10 +5734,12 @@ function bind(): void {
   root.querySelector('#mb-exf-apply')?.addEventListener('click', () => {
     if (!exDraft) return;
     const radiusChanged = exDraft.radius !== exFilters.radius;
+    // "예약 받는 곳"은 목록에서 평소 받지 않는 정보라(요금 등급이 높다, exploreApi.ts) 켤 때 한 번 새로 찾는다
+    const resvTurnedOn = exDraft.reservable && !exFilters.reservable;
     exFilters = exDraft;
     exDraft = null;
     // 반경은 검색 조건이라 새로 찾는다. 나머지는 받은 결과 안에서 거르기만 한다(호출 없음)
-    if (radiusChanged && exSearchedAt) void runExploreSearch(exSearchedAt, exCenterLabel);
+    if ((radiusChanged || resvTurnedOn) && exSearchedAt && !(exPhoto && !exQuery)) void runExploreSearch(exSearchedAt, exCenterLabel);
     else { markerSig = ''; render(); }
   });
 

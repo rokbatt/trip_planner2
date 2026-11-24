@@ -1517,7 +1517,8 @@ AI 없이 정적 데이터에서 비교한다. 띄어쓰기를 지우고 비교�
 
 ### 비용
 - 비싼 호출: Gemini 검색 그라운딩, Places 검색·주변 검색·상세의 **Enterprise 필드**(평점·사진·영업시간·예약 가능), 사진.
-  필드 마스크로 등급을 관리하고, 목록 단계에서는 필수 필드만 받는다.
+  필드 마스크로 등급을 관리하고, 목록 단계에서는 필수 필드만 받는다. 예: 주변 탐색 목록은 `isReservable`(Enterprise + Atmosphere)을 받지 않는다(`exploreApi.ts`).
+  지도 객체는 만들 때마다 "지도 불러오기"로 청구되므로 탭을 오갈 때 새로 만들지 않는다(휴대폰 `parkMap`).
 - 무료 한도는 SKU별 월 단위다. 숫자를 코드·문서에 박지 않고 공식 가격표로 확인한다.
 - Cloud Console에 **예산 알림과 API별 일일 할당량 상한**을 둔다.
 - 운영 DB에 반드시 있어야 하는 캐시 테이블: `ai_plan_cache` · `hotel_review_summary_cache` · `hotel_infra_cache` · `hotel_score_cache` ·
