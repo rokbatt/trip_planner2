@@ -1457,6 +1457,29 @@ async function userPlan(sb: SupabaseLike, user: { id: string; email?: string | n
   return planFrom((roleRes as any)?.data?.role ?? null, planRes.error ? null : (planRes.data as any));
 }
 
+/**
+ * PRO 전용 기능(웹 검색·인생샷·영수증 AI)을 썼다는 기록 — 환불 기준 "사용"의 근거(docs/PAYMENT_DESIGN.md 0장·8장).
+ * api_usage에 kind 'pro'로 하루 횟수만 남긴다(상한 없음, 7일 보관 = 환불 기간). 기록 실패는 기능을 막지 않는다.
+ */
+export const PRO_USE_KIND = 'pro';
+async function recordProUse(sb: SupabaseLike, userId: string): Promise<void> {
+  try {
+    await (sb as any).rpc('spend_api_quota', { p_user: userId, p_kind: PRO_USE_KIND, p_limit: 1_000_000 });
+  } catch {
+    // 표·함수가 없어도 기능은 그대로
+  }
+}
+
+/** 이용권의 PRO 웹 검색 남은 수에서 1을 뺀다(supabase/payments.sql spend_web_left). 0이면 false. 함수가 없거나 오류면 막지 않는다 */
+async function spendWebLeft(sb: SupabaseLike, userId: string): Promise<boolean> {
+  try {
+    const { data, error } = await (sb as any).rpc('spend_web_left', { p_user: userId });
+    return error ? true : data !== false;
+  } catch {
+    return true;
+  }
+}
+
 /** 화면이 PRO 표시(잠금·배지)를 정하려고 묻는다. 실제 허용 여부는 기능마다 서버가 다시 확인한다 */
 async function handleMyPlan(req: VercelRequest, res: VercelResponse) {
   const supabase = makeSupabase();
@@ -1470,11 +1493,21 @@ async function handleMyPlan(req: VercelRequest, res: VercelResponse) {
     res.status(200).json({ plan: 'free' });
     return;
   }
-  res.status(200).json({ plan: await userPlan(supabase, data.user) });
+  const plan = await userPlan(supabase, data.user);
+  if (plan !== 'pro') {
+    res.status(200).json({ plan });
+    return;
+  }
+  // 이용권 정보(만료일·남은 웹 검색) — 관리자·지인 PRO는 줄이 없을 수 있다(그땐 둘 다 null = 제한 없음)
+  const { data: row, error: rowError } = await supabase.from('user_plans').select('expires_at, web_left').eq('user_id', data.user.id).maybeSingle();
+  const r = rowError ? null : (row as { expires_at?: string | null; web_left?: number | null } | null);
+  res.status(200).json({ plan, expiresAt: r?.expires_at ?? null, webLeft: typeof r?.web_left === 'number' ? r.web_left : null });
 }
 
 /** PRO 웹 검색 질문의 하루 상한 — 검색 1회마다 비용이 나서 일반 AI 상한(60)과 따로 센다 */
 export const WEB_QA_DAILY_LIMIT = 20;
+/** 이용권 하나에 들어 있는 웹 검색 수 — 안내 문구용(실제 값은 src/pay/products.ts와 DB가 가진다) */
+export const WEB_PER_PASS = 100;
 
 /** 웹 검색 답변 형식: ###ANSWER### 본문 / ###USED### 줄마다 "- 자료 제목" */
 export function parseWebAnswer(text: string): { answer: string; usedTitles: string[] } {
@@ -1621,6 +1654,7 @@ async function handleDocQAWeb(
     res.status(403).json({ error: '웹 검색 답변은 PRO 기능이에요.', code: 'pro_required' });
     return;
   }
+  await recordProUse(supabase, user.id);
 
   const day = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10); // 한국 날짜
   const cacheKey = 'doc-qa-web:' + day + ':' + stableHash(question + '||' + sources.map((s) => s.title + ':' + s.digest).join('||'));
@@ -1639,6 +1673,11 @@ async function handleDocQAWeb(
   const { data: allowed, error: quotaError } = await supabase.rpc('spend_api_quota', { p_user: user.id, p_kind: 'web', p_limit: WEB_QA_DAILY_LIMIT });
   if (!quotaError && allowed === false) {
     res.status(429).json({ error: '오늘 웹 검색 질문을 다 썼어요(하루 ' + WEB_QA_DAILY_LIMIT + '번). 내일 다시 이용해 주세요.', quotaExceeded: true });
+    return;
+  }
+  // 이용권당 총 100번(2026-11-24) — 하루 상한을 먼저 본다(하루 상한에 걸리면 이용권 횟수를 쓰지 않게)
+  if (!(await spendWebLeft(supabase, user.id))) {
+    res.status(429).json({ error: '이용권의 웹 검색을 모두 썼어요. 이용권을 다시 구매하면 ' + WEB_PER_PASS + '번이 더해져요.', code: 'web_left_exhausted', quotaExceeded: true });
     return;
   }
 
@@ -1811,6 +1850,7 @@ async function handleReceiptRead(req: VercelRequest, res: VercelResponse) {
     res.status(403).json({ error: '영수증·결제 캡처로 추가는 PRO 기능이에요. 직접 입력해 주세요.', code: 'pro_required', disabled: true });
     return;
   }
+  await recordProUse(supabase, authData.user.id);
 
   const geminiKey = process.env.GEMINI_API_KEY;
   if (!geminiKey) {
@@ -1905,6 +1945,7 @@ async function handlePhotoSpots(req: VercelRequest, res: VercelResponse) {
     res.status(403).json({ error: '인생샷은 PRO 기능이에요.', code: 'pro_required' });
     return;
   }
+  await recordProUse(supabase, authData.user.id);
 
   // 약 1km 단위로 묶어 같은 동네·같은 키워드는 다시 검색하지 않는다
   const cacheKey = 'photo-spots:' + lat.toFixed(2) + ',' + lng.toFixed(2) + ':' + keyword.toLowerCase();

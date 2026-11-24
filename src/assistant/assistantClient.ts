@@ -118,12 +118,30 @@ export async function requestAssistantAnswer(
 
 export type Plan = 'free' | 'pro';
 
-/** 내 요금제 — 화면 표시용(잠금·배지). 실제 허용은 서버가 기능마다 다시 확인한다. 실패하면 무료로 본다 */
-export async function fetchMyPlan(): Promise<Plan> {
+export interface PlanInfo {
+  plan: Plan;
+  /** 이용권 만료 시각 — null이면 만료 없음(관리자가 넣은 PRO) 또는 무료 */
+  expiresAt: string | null;
+  /** 이용권의 PRO 웹 검색 남은 수 — null이면 제한 없음 또는 무료 */
+  webLeft: number | null;
+}
+
+/** 내 요금제와 이용권 정보 — 화면 표시용. 실제 허용은 서버가 기능마다 다시 확인한다. 실패하면 무료로 본다 */
+export async function fetchMyPlanInfo(): Promise<PlanInfo> {
   try {
-    const json = await postAi<{ plan?: string }>({ kind: 'my-plan' });
-    return json.plan === 'pro' ? 'pro' : 'free';
+    const json = await postAi<{ plan?: string; expiresAt?: unknown; webLeft?: unknown }>({ kind: 'my-plan' });
+    const pro = json.plan === 'pro';
+    return {
+      plan: pro ? 'pro' : 'free',
+      expiresAt: pro && typeof json.expiresAt === 'string' ? json.expiresAt : null,
+      webLeft: pro && typeof json.webLeft === 'number' && Number.isFinite(json.webLeft) ? json.webLeft : null,
+    };
   } catch {
-    return 'free';
+    return { plan: 'free', expiresAt: null, webLeft: null };
   }
+}
+
+/** 내 요금제 — 화면 표시용(잠금·배지) */
+export async function fetchMyPlan(): Promise<Plan> {
+  return (await fetchMyPlanInfo()).plan;
 }
