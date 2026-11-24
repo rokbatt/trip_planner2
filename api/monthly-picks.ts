@@ -50,6 +50,16 @@ const GATE_MARKERS: Record<(typeof GATE_KEYS)[number], string> = {
   숙소: '###숙소###',
 };
 
+/** 추천 한 줄 → 장소 이름만. 모델이 "**이름**: 설명"처럼 마크다운·설명을 붙이면 지도 검색이 실패한다.
+ *  `src/board/pickName.ts`의 cleanPickName과 같은 규칙(api 파일은 자립형이라 인라인) — 고치면 같이 고친다. */
+export function cleanPickName(raw: string): string {
+  let s = String(raw ?? '').normalize('NFC');
+  s = s.replace(/\*\*|__|`/g, '');
+  s = s.replace(/^\s*(?:[-*•·]|\d+[.)])\s*/, '');
+  s = s.split(/[:：]|\s[-–—]\s/)[0];
+  return s.replace(/\s+/g, ' ').trim().slice(0, 80);
+}
+
 /** "###MARKER###" 다음 줄부터 다른 마커가 나오기 전까지의 "- " 불릿만 뽑음 (최대 5개) */
 function extractBullets(text: string, marker: string, otherMarkers: string[]): string[] {
   const startIdx = text.indexOf(marker);
@@ -63,8 +73,8 @@ function extractBullets(text: string, marker: string, otherMarkers: string[]): s
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l.startsWith('-'))
-    .map((l) => l.replace(/^-+\s*/, '').trim())
-    .filter(Boolean)
+    .map((l) => cleanPickName(l))
+    .filter((name, i, arr) => name && arr.indexOf(name) === i)
     .slice(0, 5);
 }
 
@@ -184,6 +194,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     '⚠️ 반드시 검색해서 찾은 구체적인 장소명(가게 상호명/관광지 고유명사)만 적어.',
     '⚠️ "마사지", "루프탑 바", "카페"처럼 업종/카테고리 이름만 쓰면 안 됨 — 예를 들어',
     '   "루프탑 바"가 아니라 검색으로 찾은 실제 상호명(예: "옥토버 루프탑 바")을 적어.',
+    '',
+    '⚠️ 모든 항목은 Google 지도에서 검색해 찾을 수 있는 한 곳이어야 해. 축제·행사·지역 이름은 넣지 마',
+    '   (하고싶어는 체험 업체·투어 출발 장소·공연장처럼 위치가 있는 곳으로).',
+    '⚠️ 각 줄에는 장소명만 써. 설명·굵게 표시(**)·번호를 붙이지 마. 한국어 이름 옆에 현지·영문 이름을 괄호로 붙여도 돼.',
     '',
     '카테고리별로 정확히 5개씩. 다른 설명 없이 정확히 이 형식으로만 응답해:',
     GATE_MARKERS.가고싶어,
