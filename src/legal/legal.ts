@@ -16,6 +16,10 @@
  */
 
 import { navigate } from '../router';
+import { PAID_TERMS_LIVE } from './versions';
+import { BUSINESS_INFO, businessFooterHtml, type BusinessInfo } from './business';
+import { PRODUCTS } from '../pay/products';
+import { escapeHtml } from '../utils/html';
 import './legal.css';
 
 export type LegalDoc = 'terms' | 'privacy';
@@ -24,6 +28,23 @@ export type LegalDoc = 'terms' | 'privacy';
 function blank(label: string): string {
   return `<span class="lg-blank">[${label}]</span>`;
 }
+
+/** 사업자 정보 한 칸 — 값이 있으면 그 값, 없으면 눈에 띄는 빈칸(src/legal/business.ts) */
+function biz(key: keyof BusinessInfo, label: string): string {
+  const v = BUSINESS_INFO[key].trim();
+  return v ? escapeHtml(v) : blank(label);
+}
+
+/**
+ * 유료 서비스(PRO 이용권 결제) 조항 — VITE_PAID_TERMS=on(versions.ts)이면 본문, 아니면 "시행 예정"으로 묶어 보여 준다.
+ * 결제를 열기 전에도 무엇이 바뀌는지 미리 읽을 수 있게 하되, 아직 시행 중인 것처럼 보이지 않게 한다.
+ */
+function paid(html: string): string {
+  if (PAID_TERMS_LIVE) return html;
+  return '<div class="lg-pending"><strong>유료 서비스(PRO 이용권 결제)를 시작할 때 적용됩니다.</strong>' + html + '</div>';
+}
+
+const PRO = PRODUCTS.pro_30d;
 
 /** 이 서비스가 외부로 데이터를 보내는 곳 — api/*.ts와 src/supabase.ts 기준 */
 const SUBPROCESSORS: Array<[string, string, string]> = [
@@ -65,6 +86,7 @@ function shell(title: string, updated: string, body: string): HTMLElement {
 
       <footer class="lg-foot">
         <button type="button" class="lg-backhome" id="lg-back">← 홈으로</button>
+        ${businessFooterHtml()}
       </footer>
     </main>
   `;
@@ -190,8 +212,50 @@ function termsBody(): string {
       </ol>
     </section>
 
+    ${paid(`
     <section class="lg-sec">
-      <h2>제12조 (책임의 제한)</h2>
+      <h2>제12조 (유료 서비스 — PRO 이용권)</h2>
+      <ol class="lg-ol">
+        <li>회사는 일부 기능을 유료 이용권(이하 “PRO 이용권”)으로 제공합니다. 이용권의 가격·이용 기간·포함 기능은 서비스의 요금제 화면에 표시하며,
+        현재 이용권은 ${PRO.name}(${PRO.amount.toLocaleString('ko-KR')}원, 부가세 포함)입니다.</li>
+        <li>PRO 이용권으로 이용할 수 있는 기능은 AI 어시스턴트 웹 검색(하루 20회, 이용권당 ${PRO.web}회), 인생샷(근처 사진 명소 찾기),
+        영수증·결제 캡처로 지출 추가, 하루 AI 이용 횟수 확대(60회에서 150회)입니다.</li>
+        <li>이용권은 결제가 확인된 즉시 효력이 생기며 ${PRO.days}일 동안 유효합니다. <strong>자동으로 갱신되거나 다시 결제되지 않습니다.</strong>
+        이용 중에 다시 구매하면 남은 기간에 ${PRO.days}일, 웹 검색에 ${PRO.web}회가 더해집니다.</li>
+        <li>이용권은 결제한 회원 본인에게만 적용되며, 다른 회원에게 양도하거나 같은 여행의 멤버와 나누어 쓸 수 없습니다.</li>
+        <li>회사가 운영상·기술상 필요로 PRO 기능의 내용을 바꾸는 경우 미리 공지하며, 이용자에게 불리하게 바뀌는 경우
+        남은 이용 기간에 해당하는 금액을 환불하는 등 적절한 조치를 합니다.</li>
+      </ol>
+    </section>
+
+    <section class="lg-sec">
+      <h2>제13조 (결제)</h2>
+      <ol class="lg-ol">
+        <li>결제는 회사가 정한 결제대행사를 통해 신용·체크카드, 토스페이, 카카오페이로 할 수 있습니다.</li>
+        <li>회사는 이용자의 카드 번호 등 결제 수단 정보를 받거나 저장하지 않습니다.</li>
+        <li>결제 금액이나 결제 상태가 정상적으로 확인되지 않은 경우 이용권이 지급되지 않을 수 있으며, 이 경우 회사는 결제를 취소합니다.</li>
+      </ol>
+    </section>
+
+    <section class="lg-sec">
+      <h2>제14조 (청약철회 및 환불)</h2>
+      <ol class="lg-ol">
+        <li>이용자는 결제한 날부터 7일 이내에 청약을 철회할 수 있습니다. 결제 후 PRO 전용 기능(웹 검색, 인생샷, 영수증 AI 입력)을
+        사용하지 않은 경우 전액 환불합니다.</li>
+        <li>PRO 전용 기능을 사용한 뒤에는 디지털 콘텐츠의 특성상 「전자상거래 등에서의 소비자보호에 관한 법률」 제17조 제2항에 따라 청약철회가 제한됩니다.
+        회사는 이 내용을 결제 전에 표시하고 이용자의 동의를 받습니다.</li>
+        <li>중복 결제, 또는 회사의 귀책사유로 PRO 기능을 이용할 수 없었던 경우에는 사용 여부와 관계없이 환불합니다.</li>
+        <li>미성년자가 법정대리인의 동의 없이 결제한 경우 본인 또는 법정대리인이 결제를 취소할 수 있습니다. 다만 관계 법령에서 정한 예외에 해당하는 경우는 제외합니다.</li>
+        <li>환불은 <a href="mailto:help@mongsil2.com">help@mongsil2.com</a>으로 요청할 수 있으며, 회사는 요청을 확인한 날부터 3영업일 이내에 결제 취소를 진행합니다.
+        실제 환불 시점은 카드사·결제 수단에 따라 다를 수 있습니다.</li>
+        <li>환불하면 해당 이용권으로 늘어난 이용 기간과 웹 검색 횟수가 회수됩니다.</li>
+        <li>회원 탈퇴 시 남은 이용권은 소멸하며, 탈퇴만을 이유로 환불하지 않습니다. 환불 기준에 해당하면 탈퇴 전에 요청해 주세요.</li>
+      </ol>
+    </section>
+    `)}
+
+    <section class="lg-sec">
+      <h2>제15조 (책임의 제한)</h2>
       <ol class="lg-ol">
         <li>회사는 천재지변, 이용자의 귀책사유, 외부 서비스(지도·인공지능·환율 등)의 장애로 발생한 손해에 대해 책임지지 않습니다.</li>
         <li>회사는 이용자가 서비스를 통해 얻은 정보를 신뢰하여 내린 결정의 결과에 대해 책임지지 않습니다.</li>
@@ -201,16 +265,17 @@ function termsBody(): string {
     </section>
 
     <section class="lg-sec">
-      <h2>제13조 (분쟁의 해결)</h2>
+      <h2>제16조 (분쟁의 해결)</h2>
       <p>이 약관은 대한민국 법률에 따르며, 서비스 이용과 관련한 분쟁은 민사소송법에 따른 관할 법원에 제기합니다.</p>
     </section>
 
     <section class="lg-sec lg-contact">
       <h2>문의</h2>
-      <p>${blank('회사명')} · ${blank('대표자')}<br>
-      사업자등록번호 ${blank('000-00-00000')}<br>
-      주소 ${blank('주소')}<br>
-      이메일 <a href="mailto:help@mongsil2.com">help@mongsil2.com</a></p>
+      <p>${biz('name', '회사명')} · 대표 ${biz('ceo', '대표자')}<br>
+      사업자등록번호 ${biz('regNo', '000-00-00000')} · 통신판매업 신고 ${biz('mailOrderNo', '신고번호')}<br>
+      주소 ${biz('address', '주소')}<br>
+      전화 ${biz('phone', '전화번호')} · 이메일 <a href="mailto:help@mongsil2.com">help@mongsil2.com</a><br>
+      호스팅 ${biz('hosting', '호스팅 사업자')}</p>
     </section>
   `;
 }
@@ -224,7 +289,7 @@ function privacyBody(): string {
 
   return `
     <section class="lg-sec">
-      <p class="lg-lede">${blank('회사명')}(이하 “회사”)은 몽실이 서비스를 제공하면서 아래와 같이
+      <p class="lg-lede">${biz('name', '회사명')}(이하 “회사”)은 몽실이 서비스를 제공하면서 아래와 같이
       개인정보를 처리합니다. 이 방침은 <strong>서비스가 실제로 하는 일을 그대로 적은 것</strong>이며,
       기능이 바뀌면 함께 고쳐 공지합니다.</p>
     </section>
@@ -287,12 +352,21 @@ function privacyBody(): string {
       로그아웃하거나 탈퇴하면 이 기기에 저장된 사본은 지워집니다. 공용 기기에서는 사용 후 꼭 로그아웃해 주세요.</p>
       <p>AI 어시스턴트가 문서에서 뽑은 요약은 다시 읽지 않도록 <strong>열어 둔 탭 안에만</strong> 잠시 저장하며, 탭을 닫거나 로그아웃하면 지워집니다.</p>
 
+      ${paid(`
+      <h3>바. PRO 이용권을 결제할 때</h3>
+      <ul class="lg-ul">
+        <li>결제 번호, 상품, 금액, 결제 수단 종류(카드·토스페이·카카오페이의 구분), 결제·취소 일시, 결제한 계정의 이메일</li>
+        <li>PRO 전용 기능(웹 검색·인생샷·영수증 AI 입력)을 사용한 하루 횟수 — 환불 기준 확인용</li>
+        <li>카드 번호 등 결제 수단 정보는 결제대행사가 처리하며 회사는 받거나 저장하지 않습니다.</li>
+      </ul>
+      `)}
+
       <div class="lg-callout">
         <strong>수집하지 않는 것</strong>
         <ul class="lg-ul">
           <li><strong>기기의 위치 좌표를 서버에 저장하지 않습니다.</strong> 위치는 이용자가 권한을 허용했을 때만, 위 다항의 용도로 기기 안에서 쓰입니다.</li>
           <li>주민등록번호 등 고유식별정보를 별도로 수집하지 않습니다.</li>
-          <li>결제 수단 정보(카드번호 등)를 수집하지 않습니다. 지출 기능은 금액을 적어 두는 가계부이며 실제 결제나 송금을 하지 않습니다.</li>
+          <li>결제 수단 정보(카드번호 등)를 수집하지 않습니다. PRO 이용권 결제의 카드 정보는 결제대행사가 처리합니다. 지출 기능은 금액을 적어 두는 가계부이며 실제 결제나 송금을 하지 않습니다.</li>
           <li>광고·분석 목적의 추적 도구를 사용하지 않습니다.</li>
         </ul>
       </div>
@@ -315,7 +389,9 @@ function privacyBody(): string {
         <li>이동 시간 계산, 장소 검색, 숙소 요약 등 서비스 기능 제공</li>
         <li>지출 집계 및 정산 계산</li>
         <li>문의 응대, 부정 이용 확인, 서비스 오류 파악</li>
+        ${PAID_TERMS_LIVE ? '<li>PRO 이용권 결제·환불 처리, 이용 기간·이용 횟수 관리, 관계 법령에 따른 거래 기록 보존</li>' : ''}
       </ol>
+      ${PAID_TERMS_LIVE ? '' : paid('<ul class="lg-ul"><li>PRO 이용권 결제·환불 처리, 이용 기간·이용 횟수 관리, 관계 법령에 따른 거래 기록 보존</li></ul>')}
     </section>
 
     <section class="lg-sec">
@@ -333,6 +409,18 @@ function privacyBody(): string {
           <tr><td>접속 기록 등 운영 로그</td><td>${blank('보관 기간 — 위탁사 설정 확인 후 기재')}</td></tr>
         </tbody>
       </table>
+      ${paid(`
+      <table class="lg-table">
+        <thead><tr><th>구분 (PRO 이용권 결제)</th><th>보유 기간</th></tr></thead>
+        <tbody>
+          <tr><td>대금 결제 기록(결제 번호·금액·결제 수단 종류·결제 일시·결제자 이메일)</td><td>5년 — 회원 탈퇴 후에도 보관</td></tr>
+          <tr><td>청약철회·환불 기록</td><td>5년</td></tr>
+          <tr><td>소비자 불만 또는 분쟁 처리 기록</td><td>3년</td></tr>
+          <tr><td>PRO 전용 기능 하루 사용 횟수</td><td>7일</td></tr>
+        </tbody>
+      </table>
+      <p class="lg-note">결제 관련 기록은 「전자상거래 등에서의 소비자보호에 관한 법률」에 따라 위 기간 동안 보존합니다.</p>
+      `)}
       <p class="lg-note">법령에서 별도의 보존 기간을 정한 경우에는 그 기간을 따릅니다.</p>
     </section>
 
@@ -347,6 +435,7 @@ function privacyBody(): string {
             <li>내가 보낸 <strong>채팅 메시지, 장소 댓글, 개인 문서 보관함의 문서</strong>는 삭제됩니다.</li>
             <li>내가 담은 장소·메모·링크·공유 문서·지출 기록은 여행에 남지만 <strong>작성자 이름과 사진은 지워집니다</strong>(지출의 결제자는 “탈퇴한 멤버”로 표시).</li>
             <li>로그인 정보와 동의 기록은 삭제됩니다.</li>
+            ${PAID_TERMS_LIVE ? '<li>PRO 이용권 결제 기록은 관계 법령에 따라 5년간 보관한 뒤 파기합니다. 이때 계정과의 연결은 끊고 결제자 이메일만 남깁니다. 남은 이용권은 소멸합니다.</li>' : ''}
           </ul>
         </li>
         <li>이 기기에 저장된 오프라인 사본은 탈퇴(또는 로그아웃) 시 지워집니다.</li>
@@ -377,6 +466,16 @@ function privacyBody(): string {
         <thead><tr><th>위탁받는 자</th><th>위탁 업무</th><th>이전되는 국가</th></tr></thead>
         <tbody>${sub}</tbody>
       </table>
+      ${paid(`
+      <p>PRO 이용권 결제를 위해 아래 사업자에게 결제 처리를 위탁합니다.</p>
+      <table class="lg-table">
+        <thead><tr><th>위탁받는 자</th><th>위탁 업무</th><th>처리 국가</th></tr></thead>
+        <tbody>
+          <tr><td>포트원(PortOne) ${blank('법인명 — 계약서 확인 후 기재')}</td><td>결제창 제공, 결제 승인 결과 전달, 결제 취소 처리</td><td>${blank('확인 후 기재')}</td></tr>
+          <tr><td>${blank('결제대행사(PG) — 계약 후 기재')}</td><td>신용·체크카드, 토스페이, 카카오페이 결제 승인·취소, 매출전표 발행</td><td>${blank('확인 후 기재')}</td></tr>
+        </tbody>
+      </table>
+      `)}
       <ul class="lg-ul">
         <li><strong>이전 시기 및 방법</strong> — 서비스 이용 시점에 암호화된 통신으로 전송</li>
         <li><strong>이전 항목</strong> — 위 1항의 수집 항목 중 해당 기능에 필요한 범위</li>
@@ -479,3 +578,7 @@ export function renderLegal(doc: LegalDoc): HTMLElement {
     ? shell('이용약관', EFFECTIVE_DATE, termsBody())
     : shell('개인정보처리방침', EFFECTIVE_DATE, privacyBody());
 }
+
+/** 본문 HTML만(시험용 — 화면 없이 조항을 확인한다) */
+export const termsHtml = (): string => termsBody();
+export const privacyHtml = (): string => privacyBody();

@@ -12,6 +12,7 @@ import '../account/settings.css';
 import { navigate } from '../router';
 import { escapeHtml as esc } from '../utils/html';
 import { PRODUCTS } from './products';
+import { businessFooterHtml } from '../legal/business';
 import { fetchMyPlanInfo, type PlanInfo } from '../assistant/assistantClient';
 import {
   PAY_METHODS,
@@ -226,6 +227,7 @@ export function renderProPage(): HTMLElement {
         <div id="pro-history"><p class="st-note">불러오는 중…</p></div>
         <p class="st-note">카드 영수증은 결제한 카드사·간편결제 앱에서 확인할 수 있어요. 탈퇴하면 남은 이용권은 사라지고 환불되지 않으니, 환불 기준에 해당하면 탈퇴 전에 요청해 주세요.</p>
       </section>
+      ${businessFooterHtml()}
     </main>`;
 
   el.querySelector('#pro-back')!.addEventListener('click', () => {
