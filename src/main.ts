@@ -20,6 +20,7 @@ import { installErrorReporter } from './utils/errorReport';
 import { renderJoinPage, consumePendingInvite } from './trips/trip-join';
 import { renderWorkspace, findExistingWorkspace, switchGate, defaultGateFor } from './workspace/workspace';
 import { isKnownGate } from './workspace/gates';
+import { capturePayReturn } from './pay/payClient';
 
 // 새 배포 직후 옛 탭이 사라진 화면 조각을 찾다 실패하면 한 번 새로고침한다(utils/chunkReload.ts)
 installChunkReloadGuard();
@@ -82,6 +83,13 @@ addRoute('settings', async () => {
   const app = document.getElementById('app')!;
   const { renderSettings } = await import('./account/settings');
   app.replaceChildren(renderSettings());
+});
+
+// 요금제 · PRO 이용권 — 로그인해야 열린다. 휴대폰 결제창은 /pay/done으로 돌아오고 아래 capturePayReturn이 #pro로 바꾼다
+addRoute('pro', async () => {
+  const app = document.getElementById('app')!;
+  const { renderProPage } = await import('./pay/pro');
+  app.replaceChildren(renderProPage());
 });
 
 // 약관 · 개인정보처리방침
@@ -209,6 +217,9 @@ window.addEventListener('hashchange', () => {
 window.addEventListener('popstate', () => {
   if (pathnameChangedSinceRender() && originalHandleRoute()) rerender();
 });
+
+// 결제창에서 돌아온 주소(/pay/done?paymentId=…)는 라우터가 읽기 전에 #pro로 바꾼다(src/pay/payClient.ts)
+capturePayReturn();
 
 if (originalHandleRoute()) {
   startRouter();

@@ -1364,6 +1364,19 @@
 }
 .mb-near-chip svg { width: 15px; height: 15px; flex: none; }
 .mb-near-chip.active { background: var(--mb-sky); border-color: transparent; color: var(--mb-on-sky); }
+/* 잠긴 PRO 기능 안내 안의 "PRO 알아보기" → 요금제 화면 */
+.mb-pro-go {
+  margin-top: 12px;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--mb-line);
+  background: var(--mb-surface);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mb-ink);
+}
 /* PRO 기능 표시(인생샷) — 칩 안의 작은 글자 배지 */
 .mb-pro-tag {
   flex: none;

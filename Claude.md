@@ -1653,7 +1653,10 @@ supabase/
   legal/legal.ts, legal.css          ← 이용약관·개인정보처리방침 (#terms, #privacy). 코드가 실제로 하는 일을 적은 문서 (5-8)
   legal/versions.ts                  ← 약관·방침 버전 + 동의 항목. 내용이 달라지면 여기 버전을 올려 전원 재동의
   account/consent.ts, consentStore.ts ← 가입 동의 창 + 동의 기록(기기·서버)
-  account/settings.ts                ← #settings — 계정 정보, 로그아웃, 회원 탈퇴 창
+  account/settings.ts                ← #settings — 계정 정보, 요금제 바로가기, 로그아웃, 회원 탈퇴 창
+  pay/pro.ts, pro.css                ← #pro — 요금제·이용권(내 요금제, 무료·PRO 비교, 결제 전 고지·동의, 결제 내역·환불 요청)
+  pay/payClient.ts                   ← 결제 시작(prepare → 포트원 SDK → complete), /pay/done 복귀 처리, 결제 설정(VITE_PORTONE_*)
+  pay/products.ts                    ← 상품·가격의 단일 기준(서버 worker/pay.ts도 이것을 쓴다)
   account/accountStore.ts            ← 탈퇴 미리보기 계산·실행, account/tripFiles.ts = 문서 파일(Storage) 삭제
   assistant/assistant.ts, assistant.css  ← Assistant 패널(Drawer) — 문서/메모 기반 질의응답 (5-6 참고)
   assistant/assistantClient.ts       ← `/api/ai`(doc-digest/doc-qa) 클라이언트 (5-6 참고)

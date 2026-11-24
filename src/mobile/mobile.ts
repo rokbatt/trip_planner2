@@ -2543,7 +2543,7 @@ function exploreHtml(): string {
     exResults.length ? '  <div class="mb-ex-sort">' + (['relevance', 'distance', 'rating'] as ExploreSort[]).map((k) => '<button class="mb-ex-sortbtn' + (exSort === k ? ' active' : '') + '" data-exsort="' + k + '">' + ({ relevance: '추천순', distance: '거리순', rating: '평점순' } as const)[k] + '</button>').join('') + '</div>' : '',
     '</div>',
     exPhoto && proLocked()
-      ? '<div class="mb-day-empty"><p class="mb-day-empty-title">인생샷은 PRO 기능이에요</p><p class="mb-day-empty-sub">AI가 웹에서 찾은 사진 명소를 Google 지도에서 확인해 보여 줘요.</p></div>'
+      ? '<div class="mb-day-empty"><p class="mb-day-empty-title">인생샷은 PRO 기능이에요</p><p class="mb-day-empty-sub">AI가 웹에서 찾은 사진 명소를 Google 지도에서 확인해 보여 줘요.</p><button type="button" class="mb-pro-go" data-progo="1">PRO 알아보기</button></div>'
       : '',
     exError && !(exPhoto && proLocked()) ? '<div class="mb-map-err">' + escapeHtml(exError) + '</div>' : '',
     !exLoading && exSearchedAt && !exError && !list.length && !(exPhoto && proLocked())
@@ -4101,9 +4101,10 @@ async function testPush(): Promise<void> {
 
 let menuOpen = false;
 
-type MenuKey = 'push' | 'weather' | 'test' | 'geo' | 'plan' | 'expense' | 'docs' | 'help' | 'account' | 'trips';
+type MenuKey = 'push' | 'weather' | 'test' | 'geo' | 'plan' | 'expense' | 'docs' | 'help' | 'account' | 'trips' | 'pro';
 
 function menuSheetHtml(): string {
+  ensureMyPlan();
   const support = currentPushSupport();
   if (support === 'ok') refreshPushState();
   const denied = support === 'ok' && typeof Notification !== 'undefined' && Notification.permission === 'denied';
@@ -4145,6 +4146,9 @@ function menuSheetHtml(): string {
       row('expense', IC.wallet, '지출 대시보드 · 예산', '차트 · 필터 · 예산 설정'),
       row('docs', IC.doc, '예약 서류 올리기', '항공권 · 바우처 · 여권 사본'),
     ]),
+    group('요금제', [
+      row('pro', IC.star, '요금제 · PRO', myPlan === 'pro' ? '웹 검색 · 인생샷 · 영수증 AI 이용 중' : '웹 검색 · 인생샷 · 영수증 AI', myPlan === 'pro' ? 'PRO' : myPlan === 'free' ? '무료' : ''),
+    ]),
     group('도움말 · 계정', [
       row('help', IC.help, '도움말 · 사용 안내'),
       row('account', IC.lock, '계정 · 개인정보 · 탈퇴', '로그아웃, 약관'),
@@ -4184,6 +4188,7 @@ function onMenu(key: MenuKey): void {
     case 'docs': menuOpen = false; gotoGate('docs'); return;
     case 'help': menuOpen = false; render(); openHelp(); return;
     case 'account': menuOpen = false; navigate('settings'); return;
+    case 'pro': menuOpen = false; navigate('pro'); return;
     case 'trips': menuOpen = false; navigate('trips'); return;
   }
 }
@@ -5480,10 +5485,9 @@ function bind(): void {
     btn.addEventListener('click', () => sayPhrase((btn as HTMLElement).dataset.say!));
   });
   // ── 지갑: 사진으로 추가 ──
-  root.querySelector('#mb-wal-photo-lock')?.addEventListener('click', () => {
-    walletNotice = '영수증·결제 캡처로 추가는 PRO 기능이에요. 사진 속 결제 내역을 AI가 읽어 지출 초안을 만들어 줘요.';
-    render();
-  });
+  // 잠긴 PRO 기능의 안내 → 요금제 화면(#pro)
+  root.querySelector('#mb-wal-photo-lock')?.addEventListener('click', () => navigate('pro'));
+  root.querySelectorAll('[data-progo]').forEach((b) => b.addEventListener('click', () => navigate('pro')));
   root.querySelector('#mb-wal-photo-in')?.addEventListener('change', (e) => {
     const input = e.target as HTMLInputElement;
     const files = Array.from(input.files ?? []);
