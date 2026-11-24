@@ -322,4 +322,22 @@ describe('history · refund', () => {
     s.rows.set(PID, readyRow({ status: 'paid', granted_at: new Date().toISOString() }));
     expect(await (await handlePay(req('refund', { paymentId: PID }), ENV, f)).json()).toMatchObject({ withinPolicy: false, proUseSincePaid: 3 });
   });
+
+  it('관리자 반영 다시 확인: 관리자만, ready 결제를 포트원에 다시 조회해 반영', async () => {
+    const a = fake({ portone: PAID, admin: false });
+    a.s.rows.set(PID, readyRow());
+    expect((await handlePay(req('recheck', { paymentId: PID }), ENV, a.f)).status).toBe(403);
+    const b = fake({ portone: PAID, admin: true });
+    b.s.rows.set(PID, readyRow());
+    expect(await (await handlePay(req('recheck', { paymentId: PID }), ENV, b.f)).json()).toMatchObject({ status: 'paid', buyerEmail: 'a@x.com' });
+    expect(b.s.rows.get(PID).status).toBe('paid');
+    expect(await (await handlePay(req('recheck', { paymentId: PID }), ENV, b.f)).json()).toMatchObject({ status: 'paid', already: true });
+  });
+  it('관리자 반영 다시 확인: 금액이 다르면 반영하지 않고 이유를 알려 준다', async () => {
+    const { f, s } = fake({ portone: { ...PAID, amount: { total: 1 } }, admin: true });
+    s.rows.set(PID, readyRow());
+    expect(await (await handlePay(req('recheck', { paymentId: PID }), ENV, f)).json()).toMatchObject({ status: 'mismatch', reason: 'amount' });
+    expect(s.rows.get(PID).status).toBe('ready');
+  });
 });
+

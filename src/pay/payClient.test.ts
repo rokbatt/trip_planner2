@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { payConfig, capturePayReturn, takePayReturn, payMethodName, PAY_RETURN_KEY } from './payClient';
-import { planStatusText, PURCHASE_NOTICE } from './pro';
+import { planStatusText, PURCHASE_NOTICE, reviewHtml } from './pro';
 import { PRODUCTS } from './products';
 
 describe('결제 설정', () => {
@@ -59,3 +59,14 @@ describe('표시 문구', () => {
     expect(all).toContain('7일 이내');
   });
 });
+
+describe('관리자 환불 판단 자료', () => {
+  it('기준 안이면 전액 환불 대상, 기준 밖이면 예외 판단으로 표시', () => {
+    const base = { status: 'review', paymentId: 'mongsil-x', buyerEmail: 'a@x.com', amount: 4900, paidAt: '2026-11-24T03:00:00Z', daysSincePaid: 2 };
+    expect(reviewHtml({ ...base, proUseSincePaid: 0, withinPolicy: true })).toContain('기준 안');
+    expect(reviewHtml({ ...base, proUseSincePaid: 3, withinPolicy: false })).toContain('기준 밖');
+    expect(reviewHtml({ status: 'cancelled', already: true })).toContain('이미 환불된');
+    expect(reviewHtml({ ...base, buyerEmail: '<img src=x onerror=alert(1)>', withinPolicy: true })).not.toContain('<img');
+  });
+});
+

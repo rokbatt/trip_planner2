@@ -124,17 +124,20 @@ export interface PlanInfo {
   expiresAt: string | null;
   /** 이용권의 PRO 웹 검색 남은 수 — null이면 제한 없음 또는 무료 */
   webLeft: number | null;
+  /** 관리자(app_roles admin) — 요금제 화면의 관리자 칸 표시용. 권한은 서버가 다시 확인한다 */
+  admin?: boolean;
 }
 
 /** 내 요금제와 이용권 정보 — 화면 표시용. 실제 허용은 서버가 기능마다 다시 확인한다. 실패하면 무료로 본다 */
 export async function fetchMyPlanInfo(): Promise<PlanInfo> {
   try {
-    const json = await postAi<{ plan?: string; expiresAt?: unknown; webLeft?: unknown }>({ kind: 'my-plan' });
+    const json = await postAi<{ plan?: string; expiresAt?: unknown; webLeft?: unknown; admin?: unknown }>({ kind: 'my-plan' });
     const pro = json.plan === 'pro';
     return {
       plan: pro ? 'pro' : 'free',
       expiresAt: pro && typeof json.expiresAt === 'string' ? json.expiresAt : null,
       webLeft: pro && typeof json.webLeft === 'number' && Number.isFinite(json.webLeft) ? json.webLeft : null,
+      ...(json.admin === true ? { admin: true } : {}),
     };
   } catch {
     return { plan: 'free', expiresAt: null, webLeft: null };

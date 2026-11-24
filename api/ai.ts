@@ -1494,14 +1494,18 @@ async function handleMyPlan(req: VercelRequest, res: VercelResponse) {
     return;
   }
   const plan = await userPlan(supabase, data.user);
+  // 관리자 표시(요금제 화면의 관리자 칸) — 실제 권한은 결제 서버가 다시 확인한다
+  const email = String(data.user.email ?? '').toLowerCase();
+  const { data: role } = email ? await supabase.from('app_roles').select('role').eq('email', email).maybeSingle() : { data: null };
+  const admin = (role as { role?: string } | null)?.role === 'admin';
   if (plan !== 'pro') {
-    res.status(200).json({ plan });
+    res.status(200).json({ plan, ...(admin ? { admin: true } : {}) });
     return;
   }
   // 이용권 정보(만료일·남은 웹 검색) — 관리자·지인 PRO는 줄이 없을 수 있다(그땐 둘 다 null = 제한 없음)
   const { data: row, error: rowError } = await supabase.from('user_plans').select('expires_at, web_left').eq('user_id', data.user.id).maybeSingle();
   const r = rowError ? null : (row as { expires_at?: string | null; web_left?: number | null } | null);
-  res.status(200).json({ plan, expiresAt: r?.expires_at ?? null, webLeft: typeof r?.web_left === 'number' ? r.web_left : null });
+  res.status(200).json({ plan, expiresAt: r?.expires_at ?? null, webLeft: typeof r?.web_left === 'number' ? r.web_left : null, ...(admin ? { admin: true } : {}) });
 }
 
 /** PRO 웹 검색 질문의 하루 상한 — 검색 1회마다 비용이 나서 일반 AI 상한(60)과 따로 센다 */
