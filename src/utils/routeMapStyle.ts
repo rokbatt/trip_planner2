@@ -14,7 +14,7 @@ import type { CatKey } from './travelEstimate';
 
 export const ROUTE_LINE_COLOR = '#1E7BFF';
 export const ROUTE_LINE_CASING = '#0A4FB8';
-// 8px에서 15% 줄임 — 굵은 선이 지도 글자를 너무 가린다는 피드백
+// 8px에서 15% 줄인 값(사용자 요청)
 export const ROUTE_LINE_WEIGHT = 6.8;
 /** 경로선 바깥 테두리 두께(선 양쪽 합) */
 export const ROUTE_CASING_EXTRA = 2.55;
