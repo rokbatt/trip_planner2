@@ -46,6 +46,7 @@ const LEFT_TO_SAFETY_NET: Record<string, string> = {
   push_subscriptions: '계정 삭제 시 on delete cascade 로 같이 지워진다(이름 사본 없음)',
   user_plans: '계정 삭제 시 on delete cascade 로 같이 지워진다(이름 사본 없음)',
   client_errors: '계정 삭제 시 on delete cascade 로 같이 지워진다(이름 사본 없음)',
+  payments: '법정 보관(대금 결제 기록 5년) — 지우지 않는다. on delete set null 로 user_id 만 비워지고 buyer_email 사본은 분쟁 대응용으로 남는다(방침에 고지, docs/PAYMENT_DESIGN.md 5장)',
 };
 
 describe('delete_my_account.sql 이 스키마를 따라가는가', () => {

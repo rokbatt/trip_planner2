@@ -884,6 +884,8 @@ export interface Database {
           source: string;
           expires_at: string | null;
           note: string | null;
+          /** PRO 웹 검색 남은 수 — null이면 제한 없음(관리자가 넣은 PRO). supabase/payments.sql */
+          web_left: number | null;
           updated_at: string;
         };
         Insert: {
@@ -892,9 +894,48 @@ export interface Database {
           source?: string;
           expires_at?: string | null;
           note?: string | null;
+          web_left?: number | null;
           updated_at?: string;
         };
         Update: Partial<Database['public']['Tables']['user_plans']['Insert']>;
+        Relationships: [];
+      };
+
+      /* 결제 기록 — supabase/payments.sql. 본인 읽기만, 쓰기는 서버만. 탈퇴해도 5년 보관(user_id만 비워짐) */
+      payments: {
+        Row: {
+          payment_id: string;
+          user_id: string | null;
+          buyer_email: string | null;
+          product: string;
+          amount: number;
+          currency: string;
+          status: 'ready' | 'paid' | 'cancelled' | 'failed';
+          pay_method: string | null;
+          pg_tx_id: string | null;
+          period_days: number;
+          web_count: number;
+          granted_at: string | null;
+          period_end: string | null;
+          cancelled_at: string | null;
+          cancel_reason: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          payment_id: string;
+          user_id?: string | null;
+          buyer_email?: string | null;
+          product: string;
+          amount: number;
+          currency?: string;
+          status?: 'ready' | 'paid' | 'cancelled' | 'failed';
+          pay_method?: string | null;
+          pg_tx_id?: string | null;
+          period_days: number;
+          web_count: number;
+        };
+        Update: Partial<Database['public']['Tables']['payments']['Insert']>;
         Relationships: [];
       };
 
