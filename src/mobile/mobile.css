@@ -2656,6 +2656,8 @@
 }
 .mb-wal-photo svg { width: 18px; height: 18px; }
 .mb-wal-photo.is-busy { cursor: default; opacity: 0.8; }
+/* 무료일 때(PRO 잠금)는 label 대신 button — 버튼 기본 모양을 지운다 */
+button.mb-wal-photo { width: 100%; padding: 0; background: none; font-family: inherit; font-size: 14px; font-weight: 700; color: var(--mb-ink-2); }
 
 /* 사진에서 읽은 지출 확인 목록 */
 .mb-pdr { margin-top: 14px; padding: 14px; border: 1px solid var(--mb-line); border-radius: var(--mb-radius-sm); background: var(--mb-surface); }

@@ -53,6 +53,11 @@ function isFiniteNum(n: any): n is number {
  * - 표가 없거나 오류가 나면 통과한다(있으면 좋고 없어도 동작) */
 export type QuotaKind = 'ai' | 'search' | 'infra' | 'routes';
 export const DAILY_LIMITS: Record<QuotaKind, number> = { ai: 60, search: 40, infra: 20, routes: 60 };
+/** PRO(만료 전 user_plans.plan='pro')는 AI만 상한을 늘린다(2026-11-24 사용자 결정). 나머지 종류는 무료와 같다 */
+export const PRO_DAILY_LIMITS: Partial<Record<QuotaKind, number>> = { ai: 150 };
+export function dailyLimitFor(kind: QuotaKind, pro: boolean): number {
+  return (pro ? PRO_DAILY_LIMITS[kind] : undefined) ?? DAILY_LIMITS[kind];
+}
 export const QUOTA_EXCEEDED_MESSAGE = '오늘 사용할 수 있는 양을 다 썼어요. 내일 다시 이용해 주세요.';
 
 export async function spendDailyQuota(
@@ -76,7 +81,13 @@ export async function spendDailyQuota(
       const { data: role } = await sb.from('app_roles').select('role').eq('email', email).maybeSingle();
       if (role && (role.role === 'admin' || role.role === 'unlimited')) return true;
     }
-    const { data: allowed, error: rpcError } = await sb.rpc('spend_api_quota', { p_user: user.id, p_kind: kind, p_limit: DAILY_LIMITS[kind] });
+    // PRO 상한이 따로 있는 종류만 요금제를 읽는다(표가 없거나 실패하면 무료 상한)
+    let pro = false;
+    if (PRO_DAILY_LIMITS[kind] != null) {
+      const { data: plan } = await sb.from('user_plans').select('plan, expires_at').eq('user_id', user.id).maybeSingle();
+      pro = plan?.plan === 'pro' && (!plan.expires_at || Date.parse(plan.expires_at) > Date.now());
+    }
+    const { data: allowed, error: rpcError } = await sb.rpc('spend_api_quota', { p_user: user.id, p_kind: kind, p_limit: dailyLimitFor(kind, pro) });
     if (rpcError) return true;
     return allowed !== false;
   } catch {

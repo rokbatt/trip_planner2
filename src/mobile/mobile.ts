@@ -2272,7 +2272,8 @@ function ensureMyPlan(): void {
   myPlanAsked = true;
   void fetchMyPlan().then((p) => { myPlan = p; if (p !== 'pro') render(); });
 }
-const photoLocked = (): boolean => myPlan === 'free';
+/** 요금제가 무료로 확인됐으면 PRO 기능(인생샷·영수증 읽기)을 화면에서 잠근다 */
+const proLocked = (): boolean => myPlan === 'free';
 const PRO_TAG = '<span class="mb-pro-tag">PRO</span>';
 let spotSources: SpotSource[] = [];
 let exCat: ExploreCat = 'food';
@@ -2541,11 +2542,11 @@ function exploreHtml(): string {
     '  <span class="mb-ex-status">' + status + '</span>',
     exResults.length ? '  <div class="mb-ex-sort">' + (['relevance', 'distance', 'rating'] as ExploreSort[]).map((k) => '<button class="mb-ex-sortbtn' + (exSort === k ? ' active' : '') + '" data-exsort="' + k + '">' + ({ relevance: '추천순', distance: '거리순', rating: '평점순' } as const)[k] + '</button>').join('') + '</div>' : '',
     '</div>',
-    exPhoto && photoLocked()
+    exPhoto && proLocked()
       ? '<div class="mb-day-empty"><p class="mb-day-empty-title">인생샷은 PRO 기능이에요</p><p class="mb-day-empty-sub">AI가 웹에서 찾은 사진 명소를 Google 지도에서 확인해 보여 줘요.</p></div>'
       : '',
-    exError && !(exPhoto && photoLocked()) ? '<div class="mb-map-err">' + escapeHtml(exError) + '</div>' : '',
-    !exLoading && exSearchedAt && !exError && !list.length && !(exPhoto && photoLocked())
+    exError && !(exPhoto && proLocked()) ? '<div class="mb-map-err">' + escapeHtml(exError) + '</div>' : '',
+    !exLoading && exSearchedAt && !exError && !list.length && !(exPhoto && proLocked())
       ? exPhoto && !exResults.length
         ? '<div class="mb-day-empty"><p class="mb-day-empty-title">사진 명소를 찾지 못했어요</p><p class="mb-day-empty-sub">지도를 옮겨 다시 검색하거나, 야경·노을처럼 분위기를 적어 찾아보세요.</p></div>'
         : '<div class="mb-day-empty"><p class="mb-day-empty-title">' + (exResults.length ? '필터에 맞는 곳이 없어요' : '주변에서 찾지 못했어요') + '</p><p class="mb-day-empty-sub">' + (exResults.length ? '필터를 줄여 보세요.' : '반경을 넓히거나 다른 검색어로 찾아보세요.') + '</p></div>'
@@ -3460,6 +3461,7 @@ async function shareViewerFile(): Promise<void> {
 
 /** 기존 "지출 지갑" — 탭이 문서 중심으로 바뀌어도 돈은 그대로 여기 남는다 */
 function walletMoneyHtml(): string {
+  ensureMyPlan();
   if (expenseLoading && !expenseCtx) {
     return '<div class="mb-wallet-loading"><span class="mb-spinner"></span>지출 불러오는 중…</div>';
   }
@@ -3498,10 +3500,13 @@ function walletMoneyHtml(): string {
     '  <button class="mb-wal-calc" id="mb-wal-calc">' + IC.swap + ' 얼마예요?</button>',
     '</div>',
     // 영수증·결제 알림·이용내역 캡처를 골라 한 번에 — 고른 사진만 쓰고 앨범 전체 권한은 묻지 않는다
-    '<label class="mb-wal-photo' + (photoBusy ? ' is-busy' : '') + '">' +
-      (photoBusy ? '<span class="mb-spinner"></span>사진 읽는 중 ' + photoBusy.done + '/' + photoBusy.total : IC.camera + ' 영수증·결제 캡처로 추가') +
-      '<input type="file" id="mb-wal-photo-in" accept="image/*" multiple hidden' + (photoBusy ? ' disabled' : '') + ' />' +
-    '</label>',
+    // PRO 기능(2026-11-24): 무료로 확인되면 사진 고르기 창을 열지 않고 안내만 한다(허용은 서버가 다시 확인)
+    proLocked()
+      ? '<button type="button" class="mb-wal-photo" id="mb-wal-photo-lock">' + IC.camera + ' 영수증·결제 캡처로 추가' + PRO_TAG + '</button>'
+      : '<label class="mb-wal-photo' + (photoBusy ? ' is-busy' : '') + '">' +
+        (photoBusy ? '<span class="mb-spinner"></span>사진 읽는 중 ' + photoBusy.done + '/' + photoBusy.total : IC.camera + ' 영수증·결제 캡처로 추가' + (myPlan === 'pro' ? '' : PRO_TAG)) +
+        '<input type="file" id="mb-wal-photo-in" accept="image/*" multiple hidden' + (photoBusy ? ' disabled' : '') + ' />' +
+      '</label>',
     photoDraftsHtml(),
     settleLineHtml(ctx),
     recentExpensesHtml(ctx),
@@ -4955,7 +4960,7 @@ function openPhotoFromStop(): void {
   markerSig = '';
   activeTab = 'map';
   detailKey = null;
-  if (photoLocked()) { render(); return; }
+  if (proLocked()) { render(); return; }
   void runExploreSearch(center, st.name);
 }
 
@@ -5475,6 +5480,10 @@ function bind(): void {
     btn.addEventListener('click', () => sayPhrase((btn as HTMLElement).dataset.say!));
   });
   // ── 지갑: 사진으로 추가 ──
+  root.querySelector('#mb-wal-photo-lock')?.addEventListener('click', () => {
+    walletNotice = '영수증·결제 캡처로 추가는 PRO 기능이에요. 사진 속 결제 내역을 AI가 읽어 지출 초안을 만들어 줘요.';
+    render();
+  });
   root.querySelector('#mb-wal-photo-in')?.addEventListener('change', (e) => {
     const input = e.target as HTMLInputElement;
     const files = Array.from(input.files ?? []);
@@ -5618,7 +5627,7 @@ function bind(): void {
       exPhoto = v === 'photo';
       photoKeyword = '';
       if (!exPhoto) exCat = v as ExploreCat;
-      if (exPhoto && photoLocked()) { exResults = []; exError = ''; markerSig = ''; render(); return; }
+      if (exPhoto && proLocked()) { exResults = []; exError = ''; markerSig = ''; render(); return; }
       void runExploreSearch(exSearchedAt && !exMoved ? exSearchedAt : undefined, exSearchedAt && !exMoved ? exCenterLabel : undefined);
     });
   });
@@ -5639,7 +5648,7 @@ function bind(): void {
     if (!q) return;
     const c = mapInstance?.getCenter?.();
     if (exPhoto) {
-      if (photoLocked()) return;
+      if (proLocked()) return;
       // 인생샷 모드에서는 검색어가 "분위기·키워드"다(야경, 노을, 카페…) — 장소 이름 검색이 아니다
       photoKeyword = q.slice(0, 40);
       void runExploreSearch(exMoved && c ? { lat: c.lat(), lng: c.lng() } : exSearchedAt ?? undefined, exMoved ? '지도 중심' : exSearchedAt ? exCenterLabel : undefined);

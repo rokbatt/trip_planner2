@@ -1505,7 +1505,7 @@ AI 없이 정적 데이터에서 비교한다. 띄어쓰기를 지우고 비교�
 - 앱에서 `/api/*`를 부를 땐 `fetch` 대신 **`utils/apiFetch.ts`의 `apiFetch`** 를 쓴다 — 로그인 토큰을 붙인다. 토큰이 없으면
   **Worker 입구(`worker/auth.ts`)가 401로 막는다**(관리·정리·알림 주소는 비밀값·자체 확인으로 예외, `AUTH_EXEMPT`).
   확인 결과는 토큰 해시로 5분 캐시한다. 비상시 환경 변수 `API_AUTH=off`로 코드 없이 끌 수 있다.
-- 비용이 큰 호출에는 **사용자당 하루 상한**이 있다(`supabase/api_usage.sql`, 각 함수의 "사용량 상한" 블록): AI 60 · 장소 검색 40 ·
+- 비용이 큰 호출에는 **사용자당 하루 상한**이 있다(`supabase/api_usage.sql`, 각 함수의 "사용량 상한" 블록): AI 60(PRO 150, `PRO_DAILY_LIMITS`) · 장소 검색 40 ·
   주변 시설 20 · 길찾기 60회. **돈이 드는 외부 호출 직전에만** 센다(캐시 결과는 세지 않음). 관리자·지인 예외는 Supabase의
   `app_roles` 표에 이메일과 `admin`/`unlimited`를 적는다. 새 유료 호출을 추가하면 같은 블록을 복사해 넣고 `dailyQuota.test.ts`에 더한다.
 - 캐시에는 **서버가 직접 조회한 값만** 저장한다. 요청자가 보낸 키·내용을 그대로 믿고 캐싱하지 않는다.
@@ -1574,7 +1574,8 @@ AI 없이 정적 데이터에서 비교한다. 띄어쓰기를 지우고 비교�
 ### 그 밖의 2026-11 기능 (위치)
 - 인생샷(**PRO**, 주변 탭 + 일정 장소 상세 "이 근처 둘러보기"의 칩 → 그 장소 기준으로 지도 탭에서 찾음): `api/ai.ts` `photo-spots`(PRO 확인 → 웹 검색 + Google 장소 확인, 14일 캐시) · `src/mobile/photoSpots.ts`.
   한 번에 브라우저 장소 검색이 최대 6번이라 원가가 커서 PRO로 옮겼다(2026-11-24). 화면은 PRO 배지·잠금 안내만, 허용은 서버
-- 영수증·결제 캡처로 지출 추가(지갑): `receipt-read` — **환경 변수 `RECEIPT_AI_ENABLED=true`일 때만** 동작(지금 꺼짐)
+- 영수증·결제 캡처로 지출 추가(지갑, **PRO**): `receipt-read` — **환경 변수 `RECEIPT_AI_ENABLED=true`이고 PRO일 때만** 동작(지금 변수 꺼짐).
+  켜면 `helpContent.ts`의 "준비 중" 문구 두 곳을 고친다
 - 회화(회화 탭): `src/mobile/phrasebook.ts` 고정 문장 + 음성 읽기(API 비용 없음)
 - 길찾기 출발지: 기본 현재 위치, 상세에서 숙소·이전 장소·직접 입력으로 바꿈(`src/mobile/directions.ts`)
 - 서버 로그인 확인(`worker/auth.ts`), 오류 감지(`utils/errorReport.ts`, `/api/health`) — 5-11 참고
