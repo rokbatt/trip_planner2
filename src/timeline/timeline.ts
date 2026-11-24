@@ -80,6 +80,7 @@ import './timeline.css';
 import { parseISODate } from '../utils/dates';
 import { requestRouteLegs } from '../utils/routeLegs';
 import { escapeHtml } from '../utils/html';
+import { stopRole, routeStopMarker, svgMarkerIcon, legPathOrArc, drawRouteLeg, MAP_CAT_ICON } from '../utils/routeMapStyle';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type Trip = Database['public']['Tables']['trips']['Row'];
@@ -1470,53 +1471,6 @@ function clearMapOverlays(): void {
   mapLines = [];
 }
 
-const PIN_TAIL_RATIO = 1.5;
-
-/** 반지름 r인 원(중심 cx,cy)에 외부 접선 두 개를 그어 tip에서 만나는 "물방울(핀)" 윤곽 경로.
- *  ROUTE의 지도 핀(buildMarkerV2)과 같은 모양 — 두 화면의 핀이 한 눈에 같은 것으로 읽히도록. */
-function pinTearPath(cx: number, cy: number, r: number, tipY: number): string {
-  const d = tipY - cy;
-  const phi = Math.acos(r / d);
-  const a1 = Math.PI / 2 - phi;
-  const a2 = Math.PI / 2 + phi;
-  const t1x = cx + r * Math.cos(a1);
-  const t1y = cy + r * Math.sin(a1);
-  const t2x = cx + r * Math.cos(a2);
-  const t2y = cy + r * Math.sin(a2);
-  return 'M' + t1x + ' ' + t1y + ' A' + r + ' ' + r + ' 0 1 0 ' + t2x + ' ' + t2y + ' L' + cx + ' ' + tipY + ' Z';
-}
-
-/** 번호가 박힌 물방울 핀 — ROUTE 지도 핀과 같은 모양: 색 채운 물방울 위에 살짝 작은 흰 원을 얹어
- *  위쪽만 링처럼 보이고, 그 흰 원 안에 순번을 핀 색으로 적는다. 카드의 순번 배지와 같은 숫자라
- *  둘이 바로 이어진다. */
-function pinIcon(g: any, n: number, color: string, active: boolean): any {
-  const r = active ? 15 : 12;
-  const pad = 10;
-  const tail = r * PIN_TAIL_RATIO;
-  const w = Math.ceil(r * 2 + pad);
-  const h = Math.ceil(r + tail + pad);
-  const cx = w / 2;
-  const tipY = h - pad / 2;
-  const headCy = tipY - tail;
-  const ringWidth = r * 0.24;
-  const whiteR = r - ringWidth;
-  const shadow =
-    '<ellipse cx="' + cx + '" cy="' + (tipY + r * 0.1) + '" rx="' + r * 0.42 + '" ry="' + r * 0.15 + '" fill="rgba(11,42,92,0.18)"/>';
-  const svg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
-    shadow +
-    '<path d="' + pinTearPath(cx, headCy, r, tipY) + '" fill="' + color + '"/>' +
-    '<circle cx="' + cx + '" cy="' + headCy + '" r="' + whiteR + '" fill="#FFFFFF"/>' +
-    '<text x="' + cx + '" y="' + (headCy + 4.2) + '" text-anchor="middle" font-family="system-ui,sans-serif" font-size="' +
-    Math.round(active ? 13 : 11) + '" font-weight="800" fill="' + color + '">' + n + '</text>' +
-    '</svg>';
-  return {
-    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
-    scaledSize: new g.maps.Size(w, h),
-    anchor: new g.maps.Point(cx, tipY),
-  };
-}
-
 function drawMap(): void {
   if (!mapReady || !mapInstance) return;
   const g = (window as any).google;
@@ -1536,42 +1490,37 @@ function drawMap(): void {
     .map((stop, i) => ({ stop, i }))
     .filter(({ stop }) => stop.lat != null && stop.lng != null);
 
-  // 구간 선 — 실제 도로 좌표가 있으면 그걸, 없으면 두 점을 잇는 점선(추정)
+  // 구간 선 — ROUTE와 같은 모양(routeMapStyle). 실제 도로 좌표가 있으면 그걸, 없으면 부드러운 호
   for (let k = 0; k < pts.length - 1; k++) {
     const a = pts[k];
     const b = pts[k + 1];
     const leg = s.legs[a.i];
     if (!leg) continue;
-    const path = leg.path?.length
-      ? leg.path
-      : [{ lat: a.stop.lat!, lng: a.stop.lng! }, { lat: b.stop.lat!, lng: b.stop.lng! }];
-    mapLines.push(
-      new g.maps.Polyline({
-        path,
-        map: mapInstance,
-        strokeColor: leg.mode === 'WALK' ? '#1D9E75' : leg.mode === 'TRANSIT' ? '#0B7CC4' : '#E08A1E',
-        strokeOpacity: leg.path?.length ? 0.85 : 0,
-        strokeWeight: 3.5,
-        // 실측 경로가 아니면 점선으로 그려서 "추정"임을 지도 위에서도 구분되게 (원칙 3-1)
-        icons: leg.path?.length
-          ? undefined
-          : [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 0.7, strokeWeight: 3, scale: 3 }, offset: '0', repeat: '12px' }],
-        zIndex: 1,
-      })
-    );
+    const path = legPathOrArc({ lat: a.stop.lat!, lng: a.stop.lng! }, { lat: b.stop.lat!, lng: b.stop.lng! }, leg.path);
+    const { casing, main } = drawRouteLeg(g, mapInstance, path, { zIndex: 2 });
+    mapLines.push(casing, main);
   }
 
   const bounds = new g.maps.LatLngBounds();
-  pts.forEach(({ stop, i }) => {
+  pts.forEach(({ stop, i }, k) => {
     const pos = { lat: stop.lat!, lng: stop.lng! };
     bounds.extend(pos);
     const active = selectedKey === stop.key;
+    // ROUTE와 같은 마커 — 그날 첫(출발) 초록 핀 · 마지막(도착) 빨강 핀 · 그 사이 번호 원(카드 순번과 같은 숫자)
+    const role = stopRole(k, pts.length);
     const marker = new g.maps.Marker({
       position: pos,
       map: mapInstance,
-      icon: pinIcon(g, i + 1, PIN_NAVY, active),
+      icon: svgMarkerIcon(g, routeStopMarker({
+        role,
+        catIcon: MAP_CAT_ICON[stop.cat],
+        num: i + 1,
+        isRevisit: !!stop.purpose,
+        scale: active ? 1.18 : 1,
+        highlighted: active,
+      })),
       title: stop.name,
-      zIndex: active ? 999 : 10 + i,
+      zIndex: active ? 999 : role !== 'mid' ? 300 : 10 + i,
     });
     // 지도 → 목록. 핀을 누르면 그 카드가 선택되고 화면에 보이도록 스크롤한다
     marker.addListener('click', () => {

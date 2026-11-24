@@ -119,6 +119,7 @@ import { savedDocPaths, saveDocOffline, loadOfflineDoc, removeOfflineDoc, type O
 import { fetchWeather, resetWeatherCache } from './weather';
 import type { Weather } from './weather';
 import { loadGoogleMapsScript, suggestGateFromCategory } from '../utils/googleMaps';
+import { stopRole, stopRoleColor, routeStopMarker, svgMarkerIcon, legPathOrArc, drawRouteLeg, MAP_CAT_ICON, LODGING_REVISIT_COLOR } from '../utils/routeMapStyle';
 import { insertGooglePlace, rehostPhoto } from '../trips/addGooglePlace';
 import {
   EXPLORE_CATS, CAT_SHORT, DEFAULT_FILTERS, RADIUS_OPTIONS, catDef, priceLabel, straightMeters, straightLabel, fmtMeters,
@@ -2252,6 +2253,12 @@ let mapLoading = false;
 let mapError = '';
 /** 지금 지도에 찍힌 마커가 무엇인지 — 같으면 마커를 다시 만들지 않는다 */
 let markerSig = '';
+/** 일정 지도의 하루 동선 선(테두리·본선 쌍) — 마커와 같이 지우고 다시 그린다 */
+let routeLines: Array<{ setMap: (m: unknown) => void }> = [];
+/** 마지막으로 화면을 맞춘 정류지 묶음 — 실측 경로만 새로 도착했을 땐 사용자가 옮겨 둔 지도를 다시 맞추지 않는다 */
+let routeFitSig = '';
+/** 일정 밖 핀(검색 결과·"이 근처" 기준점) 크기 배율 */
+const OTHER_PIN_SCALE = 1.3;
 let userDot: any = null;
 let exMarkerById = new Map<string, any>();
 
@@ -2500,7 +2507,7 @@ function planMapHtml(): string {
       .map(
         (s, i) =>
           '<button class="mb-map-row" data-mapgo="' + escapeHtml(s.key) + '">' +
-          '<span class="mb-map-num">' + (i + 1) + '</span>' +
+          '<span class="mb-map-num" style="' + mapNumStyle(s, stopRole(i, pins.length)) + '">' + (i + 1) + '</span>' +
           '<span class="mb-map-name">' + escapeHtml(s.name) + '</span>' +
           '<span class="mb-map-chev">' + IC.chevRight + '</span>' +
           '</button>'
@@ -2953,9 +2960,13 @@ function syncMapMarkers(): void {
 
   if (mapMode() === 'plan') {
     const day = activeDay();
-    const pins = (day?.stops ?? []).filter((s) => s.lat != null && s.lng != null);
-    const sig = 'plan:' + (day?.destId ?? '') + ':' + (day?.dayIndex ?? '') + ':' + pins.map((p) => p.key).join('|');
-    if (sig !== markerSig) { markerSig = sig; drawMapMarkers(pins); }
+    if (!day) { if (markerSig !== 'plan:') { markerSig = 'plan:'; clearMarkers(); } return; }
+    const pins = day.stops.filter((s) => s.lat != null && s.lng != null);
+    // 실제 도로 경로가 나중에 도착하면 선을 다시 그려야 하므로, 어느 구간에 실측 경로가 있는지도 지문에 넣는다
+    const legs = scheduleFor(day, realLegs).legs;
+    const sig = 'plan:' + (day.destId ?? '') + ':' + day.dayIndex + ':' + pins.map((p) => p.key).join('|') +
+      ':' + legs.map((l) => (l?.path?.length ? 1 : 0)).join('');
+    if (sig !== markerSig) { markerSig = sig; drawMapMarkers(day, legs); }
     return;
   }
 
@@ -2988,13 +2999,18 @@ function syncAnchorMarker(g: any): void {
   const a = exAnchor;
   if (anchorMarker?.__key === a.stopKey) { anchorMarker.setMap(mapInstance); return; }
   anchorMarker?.setMap(null);
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30"><circle cx="15" cy="15" r="13" fill="#0B2A5C" stroke="#fff" stroke-width="3"/><circle cx="15" cy="15" r="4.5" fill="#fff"/></svg>';
+  const size = Math.round(30 * OTHER_PIN_SCALE);
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 30 30"><circle cx="15" cy="15" r="13" fill="#0B2A5C" stroke="#fff" stroke-width="3"/><circle cx="15" cy="15" r="4.5" fill="#fff"/></svg>';
   anchorMarker = new g.maps.Marker({
     map: mapInstance,
     position: { lat: a.lat, lng: a.lng },
     title: a.name + ' (일정)',
     zIndex: 200,
-    icon: { url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg), anchor: new g.maps.Point(15, 15) },
+    icon: {
+      url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+      scaledSize: new g.maps.Size(size, size),
+      anchor: new g.maps.Point(size / 2, size / 2),
+    },
   });
   anchorMarker.__key = a.stopKey;
   anchorMarker.addListener('click', backToAnchorStop);
@@ -3003,6 +3019,8 @@ function syncAnchorMarker(g: any): void {
 function clearMarkers(): void {
   mapMarkers.forEach((m) => m.setMap(null));
   mapMarkers = [];
+  routeLines.forEach((l) => l.setMap(null));
+  routeLines = [];
   exMarkerById = new Map();
 }
 
@@ -3034,7 +3052,7 @@ const EX_MARKER_GLYPH: Record<ExplorePlace['cat'], string> = {
 };
 
 function exMarkerIcon(g: any, p: ExplorePlace, selected: boolean): any {
-  const s = selected ? 44 : 32;
+  const s = Math.round((selected ? 44 : 32) * OTHER_PIN_SCALE);
   const ring = selected ? '<circle cx="12" cy="12" r="11" fill="none" stroke="#2F86D6" stroke-width="2.2"/>' : '';
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="' + s + '" height="' + Math.round(s * 1.25) + '" viewBox="0 0 24 30">' +
@@ -3059,20 +3077,42 @@ function focusExMarker(id: string): void {
   if (p && mapInstance) mapInstance.panTo({ lat: p.lat, lng: p.lng });
 }
 
-function drawMapMarkers(pins: TlStop[]): void {
+/** 목록 번호 배지를 지도 마커와 같은 색으로 — 출발·도착·숙소 들르기는 채운 원, 경유지는 흰 원 + 색 테두리 */
+function mapNumStyle(s: TlStop, role: ReturnType<typeof stopRole>): string {
+  const c = s.purpose ? LODGING_REVISIT_COLOR : stopRoleColor(role);
+  return s.purpose || role !== 'mid'
+    ? 'background:' + c + ';color:#FFFFFF'
+    : 'background:#FFFFFF;color:' + c + ';box-shadow:inset 0 0 0 2px ' + c;
+}
+
+/** 일정 지도 — PC의 ROUTE·TIMELINE과 같은 선과 마커(utils/routeMapStyle) */
+function drawMapMarkers(day: TlDay, legs: DaySchedule['legs']): void {
   const g = (window as unknown as { google?: any }).google;
   if (!g?.maps || !mapInstance) return;
 
   clearMarkers();
 
+  const pts = day.stops.map((stop, i) => ({ stop, i })).filter(({ stop }) => stop.lat != null && stop.lng != null);
+
+  // 구간 선 — 실제 도로 좌표가 있으면 그걸, 없으면 부드러운 호
+  for (let k = 0; k < pts.length - 1; k++) {
+    const a = pts[k];
+    const b = pts[k + 1];
+    const path = legPathOrArc({ lat: a.stop.lat!, lng: a.stop.lng! }, { lat: b.stop.lat!, lng: b.stop.lng! }, legs[a.i]?.path);
+    const { casing, main } = drawRouteLeg(g, mapInstance, path, { zIndex: 2 });
+    routeLines.push(casing, main);
+  }
+
   const bounds = new g.maps.LatLngBounds();
-  pins.forEach((s, i) => {
+  pts.forEach(({ stop: s }, k) => {
     const pos = { lat: s.lat!, lng: s.lng! };
+    const role = stopRole(k, pts.length);
     const marker: any = new g.maps.Marker({
       position: pos,
       map: mapInstance,
-      label: { text: String(i + 1), color: '#FFFFFF', fontSize: '12px', fontWeight: '700' },
+      icon: svgMarkerIcon(g, routeStopMarker({ role, catIcon: MAP_CAT_ICON[s.cat], num: k + 1, isRevisit: !!s.purpose, scale: 1 })),
       title: s.name,
+      zIndex: role !== 'mid' ? 300 : 10 + k,
     });
     marker.addListener('click', () => {
       detailKey = s.key;
@@ -3083,8 +3123,11 @@ function drawMapMarkers(pins: TlStop[]): void {
     bounds.extend(pos);
   });
 
-  if (pins.length > 1) (mapInstance as any).fitBounds(bounds, 48);
-  else if (pins.length === 1) mapInstance.panTo(pins[0]);
+  const fitSig = (day.destId ?? '') + ':' + day.dayIndex + ':' + pts.map((p) => p.stop.key).join('|');
+  if (fitSig === routeFitSig) return;
+  routeFitSig = fitSig;
+  if (pts.length > 1) (mapInstance as any).fitBounds(bounds, 48);
+  else if (pts.length === 1) mapInstance.panTo({ lat: pts[0].stop.lat!, lng: pts[0].stop.lng! });
 }
 
 /**
@@ -3097,6 +3140,7 @@ function parkMap(): void {
   userDot?.setMap(null);
   userDot = null;
   markerSig = '';
+  routeFitSig = '';
   exDetailId = null;
   exDayPicker = false;
   exDraft = null;
@@ -3111,6 +3155,7 @@ function teardownMap(): void {
   mapLoading = false;
   mapError = '';
   markerSig = '';
+  routeFitSig = '';
   exDetailId = null;
   exDayPicker = false;
   exDraft = null;
