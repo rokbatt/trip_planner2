@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { DAILY_LIMITS, spendDailyQuota } from '../../api/ai';
+import { DAILY_LIMITS, PRO_DAILY_LIMITS, dailyLimitFor, spendDailyQuota } from '../../api/ai';
 // ?raw 는 Vite 가 파일 내용을 문자열로 넘겨 준다(deletionDrift.test.ts와 같은 방식)
 import aiSrc from '../../api/ai.ts?raw';
 import zonesSrc from '../../api/destination-zones.ts?raw';
@@ -15,6 +15,13 @@ import routeSrc from '../../api/route-matrix.ts?raw';
 describe('하루 상한 숫자', () => {
   it('사용자와 정한 값이다(AI 60 · 검색 40 · 주변 시설 20 · 길찾기 60)', () => {
     expect(DAILY_LIMITS).toEqual({ ai: 60, search: 40, infra: 20, routes: 60 });
+  });
+  it('PRO는 AI만 150번, 나머지는 무료와 같다(2026-11-24)', () => {
+    expect(PRO_DAILY_LIMITS).toEqual({ ai: 150 });
+    expect(dailyLimitFor('ai', true)).toBe(150);
+    expect(dailyLimitFor('ai', false)).toBe(60);
+    expect(dailyLimitFor('search', true)).toBe(40);
+    expect(dailyLimitFor('routes', true)).toBe(60);
   });
 });
 
