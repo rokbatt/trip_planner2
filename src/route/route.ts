@@ -2812,8 +2812,12 @@ function renderRightPanel(container: HTMLElement): void {
     if (!revisitPurpose) displayNum += 1;
     const memo = memoStore.get(p.id) ?? '';
     const highlighted = p.id === highlightedPlaceId;
-    const isEndpoint = i === 0 || i === stops.length - 1;
-    const cardColor = revisitPurpose ? LODGING_REVISIT_COLOR : stopIdentityColor(isEndpoint);
+    const role = stopRole(i, stops.length);
+    const cardColor = revisitPurpose ? LODGING_REVISIT_COLOR : stopIdentityColor(role);
+    // 지도 마커와 같은 모양 — 출발·도착·숙소 들르기는 색을 채운 원 + 흰 글자, 중간 경유지는 흰 원 + 색 테두리·숫자
+    const badgeStyle = revisitPurpose || role !== 'mid'
+      ? 'background:' + cardColor + ';color:#FFFFFF'
+      : 'background:#FFFFFF;color:' + cardColor + ';box-shadow:inset 0 0 0 2px ' + cardColor;
 
     const manualTime = timeOverride.has(timeKey(day.id, p.id));
     // 예상 체류시간(참고용 추정치) 대신, 그 시각에 실제로 도착하는 시각(HH:MM)을 보여준다 —
@@ -2829,8 +2833,7 @@ function renderRightPanel(container: HTMLElement): void {
         // "순서 정리" 버튼(optimizedOrder)을 누르면 그때만 다시 양 끝으로 고정된다.
         '<div class="rt-panel-stop' + (highlighted ? ' rt-highlighted' : '') + (revisitPurpose ? ' rt-panel-stop-revisit' : '') +
           '" draggable="true" data-place-id="' + p.id + '" title="드래그해서 순서 바꾸기">',
-        // 지도 마커처럼 색을 꽉 채운 원 + 흰 글자/아이콘
-        '  <span class="rt-panel-badge" style="background:' + cardColor + ';color:#FFFFFF">' + (revisitPurpose ? IC_LODGING : displayNum) + '</span>',
+        '  <span class="rt-panel-badge" style="' + badgeStyle + '">' + (revisitPurpose ? IC_LODGING : displayNum) + '</span>',
         '  <div class="rt-panel-name-col"><div class="rt-panel-name">' + escapeHtml(p.name) + '</div><div class="rt-panel-sub">' +
           escapeHtml(revisitPurpose ? '잠깐 들르기 · ' + revisitPurpose : p.category || (isBasecamp ? '숙소' : '')) + '</div></div>',
         timeOrDwellHtml,
@@ -3163,45 +3166,55 @@ function refreshAll(container: HTMLElement, opts: { refit: boolean } = { refit: 
 /* ══════════════════ 지도 ══════════════════ */
 
 /**
- * 지도 색 — 레퍼런스 시안("고급형") 이미지에서 픽셀로 뽑은 값.
- *  - 출발·도착(그날 첫/마지막 정류지): 짙은 네이비 핀 + 그 아래 위치 점
- *  - 중간 경유지: 라이트 블루 원 / 경로선: 그보다 한 톤 짙은 블루의 가는 선
- *  - 아직 동선에 없는 후보: 더 옅은 블루 핀
+ * 지도 색 — 네이버 지도식 굵은 경로선 + 신호등 핀(샘플 비교 후 고른 조합).
+ *  - 경로선: 일렉트릭 블루 8px + 한 톤 진한 테두리 + 흰 진행 방향 화살표
+ *  - 출발(그날 첫 정류지): 초록 핀 / 도착(마지막 정류지): 빨강 핀 — 어디서 시작해 어디서 끝나는지
+ *    색만으로 바로 구분된다. 핀 아래 흰 점이 실제 위치를 짚는다.
+ *  - 중간 경유지: 흰 원 + 진한 파랑 테두리·번호 — 같은 파랑 선 위에서도 묻히지 않게 흰 바탕
+ *  - 아직 동선에 없는 후보: 옅은 블루 핀
  * 이동수단 구분은 색이 아니라 캡슐 배지의 아이콘/라벨과 모드 전환 노드가 담당한다.
- * (상수 이름 AERO_BLUE는 유지 — 지금은 "중간 경유지" 색을 가리킨다)
  */
+const ROUTE_LINE_COLOR = '#1E7BFF';
+const ROUTE_LINE_CASING = '#0A4FB8';
+const START_GREEN = '#16A34A';
+const END_RED = '#E5383B';
+const STOP_RING = '#0A4FB8';
+// 클릭 리플·후보 선택 강조처럼 "동선 밖" 요소에 쓰는 옅은 블루
 const AERO_BLUE = '#79BEFC';
-// 동선에 담은 중간 경유지(원) 색 — 경로선(#4E9ADC)과 거의 같은 톤이라 줌아웃하면 선과 원이
-// 한 덩어리로 뭉쳐 보인다는 피드백으로, 선보다 한 단계만 진하게 해서 구분한다.
-const STOP_BLUE = '#2F86D6';
-const ENDPOINT_NAVY = '#0B2E6B';
 const CANDIDATE_BLUE = '#B1D8FD';
 const CANDIDATE_ICON = '#2C64AE';
 // "다음 장소"를 가리킬 때 쓰는 강조색 — 짙은 남색. 처음 시도한 값(#0B0F5C)이 남색보다
 // 검정에 가까워 보인다는 피드백으로, 이 앱 전체에서 이미 쓰는 네이비(--rt-navy)로 교체.
 const ROUTE_NEXT = '#0B2A5C';
 const ROUTE_GRAY = '#9AA7B8';
-// 시안처럼 흰 테두리(halo) 없이 단색 선 하나로만 그린다.
-const ROUTE_LINE_COLOR = '#4E9ADC';
 // "숙소 들르기"(짐 두기 등 목적만 있는 재방문 스탑) 전용색 — 다른 어떤 카테고리/강조색과도
 // 안 겹치는 바이올렛. 우측 패널 배지·타임라인 카드가 이 색 하나로 서로 짝을 맞춘다.
 const LODGING_REVISIT_COLOR = '#7C5CFC';
 
+/** 그날 동선 안에서의 자리 — 첫 정류지(출발) / 마지막(도착) / 그 사이(경유) */
+type StopRole = 'start' | 'end' | 'mid';
+function stopRole(index: number, count: number): StopRole {
+  if (index === 0) return 'start';
+  if (index === count - 1) return 'end';
+  return 'mid';
+}
+
 /**
  * 지도 마커와 우측 패널 배지가 항상 같은 색을 쓰도록 하는 단일 기준 — "이 마커 = 이 카드"가
- * 색으로도 바로 연결되게 한다. 그날의 첫/마지막 정류지는 네이비, 그 사이는 경로선 색.
- * 진행 상태 강조(다음/지나옴)만 phaseColor가 다른 색을 얹는다.
+ * 색으로도 바로 연결되게 한다. 진행 상태 강조(다음/지나옴)만 phaseColor가 다른 색을 얹는다.
  */
-function stopIdentityColor(isEndpoint: boolean): string {
-  return isEndpoint ? ENDPOINT_NAVY : STOP_BLUE;
+function stopIdentityColor(role: StopRole): string {
+  return role === 'start' ? START_GREEN : role === 'end' ? END_RED : STOP_RING;
 }
 // 두께는 항상 고정(줌 배율과 무관) — 이동수단 구분은 색이 아니라 캡슐 배지의
-// 아이콘/라벨과 모드 전환 노드가 담당한다. 시안의 선 굵기에 맞춰 2.5로.
+// 아이콘/라벨과 모드 전환 노드가 담당한다.
 const MODE_STYLE: Record<Leg['mode'], { weight: number }> = {
-  WALK: { weight: 2.5 },
-  TRANSIT: { weight: 2.5 },
-  TAXI: { weight: 2.5 },
+  WALK: { weight: 8 },
+  TRANSIT: { weight: 8 },
+  TAXI: { weight: 8 },
 };
+/** 경로선 바깥 테두리 두께(선 양쪽 합) */
+const ROUTE_CASING_EXTRA = 3;
 
 async function initMap(container: HTMLElement): Promise<void> {
   const mapEl = container.querySelector('#rt-map') as HTMLElement;
@@ -3368,9 +3381,9 @@ function drawRouteOnMap(refit: boolean): void {
   let mapDisplayNum = 0;
   stops.forEach((p, i) => {
     const isBasecamp = isBasecampPlace(p, dayIndex);
-    // 그날의 첫/마지막 정류지만 핀, 그 사이는 원 — 시안과 같은 구성
-    const isEndpoint = i === 0 || i === stops.length - 1;
-    const baseColor = stopIdentityColor(isEndpoint);
+    // 그날의 첫(출발)·마지막(도착) 정류지만 핀, 그 사이는 원
+    const role = stopRole(i, stops.length);
+    const baseColor = stopIdentityColor(role);
     if (!lodgingRevisitPurpose.has(p.id)) mapDisplayNum += 1;
     // 어떤 장소를 클릭/호버하면 그 장소(current)와 바로 이전 정류지(adjacent)만 강조하고,
     // 나머지는 전부 회색으로 물러난다 — "그 장소로 가는 구간 + 이전 장소만" 강조라는 원칙.
@@ -3384,7 +3397,7 @@ function drawRouteOnMap(refit: boolean): void {
     const marker = buildMarkerV2(g, p, {
       isBasecamp,
       included: true,
-      endpoint: isEndpoint,
+      endpoint: role !== 'mid',
       num: mapDisplayNum,
       highlighted: p.id === focusId,
       phase,
@@ -3416,9 +3429,9 @@ function drawRouteOnMap(refit: boolean): void {
     // 포커스가 있는데 이 구간이 아니면 회색으로 물러난다.
     const selected = focusIdx >= 0 && i + 1 === focusIdx;
     const dimmed = focusIdx >= 0 && !selected;
-    const line = buildLegPolyline(g, stops[i], stops[i + 1], leg, { overlapIndex, selected, dimmed });
-    line.addListener('click', () => handleLegClick(stops[i].id, stops[i + 1].id));
-    routePolylines.push(line);
+    const { casing, main } = buildLegPolyline(g, stops[i], stops[i + 1], leg, { overlapIndex, selected, dimmed });
+    main.addListener('click', () => handleLegClick(stops[i].id, stops[i + 1].id));
+    routePolylines.push(casing, main);
 
     // 이동수단이 바뀌는 지점에 작은 노드 (첫 구간이거나 앞 구간과 모드가 다를 때)
     if (i > 0 && legs[i - 1] && legs[i - 1].mode !== leg.mode) {
@@ -3986,10 +3999,10 @@ function outlinedPinSvg(cx: number, headCy: number, r: number, tipY: number, fil
 }
 
 /**
- * 지도 마커 — 레퍼런스 시안("고급형")과 같은 구성. 크기 비율은 시안에서 핀 머리 반지름(r) 대비로 잰 값.
- *  - 그날의 첫/마지막 정류지: 네이비 핀(흰 카테고리 아이콘) + 실제 위치를 짚는 흰 점(네이비 테두리).
- *    핀은 점 위에 살짝 떠 있고, 경로선은 점에 닿는다.
- *  - 중간 경유지: 라이트 블루로 꽉 채운 원 + 흰 번호(얇은 흰 테두리)
+ * 지도 마커.
+ *  - 출발(초록)·도착(빨강) 핀: 흰 카테고리 아이콘 + 흰 테두리 + 실제 위치를 짚는 흰 점.
+ *    핀은 점 위에 살짝 떠 있고, 경로선은 점에 닿는다. 굵어진 경로선 위에서도 먼저 보이게 살짝 크게.
+ *  - 중간 경유지: 흰 원 + 진한 파랑 테두리·번호
  *  - 아직 담지 않은 후보: 옅은 블루 핀 + 두꺼운 흰 테두리 + 블루 아이콘
  * "숙소 들르기" 재방문 스탑은 위치와 상관없이 바이올렛 + 숙소 아이콘(번호 없음).
  */
@@ -4008,41 +4021,44 @@ function buildMarkerV2(g: any, p: Place, opts: MarkerOpts): any {
   let zIndex: number;
 
   if (opts.included && opts.endpoint) {
-    const fill = isRevisit ? LODGING_REVISIT_COLOR : phaseColor(phase, opts.baseColor ?? ENDPOINT_NAVY);
-    const r = 15 * scale;
+    const fill = isRevisit ? LODGING_REVISIT_COLOR : phaseColor(phase, opts.baseColor ?? START_GREEN);
+    const r = 15 * 1.12 * scale;
+    const outline = r * 0.16;
     const tail = r * PIN_TAIL_RATIO;
     const gap = r * 0.3;
-    const dotR = r * 0.42;
-    const dotRing = r * 0.2;
-    w = Math.ceil(r * 2 + pad);
+    const dotR = r * 0.38;
+    const dotRing = r * 0.18;
+    w = Math.ceil((r + outline) * 2 + pad);
     ax = w / 2;
-    const headCy = pad / 2 + r;
+    const headCy = pad / 2 + outline + r;
     const tipY = headCy + tail;
     ay = tipY + gap + dotR;
     h = Math.ceil(ay + dotR + pad / 2);
     body =
       (opts.highlighted ? markerHaloSvg(ax, headCy, r, fill) : '') +
-      outlinedPinSvg(ax, headCy, r, tipY, fill, 0) +
+      outlinedPinSvg(ax, headCy, r, tipY, fill, outline) +
       markerIconSvg(isRevisit ? IC_LODGING : meta.icon, ax, headCy, r * 0.9, '#FFFFFF', 2.6) +
       '<circle cx="' + ax + '" cy="' + ay + '" r="' + (dotR - dotRing / 2) + '" fill="#FFFFFF" stroke="' + fill +
       '" stroke-width="' + dotRing + '"/>';
     zIndex = 300;
   } else if (opts.included) {
-    const fill = isRevisit ? LODGING_REVISIT_COLOR : phaseColor(phase, opts.baseColor ?? STOP_BLUE);
-    const rc = 15 * scale * 0.68;
-    const ring = Math.max(1, rc * 0.1);
-    const outerR = rc + ring;
+    const fill = isRevisit ? LODGING_REVISIT_COLOR : phaseColor(phase, opts.baseColor ?? STOP_RING);
+    const rc = 15 * 0.75 * scale;
+    const ring = Math.max(2, rc * 0.3);
+    const outerR = rc + ring / 2;
     w = h = Math.ceil(outerR * 2 + pad);
     ax = ay = w / 2;
-    const fontSize = Math.round(rc * 1.1);
+    const fontSize = Math.round(rc * 1.05);
     body =
       (opts.highlighted ? markerHaloSvg(ax, ay, outerR, fill) : '') +
-      '<circle cx="' + ax + '" cy="' + ay + '" r="' + outerR + '" fill="#FFFFFF"/>' +
-      '<circle cx="' + ax + '" cy="' + ay + '" r="' + rc + '" fill="' + fill + '"/>' +
       (isRevisit
-        ? markerIconSvg(IC_LODGING, ax, ay, rc * 1.1, '#FFFFFF', 2.2)
-        : '<text x="' + ax + '" y="' + (ay + fontSize * 0.36) + '" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="' +
-          fontSize + '" font-weight="700" fill="#FFFFFF">' + (opts.num ?? '') + '</text>');
+        // 숙소 들르기는 번호 없이 바이올렛을 채운 원 + 숙소 아이콘
+        ? '<circle cx="' + ax + '" cy="' + ay + '" r="' + outerR + '" fill="#FFFFFF"/>' +
+          '<circle cx="' + ax + '" cy="' + ay + '" r="' + (outerR - 1.5) + '" fill="' + fill + '"/>' +
+          markerIconSvg(IC_LODGING, ax, ay, rc * 1.1, '#FFFFFF', 2.2)
+        : '<circle cx="' + ax + '" cy="' + ay + '" r="' + rc + '" fill="#FFFFFF" stroke="' + fill + '" stroke-width="' + ring + '"/>' +
+          '<text x="' + ax + '" y="' + (ay + fontSize * 0.36) + '" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="' +
+          fontSize + '" font-weight="800" fill="' + fill + '">' + (opts.num ?? '') + '</text>');
     zIndex = 100 + (opts.num ?? 0);
   } else {
     const r = 10 * scale;
@@ -4150,11 +4166,11 @@ function buildSearchResultMarker(g: any, p: Place): any {
 
 /** 이동수단이 바뀌는 지점에 찍는 작은 원형 노드 */
 function buildModeChangeNode(g: any, at: LatLngLit): any {
-  const size = 14;
+  const size = 16;
   const c = size / 2;
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">' +
-    '<circle cx="' + c + '" cy="' + c + '" r="4.5" fill="#FFFFFF" stroke="' + AERO_BLUE + '" stroke-width="2.4"/></svg>';
+    '<circle cx="' + c + '" cy="' + c + '" r="5.5" fill="#FFFFFF" stroke="' + ROUTE_LINE_CASING + '" stroke-width="2.4"/></svg>';
   return new g.maps.Marker({
     position: at,
     map: mapInstance,
@@ -4234,8 +4250,12 @@ interface LegDrawOpts {
   dimmed: boolean;
 }
 
-/** 경로선 한 구간 — 시안처럼 흰 테두리 없이 단색 선 하나 */
-function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDrawOpts): any {
+/**
+ * 경로선 한 구간 = 진한 테두리 선 위에 굵은 본선 + 흰 진행 방향 화살표(Polyline icons repeat).
+ * 화살표는 지도 API가 선을 따라 직접 그려 주는 기호라 추가 요청·비용이 없다.
+ * 클릭은 본선(main)만 받는다 — 테두리는 clickable:false.
+ */
+function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDrawOpts): { casing: any; main: any } {
   const style = MODE_STYLE[leg.mode];
 
   let path: LatLngLit[];
@@ -4246,19 +4266,45 @@ function buildLegPolyline(g: any, from: Place, to: Place, leg: Leg, opts: LegDra
   }
   if (opts.overlapIndex > 0) path = offsetPath(path, opts.overlapIndex * 28);
 
-  const color = opts.dimmed ? ROUTE_GRAY : ROUTE_LINE_COLOR;
-  const opacity = opts.dimmed ? 0.5 : 1;
+  const opacity = opts.dimmed ? 0.45 : 1;
   const weight = opts.selected ? style.weight + 1 : style.weight;
+  const zBase = opts.selected ? 12 : 10;
 
-  return new g.maps.Polyline({
+  const casing = new g.maps.Polyline({
     map: mapInstance,
     path,
     geodesic: true,
-    strokeColor: color,
+    strokeColor: opts.dimmed ? ROUTE_GRAY : ROUTE_LINE_CASING,
+    strokeOpacity: opacity,
+    strokeWeight: weight + ROUTE_CASING_EXTRA,
+    clickable: false,
+    zIndex: zBase - 1,
+  });
+  const main = new g.maps.Polyline({
+    map: mapInstance,
+    path,
+    geodesic: true,
+    strokeColor: opts.dimmed ? ROUTE_GRAY : ROUTE_LINE_COLOR,
     strokeOpacity: opacity,
     strokeWeight: weight,
-    zIndex: opts.selected ? 12 : 10,
+    zIndex: zBase,
+    // 흐려진(포커스 밖) 구간엔 화살표를 빼서 강조된 구간이 더 또렷하게
+    icons: opts.dimmed
+      ? []
+      : [{
+          icon: {
+            path: g.maps.SymbolPath.FORWARD_OPEN_ARROW,
+            scale: 2,
+            strokeColor: '#FFFFFF',
+            strokeOpacity: 0.95,
+            strokeWeight: 2,
+          },
+          offset: '24px',
+          repeat: '56px',
+        }],
   });
+
+  return { casing, main };
 }
 
 /**
