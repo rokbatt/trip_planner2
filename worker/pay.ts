@@ -8,6 +8,7 @@
  *   POST /api/pay/webhook                          로그인 예외 — Standard Webhooks 서명 확인 → 다시 조회 → 반영·회수
  *   GET  /api/pay/history                          로그인 — 내 결제 내역
  *   POST /api/pay/refund    { paymentId, reason, confirm? }  관리자 — 환불 판단 자료 / confirm이면 포트원 취소 → 회수
+ *   POST /api/pay/recheck   { paymentId }          관리자 — 반영 안 된 결제를 포트원에 다시 조회해 반영
  *
  * 원칙
  *   - 결제 상태는 **포트원 API로 다시 조회한 값만** 믿는다(웹훅 본문·화면이 보낸 값은 믿지 않는다).
@@ -447,6 +448,19 @@ export async function handlePay(request: Request, env: PayEnv, f: FetchLike = (i
       default:
         return json(503, { status: 'pending', error: '결제를 확인하지 못했어요. 결제가 됐다면 잠시 뒤 자동으로 반영돼요.' });
     }
+  }
+
+  // 관리자: 반영이 안 된 결제(웹훅 실패 등)를 포트원에 다시 조회해 반영 — 운영 절차 docs/PAYMENT_OPERATIONS.md
+  if (action === 'recheck') {
+    if (!(await api.isAdmin(user.email))) return json(403, { error: '관리자만 쓸 수 있어요.' });
+    if (!isPaymentId(body.paymentId)) return json(400, { error: '결제 번호가 올바르지 않아요.' });
+    const row = await api.order(body.paymentId);
+    if (row === 'error') return json(503, { error: 'DB 조회 실패' });
+    if (!row) return json(404, { error: '결제를 찾지 못했어요.' });
+    if (row.status === 'paid' || row.status === 'cancelled') return json(200, { status: row.status, already: true, buyerEmail: row.buyer_email });
+    const r = await confirmAndGrant(api, env, row);
+    const status = r.kind === 'granted' ? 'paid' : r.kind;
+    return json(200, { status, buyerEmail: row.buyer_email, ...(r.kind === 'mismatch' ? { reason: r.reason } : {}) });
   }
 
   if (action === 'refund') {

@@ -174,3 +174,36 @@ export function payMethodName(v: string | null): string {
   if (v.startsWith('EASY_PAY')) return '간편결제';
   return '';
 }
+
+/* ── 관리자(운영 절차: docs/PAYMENT_OPERATIONS.md) — 권한은 서버가 app_roles로 확인한다 ── */
+
+export interface RefundReview {
+  status: 'review' | 'cancelled' | string;
+  paymentId?: string;
+  buyerEmail?: string | null;
+  amount?: number;
+  paidAt?: string;
+  daysSincePaid?: number;
+  proUseSincePaid?: number | null;
+  withinPolicy?: boolean;
+  already?: boolean;
+  error?: string;
+}
+
+export async function adminRefund(paymentId: string, reason: string, confirm: boolean): Promise<RefundReview> {
+  try {
+    const { json } = await postPay<RefundReview>('refund', { paymentId, reason, ...(confirm ? { confirm: true } : {}) });
+    return json;
+  } catch {
+    return { status: 'error', error: '요청을 보내지 못했어요.' };
+  }
+}
+
+export async function adminRecheck(paymentId: string): Promise<{ status: string; buyerEmail?: string | null; reason?: string; error?: string }> {
+  try {
+    const { json } = await postPay<{ status: string; buyerEmail?: string | null; reason?: string }>('recheck', { paymentId });
+    return json;
+  } catch {
+    return { status: 'error', error: '요청을 보내지 못했어요.' };
+  }
+}

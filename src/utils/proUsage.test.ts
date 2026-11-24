@@ -7,14 +7,14 @@ import handler from '../../api/ai';
 
 declare const process: { env: Record<string, string | undefined> };
 
-interface World { webLeft: boolean; dailyOk: boolean; rpc: string[]; gemini: number; planRow: Record<string, unknown> | null }
+interface World { webLeft: boolean; dailyOk: boolean; rpc: string[]; gemini: number; planRow: Record<string, unknown> | null; admin?: boolean }
 
 function stub(w: World) {
   vi.stubGlobal('fetch', async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = String(input instanceof Request ? input.url : input);
     const body = typeof init.body === 'string' ? init.body : '';
     if (url.includes('/auth/v1/user')) return Response.json({ id: 'u-1', email: 'a@x.com' });
-    if (url.includes('/rest/v1/app_roles')) return Response.json([]);
+    if (url.includes('/rest/v1/app_roles')) return Response.json(w.admin ? [{ role: 'admin' }] : []);
     if (url.includes('/rest/v1/user_plans')) return Response.json(w.planRow ? [w.planRow] : []);
     if (url.includes('/rest/v1/ai_plan_cache')) return (init.method ?? 'GET') === 'GET' ? Response.json([]) : new Response(null, { status: 201 });
     if (url.includes('/rest/v1/rpc/spend_api_quota')) {
@@ -112,4 +112,10 @@ describe('PRO 웹 검색 — 이용권 총 100번', () => {
     delete process.env.RECEIPT_AI_ENABLED;
     expect(w2.rpc[0]).toBe('quota:pro');
   });
+
+  it('my-plan: 관리자면 admin 표시가 붙는다(권한은 결제 서버가 다시 확인)', async () => {
+    stub(world({ planRow: null, admin: true }));
+    expect((await call({ kind: 'my-plan' })).json).toEqual({ plan: 'pro', expiresAt: null, webLeft: null, admin: true });
+  });
 });
+

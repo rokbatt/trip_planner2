@@ -21,6 +21,9 @@ import {
   takePayReturn,
   fetchPaymentHistory,
   payMethodName,
+  adminRefund,
+  adminRecheck,
+  type RefundReview,
   type PayMethodKey,
   type PaymentHistoryRow,
 } from './payClient';
@@ -39,7 +42,7 @@ const COMPARE: { label: string; free: string; pro: string }[] = [
   { label: '하루 AI 사용 횟수', free: '60번', pro: '150번' },
 ];
 
-/** 결제 전 고지 — 사용자 확인 대기 초안(C-5). 바꾸면 약관 유료 조항(C-7)과 맞춘다 */
+/** 결제 전 고지 — 사용자 확정(2026-11-24). 바꾸면 약관 유료 조항(C-7)과 맞춘다 */
 export const PURCHASE_NOTICE: string[] = [
   `${PRODUCT.name}은 ${PRODUCT.amount.toLocaleString('ko-KR')}원(부가세 포함)이며, 결제 즉시 ${PRODUCT.days}일 동안 이용할 수 있습니다.`,
   '자동으로 갱신되거나 다시 결제되지 않습니다.',
@@ -113,6 +116,75 @@ function buyHtml(configured: boolean, isPro: boolean): string {
   ].join('');
 }
 
+/** 환불 판단 자료 한 덩어리 — 기준: 결제 후 7일 이내 + PRO 전용 기능 미사용 */
+export function reviewHtml(r: RefundReview): string {
+  if (r.error) return '<p class="pro-msg">' + esc(r.error) + '</p>';
+  if (r.status === 'cancelled') return '<p class="st-note">' + (r.already ? '이미 환불된 결제예요.' : '환불했어요. 이용권도 회수했어요.') + '</p>';
+  const use = r.proUseSincePaid === null || r.proUseSincePaid === undefined ? '확인 불가' : r.proUseSincePaid + '번';
+  return [
+    '<dl class="pro-admin-dl">',
+    '<dt>결제자</dt><dd>' + esc(r.buyerEmail ?? '(알 수 없음)') + '</dd>',
+    '<dt>금액</dt><dd>' + (r.amount ?? 0).toLocaleString('ko-KR') + '원</dd>',
+    '<dt>결제일</dt><dd>' + esc(fmtDate(r.paidAt ?? null)) + ' (' + (r.daysSincePaid ?? '?') + '일 지남)</dd>',
+    '<dt>결제 후 PRO 기능 사용</dt><dd>' + esc(use) + '</dd>',
+    '<dt>환불 기준</dt><dd><b>' + (r.withinPolicy ? '기준 안 — 전액 환불 대상' : '기준 밖 — 운영 절차 문서의 예외 판단') + '</b></dd>',
+    '</dl>',
+    '<button type="button" class="st-btn st-btn-danger" id="pro-admin-go">이 결제 환불하기</button>',
+  ].join('');
+}
+
+function adminCardHtml(): string {
+  return `
+    <section class="st-card pro-admin">
+      <h2 class="st-h2">관리자 · 결제 처리</h2>
+      <p class="st-note">관리자에게만 보여요. 처리 기준과 순서는 운영 절차 문서(docs/PAYMENT_OPERATIONS.md)를 따라 주세요.</p>
+      <input class="st-input" id="pro-admin-id" placeholder="결제 번호 (mongsil-…)" autocomplete="off" />
+      <input class="st-input" id="pro-admin-reason" placeholder="환불 사유 (예: 단순 변심, 7일 이내 미사용)" autocomplete="off" />
+      <div class="pro-admin-acts">
+        <button type="button" class="st-btn" id="pro-admin-review">환불 검토</button>
+        <button type="button" class="st-btn" id="pro-admin-recheck">반영 다시 확인</button>
+      </div>
+      <div id="pro-admin-out"></div>
+    </section>`;
+}
+
+function bindAdmin(root: HTMLElement): void {
+  const out = root.querySelector('#pro-admin-out') as HTMLElement;
+  const idOf = () => ((root.querySelector('#pro-admin-id') as HTMLInputElement).value || '').trim();
+  const reasonOf = () => ((root.querySelector('#pro-admin-reason') as HTMLInputElement).value || '').trim();
+  root.querySelector('#pro-admin-review')?.addEventListener('click', async () => {
+    const id = idOf();
+    if (!id) return;
+    out.innerHTML = '<p class="st-note">확인 중…</p>';
+    const r = await adminRefund(id, reasonOf(), false);
+    out.innerHTML = reviewHtml(r);
+    out.querySelector('#pro-admin-go')?.addEventListener('click', async () => {
+      if (!reasonOf()) {
+        out.insertAdjacentHTML('beforeend', '<p class="pro-msg">환불 사유를 적어 주세요.</p>');
+        return;
+      }
+      if (!window.confirm(id + ' 결제를 환불할까요? 포트원에서 결제가 취소되고 이용권이 회수돼요. 되돌릴 수 없어요.')) return;
+      out.innerHTML = '<p class="st-note">환불하는 중…</p>';
+      out.innerHTML = reviewHtml(await adminRefund(id, reasonOf(), true));
+    });
+  });
+  root.querySelector('#pro-admin-recheck')?.addEventListener('click', async () => {
+    const id = idOf();
+    if (!id) return;
+    out.innerHTML = '<p class="st-note">포트원에 다시 확인하는 중…</p>';
+    const r = await adminRecheck(id);
+    const label: Record<string, string> = {
+      paid: '결제 완료 — 이용권이 반영돼 있어요.',
+      pending: '아직 결제 승인 전이에요.',
+      failed: '결제가 완료되지 않은 주문이에요(실패·취소).',
+      mismatch: '금액·상점·채널이 맞지 않아 반영하지 않았어요(' + (r.reason ?? '') + '). 포트원 콘솔에서 확인해 주세요.',
+      cancelled: '환불된 결제예요.',
+      error: '포트원 또는 DB 확인에 실패했어요. 잠시 뒤 다시 시도해 주세요.',
+    };
+    out.innerHTML = '<p class="st-note">' + esc(r.error ?? label[r.status] ?? r.status) + (r.buyerEmail ? ' · ' + esc(r.buyerEmail) : '') + '</p>';
+  });
+}
+
 export function renderProPage(): HTMLElement {
   window.scrollTo(0, 0);
   const cfg = payConfig();
@@ -175,6 +247,10 @@ export function renderProPage(): HTMLElement {
     if (statusEl) statusEl.innerHTML = '<b>' + esc(s.title) + '</b>' + (s.sub ? '<span>' + esc(s.sub) + '</span>' : '');
     const hist = el.querySelector('#pro-history');
     if (hist) hist.innerHTML = historyHtml(rows);
+    if (p.admin && !el.querySelector('.pro-admin')) {
+      el.querySelector('.st-main')?.insertAdjacentHTML('beforeend', adminCardHtml());
+      bindAdmin(el);
+    }
     const body = el.querySelector('#pro-buy-body');
     if (body && cfg) {
       body.innerHTML = buyHtml(true, p.plan === 'pro');
