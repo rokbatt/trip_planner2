@@ -42,6 +42,7 @@ const CHEVRON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const ICON_PLANE_PASS = `<svg class="lp-pass-plane" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="square" stroke-linejoin="miter"><path d="M2 12L22 5L15 22L11 14L2 12Z"/><path d="M11 14L22 5"/></svg>`;
 
 const DI = {
+  pro: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><path d="M12 3L14.6 8.6L20.5 9.3L16.2 13.4L17.3 19.3L12 16.4L6.7 19.3L7.8 13.4L3.5 9.3L9.4 8.6Z"/></svg>`,
   trip: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="3" y="5" width="18" height="16"/><path d="M3 10H21M8 3V7M16 3V7"/></svg>`,
   setting: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><rect x="4" y="4" width="16" height="16"/><path d="M9 4V20M4 9H20"/></svg>`,
   help: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square" stroke-linejoin="miter"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5C9.5 8 10.5 7 12 7C13.5 7 14.5 8 14.5 9.5C14.5 11 12 11 12 13"/><circle cx="12" cy="16.5" r="0.5"/></svg>`,
@@ -78,6 +79,7 @@ function navRightHtml(): string {
             <div class="lp-dropdown-email">${escapeHtml(info.email)}</div>
           </div>
           <button class="lp-dropdown-item" id="dd-trips">${DI.trip}<span>내 여행</span></button>
+          <button class="lp-dropdown-item" id="dd-pro">${DI.pro}<span>요금제 · PRO</span></button>
           <button class="lp-dropdown-item" id="dd-settings">${DI.setting}<span>설정</span></button>
           <button class="lp-dropdown-item" id="dd-help">${DI.help}<span>문의하기</span></button>
           <div class="lp-dropdown-divider"></div>
@@ -443,6 +445,7 @@ export function renderLogin(): void {
 
   document.getElementById('dd-trips')?.addEventListener('click', () => navigate('trips'));
   document.getElementById('dd-settings')?.addEventListener('click', () => navigate('settings'));
+  document.getElementById('dd-pro')?.addEventListener('click', () => navigate('pro'));
   document.getElementById('dd-help')?.addEventListener('click', () => alert('문의하기 기능은 곧 구현 예정이에요!'));
   document.getElementById('dd-logout')?.addEventListener('click', signOut);
 

@@ -441,6 +441,18 @@ export const HELP_ARTICLES: HelpArticle[] = [
     paragraphs: ['Expense에서 예산을 정하고 결제할 때마다 기록해요. 현지 통화는 원화로 환산돼요. 공동 지출은 정산 탭에서 누가 누구에게 보낼지 알려 줘요. 여행 중에는 Companion 지갑에서 기록하면 돼요.'],
   },
   {
+    id: 'faq-pro',
+    category: 'faq',
+    status: 'part',
+    title: 'PRO 이용권은 무엇이고 어디서 볼 수 있나요?',
+    summary: '계정 메뉴·설정·휴대폰 메뉴(☰)의 "요금제 · PRO"에서 볼 수 있어요.',
+    keywords: ['PRO', '프로', '요금제', '이용권', '결제', '유료', '환불', '구독'],
+    paragraphs: [
+      'PRO는 30일 이용권이에요. 자동으로 갱신되지 않아요. AI 어시스턴트 웹 검색, 인생샷, 영수증·결제 캡처로 지출 추가를 쓸 수 있고, 하루 AI 사용 횟수가 늘어나요.',
+      '요금제 화면에서 지금 내 요금제·만료일·남은 웹 검색 수와 결제 내역을 볼 수 있어요. 결제는 준비 중이에요. 열리면 같은 화면에서 구매할 수 있어요.',
+    ],
+  },
+  {
     id: 'faq-receipt',
     category: 'faq',
     status: 'no',

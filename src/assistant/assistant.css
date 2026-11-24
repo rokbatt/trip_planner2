@@ -307,6 +307,8 @@
 .ws-ai-web-toggle.is-locked { color: #7A8CA3; }
 .ws-ai-pro { padding: 1px 6px; border-radius: 999px; font-size: 9.5px; font-weight: 800; letter-spacing: 0.04em; color: #FFFFFF; background: linear-gradient(135deg, #F59E0B, #F97316); }
 .ws-ai-web-hint { font-size: 11px; color: #64748B; line-height: 1.4; }
+.ws-ai-pro-link { color: #0B7CC4; font-weight: 600; text-decoration: none; margin-left: 4px; }
+.ws-ai-pro-link:hover { text-decoration: underline; }
 .ws-ai-websrc { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
 .ws-ai-websrc-label { font-size: 10.5px; font-weight: 700; color: #64748B; }
 .ws-ai-websrc-link { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 8px; border-radius: 999px; font-size: 11px; color: #2563EB; background: #EFF6FF; text-decoration: none; }

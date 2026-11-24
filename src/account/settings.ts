@@ -59,6 +59,11 @@ export function renderSettings(): HTMLElement {
       </section>
 
       <section class="st-card">
+        <h2 class="st-h2">요금제</h2>
+        <a class="st-row" href="#pro"><span class="st-plan" id="st-plan">요금제 · PRO 이용권</span><span>›</span></a>
+      </section>
+
+      <section class="st-card">
         <h2 class="st-h2">약관과 개인정보</h2>
         <a class="st-row" href="#terms">이용약관<span>›</span></a>
         <a class="st-row" href="#privacy">개인정보처리방침<span>›</span></a>
@@ -87,6 +92,13 @@ export function renderSettings(): HTMLElement {
     else navigate('trips');
   });
   el.querySelector('#st-logout')!.addEventListener('click', () => { void signOut(); });
+  // 지금 요금제를 한 줄로(무료 / PRO ~만료일) — 실패하면 그냥 링크만 남는다
+  void import('../assistant/assistantClient').then(async ({ fetchMyPlanInfo }) => {
+    const p = await fetchMyPlanInfo();
+    const span = el.querySelector('#st-plan');
+    if (!span) return;
+    span.textContent = p.plan === 'pro' ? 'PRO 이용 중' + (p.expiresAt ? ' · ' + fmtDate(p.expiresAt) + '까지' : '') : '무료 이용 중 · PRO 알아보기';
+  }).catch(() => undefined);
   el.querySelector('#st-withdraw')!.addEventListener('click', () => {
     if (user) openWithdrawModal(user.id, email);
   });

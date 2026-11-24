@@ -1,0 +1,60 @@
+/* ============================================================
+   요금제 · PRO 이용권(#pro) — 설정 화면(settings.css)과 같은 카드 체계
+   ============================================================ */
+
+.pro-banner {
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  word-break: keep-all;
+  border: 1px solid #CDEBFB;
+  background: #F2FAFF;
+  color: #0B2A5C;
+}
+.pro-banner.is-ok { border-color: #BFE8D2; background: #F1FBF5; color: #166534; }
+.pro-banner.is-err { border-color: #F5CACA; background: #FFF6F6; color: #9F1D1D; }
+
+.pro-status { display: grid; gap: 2px; margin-top: 6px; }
+.pro-status b { font-size: 16px; color: #0B2A5C; letter-spacing: -0.02em; }
+.pro-status span { font-size: 13px; color: #64748B; }
+
+.pro-compare { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+.pro-compare th { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: #64748B; text-align: center; padding: 6px 4px; }
+.pro-compare th:last-child { color: #0B7CC4; }
+.pro-compare td { padding: 10px 4px; border-top: 1px dashed rgba(130, 150, 170, 0.18); color: #17212B; text-align: center; word-break: keep-all; }
+.pro-compare td:first-child { text-align: left; color: #334155; }
+.pro-compare td:last-child { font-weight: 600; color: #0B2A5C; }
+
+.pro-price { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin: 8px 0 4px; }
+.pro-price-num { font-family: 'Instrument Serif', serif; font-size: 34px; color: #0B2A5C; letter-spacing: -0.01em; }
+.pro-price-unit { font-family: var(--font-sans); font-size: 15px; margin-left: 2px; }
+.pro-price-per { font-size: 12.5px; color: #64748B; }
+
+.pro-notice { margin: 12px 0 0; padding: 12px 14px 12px 28px; border-radius: 12px; background: #F8FBFE; border: 1px solid #E3EEF7; display: grid; gap: 6px; }
+.pro-notice li { font-size: 12.5px; line-height: 1.65; color: #334155; word-break: keep-all; }
+
+.pro-agree { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; font-size: 13px; line-height: 1.6; color: #17212B; cursor: pointer; word-break: keep-all; }
+.pro-agree input { margin-top: 3px; width: 16px; height: 16px; flex: none; accent-color: #0B2A5C; }
+.pro-agree a { color: #0B7CC4; }
+
+.pro-methods { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+.pro-method:disabled { opacity: 0.45; cursor: not-allowed; }
+.pro-msg { min-height: 1.2em; margin-top: 8px; font-size: 12.5px; color: #9F1D1D; }
+
+.pro-hist { list-style: none; margin: 8px 0 0; padding: 0; }
+.pro-hist-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 12px 0; border-top: 1px dashed rgba(130, 150, 170, 0.18); }
+.pro-hist-row:first-child { border-top: 0; }
+.pro-hist-main { display: grid; gap: 2px; }
+.pro-hist-date { font-size: 13.5px; font-weight: 600; color: #0B2A5C; }
+.pro-hist-amt { font-size: 12.5px; color: #64748B; }
+.pro-hist-side { display: grid; justify-items: end; gap: 4px; }
+.pro-hist-state { font-size: 12px; font-weight: 600; color: #166534; }
+.pro-hist-state.is-off { color: #64748B; }
+.pro-hist-refund { font-size: 12px; color: #0B7CC4; text-decoration: none; }
+.pro-hist-id { grid-column: 1 / -1; font-size: 11px; color: #94A3B8; }
+
+@media (max-width: 480px) {
+  .pro-methods { grid-template-columns: 1fr; }
+  .pro-compare { font-size: 12.5px; }
+}

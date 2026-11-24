@@ -395,7 +395,10 @@ function mountShell(): void {
   rootEl.querySelector('#ws-ai-web')?.addEventListener('click', () => {
     if (myPlan !== 'pro') {
       const hint = rootEl?.querySelector('#ws-ai-web-hint') as HTMLElement | null;
-      if (hint) hint.textContent = myPlan === null ? '확인 중이에요…' : 'PRO 기능이에요. 문서에 없는 운영 시간·교통 같은 정보까지 웹에서 찾아 답해요.';
+      if (hint) {
+        if (myPlan === null) hint.textContent = '확인 중이에요…';
+        else hint.innerHTML = 'PRO 기능이에요. 문서에 없는 운영 시간·교통 같은 정보까지 웹에서 찾아 답해요. <a href="#pro" class="ws-ai-pro-link">PRO 알아보기</a>';
+      }
       return;
     }
     webOn = !webOn;

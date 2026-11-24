@@ -81,6 +81,7 @@
 }
 .st-row span { color: #94A3B8; font-size: 18px; }
 .st-row:hover { color: #0B7CC4; }
+.st-row .st-plan { color: inherit; font-size: inherit; }
 
 /* ── 버튼 ── */
 .st-btn {

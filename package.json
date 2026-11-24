@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@googlemaps/markerclusterer": "^2.6.2",
+    "@portone/browser-sdk": "0.1.13",
     "@supabase/supabase-js": "^2.49.1",
     "@turf/bbox": "^7.3.5",
     "@turf/convex": "^7.3.5",
