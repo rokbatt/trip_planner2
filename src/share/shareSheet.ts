@@ -86,7 +86,7 @@ export function openShareSheet(input: ShareInput): void {
   const apps = [
     KAKAO_KEY ? btn('kakao', '카카오톡', 'data-ss="kakao"') : '',
     ...targets.map((t) => btn(t.key, t.label, 'href="' + escapeHtml(t.href) + '"')),
-    'share' in navigator ? btn('more', '더보기', 'data-ss="more"') : '',
+    !phone && 'share' in navigator ? btn('more', '더보기', 'data-ss="more"') : '',
   ].join('');
 
   const overlay = document.createElement('div');
@@ -98,6 +98,8 @@ export function openShareSheet(input: ShareInput): void {
     '  <div class="ss-apps">' + apps + '</div>',
     '  <div class="ss-link"><input class="ss-url" type="text" readonly value="' + escapeHtml(input.url) + '" aria-label="공유 링크" />',
     '    <button type="button" class="ss-copy">복사</button></div>',
+    // 휴대폰: 설치된 앱(카카오톡 포함) 전부로 보내는 기기 공유를 큰 버튼으로 — 가장 많이 쓰는 길
+    phone && 'share' in navigator ? '  <button type="button" class="ss-native" data-ss="more">' + ICONS.more.svg + '다른 앱으로 보내기</button>' : '',
     '  <p class="ss-note">링크를 받은 사람이 로그인하면 이 여행에 함께하게 돼요.</p>',
     '</div>',
   ].join('');
@@ -132,11 +134,11 @@ export function openShareSheet(input: ShareInput): void {
   overlay.querySelector('[data-ss="kakao"]')?.addEventListener('click', async () => {
     if (!(await shareKakao(input))) copyBtn.click();
   });
-  overlay.querySelector('[data-ss="more"]')?.addEventListener('click', async () => {
+  overlay.querySelectorAll('[data-ss="more"]').forEach((el) => el.addEventListener('click', async () => {
     try {
       await nav.share!({ title: '몽실이 여행 초대', text: input.text, url: input.url });
     } catch {
       /* 닫음 */
     }
-  });
+  }));
 }

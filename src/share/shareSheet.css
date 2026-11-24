@@ -45,3 +45,32 @@
 .ss-copy { flex: none; min-height: 34px; padding: 0 14px; border: 1px solid #CBD5E1; border-radius: 999px; background: #FFFFFF; font-size: 13px; font-weight: 700; color: #0F172A; cursor: pointer; font-family: inherit; }
 .ss-copy.is-done { border-color: #2563EB; color: #2563EB; }
 .ss-note { margin: 10px 2px 0; font-size: 11.5px; color: #64748B; }
+
+/* ── 휴대폰: 아이콘을 4칸 격자로(옆으로 밀지 않아도 다 보이게), 손가락 크기 터치, 기기 공유 큰 버튼 ── */
+.ss-overlay.is-sheet .ss-box { padding: 10px 18px calc(18px + env(safe-area-inset-bottom)); max-height: 88dvh; overflow-y: auto; }
+.ss-overlay.is-sheet .ss-box::before { content: ''; display: block; width: 38px; height: 4px; margin: 0 auto 10px; border-radius: 999px; background: #CBD5E1; }
+.ss-overlay.is-sheet .ss-apps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px 4px; overflow: visible; padding-bottom: 16px; }
+.ss-overlay.is-sheet .ss-app { min-width: 0; padding: 4px 0; min-height: 76px; }
+.ss-overlay.is-sheet .ss-app-ic { width: 54px; height: 54px; }
+.ss-overlay.is-sheet .ss-link { padding: 6px 6px 6px 12px; }
+.ss-overlay.is-sheet .ss-url { font-size: 14px; }
+.ss-overlay.is-sheet .ss-copy { min-height: 40px; padding: 0 16px; font-size: 14px; }
+.ss-native {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 10px;
+  border: 0;
+  border-radius: 12px;
+  background: #0B2A5C;
+  color: #FFFFFF;
+  font-size: 15px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+}
+.ss-native svg { width: 20px; height: 20px; }
+.ss-native svg circle { fill: #FFFFFF; }
