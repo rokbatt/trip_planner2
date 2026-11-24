@@ -7,6 +7,7 @@ import './auth.css';
 import './landing-shots.css';
 import { boardShotHtml, chatShotHtml, expenseShotHtml, routeShotHtml, stayShotHtml, timelineShotHtml } from './landingShots';
 import { escapeHtml } from '../utils/html';
+import { businessFooterHtml } from '../legal/business';
 
 /* ── 인증 ── */
 export async function signInWithGoogle(): Promise<void> {
@@ -399,6 +400,7 @@ export function renderLogin(): void {
         <footer class="lp-footer">
           <div class="lp-footer-inner">
             <!--
+              사업자 정보는 src/legal/business.ts 한 곳에서 채운다 — 전부 채워지기 전엔 아래 표시가 그려지지 않는다.
               사업자등록번호·주소·대표자는 실제 값이 생긴 뒤에 넣는다. 자리표시용 번호는
               "비어 있는 것"이 아니라 "틀린 것"이라 없는 것보다 나쁘다.
               약관·개인정보처리방침 본문의 같은 자리도 함께 채울 것(src/legal/legal.ts).
@@ -414,6 +416,7 @@ export function renderLogin(): void {
             <div class="lp-footer-biz">
               친구와 함께 짜는 여행 계획 · 몽실이 (Mongsil)
             </div>
+            ${businessFooterHtml()}
             <div class="lp-footer-copy">
               © ${new Date().getFullYear()} Mongsil. All rights reserved.
             </div>

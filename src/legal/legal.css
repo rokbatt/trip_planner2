@@ -240,3 +240,18 @@
   .lg-navlink { font-size: 12px; padding: 6px 9px; }
   .lg-table { display: block; overflow-x: auto; }
 }
+
+/* 유료 서비스 조항 — 결제를 열기 전에는 "시행 예정"으로 묶어 보여 준다(legal.ts paid()) */
+.lg-pending {
+  border: 1px dashed #9CC9E8;
+  border-radius: 14px;
+  padding: 14px 18px 4px;
+  margin: 18px 0;
+  background: #F7FBFF;
+}
+.lg-pending > strong {
+  display: block;
+  font-size: 13px;
+  color: #0B7CC4;
+  margin-bottom: 10px;
+}

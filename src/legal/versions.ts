@@ -12,8 +12,17 @@
  * 않도록 상수를 따로 둔다.
  */
 
-export const TERMS_VERSION = '2026-11-draft2';
-export const PRIVACY_VERSION = '2026-11-draft2';
+/**
+ * 유료 서비스(PRO 이용권 결제) 조항을 시행하는 스위치 — Build 변수 `VITE_PAID_TERMS=on`.
+ * 결제를 실제로 여는 날(실결제 키를 넣는 날) 켠다. 켜면
+ *   - 약관·방침의 유료 조항이 "시행 예정" 표시 없이 본문이 되고
+ *   - 아래 두 버전이 올라가 이미 가입한 사람도 다음 접속 때 다시 동의한다(account/consent.ts의 게이트).
+ * 시험 결제 기간에는 끈 채로 둔다(사업자 정보가 비어 있는 문서에 모두가 다시 동의하지 않게).
+ */
+export const PAID_TERMS_LIVE = (import.meta.env?.VITE_PAID_TERMS ?? '') === 'on';
+
+export const TERMS_VERSION = PAID_TERMS_LIVE ? '2026-12-paid1' : '2026-11-draft2';
+export const PRIVACY_VERSION = PAID_TERMS_LIVE ? '2026-12-paid1' : '2026-11-draft2';
 
 /** 동의 창에 나오는 항목 — 법이 "각각 따로" 받으라고 하는 것들을 한 줄씩 나눠 둔다. */
 export interface ConsentItem {
