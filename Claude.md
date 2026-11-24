@@ -148,6 +148,9 @@ Shortlist 3단계 세부 컨셉:
   발송은 `worker/webpush.ts`(VAPID 서명 + RFC 8291 암호화, 외부 라이브러리 없음). 구독은 `push_subscriptions`(본인 줄만, RLS).
   비밀값 `VAPID_PRIVATE_KEY`는 서버 Secret, 공개 키는 서버 `VAPID_PUBLIC_KEY`와 빌드 `VITE_VAPID_PUBLIC_KEY` 두 곳에 같은 값.
   아이폰은 홈 화면에 추가한 앱에서만 받는다
+- 초대 공유 창(`src/share/shareSheet.ts`)은 PC 멤버 초대·Companion 일행 초대가 같이 쓴다. 카카오톡 버튼은 **빌드 변수 `VITE_KAKAO_JS_KEY`**
+  (카카오 디벨로퍼스 [앱] → [플랫폼 키] → JavaScript 키, 그 아래 "JavaScript SDK 도메인"에 운영·시험 주소 등록)가 있을 때만 보인다.
+  공개용 키라 Build 칸에 넣고, 바꾸면 다시 배포해야 화면에 들어간다
 - 결제 `/api/pay/*`도 **Worker 안에서** 처리한다(`worker/pay.ts`, 설계 `docs/PAYMENT_DESIGN.md`). 웹훅(`/api/pay/webhook`)만 로그인 예외이고
   Standard Webhooks 서명(WebCrypto, 외부 라이브러리 없음)으로 지킨다. 결제 상태는 **포트원 API로 다시 조회한 값만** 믿고, 반영·회수는 DB 함수
   (`grant_pro_pass`·`revoke_pro_pass`)가 한 번만 한다. 금액·기간은 `src/pay/products.ts` 한 곳. 비밀값 `PORTONE_API_SECRET`·`PORTONE_WEBHOOK_SECRET`은 Secret,
