@@ -36,7 +36,7 @@ import {
   normalizeNoteCategory,
 } from '../docs/docsStore';
 import { escapeHtml } from '../docs/docsIcons';
-import { requestAssistantAnswer, requestDocDigest, fetchMyPlan } from './assistantClient';
+import { requestAssistantAnswer, requestDocDigest, fetchMyPlanInfo } from './assistantClient';
 import type { AssistantSource, Plan, WebSource } from './assistantClient';
 import { safeHttpUrl } from '../utils/html';
 import type { TripDocUser, TripDocument } from '../types/database';
@@ -69,6 +69,12 @@ interface ChatTurn {
  * 무료 사용자는 스위치가 잠겨 보이고 눌러도 안내만 나온다. 서버(api/ai.ts handleDocQAWeb)가 다시 확인한다.
  */
 let myPlan: Plan | null = null;
+/** 이용권의 PRO 웹 검색 남은 수(null = 제한 없음·모름) — 안내 문구용, 실제 차감은 서버 */
+let webLeft: number | null = null;
+
+function refreshPlan(): void {
+  void fetchMyPlanInfo().then((p) => { myPlan = p.plan; webLeft = p.webLeft; updateFormState(); });
+}
 let planAsked = false;
 let webOn = false;
 
@@ -129,7 +135,7 @@ export function renderAssistantPanel(container: HTMLElement, tripId: string): vo
   updateFormState();
   if (!planAsked) {
     planAsked = true;
-    void fetchMyPlan().then((p) => { myPlan = p; updateFormState(); });
+    refreshPlan();
   }
 
   if (!sourcesReady && !sourcesPromise) {
@@ -354,6 +360,7 @@ async function ask(question: string): Promise<void> {
     const useWeb = webOn && myPlan === 'pro';
     const result = await requestAssistantAnswer(currentTripId, question, sources, useWeb);
     turns.push({ role: 'ai', text: result.answer, sources: result.usedTitles, webSources: result.webSources, web: result.web });
+    if (useWeb && webLeft !== null) refreshPlan(); // 남은 웹 검색 수를 서버 값으로 다시
   } catch (e) {
     turns.push({ role: 'ai', text: '답변을 가져오지 못했어요: ' + (e as Error).message, error: true });
   } finally {
@@ -424,7 +431,7 @@ function updateFormState(): void {
     webBtn.classList.toggle('is-locked', myPlan !== 'pro');
     webBtn.setAttribute('aria-checked', String(on));
     const hint = rootEl.querySelector('#ws-ai-web-hint') as HTMLElement | null;
-    if (hint && myPlan === 'pro') hint.textContent = on ? '문서 + 웹에서 찾아 답해요 (하루 20번)' : '';
+    if (hint && myPlan === 'pro') hint.textContent = on ? '문서 + 웹에서 찾아 답해요 (하루 20번' + (webLeft !== null ? ' · 이용권 남은 ' + webLeft + '번' : '') + ')' : '';
   }
   if (disclaimerEl) disclaimerEl.classList.toggle('is-visible', turns.length > 0);
 }
