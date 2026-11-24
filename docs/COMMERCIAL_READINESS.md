@@ -131,7 +131,7 @@ PRO 판정: 서버 `api/ai.ts` `userPlan`. 화면은 표시만 하고, 허용 �
 
 ### C. 결제 개발 — 🤖 (사업자등록 없이 포트원 테스트 모드로 먼저 진행 가능, 한 줄 = PR 하나)
 
-- [ ] 🤖 C-1 결제 설계 확정 — `docs/LAUNCH_HANDOFF.md` 4장을 포트원 기준 확정안으로 고쳐요
+- [x] 🤖 C-1 결제 설계 확정 → `docs/PAYMENT_DESIGN.md`(11-24). 남은 확인 3개는 그 문서 8장
 - [ ] 🤖 C-2 `supabase/payments.sql` — 결제 기록(주문 ID·포트원 결제 ID·금액·상태·기간·웹 검색 사용 횟수)
   - 본인은 읽기만, 쓰기는 서버만 해요(RLS).
   - 탈퇴 처리 확인(`deletionDrift.test.ts`)도 같이 해요.
