@@ -2,7 +2,8 @@
  * 서버 주소(/api/*) 로그인 확인 — 모든 요청이 지나는 Worker 입구 한 곳에서 한다(Claude.md 5-11 "치명" 항목).
  *
  * - 앱은 이미 모든 /api 호출에 로그인 토큰을 붙인다(src/utils/apiFetch.ts). 토큰이 없거나 틀리면 401.
- * - 예외: 비밀값으로 따로 지키는 관리·정리 주소(ADMIN_SECRET · CRON_SECRET), 그리고 자체 확인하는 /api/notify.
+ * - 예외: 비밀값으로 따로 지키는 관리·정리 주소(ADMIN_SECRET · CRON_SECRET), 자체 확인하는 /api/notify,
+ *   포트원이 부르는 /api/pay/webhook(Standard Webhooks 서명으로 지킨다, worker/pay.ts).
  * - 토큰 확인은 Supabase에 묻고(`/auth/v1/user`), 결과를 Cloudflare 캐시에 5분 둔다 — 같은 토큰으로 연달아 부를 때
  *   매번 묻지 않는다. 캐시 키는 토큰의 SHA-256(토큰 원문을 저장하지 않는다).
  * - 비상 스위치: 환경 변수 `API_AUTH=off`면 확인을 건너뛴다(예전 화면을 가진 기기가 많이 막힐 때 코드 없이 되돌리기).
@@ -19,7 +20,7 @@ export interface AuthEnv {
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 /** 로그인 없이 들어올 수 있는 주소 — 각자 비밀값이나 자체 확인으로 지킨다 */
-export const AUTH_EXEMPT = new Set(['/api/cleanup-search-cache', '/api/backfill-photos', '/api/notify', '/api/health']);
+export const AUTH_EXEMPT = new Set(['/api/cleanup-search-cache', '/api/backfill-photos', '/api/notify', '/api/health', '/api/pay/webhook']);
 
 const OK_TTL_SEC = 300;
 

@@ -17,8 +17,9 @@ import { edgeNote } from './edgeNote';
 import { handleNotify, type NotifyEnv, type Limiter } from './notify';
 import { runWeatherAlerts } from './weatherAlert';
 import { requireLogin, type AuthEnv } from './auth';
+import { handlePay, type PayEnv } from './pay';
 
-interface Env extends NotifyEnv, AuthEnv {
+interface Env extends NotifyEnv, AuthEnv, PayEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
   CRON_SECRET?: string;
 }
@@ -75,6 +76,13 @@ export default {
       if (url.pathname === '/api/notify' || url.pathname === '/api/notify/') {
         const edge = typeof caches !== 'undefined' ? caches.default : undefined;
         const res = await handleNotify(request, env, undefined, edge ? cacheLimiter(edge) : undefined);
+        const note = edgeNote(request, res.status);
+        if (note) console.warn(note);
+        return res;
+      }
+      // 결제도 Worker 안에서 처리한다(worker/pay.ts — 웹훅만 로그인 예외, 서명으로 지킨다)
+      if (url.pathname.startsWith('/api/pay/')) {
+        const res = await handlePay(request, env);
         const note = edgeNote(request, res.status);
         if (note) console.warn(note);
         return res;

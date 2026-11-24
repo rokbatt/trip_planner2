@@ -34,7 +34,7 @@ interface VercelResponse {
 }
 
 /** 캐시 키에 자유 입력(검색어 등)이 섞여 무한 증식 가능한 테이블만 여기 등록 */
-const CLEANUP_TARGETS: { table: string; retentionDays: number }[] = [
+const CLEANUP_TARGETS: { table: string; retentionDays: number; column?: string; statusIn?: string[] }[] = [
   { table: 'hotel_search_cache', retentionDays: 90 },
   // AI 일정 추천 — 키에 "담은 장소 조합"이 들어가서 조합 수만큼 늘어날 수 있음.
   // 30일이면 "장소를 안 바꾸는 한 계속 캐시가 살아있다"는 사용자 기대에는 충분히 길고,
@@ -44,6 +44,10 @@ const CLEANUP_TARGETS: { table: string; retentionDays: number }[] = [
   { table: 'api_usage', retentionDays: 7 },
   // 앱 오류 기록(supabase/client_errors.sql) — 원인 찾기용이라 30일이면 충분하다
   { table: 'client_errors', retentionDays: 30 },
+  // 결제(supabase/payments.sql) — 결제창만 열고 끝난 주문(ready·failed)은 30일 뒤 정리
+  { table: 'payments', retentionDays: 30, column: 'created_at', statusIn: ['ready', 'failed'] },
+  // 완료·취소된 결제는 전자상거래법 보관 기간(5년) 뒤 정리(docs/PAYMENT_DESIGN.md 5장)
+  { table: 'payments', retentionDays: 5 * 365 + 2, column: 'created_at' },
 ];
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -72,15 +76,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const deleted: Record<string, number> = {};
   for (const target of CLEANUP_TARGETS) {
     const cutoff = new Date(Date.now() - target.retentionDays * 24 * 60 * 60 * 1000).toISOString();
-    const { error, count } = await supabase
+    let q = supabase
       .from(target.table)
       .delete({ count: 'exact' })
-      .lt('updated_at', cutoff);
+      .lt(target.column ?? 'updated_at', cutoff);
+    if (target.statusIn) q = q.in('status', target.statusIn);
+    const { error, count } = await q;
+    const label = target.table + (target.statusIn ? ':' + target.statusIn.join('+') : '');
     if (error) {
-      console.error('[cleanup-search-cache] ' + target.table + ' 정리 실패:', error.message);
+      console.error('[cleanup-search-cache] ' + label + ' 정리 실패:', error.message);
       continue;
     }
-    deleted[target.table] = count ?? 0;
+    deleted[label] = count ?? 0;
   }
 
   res.status(200).json({ deleted });
