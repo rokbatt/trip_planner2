@@ -20,6 +20,7 @@ import './board.css';
 import { parseISODate } from '../utils/dates';
 import { apiFetch } from '../utils/apiFetch';
 import { escapeHtml } from '../utils/html';
+import { cleanPickName, pickSearchQueries } from './pickName';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type PlacesDbRow = Database['public']['Tables']['places_db']['Row'];
@@ -2083,7 +2084,8 @@ function buildAiPicksContent(picks: Record<string, string[]>, _tripId: string): 
   const yearMonthLabel = now.getFullYear() + '.' + String(now.getMonth() + 1).padStart(2, '0');
 
   const sections = GATES.map((gate) => {
-    const names = picks[gate.key] ?? [];
+    // 이미 캐시된 옛 추천에는 "**이름**: 설명"이 남아 있을 수 있어 화면에서도 다듬는다
+    const names = (picks[gate.key] ?? []).map(cleanPickName).filter((n, i, arr) => n && arr.indexOf(n) === i);
     const items = names.slice(0, 5).map((name) => [
       '<li class="bd-ai-pick-item">',
       '  <span class="bd-ai-pick-name">' + escapeHtml(name) + '</span>',
@@ -2134,11 +2136,15 @@ function bindAiPickAddButtons(body: HTMLElement, tripId: string): void {
 /** AI 추천 장소 이름으로 Google Places를 찾아 Inbox에 추가 (+ 누르기 전까진 API 호출 안 함) */
 async function addAiPickToInbox(tripId: string, name: string, destination: string): Promise<boolean> {
   try {
-    const query = destination ? name + ' ' + destination : name;
-    const predictions = await getPlacePredictions(query);
+    // 이름 전체 → 괄호 안(현지·영문 이름) → 괄호 밖 순서로, 찾을 때까지만 검색한다(최대 3번)
+    let predictions: Awaited<ReturnType<typeof getPlacePredictions>> = [];
+    for (const query of pickSearchQueries(name, destination)) {
+      predictions = await getPlacePredictions(query);
+      if (predictions.length > 0) break;
+    }
 
     if (predictions.length === 0) {
-      alert('"' + name + '"의 장소 정보를 찾지 못했어요.');
+      alert('"' + name + '"을(를) 지도에서 찾지 못했어요. 행사나 지역 이름처럼 한 장소가 아닌 추천일 수 있어요.');
       return false;
     }
 
