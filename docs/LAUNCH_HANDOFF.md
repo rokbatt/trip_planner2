@@ -27,23 +27,48 @@
 | AI | Gemini 2.5 Flash-Lite **유료 등급 전환 완료**(결제 계정 "내 결제 계정", 예산 알림 설정됨) |
 | 요금제 | `user_plans`(free/pro, source, expires_at, web_left) + `app_roles`(admin·unlimited = 자동 PRO). PRO 30일 이용권 4,900원(자동 갱신 없음) |
 | PRO 기능 | AI 어시스턴트 웹 검색(하루 20번·이용권당 100번) · 인생샷(주변 탭·일정 장소 상세) · 영수증 AI 입력(`RECEIPT_AI_ENABLED` 꺼짐) · AI 하루 150번 |
-| 결제 | **코드 완료, 닫혀 있음** — 포트원 V2(`worker/pay.ts`·`#pro`·`supabase/payments.sql` 실행됨). 포트원 키(`VITE_PORTONE_*`·Secret)가 없어 "결제 준비 중". 약관 유료 조항은 `VITE_PAID_TERMS=on` 전까지 "시행 예정". 설계 `docs/PAYMENT_DESIGN.md`, 운영 `docs/PAYMENT_OPERATIONS.md` |
+| 결제 | **코드 완료, 닫혀 있음 · 유료화 보류(무료 운영, 11-24)** — 포트원 V2(`worker/pay.ts`·`#pro`·`supabase/payments.sql` 실행됨). 포트원 키(`VITE_PORTONE_*`·Secret)가 없어 "결제 준비 중". 약관 유료 조항은 `VITE_PAID_TERMS=on` 전까지 "시행 예정". 설계 `docs/PAYMENT_DESIGN.md`, 운영 `docs/PAYMENT_OPERATIONS.md` |
 | 알림 | 웹 푸시(시험·"어디야?"·현지 저녁 8시 내일 날씨, 기기별 날씨 끄기) |
 | 오류 감지 | 화면 오류 → `client_errors`, 다운 감시용 `/api/health` |
 | 법·약관 | 약관·방침 초안 `draft2`(사업자 정보·위탁 국가 빈칸), 연락처 `help@mongsil2.com`(받기 전용) |
 
-## 2. 사용자가 아직 할 일 (확인 필요)
+## 2. 사용자가 할 일 총정리 (2026-11-24 — 무료 운영 결정 뒤)
 
-| 할 일 | 위치 | 상태 |
+> **유료화 보류(사용자 결정 2026-11-24, A안).** 사업자등록을 하면 건강보험 피부양자 자격에 영향이 있을 수 있어(사업자등록이 있으면 사업소득 0원이어야 한다는 설명이 많음 — 공단 확인 필요)
+> **무료로 운영하며 사용자를 모은다.** 결제 코드는 완성됐지만 닫힌 채로 둔다. 사업자등록·PG·결제 열기는 보류.
+> 사업자등록 없이 돈을 받는 우회(개인 계좌·명의대여)는 하지 않는다.
+
+### 🔴 먼저 (무료 운영의 원가·보안)
+| # | 할 일 | 어디서 | 상태 |
+|---|---|---|---|
+| 1 | Places API(New)·Maps JavaScript API **하루 요청 상한(할당량)** | Google Cloud 콘솔 → API 및 서비스 → 할당량 | 미확인 |
+| 2 | **예산 알림** — Gemini 결제 계정(완료)에 더해 **지도 결제 계정**에도 | Google Cloud Billing | 지도 쪽 미확인 |
+| 3 | Vercel 옛 주소(`mongsil2.vercel.app/api/*`, 로그인 확인 없음 = 원가 구멍) 닫기 | Vercel 대시보드 / 5단계 정리 | 결정 대기 |
+| 4 | Cloudflare 이전 5단계 정리(11-28 무렵) | `docs/CLOUDFLARE_MIGRATION.md` | 예정 |
+| 5 | 관리자 등록 확인 `select email, role from app_roles where role = 'admin'` | Supabase SQL | 미확인 |
+| 6 | 업타임 감시 `https://www.mongsil2.com/api/health` | UptimeRobot 등 | 미확인 |
+
+### 🟡 확인 (짧게 끝나는 것)
+| # | 할 일 | 상태 |
 |---|---|---|
-| `supabase/user_plans.sql` 실행 | Supabase SQL Editor | 미확인 |
-| `supabase/client_errors.sql` 실행 | 〃 | 미확인 |
-| `supabase/push_weather_optout.sql` 실행 | 〃 | 미확인 |
-| 업타임 감시 등록 `https://www.mongsil2.com/api/health` | UptimeRobot 등 | 미확인 |
-| Vercel 옛 주소(`mongsil2.vercel.app/api/*`, 로그인 확인 없음) 닫기 | Vercel 대시보드 | **권장, 결정 대기** |
-| 지도 결제 계정("내 지도 결제 계정")에도 예산 알림 | Google Cloud Billing | 미확인 |
-| Supabase 플랜·백업 상태 캡처 | Supabase Billing·Backups | 미확인 |
-| Cloudflare 이전 5단계 정리(11-28 무렵) | `docs/CLOUDFLARE_MIGRATION.md` | 예정 |
+| 7 | SQL 실행 여부: `client_errors.sql` · `push_weather_optout.sql` (`user_plans`·`api_usage`·`payments`는 실행 확인 11-24) | 일부 미확인 |
+| 8 | Supabase 플랜·백업(무료 플랜은 오래 안 쓰면 멈출 수 있음 — 추정) | 미확인 |
+| 9 | 휴대폰 확인(배포됨): Monthly Picks `**` 사라짐·＋ 추가 · 인생샷 PRO 잠금과 일정 장소 상세 칩 · 지갑 영수증 버튼 PRO · 지도↔다른 탭 오가기 · "예약 받는 곳" 필터 · 요금제 화면 | 미확인 |
+| 10 | (선택) 방콕 이번 달 추천 다시 받기 `delete from ai_monthly_picks where year_month = '2026-11'` | 선택 |
+
+### 🟢 결정
+| # | 할 일 | 메모 |
+|---|---|---|
+| 11 | **베타 PRO** — 초대한 사람에게 PRO를 열지(`app_roles` unlimited 또는 수동 PRO) | Claude 추천: 초대자만 |
+| 12 | 영수증 AI 켜기(`RECEIPT_AI_ENABLED=true`) — PRO 전용이라 11과 같이 | 켜면 도움말 "준비 중" 문구 고침 |
+| 13 | **위치정보 신고 필요 여부** — 무료여도 해당할 수 있음(추정). 방송통신위원회·위치정보지원센터 | 미확인 |
+| 14 | **개인정보처리방침 빈칸** — 운영자 표기(개인), 보호책임자 성명, 위탁사 실제 리전, 로그 보관 기간. 방침 의무는 유료 여부와 무관(추정) | 값 알려 주면 Claude가 채움 |
+| 15 | 건강보험공단 문의(1577-1000) — 유료화 시점 판단용. 질문은 아래 | 나중 |
+
+공단 질문: ① 사업자등록이 있고 사업소득금액이 0원·적자면 피부양자 유지되나요 ② 사업자등록 없이 사업소득이 생기면 기준 금액은 ③ 소득은 언제 반영되나요
+
+### ⏸ 보류 (유료화할 때 — `docs/COMMERCIAL_READINESS.md` 3단계 A·D·E)
+세무사 상담 → 사업자등록·통신판매업 신고 → `src/legal/business.ts` 값 → 포트원·PG 심사와 위탁 표 빈칸 → 결제 여는 날 순서(실결제 키 → `VITE_PAID_TERMS=on` → `PAY_ALLOW_TEST` 끄기) → 약관·방침 법률 검토
 
 ## 3. 결정 사항과 결정 대기 (사용자)
 
@@ -91,8 +116,8 @@
 
 ## 6. 다음 순서 (추천)
 
-1. 사용자: 사업자등록 → 통신판매업 신고(체크리스트 3단계 A) → 값을 알려 주면 Claude가 `src/legal/business.ts`를 채움
-2. 사용자: 포트원 가입(추천패키지) → **테스트 키**가 생기면 Claude와 시험 결제(실제 응답 필드·휴대폰 복귀·웹훅 서명 확인, 설계 문서 3장 "확인 필요")
-3. 사용자: PG 심사 → 포트원 법인명·PG사·처리 국가를 알려 주면 Claude가 방침 위탁 표를 채움
-4. 결제 여는 날: 체크리스트 E의 순서(실결제 키 → `VITE_PAID_TERMS=on` → `PAY_ALLOW_TEST` 끄기 → 소액 결제·환불 점검)
-5. 병행 가능(Claude): 여행 멤버 확인, 보안 헤더(CSP — 포트원 SDK가 `cdn.portone.io` 스크립트를 불러오는 점 반영), 브라우저 장소 호출 원가(1단계), 외부 호출 타임아웃·`npm audit`
+무료 운영(A안)이라 **원가·보안·안정**이 우선이다.
+1. 사용자: 2장 🔴 1~6(특히 Google 하루 상한·예산 알림, Vercel 옛 주소)
+2. Claude(결정 없이 가능): 브라우저 장소 호출 원가 2차(PC 게이트 지도 재생성, 목록 사진 수), 여행 멤버 확인(보안), 보안 헤더(CSP — 포트원 SDK의 `cdn.portone.io` 반영), 외부 호출 타임아웃·`npm audit`
+3. 사용자 결정: 2장 🟢 11~14(베타 PRO, 영수증 AI, 위치정보 신고, 방침 빈칸)
+4. 유료화는 사용자가 다시 정할 때 2장 ⏸ 순서로
