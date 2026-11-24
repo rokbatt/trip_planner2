@@ -598,16 +598,7 @@ function bindEvents(page: HTMLElement, tripId: string): void {
   });
 
   page.querySelector('#ws-invite')?.addEventListener('click', () => {
-    const trip = store.get('currentTrip');
-    if (trip && trip.invite_code) {
-      const url = window.location.origin + '/#join/' + trip.invite_code;
-      navigator.clipboard.writeText(url).then(
-        () => alert('초대 링크가 복사되었어요!\n\n' + url),
-        () => alert('초대 코드: ' + trip.invite_code)
-      );
-    } else {
-      alert('초대 코드를 찾을 수 없어요.');
-    }
+    openInviteShare();
   });
 
   page.querySelector('#ws-help-btn')?.addEventListener('click', () => openHelp());
@@ -618,17 +609,24 @@ function bindEvents(page: HTMLElement, tripId: string): void {
   });
 
   page.querySelector('#ws-share-btn')?.addEventListener('click', () => {
-    const trip = store.get('currentTrip');
-    if (trip && trip.invite_code) {
-      const url = window.location.origin + '/#join/' + trip.invite_code;
-      navigator.clipboard.writeText(url).then(
-        () => alert('초대 링크가 복사되었어요!\n\n' + url),
-        () => alert('초대 코드: ' + trip.invite_code)
-      );
-    } else {
-      alert('초대 코드를 찾을 수 없어요.');
-    }
+    openInviteShare();
   });
+}
+
+/** 멤버 초대·공유 — 앱 아이콘 + 링크 복사 공유 창(share/shareSheet.ts) */
+function openInviteShare(): void {
+  const trip = store.get('currentTrip');
+  if (!trip?.invite_code) {
+    alert('초대 코드를 찾을 수 없어요.');
+    return;
+  }
+  void import('../share/shareSheet').then((m) =>
+    m.openShareSheet({
+      url: window.location.origin + '/#join/' + trip.invite_code,
+      title: '멤버 초대',
+      text: (trip.name || '여행') + '에 같이 가요 — 몽실이에서 함께 계획해요',
+    })
+  );
 }
 
 /** 채팅 초기화 + 우측 레일/패널 인터랙션 바인딩 */
