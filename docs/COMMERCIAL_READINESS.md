@@ -135,11 +135,10 @@ PRO 판정: 서버 `api/ai.ts` `userPlan`. 화면은 표시만 하고, 허용 �
 - [x] 🤖 C-2 `supabase/payments.sql`(11-24) — 결제 기록 표 + `user_plans.web_left` + DB 함수 3개(반영·회수·웹 검색 차감, 서버만 실행).
   Postgres 16에서 반영·중복·연장·환불·탈퇴 보관·권한을 시나리오로 확인. 탈퇴 검사 테스트에 "법정 보관" 예외 추가
   - [ ] 👤 실행 — Supabase SQL Editor(먼저 `user_plans.sql`·`api_usage.sql`이 실행돼 있어야 함)
-- [ ] 🤖 C-3 Worker 결제 주소(`api/` 12개 한도 때문에 Worker 안에서 처리)
-  - `prepare`: 주문 만들기, 금액은 서버가 고정
-  - `confirm`: 포트원에 결제를 다시 조회해서 금액·상태를 확인
-  - `webhook`: 로그인 확인 예외로 두고 서명을 확인
-  - 같은 결제 ID는 한 번만 처리하고(멱등), 끝나면 `user_plans`에 `source`·`expires_at`을 기록
+- [x] 🤖 C-3 Worker 결제 주소(11-24) — `worker/pay.ts`: prepare · complete · webhook(Standard Webhooks 서명) · history · refund(관리자).
+  가짜 Supabase·포트원으로 31개 시험(서명은 명세 공개 예제 값과 일치). 미결제 주문 30일·결제 기록 5년 뒤 정리 추가
+  - [ ] 👤 포트원 테스트 계정이 생기면: Secret `PORTONE_API_SECRET`·`PORTONE_WEBHOOK_SECRET`, 변수 `PORTONE_STORE_ID`·`PAY_ALLOW_TEST=true`,
+    포트원 콘솔 웹훅 주소 `https://www.mongsil2.com/api/pay/webhook`(버전 2024-04-25) → 실제 응답으로 "확인 필요" 필드 점검
 - [ ] 🤖 C-4 웹 검색 총 100번 상한 — 이용권 단위로 세요. 서버에서 확인해요
 - [ ] 🤖 C-5 요금제·결제 화면
   - 결제 전 고지: 가격, 30일, 자동 갱신 없음, 환불 기준
