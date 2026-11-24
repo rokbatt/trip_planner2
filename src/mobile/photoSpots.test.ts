@@ -25,4 +25,11 @@ describe('parsePhotoSpots', () => {
     const text = '###SPOTS###\n' + Array.from({ length: 9 }, (_, i) => '- 장소' + i + ' | 이유').join('\n') + '\n- | 이름 없음';
     expect(parsePhotoSpots(text)).toHaveLength(6);
   });
+  it('"* ", "• ", 번호 목록으로 답해도 읽는다', () => {
+    const text = '###SPOTS###\n* Wat Arun | 노을\n• Chinatown | 네온\n1. Lumpini Park | 호수\n2) ICONSIAM | 야경';
+    expect(parsePhotoSpots(text).map((s) => s.name)).toEqual(['Wat Arun', 'Chinatown', 'Lumpini Park', 'ICONSIAM']);
+  });
+  it('"|"가 없는 줄(설명 문장·목록)은 장소로 읽지 않는다', () => {
+    expect(parsePhotoSpots('###SPOTS###\n- 아래는 추천이에요\n- Wat Arun | 노을')).toEqual([{ name: 'Wat Arun', reason: '노을' }]);
+  });
 });

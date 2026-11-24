@@ -1848,8 +1848,10 @@ export function parsePhotoSpots(text: string): PhotoSpot[] {
   const seen = new Set<string>();
   for (const raw of body.split('\n')) {
     const line = raw.trim();
-    if (!line.startsWith('-')) continue;
-    const [namePart, ...rest] = line.replace(/^-+\s*/, '').split('|');
+    // 약속한 "- " 대신 "* ", "• ", "1. "로 답해도 읽는다(형식이 어긋나 0곳이 되는 것을 막는다)
+    const bullet = line.match(/^(?:[-*•·]+|\d+[.)])\s*/);
+    if (!bullet || !line.includes('|')) continue;
+    const [namePart, ...rest] = line.slice(bullet[0].length).split('|');
     const name = (namePart ?? '').replace(/\*\*/g, '').trim().slice(0, 80);
     const reason = rest.join('|').replace(/\*\*/g, '').trim().slice(0, 80);
     if (!name || seen.has(name.toLowerCase())) continue;
@@ -1880,6 +1882,11 @@ async function handlePhotoSpots(req: VercelRequest, res: VercelResponse) {
   const { data: authData, error: authError } = await supabase.auth.getUser(token);
   if (authError || !authData?.user?.id) {
     res.status(401).json({ error: '로그인이 만료됐어요. 다시 로그인해 주세요.' });
+    return;
+  }
+  // 인생샷은 PRO 기능(2026-11-24 사용자 결정) — 캐시 결과를 돌려주기 전에 확인한다
+  if ((await userPlan(supabase, authData.user)) !== 'pro') {
+    res.status(403).json({ error: '인생샷은 PRO 기능이에요.', code: 'pro_required' });
     return;
   }
 
