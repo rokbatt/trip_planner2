@@ -1,0 +1,47 @@
+/* 공유 창 — PC는 가운데 창, 휴대폰은 아래 시트 */
+.ss-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.42);
+  opacity: 0;
+  transition: opacity 160ms ease;
+  font-family: inherit;
+}
+.ss-overlay.open { opacity: 1; }
+.ss-box, .ss-box * { box-sizing: border-box; }
+.ss-box {
+  width: min(470px, 100%);
+  padding: 18px 20px 20px;
+  border-radius: 14px;
+  background: #FFFFFF;
+  color: #0F172A;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.22);
+  transform: translateY(8px);
+  transition: transform 180ms ease;
+}
+.ss-overlay.open .ss-box { transform: none; }
+.ss-overlay.is-sheet { align-items: flex-end; padding: 0; }
+.ss-overlay.is-sheet .ss-box { width: 100%; border-radius: 18px 18px 0 0; padding-bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateY(24px); }
+.ss-overlay.is-sheet.open .ss-box { transform: none; }
+.ss-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.ss-title { margin: 0; font-size: 16px; font-weight: 700; }
+.ss-close { display: grid; place-items: center; width: 34px; height: 34px; border: 0; border-radius: 50%; background: transparent; color: #334155; cursor: pointer; }
+.ss-close svg { width: 20px; height: 20px; }
+.ss-close:hover { background: #F1F5F9; }
+.ss-apps { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 14px; scrollbar-width: none; }
+.ss-apps::-webkit-scrollbar { display: none; }
+.ss-app { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 64px; padding: 4px 2px; border: 0; background: none; color: #0F172A; text-decoration: none; cursor: pointer; font-family: inherit; }
+.ss-app-ic { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; }
+.ss-app-ic svg { width: 28px; height: 28px; }
+.ss-app-label { font-size: 11.5px; white-space: nowrap; color: #334155; }
+.ss-app:hover .ss-app-ic { filter: brightness(0.95); }
+.ss-link { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 14px; border: 1px solid #CBD5E1; border-radius: 12px; }
+.ss-url { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; font-size: 13.5px; color: #0F172A; font-family: inherit; }
+.ss-copy { flex: none; min-height: 34px; padding: 0 14px; border: 1px solid #CBD5E1; border-radius: 999px; background: #FFFFFF; font-size: 13px; font-weight: 700; color: #0F172A; cursor: pointer; font-family: inherit; }
+.ss-copy.is-done { border-color: #2563EB; color: #2563EB; }
+.ss-note { margin: 10px 2px 0; font-size: 11.5px; color: #64748B; }

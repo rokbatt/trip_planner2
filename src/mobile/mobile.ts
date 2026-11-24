@@ -4357,26 +4357,16 @@ function crewLinksHtml(): string {
   ].join('');
 }
 
-/** 초대 링크 보내기 — 휴대폰이면 공유 시트, 아니면 복사 */
+/** 초대 링크 보내기 — 앱 아이콘 + 링크 복사 공유 창(share/shareSheet.ts, PC 멤버 초대와 같은 창) */
 async function shareInvite(): Promise<void> {
   const code = currentTrip?.invite_code;
   if (!code) { showToast('초대 코드를 찾을 수 없어요.'); return; }
-  const url = window.location.origin + '/#join/' + code;
-  const nav = navigator as Navigator & { share?: (d: { title?: string; text?: string; url?: string }) => Promise<void> };
-  if (nav.share) {
-    try {
-      await nav.share({ title: '몽실이 여행 초대', text: (currentTrip?.name || '여행') + '에 같이 가요', url });
-      return;
-    } catch (e) {
-      if ((e as { name?: string })?.name === 'AbortError') return; // 사용자가 닫음
-    }
-  }
-  try {
-    await navigator.clipboard.writeText(url);
-    showToast('초대 링크를 복사했어요. 메신저에 붙여넣어 보내세요.');
-  } catch {
-    showToast('초대 코드: ' + code);
-  }
+  const { openShareSheet } = await import('../share/shareSheet');
+  openShareSheet({
+    url: window.location.origin + '/#join/' + code,
+    title: '일행 초대하기',
+    text: (currentTrip?.name || '여행') + '에 같이 가요 — 몽실이에서 함께 계획해요',
+  });
 }
 
 function whereSheetHtml(w: WhereIncoming): string {
