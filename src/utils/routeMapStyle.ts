@@ -4,7 +4,7 @@
  * 세 화면이 같은 하루를 보여 주므로 선과 핀도 똑같아야 한다(한 곳만 바꾸면 화면마다 달라진다).
  * 여기엔 색·굵기·모양과 SVG 마커 생성만 있고, 지도 API는 호출부가 넘기는 `g`(window.google)로만 쓴다.
  *
- *  - 경로선: 일렉트릭 블루 8px + 한 톤 진한 테두리 + 흰 진행 방향 화살표
+ *  - 경로선: 일렉트릭 블루 6.8px + 한 톤 진한 테두리 + 흰 진행 방향 화살표
  *  - 출발(그날 첫 정류지) 초록 핀 / 도착(마지막) 빨강 핀 — 흰 테두리, 아래 흰 점이 실제 위치를 짚는다
  *  - 중간 경유지: 흰 원 + 진한 파랑 테두리·번호
  *  - "숙소 들르기": 위치와 상관없이 바이올렛 원 + 숙소 아이콘
@@ -14,9 +14,10 @@ import type { CatKey } from './travelEstimate';
 
 export const ROUTE_LINE_COLOR = '#1E7BFF';
 export const ROUTE_LINE_CASING = '#0A4FB8';
-export const ROUTE_LINE_WEIGHT = 8;
+// 8px에서 15% 줄임 — 굵은 선이 지도 글자를 너무 가린다는 피드백
+export const ROUTE_LINE_WEIGHT = 6.8;
 /** 경로선 바깥 테두리 두께(선 양쪽 합) */
-export const ROUTE_CASING_EXTRA = 3;
+export const ROUTE_CASING_EXTRA = 2.55;
 export const START_GREEN = '#16A34A';
 export const END_RED = '#E5383B';
 export const STOP_RING = '#0A4FB8';
