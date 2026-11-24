@@ -138,6 +138,7 @@ import { takeWhereParams, askWhere, sendHere, positionOnce, agoLabel, type Where
 import { directionsUrl, originChoices, type DirPoint, type Origin, type TravelHint } from './directions';
 import { readReceiptPhoto, toDraft, chargedRate, MAX_PHOTOS_PER_IMPORT, type PhotoDraft } from './receiptImport';
 import { searchPhotoSpots, instagramTagUrl, type SpotInfo, type SpotSource } from './photoSpots';
+import { fetchMyPlan, type Plan } from '../assistant/assistantClient';
 import { PHRASES, LANG_LABEL, SPEECH_LANG, SITUATION_LABEL, languageForDestination, situationsForDay, type Situation } from './phrasebook';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -2260,6 +2261,19 @@ let exPhoto = false;
 /** 인생샷 키워드(야경·노을 등) — 인생샷 모드에서 검색창에 쓴 말 */
 let photoKeyword = '';
 let spotInfo = new Map<string, SpotInfo>();
+/**
+ * 내 요금제 — 인생샷은 PRO 기능이다(2026-11-24). 화면은 잠금·배지 표시만 하고, 실제 허용은 서버가 다시 확인한다.
+ * 모르는 동안(null)은 막지 않는다 — 서버가 PRO가 아니면 403과 안내 문구를 돌려준다.
+ */
+let myPlan: Plan | null = null;
+let myPlanAsked = false;
+function ensureMyPlan(): void {
+  if (myPlanAsked) return;
+  myPlanAsked = true;
+  void fetchMyPlan().then((p) => { myPlan = p; if (p !== 'pro') render(); });
+}
+const photoLocked = (): boolean => myPlan === 'free';
+const PRO_TAG = '<span class="mb-pro-tag">PRO</span>';
 let spotSources: SpotSource[] = [];
 let exCat: ExploreCat = 'food';
 /** 검색어 검색 중이면 그 검색어(카테고리 대신) */
@@ -2439,11 +2453,12 @@ const QUICK_NEAR: NearbyKey[] = ['convenience', 'pharmacy', 'atm', 'exchange'];
  * 내 일정의 지도는 일정 탭 → 지도에 있다(주변은 "새로 찾기"만 맡는다).
  */
 function mapChipsHtml(): string {
-  const chip = (key: string, label: string, icon: string, active: boolean) =>
-    '<button class="mb-ex-chip' + (active ? ' active' : '') + '" data-mapview="' + key + '">' + icon + '<span>' + label + '</span></button>';
+  ensureMyPlan();
+  const chip = (key: string, label: string, icon: string, active: boolean, tag = '') =>
+    '<button class="mb-ex-chip' + (active ? ' active' : '') + '" data-mapview="' + key + '">' + icon + '<span>' + label + '</span>' + tag + '</button>';
   return [
     '<div class="mb-ex-chips" role="tablist">',
-    chip('photo', '인생샷', IC.camera, exPhoto && !exQuery),
+    chip('photo', '인생샷', IC.camera, exPhoto && !exQuery, myPlan === 'pro' ? '' : PRO_TAG),
     // "이 근처" 칩(환전소 등)으로 넘어온 검색이면 위 칩은 아무것도 켜지 않는다 — 그 칩의 검색이 아니다
     EXPLORE_CATS.map((c) => chip(c.key, c.label, EX_ICON[c.key], !exQuery && !exNear && !exPhoto && exCat === c.key)).join(''),
     '</div>',
@@ -2526,9 +2541,14 @@ function exploreHtml(): string {
     '  <span class="mb-ex-status">' + status + '</span>',
     exResults.length ? '  <div class="mb-ex-sort">' + (['relevance', 'distance', 'rating'] as ExploreSort[]).map((k) => '<button class="mb-ex-sortbtn' + (exSort === k ? ' active' : '') + '" data-exsort="' + k + '">' + ({ relevance: '추천순', distance: '거리순', rating: '평점순' } as const)[k] + '</button>').join('') + '</div>' : '',
     '</div>',
-    exError ? '<div class="mb-map-err">' + escapeHtml(exError) + '</div>' : '',
-    !exLoading && exSearchedAt && !exError && !list.length
-      ? '<div class="mb-day-empty"><p class="mb-day-empty-title">' + (exResults.length ? '필터에 맞는 곳이 없어요' : '주변에서 찾지 못했어요') + '</p><p class="mb-day-empty-sub">' + (exResults.length ? '필터를 줄여 보세요.' : '반경을 넓히거나 다른 검색어로 찾아보세요.') + '</p></div>'
+    exPhoto && photoLocked()
+      ? '<div class="mb-day-empty"><p class="mb-day-empty-title">인생샷은 PRO 기능이에요</p><p class="mb-day-empty-sub">AI가 웹에서 찾은 사진 명소를 Google 지도에서 확인해 보여 줘요.</p></div>'
+      : '',
+    exError && !(exPhoto && photoLocked()) ? '<div class="mb-map-err">' + escapeHtml(exError) + '</div>' : '',
+    !exLoading && exSearchedAt && !exError && !list.length && !(exPhoto && photoLocked())
+      ? exPhoto && !exResults.length
+        ? '<div class="mb-day-empty"><p class="mb-day-empty-title">사진 명소를 찾지 못했어요</p><p class="mb-day-empty-sub">지도를 옮겨 다시 검색하거나, 야경·노을처럼 분위기를 적어 찾아보세요.</p></div>'
+        : '<div class="mb-day-empty"><p class="mb-day-empty-title">' + (exResults.length ? '필터에 맞는 곳이 없어요' : '주변에서 찾지 못했어요') + '</p><p class="mb-day-empty-sub">' + (exResults.length ? '필터를 줄여 보세요.' : '반경을 넓히거나 다른 검색어로 찾아보세요.') + '</p></div>'
       : '',
     '<div class="mb-ex-list" id="mb-ex-list">' + list.map(exCardHtml).join('') + '</div>',
     exPhoto && list.length
@@ -4795,8 +4815,11 @@ function pdNearHtml(stop: TlStop): string {
   const near = pdNear && pdNear.stopKey === stop.key ? pdNear : null;
   const radius = near?.radius ?? NEARBY_RADII[0];
 
+  ensureMyPlan();
   const chips =
     '<div class="mb-near-chips">' +
+    // 인생샷은 반경 칩과 달리 지도 탭에서 이 장소 기준으로 찾는다(결과에 지도·사진·출처가 필요해서)
+    '<button class="mb-near-chip" data-nearphoto="1">' + IC.camera + '<span>인생샷</span>' + (myPlan === 'pro' ? '' : PRO_TAG) + '</button>' +
     NEARBY_CATS.map((c) =>
       '<button class="mb-near-chip' + (near?.cat === c.key ? ' active' : '') + '" data-near="' + c.key + '" aria-pressed="' + (near?.cat === c.key) + '">' +
       NEAR_ICON[c.key] + '<span>' + escapeHtml(c.label) + '</span></button>'
@@ -4908,6 +4931,32 @@ function openNearInMap(placeId?: string): void {
   // 지도가 이미 떠 있었으면 render 안에서 바로 다시 붙었다 — 결과에 맞춰 화면을 옮긴다(처음이면 mountMap이 한다)
   if (mapInstance) fitExploreBounds(center);
   if (placeId) openExDetail(placeId);
+}
+
+/** 일정 장소 상세의 "인생샷" — 지도 탭 인생샷을 **이 장소 기준**으로 연다(현재 위치가 아니라) */
+function openPhotoFromStop(): void {
+  const found = detailKey ? findStop(detailKey) : null;
+  const st = found?.stop;
+  if (!st || st.lat == null || st.lng == null) return;
+  const center = { lat: st.lat, lng: st.lng };
+  exAnchor = { stopKey: st.key, name: st.name, ...center };
+  exPhoto = true;
+  photoKeyword = '';
+  exNear = null;
+  exQuery = '';
+  exResults = [];
+  exError = '';
+  exNotice = '';
+  exDetailId = null;
+  exSelected = null;
+  exSearchedAt = center;
+  exCenterLabel = st.name;
+  exMoved = false;
+  markerSig = '';
+  activeTab = 'map';
+  detailKey = null;
+  if (photoLocked()) { render(); return; }
+  void runExploreSearch(center, st.name);
 }
 
 /** 지도에서 "상세로" — 넘어오기 전의 일정 장소 상세로 돌아간다 */
@@ -5321,6 +5370,7 @@ function bind(): void {
       void runPdNear(cat, keep);
     });
   });
+  root.querySelector('[data-nearphoto]')?.addEventListener('click', openPhotoFromStop);
   root.querySelectorAll('[data-nearr]').forEach((btn) => {
     btn.addEventListener('click', () => {
       if (!pdNear || pdNear.stopKey !== detailKey) return;
@@ -5568,6 +5618,7 @@ function bind(): void {
       exPhoto = v === 'photo';
       photoKeyword = '';
       if (!exPhoto) exCat = v as ExploreCat;
+      if (exPhoto && photoLocked()) { exResults = []; exError = ''; markerSig = ''; render(); return; }
       void runExploreSearch(exSearchedAt && !exMoved ? exSearchedAt : undefined, exSearchedAt && !exMoved ? exCenterLabel : undefined);
     });
   });
@@ -5588,6 +5639,7 @@ function bind(): void {
     if (!q) return;
     const c = mapInstance?.getCenter?.();
     if (exPhoto) {
+      if (photoLocked()) return;
       // 인생샷 모드에서는 검색어가 "분위기·키워드"다(야경, 노을, 카페…) — 장소 이름 검색이 아니다
       photoKeyword = q.slice(0, 40);
       void runExploreSearch(exMoved && c ? { lat: c.lat(), lng: c.lng() } : exSearchedAt ?? undefined, exMoved ? '지도 중심' : exSearchedAt ? exCenterLabel : undefined);

@@ -1572,7 +1572,8 @@ AI 없이 정적 데이터에서 비교한다. 띄어쓰기를 지우고 비교�
   검색어에 개인정보 넣지 말라는 지시, 답에 웹 출처)
 
 ### 그 밖의 2026-11 기능 (위치)
-- 인생샷(주변 탭): `api/ai.ts` `photo-spots`(웹 검색 + Google 장소 확인, 14일 캐시) · `src/mobile/photoSpots.ts`
+- 인생샷(**PRO**, 주변 탭 + 일정 장소 상세 "이 근처 둘러보기"의 칩 → 그 장소 기준으로 지도 탭에서 찾음): `api/ai.ts` `photo-spots`(PRO 확인 → 웹 검색 + Google 장소 확인, 14일 캐시) · `src/mobile/photoSpots.ts`.
+  한 번에 브라우저 장소 검색이 최대 6번이라 원가가 커서 PRO로 옮겼다(2026-11-24). 화면은 PRO 배지·잠금 안내만, 허용은 서버
 - 영수증·결제 캡처로 지출 추가(지갑): `receipt-read` — **환경 변수 `RECEIPT_AI_ENABLED=true`일 때만** 동작(지금 꺼짐)
 - 회화(회화 탭): `src/mobile/phrasebook.ts` 고정 문장 + 음성 읽기(API 비용 없음)
 - 길찾기 출발지: 기본 현재 위치, 상세에서 숙소·이전 장소·직접 입력으로 바꿈(`src/mobile/directions.ts`)
