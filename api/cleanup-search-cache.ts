@@ -42,6 +42,8 @@ const CLEANUP_TARGETS: { table: string; retentionDays: number; column?: string; 
   { table: 'ai_plan_cache', retentionDays: 30 },
   // 하루 사용량 기록(supabase/api_usage.sql) — 상한은 오늘 기록만 보므로 7일이면 충분하다
   { table: 'api_usage', retentionDays: 7 },
+  // PRO 기능 연타 상한 기록(supabase/api_burst.sql) — 창이 3분이라 하루면 충분하다
+  { table: 'api_burst', retentionDays: 1, column: 'at' },
   // 앱 오류 기록(supabase/client_errors.sql) — 원인 찾기용이라 30일이면 충분하다
   { table: 'client_errors', retentionDays: 30 },
   // 결제(supabase/payments.sql) — 결제창만 열고 끝난 주문(ready·failed)은 30일 뒤 정리
