@@ -12,11 +12,11 @@
 import { store } from '../store';
 import { escapeHtml } from '../utils/html';
 import { fetchDetail, searchNearbyCat, searchText, type ExploreDetail, type ExplorePlace } from '../mobile/exploreApi';
-import { priceLabel, type ExploreCat } from '../mobile/explore';
+import type { ExploreCat } from '../mobile/explore';
 import {
-  AREA_DAILY_LIMIT, AREA_SORTS, coveringCircle, filterAndSort, isUsableArea, remainingToday, useOne, type AreaSort,
+  AREA_DAILY_LIMIT, AREA_SORTS, TOP_RANKS, coveringCircle, filterAndSort, isUsableArea, rankColor, remainingToday, tint, useOne, type AreaSort,
 } from './areaModel';
-import { formatDistance, haversineMeters, type LatLng } from './penModel';
+import type { LatLng } from './penModel';
 import { todayIso } from '../trips/tripListModel';
 import { createProjector, isOverlayUi } from './mapPixel';
 
@@ -230,7 +230,7 @@ export function mountAreaSearch(opts: {
     error = '';
     results = [];
     added.clear();
-    openId = null;
+    closeDetail();
     renderPanel();
     try {
       const key = 'area:' + (cat ?? 'q:' + query) + ':' + center.lat.toFixed(4) + ',' + center.lng.toFixed(4) + ':' + radius;
@@ -253,9 +253,37 @@ export function mountAreaSearch(opts: {
     return area ? filterAndSort(results, area, sort) : [];
   }
 
-  /** 펼친 결과(상세) — 상세는 처음 펼칠 때 한 번 받고 이 기기에 남는다(exploreApi 캐시) */
+  /* ── 상세 — 지도 왼쪽에 크게 뜨는 패널(목록 칸 안에 펼치면 좁아서 잘렸다) ──
+   * 사진·한국어 소개·리뷰·구글 지도 링크·[+ 담기]. 주소·전화·영업시간은 뺐다(사용자 결정).
+   * 상세는 처음 열 때 한 번 받고 이 기기에 남는다(exploreApi 캐시). */
   let openId: string | null = null;
   const details = new Map<string, ExploreDetail | 'loading' | 'error'>();
+  const detailEl = document.createElement('aside');
+  detailEl.className = 'bd-area-sheet';
+  detailEl.hidden = true;
+  mapDiv.appendChild(detailEl);
+
+  function addBtnHtml(p: ExplorePlace, big = false): string {
+    const st = added.get(p.id);
+    const done = st === 'added' || st === 'dup';
+    const text = st === 'added' ? '담음' : st === 'dup' ? '이미 있음' : st === 'fail' ? '다시' : big ? '+ 체크인에 담기' : '+';
+    return '<button type="button" class="' + (big ? 'bd-area-add-big' : 'bd-area-add') + (done ? ' done' : '') + '" data-add="' + escapeHtml(p.id) + '"' +
+      (done ? ' disabled' : '') + ' aria-label="' + escapeHtml(p.name) + ' 체크인에 담기">' + text + '</button>';
+  }
+
+  function bindAddButtons(root: HTMLElement): void {
+    root.querySelectorAll<HTMLButtonElement>('[data-add]').forEach((b) => {
+      b.addEventListener('click', async () => {
+        const p = results.find((x) => x.id === b.dataset.add);
+        if (!p) return;
+        b.disabled = true;
+        b.textContent = '…';
+        added.set(p.id, await onAdd(p));
+        renderPanel();
+        if (openId === p.id) renderDetail();
+      });
+    });
+  }
 
   async function loadDetail(p: ExplorePlace): Promise<void> {
     if (details.has(p.id) && details.get(p.id) !== 'error') return;
@@ -266,35 +294,76 @@ export function mountAreaSearch(opts: {
       console.warn('[area] 상세 실패:', e);
       details.set(p.id, 'error');
     }
-    if (!destroyed && openId === p.id) renderPanel();
+    if (!destroyed && openId === p.id) renderDetail();
   }
 
-  function detailHtml(p: ExplorePlace): string {
+  function toggleDetail(p: ExplorePlace): void {
+    openId = openId === p.id ? null : p.id;
+    renderPanel();
+    if (!openId) { closeDetail(); return; }
+    renderDetail();
+    void loadDetail(p);
+    // 패널이 지도 왼쪽을 가리므로, 장소가 패널 오른쪽 보이는 곳 가운데에 오게 옮긴다
+    map.panTo({ lat: p.lat, lng: p.lng });
+    const w = detailEl.getBoundingClientRect().width;
+    if (w && typeof map.panBy === 'function') map.panBy(-Math.round(w / 2), 0);
+  }
+
+  function closeDetail(): void {
+    openId = null;
+    detailEl.hidden = true;
+    detailEl.innerHTML = '';
+    panelEl.querySelectorAll('.bd-area-item.open').forEach((li) => li.classList.remove('open'));
+  }
+
+  function renderDetail(): void {
+    const p = results.find((x) => x.id === openId);
+    if (!p) { closeDetail(); return; }
+    const list = sorted();
+    const i = list.findIndex((x) => x.id === p.id);
+    const color = rankColor(Math.max(0, i), list.length);
     const d = details.get(p.id);
-    if (!d || d === 'loading') return '<div class="bd-area-detail"><p class="bd-area-muted">정보를 불러오는 중…</p></div>';
-    if (d === 'error') return '<div class="bd-area-detail"><p class="bd-area-muted">상세 정보를 불러오지 못했어요.</p></div>';
-    const photo = d.photos[0]?.url ?? p.photo;
-    // 리뷰는 한국어를 먼저 — 없으면 첫 리뷰
-    const review = d.reviews.find((r) => /[가-힣]/.test(r.text)) ?? d.reviews[0];
-    return '<div class="bd-area-detail">' +
-      (photo ? '<div class="bd-area-photo" style="background-image:url(\'' + escapeHtml(photo) + '\')"></div>' : '') +
-      '<p class="bd-area-summary">' + (d.summary ? escapeHtml(d.summary) : '<span class="bd-area-muted">구글에 등록된 소개글이 없어요.</span>') + '</p>' +
-      '<dl class="bd-area-facts">' +
-      (p.todayHours ? '<div><dt>오늘</dt><dd>' + escapeHtml(p.todayHours) + '</dd></div>' : '') +
-      (p.address ? '<div><dt>주소</dt><dd>' + escapeHtml(p.address) + '</dd></div>' : '') +
-      (d.phone ? '<div><dt>전화</dt><dd>' + escapeHtml(d.phone) + '</dd></div>' : '') +
-      '</dl>' +
-      (review ? '<blockquote class="bd-area-review"><span>' + (review.rating != null ? '★' + review.rating + ' · ' : '') + escapeHtml(review.author) + (review.when ? ' · ' + escapeHtml(review.when) : '') + '</span>' + escapeHtml(review.text) + '</blockquote>' : '') +
-      '<div class="bd-area-links">' +
-      (d.mapsUrl ? '<a href="' + escapeHtml(d.mapsUrl) + '" target="_blank" rel="noopener">구글 지도에서 보기</a>' : '') +
-      (d.website ? '<a href="' + escapeHtml(d.website) + '" target="_blank" rel="noopener">웹사이트</a>' : '') +
-      '</div></div>';
+    const ready = d && d !== 'loading' && d !== 'error' ? d : null;
+    const photos = ready ? ready.photos.map((x) => x.url) : [];
+    if (!photos.length && p.photo) photos.push(p.photo);
+    // 리뷰는 한국어를 먼저, 최대 3개
+    const reviews = ready ? [...ready.reviews].sort((a, b) => Number(/[가-힣]/.test(b.text)) - Number(/[가-힣]/.test(a.text))).slice(0, 3) : [];
+    detailEl.style.setProperty('--rank', color);
+    detailEl.innerHTML =
+      '<button type="button" class="bd-area-x bd-area-sheet-x" data-act="close-detail" aria-label="상세 닫기">' + ICON_CLOSE + '</button>' +
+      (photos.length
+        ? '<div class="bd-area-sheet-photos">' +
+          '<div class="bd-area-sheet-hero" style="background-image:url(\'' + escapeHtml(photos[0]) + '\')"></div>' +
+          (photos.length > 1 ? '<div class="bd-area-sheet-thumbs">' + photos.slice(1, 4).map((u) => '<div style="background-image:url(\'' + escapeHtml(u) + '\')"></div>').join('') + '</div>' : '') +
+          '</div>'
+        : '') +
+      '<div class="bd-area-sheet-body">' +
+      (i >= 0 ? '<span class="bd-area-sheet-rank">' + (i === 0 ? '👑 ' : '') + (i + 1) + '위</span>' : '') +
+      '<h3>' + escapeHtml(p.name) + '</h3>' +
+      '<p class="bd-area-sheet-meta"><b>' + (p.rating != null ? '★ ' + p.rating.toFixed(1) : '평점 없음') + '</b>' +
+      (p.ratingCount ? ' · 리뷰 ' + p.ratingCount.toLocaleString('ko-KR') : '') + ' · ' + escapeHtml(p.typeLabel ?? CAT_LABEL[p.cat]) +
+      (p.openNow === true ? ' · <span class="bd-area-open">영업 중</span>' : p.openNow === false ? ' · <span class="bd-area-closed">영업 종료</span>' : '') + '</p>' +
+      (d === 'loading' || !d ? '<p class="bd-area-muted">정보를 불러오는 중…</p>'
+        : d === 'error' ? '<p class="bd-area-muted">상세 정보를 불러오지 못했어요.</p>'
+        : '<p class="bd-area-sheet-summary">' + (ready!.summary ? escapeHtml(ready!.summary) : '<span class="bd-area-muted">구글에 등록된 소개글이 없어요. 아래 리뷰를 참고해 주세요.</span>') + '</p>' +
+          (reviews.length
+            ? '<h4>리뷰</h4>' + reviews.map((r) =>
+              '<blockquote class="bd-area-review"><span>' + (r.rating != null ? '★' + r.rating + ' · ' : '') + escapeHtml(r.author) + (r.when ? ' · ' + escapeHtml(r.when) : '') + '</span>' + escapeHtml(r.text) + '</blockquote>').join('')
+            : '') +
+          '<div class="bd-area-links">' +
+          (ready!.mapsUrl ? '<a href="' + escapeHtml(ready!.mapsUrl) + '" target="_blank" rel="noopener">구글 지도에서 보기</a>' : '') +
+          (ready!.website ? '<a href="' + escapeHtml(ready!.website) + '" target="_blank" rel="noopener">웹사이트</a>' : '') +
+          '</div>') +
+      '</div>' +
+      '<div class="bd-area-sheet-foot">' + addBtnHtml(p, true) + '</div>';
+    detailEl.hidden = false;
+    detailEl.querySelector('[data-act="close-detail"]')?.addEventListener('click', () => { closeDetail(); renderPanel(); });
+    bindAddButtons(detailEl);
   }
 
   function renderPanel(): void {
     if (!panelHost) return;
     const list = sorted();
-    const c = area ? coveringCircle(area).center : null;
     panelHost.classList.toggle('is-area', true);
     panelEl.hidden = false;
     panelEl.innerHTML =
@@ -310,25 +379,18 @@ export function mountAreaSearch(opts: {
         : !list.length ? '<li class="bd-area-empty">이 영역 안에서 찾은 곳이 없어요.<br/>영역을 넓히거나 다른 걸 찾아보세요.</li>'
         : list.map((p, i) => {
           const st = added.get(p.id);
-          const dist = c ? formatDistance(haversineMeters([c.lat, c.lng], [p.lat, p.lng])) : '';
-          const open = openId === p.id;
-          // 두 번째 줄 — 무엇을 하는 곳인지 한국어로: 구글 업종 이름(예: "태국 음식점") · 가격대 · 영업 여부 · 거리
-          const facts = [
-            p.typeLabel ?? CAT_LABEL[p.cat],
-            priceLabel(p.priceLevel) ? '가격 ' + priceLabel(p.priceLevel) : null,
-            p.openNow === true ? '<span class="bd-area-open">영업 중</span>' : p.openNow === false ? '<span class="bd-area-closed">영업 종료</span>' : null,
-            '가운데서 ' + dist,
-          ].filter(Boolean);
-          return '<li class="bd-area-item' + (hoverId === p.id ? ' hover' : '') + (open ? ' open' : '') + '" data-id="' + escapeHtml(p.id) + '">' +
-            '<div class="bd-area-row">' +
-            '<span class="bd-area-num">' + (i + 1) + '</span>' +
-            '<div class="bd-area-info"><b>' + escapeHtml(p.name) + '</b>' +
+          const color = rankColor(i, list.length);
+          const top = i < TOP_RANKS;
+          // 두 번째 줄 — 무엇을 하는 곳인지(한국어 업종) · 영업 여부. 거리·가격대는 뺐다(사용자 결정)
+          const kind = escapeHtml(p.typeLabel ?? CAT_LABEL[p.cat]);
+          const openTxt = p.openNow === true ? '<span class="bd-area-open">영업 중</span>' : p.openNow === false ? '<span class="bd-area-closed">영업 종료</span>' : '';
+          return '<li class="bd-area-item' + (top ? ' top' : '') + (hoverId === p.id ? ' hover' : '') + (openId === p.id ? ' open' : '') + '" data-id="' + escapeHtml(p.id) + '"' +
+            ' style="--rank:' + color + ';--rank-bg:' + tint(color, 0.12) + ';--rank-bg2:' + tint(color, 0.22) + '">' +
+            '<span class="bd-area-num">' + (i === 0 ? '👑' : String(i + 1)) + '</span>' +
+            '<div class="bd-area-info"><b><span class="bd-area-name">' + escapeHtml(p.name) + '</span>' + (top ? '<i class="bd-area-rankchip">' + (i + 1) + '위</i>' : '') + '</b>' +
             '<small class="bd-area-rating">' + (p.rating != null ? '★ ' + p.rating.toFixed(1) + (p.ratingCount ? ' · 리뷰 ' + p.ratingCount.toLocaleString('ko-KR') : '') : '평점 없음') + '</small>' +
-            '<small>' + facts.map((f) => (String(f).startsWith('<span') ? f : escapeHtml(String(f)))).join(' · ') + '</small></div>' +
-            '<button type="button" class="bd-area-add' + (st === 'added' || st === 'dup' ? ' done' : '') + '" data-add="' + escapeHtml(p.id) + '"' +
-            (st === 'added' || st === 'dup' ? ' disabled' : '') + ' aria-label="' + escapeHtml(p.name) + ' 체크인에 담기">' +
-            (st === 'added' ? '담음' : st === 'dup' ? '있음' : st === 'fail' ? '다시' : '+') + '</button></div>' +
-            (open ? detailHtml(p) : '') +
+            '<small>' + kind + (openTxt ? ' · ' + openTxt : '') + '</small></div>' +
+            addBtnHtml(p) +
             '</li>';
         }).join('')) +
       '</ol>';
@@ -343,41 +405,33 @@ export function mountAreaSearch(opts: {
       li.addEventListener('click', (e) => {
         if ((e.target as HTMLElement).closest('button, a')) return;
         const p = results.find((x) => x.id === li.dataset.id);
-        if (!p) return;
-        // 줄을 누르면 그 자리에서 상세(사진·소개·영업시간·리뷰)를 펼친다. 다시 누르면 접는다
-        openId = openId === p.id ? null : p.id;
-        if (openId) { map.panTo({ lat: p.lat, lng: p.lng }); void loadDetail(p); }
-        renderPanel();
-        if (openId) (panelEl.querySelector('.bd-area-item.open') as HTMLElement | null)?.scrollIntoView({ block: 'nearest' });
+        if (p) toggleDetail(p);
       });
     });
-    panelEl.querySelectorAll<HTMLButtonElement>('[data-add]').forEach((b) => {
-      b.addEventListener('click', async () => {
-        const p = results.find((x) => x.id === b.dataset.add);
-        if (!p) return;
-        b.disabled = true;
-        b.textContent = '…';
-        added.set(p.id, await onAdd(p));
-        renderPanel();
-      });
-    });
+    bindAddButtons(panelEl);
     drawPins(list);
   }
 
-  function pinIcon(n: number, on: boolean): any {
-    const size = on ? 26 : 20;
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 20 20">' +
-      '<circle cx="10" cy="10" r="9" fill="' + (on ? '#2F80ED' : '#0B2A5C') + '" stroke="#fff" stroke-width="2"/>' +
-      '<text x="10" y="10.5" text-anchor="middle" dominant-baseline="central" font-family="-apple-system,Segoe UI,sans-serif" font-size="' + (n > 9 ? 8 : 10) + '" font-weight="700" fill="#fff">' + n + '</text></svg>';
+  function pinIcon(n: number, total: number, on: boolean): any {
+    const top = n <= TOP_RANKS;
+    const size = (top ? 30 : 22) + (on ? 6 : 0);
+    const c1 = rankColor(n - 1, total);
+    const c2 = rankColor(Math.min(total - 1, n - 1 + 0.6), total);
+    const ring = top ? '<circle cx="20" cy="20" r="19" fill="#FFFFFF"/><circle cx="20" cy="20" r="17.5" fill="none" stroke="' + c1 + '" stroke-width="2"/>' : '<circle cx="20" cy="20" r="18" fill="#FFFFFF"/>';
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 40 40">' +
+      '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="' + c1 + '"/><stop offset="1" stop-color="' + c2 + '"/></linearGradient></defs>' +
+      ring + '<circle cx="20" cy="20" r="' + (top ? 14 : 15) + '" fill="url(#g)"/>' +
+      '<text x="20" y="21" text-anchor="middle" dominant-baseline="central" font-family="-apple-system,Segoe UI,sans-serif" font-size="' + (n > 9 ? 13 : 15) + '" font-weight="800" fill="#fff">' + n + '</text></svg>';
     return { url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg), scaledSize: new g.maps.Size(size, size), anchor: new g.maps.Point(size / 2, size / 2) };
   }
 
   function drawPins(list: ExplorePlace[]): void {
     pins.forEach((m) => m.setMap(null));
     pins = list.map((p, i) => {
-      const m = new g.maps.Marker({ position: { lat: p.lat, lng: p.lng }, map, icon: pinIcon(i + 1, hoverId === p.id), zIndex: 1300 + (hoverId === p.id ? 100 : 0), title: p.name });
+      const m = new g.maps.Marker({ position: { lat: p.lat, lng: p.lng }, map, icon: pinIcon(i + 1, list.length, hoverId === p.id), zIndex: 1300 + (list.length - i) + (hoverId === p.id ? 100 : 0), title: p.name });
       m.addListener('mouseover', () => setHover(p.id, true));
       m.addListener('mouseout', () => setHover(null, true));
+      m.addListener('click', () => toggleDetail(p));
       (m as any).__areaId = p.id;
       return m;
     });
@@ -388,8 +442,8 @@ export function mountAreaSearch(opts: {
     hoverId = id;
     pins.forEach((m, i) => {
       const on = (m as any).__areaId === id;
-      m.setIcon(pinIcon(i + 1, on));
-      m.setZIndex(1300 + (on ? 100 : 0));
+      m.setIcon(pinIcon(i + 1, pins.length, on));
+      m.setZIndex(1300 + (pins.length - i) + (on ? 100 : 0));
     });
     panelEl.querySelectorAll<HTMLElement>('.bd-area-item').forEach((li) => {
       const on = li.dataset.id === id;
@@ -407,7 +461,7 @@ export function mountAreaSearch(opts: {
     pins = [];
     results = [];
     hoverId = null;
-    openId = null;
+    closeDetail();
     panelEl.hidden = true;
     panelEl.innerHTML = '';
     panelHost?.classList.remove('is-area');
@@ -433,6 +487,7 @@ export function mountAreaSearch(opts: {
       projector.destroy();
       popEl.remove();
       panelEl.remove();
+      detailEl.remove();
       toolsEl.innerHTML = '';
     },
   };
