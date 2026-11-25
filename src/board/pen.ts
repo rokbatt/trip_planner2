@@ -40,6 +40,8 @@ interface Member {
 
 export interface PenController {
   destroy(): void;
+  /** 펜이 켜져 있는가 — 영역 검색이 꾹 누르기를 양보할 때 본다 */
+  isActive(): boolean;
 }
 
 const ICON_PEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1 10-10-3-3L5 16l-1 4z"/><path d="M13.5 6.5l3 3"/></svg>';
@@ -320,6 +322,7 @@ export function mountPen(opts: {
   void load();
 
   return {
+    isActive: () => active,
     destroy() {
       destroyed = true;
       if (active) map.setOptions({ draggable: true, draggableCursor: null, disableDoubleClickZoom: false });
