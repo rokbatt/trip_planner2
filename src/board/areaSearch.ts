@@ -39,8 +39,20 @@ const ICON_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 const LONG_PRESS_MS = 400;
 /** 1위 번호 동그라미 오른쪽 위에 비스듬히 얹는 작은 왕관(금색 + 흰 테두리로 어떤 배경에서도 또렷하게) */
 const CROWN_PATH = 'M3 17.5 L1.5 6.5 L7 10.5 L12 3 L17 10.5 L22.5 6.5 L21 17.5 Z';
-const CROWN = '<svg class="bd-area-crown" viewBox="0 0 24 21" aria-hidden="true"><path d="' + CROWN_PATH + '" fill="#F5C04A" stroke="#FFFFFF" stroke-width="2.2" stroke-linejoin="round"/><path d="M3.6 15.2h16.8" stroke="#E0A526" stroke-width="1.6"/><circle cx="12" cy="3" r="1.6" fill="#FFE08A"/></svg>';
-const CROWN_INLINE = '<svg class="bd-area-crown-inline" viewBox="0 0 24 21" aria-hidden="true"><path d="' + CROWN_PATH + '" fill="#F5C04A" stroke="#E0A526" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+/** 순위별 왕관 색 — 1위 금, 2위 은, 3위 동 (밝은 면, 어두운 띠, 꼭짓점 구슬) */
+const CROWN_TONES = [
+  { main: '#F5C04A', band: '#E0A526', gem: '#FFE08A', edge: '#E0A526' },
+  { main: '#C9D1DB', band: '#9AA6B4', gem: '#F1F5F9', edge: '#9AA6B4' },
+  { main: '#D99A6C', band: '#B87444', gem: '#F3C9A8', edge: '#B87444' },
+] as const;
+function crown(rank: number): string {
+  const t = CROWN_TONES[rank];
+  return '<svg class="bd-area-crown" viewBox="0 0 24 21" aria-hidden="true"><path d="' + CROWN_PATH + '" fill="' + t.main + '" stroke="#FFFFFF" stroke-width="2.2" stroke-linejoin="round"/><path d="M3.6 15.2h16.8" stroke="' + t.band + '" stroke-width="1.6"/><circle cx="12" cy="3" r="1.6" fill="' + t.gem + '"/></svg>';
+}
+function crownInline(rank: number): string {
+  const t = CROWN_TONES[rank];
+  return '<svg class="bd-area-crown-inline" viewBox="0 0 24 21" aria-hidden="true"><path d="' + CROWN_PATH + '" fill="' + t.main + '" stroke="' + t.edge + '" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+}
 /** 구글이 업종 이름을 안 줄 때 쓰는 한국어 분류 */
 const CAT_LABEL: Record<ExplorePlace['cat'], string> = { food: '음식점', cafe: '카페', sight: '관광지', stay: '숙소', amenity: '편의시설' };
 const MOVE_TOLERANCE_PX = 6;
@@ -369,7 +381,7 @@ export function mountAreaSearch(opts: {
           '</div>'
         : '') +
       '<div class="bd-area-sheet-body">' +
-      (i >= 0 ? '<span class="bd-area-sheet-rank">' + (i === 0 ? CROWN_INLINE : '') + (i + 1) + '위</span>' : '') +
+      (i >= 0 ? '<span class="bd-area-sheet-rank">' + (i < TOP_RANKS ? crownInline(i) : '') + (i + 1) + '위</span>' : '') +
       '<h3>' + escapeHtml(p.name) + '</h3>' +
       '<p class="bd-area-sheet-meta"><b>' + (p.rating != null ? '★ ' + p.rating.toFixed(1) : '평점 없음') + '</b>' +
       (p.ratingCount ? ' · 리뷰 ' + p.ratingCount.toLocaleString('ko-KR') : '') + ' · ' + escapeHtml(p.typeLabel ?? CAT_LABEL[p.cat]) +
@@ -417,7 +429,7 @@ export function mountAreaSearch(opts: {
           const openTxt = p.openNow === true ? '<span class="bd-area-open">영업 중</span>' : p.openNow === false ? '<span class="bd-area-closed">영업 종료</span>' : '';
           return '<li class="bd-area-item' + (top ? ' top' : '') + (hoverId === p.id ? ' hover' : '') + (openId === p.id ? ' open' : '') + '" data-id="' + escapeHtml(p.id) + '"' +
             ' style="--rank:' + color + ';--rank-bg:' + tint(color, 0.12) + ';--rank-bg2:' + tint(color, 0.22) + '">' +
-            '<span class="bd-area-num">' + String(i + 1) + (i === 0 ? CROWN : '') + '</span>' +
+            '<span class="bd-area-num">' + String(i + 1) + (i < TOP_RANKS ? crown(i) : '') + '</span>' +
             '<div class="bd-area-info"><b><span class="bd-area-name">' + escapeHtml(p.name) + '</span>' + (top ? '<i class="bd-area-rankchip">' + (i + 1) + '위</i>' : '') + '</b>' +
             '<small class="bd-area-rating">' + (p.rating != null ? '★ ' + p.rating.toFixed(1) + (p.ratingCount ? ' · 리뷰 ' + p.ratingCount.toLocaleString('ko-KR') : '') : '평점 없음') + '</small>' +
             '<small>' + kind + (openTxt ? ' · ' + openTxt : '') + '</small></div>' +
