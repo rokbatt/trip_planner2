@@ -663,6 +663,49 @@
   line-height: 1.6;
 }
 .lp-now-after strong { color: #8FD8F8; font-weight: 700; }
+.lp-now-actions { grid-template-columns: repeat(2, 1fr); }
+/* 실제 Companion 하단 탭 5개 — 목업이 앱과 같은 구조로 보이게 */
+.lp-phone-tabs {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  margin: 16px -16px -22px;
+  padding: 10px 6px 12px;
+  border-top: 1px solid rgba(143,216,248,0.18);
+  border-radius: 0 0 28px 28px;
+  background: rgba(4,18,40,0.45);
+  font-size: 10.5px;
+  text-align: center;
+  color: #6F8BAE;
+}
+.lp-phone-tabs .is-on { color: #8FD8F8; font-weight: 700; }
+
+/* 여행 중 기능 3칸 */
+.lp-trip-feats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 64px;
+}
+.lp-trip-feat {
+  padding: 22px 22px 24px;
+  border: 1px solid rgba(143,216,248,0.18);
+  border-radius: 16px;
+  background: rgba(143,216,248,0.05);
+}
+.lp-trip-feat-tag {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #8FD8F8;
+  margin-bottom: 10px;
+}
+.lp-trip-feat h3 { font-size: 17px; font-weight: 700; color: #F2F7FC; letter-spacing: -0.02em; margin-bottom: 8px; }
+.lp-trip-feat p:last-child { font-size: 13.5px; line-height: 1.7; color: #9DB4D0; }
+.lp-trip-feat h3, .lp-trip-feat p { word-break: keep-all; overflow-wrap: break-word; }
+@media (max-width: 820px) {
+  .lp-trip-feats { grid-template-columns: 1fr; gap: 12px; margin-top: 48px; }
+  .lp-trip-feat { padding: 18px 18px 20px; }
+}
 
 /* ── 정산 (EXPENSE) ── */
 .lp-settle {
