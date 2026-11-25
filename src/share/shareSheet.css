@@ -74,3 +74,27 @@
 }
 .ss-native svg { width: 20px; height: 20px; }
 .ss-native svg circle { fill: #FFFFFF; }
+
+/* ── 아이콘 줄 좌우 넘기기(PC) ── */
+.ss-apps-wrap { position: relative; }
+.ss-nav {
+  position: absolute;
+  top: 16px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #E2E8F0;
+  border-radius: 50%;
+  background: #FFFFFF;
+  color: #0F172A;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.16);
+  cursor: pointer;
+}
+.ss-nav[hidden] { display: none; }
+.ss-nav svg { width: 18px; height: 18px; }
+.ss-nav.is-prev { left: -6px; }
+.ss-nav.is-next { right: -6px; }
+.ss-nav:hover { background: #F8FAFC; }
+.ss-overlay.is-sheet .ss-nav { display: none; }
