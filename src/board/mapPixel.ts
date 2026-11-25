@@ -40,5 +40,5 @@ export function createProjector(g: any, map: any): Projector {
 /** 지도 위 떠 있는 우리 UI(펜 바·영역 선택 창·정보창) 위에서 누른 건 그리기로 보지 않는다 */
 export function isOverlayUi(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
-  return !!el?.closest?.('.bd-pen-float, .bd-area-pop, .gm-style-iw-c, .gm-style-iw, button, input, a, .gmnoprint');
+  return !!el?.closest?.('.bd-pen-float, .bd-area-pop, .bd-area-sheet, .gm-style-iw-c, .gm-style-iw, button, input, a, .gmnoprint');
 }
