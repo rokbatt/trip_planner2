@@ -280,7 +280,8 @@
 .ls-tl-leg-ic { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,.8); }
 .ls-tl-leg.is-taxi .ls-tl-leg-ic { color: #C97A0A; } .ls-tl-leg.is-walk .ls-tl-leg-ic { color: #16A34A; }
 .ls-tl-leg-ic svg { width: 15px; height: 15px; }
-.ls-tl-leg > b { color: #334155; }
+.ls-tl-leg > b { color: #334155; white-space: nowrap; flex: none; }
+.ls-tl-leg-ic { flex: none; }
 .ls-tl-leg-r { margin-left: auto; display: flex; align-items: center; gap: 8px; color: #64748B; flex-wrap: wrap; justify-content: flex-end; }
 .ls-tl-leg-r > b { color: #0B2A5C; }
 .ls-tl-leg-r small { font-size: 10px; color: #94A3B8; }

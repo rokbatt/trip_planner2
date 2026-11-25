@@ -68,7 +68,7 @@ function navRightHtml(): string {
   const info = getUserInfo();
   if (info) {
     const avatarInner = info.avatar
-      ? `<img src="${info.avatar}" alt="" referrerpolicy="no-referrer" />`
+      ? `<img src="${escapeHtml(info.avatar)}" alt="" referrerpolicy="no-referrer" />`
       : escapeHtml(info.name.charAt(0));
     return `
       <div class="lp-nav-profile">
@@ -449,7 +449,7 @@ export function renderLogin(): void {
   document.getElementById('dd-trips')?.addEventListener('click', () => navigate('trips'));
   document.getElementById('dd-settings')?.addEventListener('click', () => navigate('settings'));
   document.getElementById('dd-pro')?.addEventListener('click', () => navigate('pro'));
-  document.getElementById('dd-help')?.addEventListener('click', () => alert('문의하기 기능은 곧 구현 예정이에요!'));
+  document.getElementById('dd-help')?.addEventListener('click', () => { window.location.href = 'mailto:help@mongsil2.com'; });
   document.getElementById('dd-logout')?.addEventListener('click', signOut);
 
   setupScrollEffects();
