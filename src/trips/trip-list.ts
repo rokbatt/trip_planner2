@@ -10,7 +10,7 @@ import './trip-list.css';
 import { openHelp } from '../onboarding/onboarding';
 import { parseISODate } from '../utils/dates';
 import { escapeHtml } from '../utils/html';
-import { readTripCache, saveTripCache, sortTrips, todayIso } from './tripListModel';
+import { readTripCache, saveTripCache, sortTrips, todayIso, tripBadge } from './tripListModel';
 
 type Trip = Database['public']['Tables']['trips']['Row'];
 
@@ -116,19 +116,6 @@ function formatDays(start: string | null, end: string | null): string {
   return `${diff + 1}일`;
 }
 
-function formatDDay(start: string | null): string | null {
-  if (!start) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const target = parseISODate(start);
-  target.setHours(0, 0, 0, 0);
-
-  const diffDays = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
-  if (diffDays === 0) return 'D-DAY';
-  if (diffDays > 0) return `D-${diffDays}`;
-  return `D+${Math.abs(diffDays)}`;
-}
 
 /** 스텁의 TRIP ID — 예약번호를 지어내는 대신 이 트립의 실제 정보(출발지·도착지·출발일)를
  * 조합해 만든다. 예: MGS-ICNBKK-1026 */
@@ -197,7 +184,7 @@ function createTripCard(trip: Trip, index: number, onChanged: () => void): HTMLE
   const destCity = trip.destinations?.[0] ?? trip.name;
   const destCode = toAirportCode(destCity);
   const destCityEn = toAirportCityEn(destCity);
-  const dday = formatDDay(trip.start_date);
+  const dday = tripBadge(trip.start_date, trip.end_date, todayIso());
 
   const tripNo = tripIdCode(destCode, trip.start_date);
   const originEn = airportCityEnByCode('ICN') ?? '';

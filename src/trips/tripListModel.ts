@@ -36,6 +36,28 @@ export function sortTrips<T extends TripLike>(trips: readonly T[], today: string
   });
 }
 
+/** 두 YYYY-MM-DD 사이 날짜 수(b - a) */
+function daysBetween(a: string, b: string): number {
+  const [ay, am, ad] = a.split('-').map(Number);
+  const [by, bm, bd] = b.split('-').map(Number);
+  return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86_400_000);
+}
+
+/**
+ * 카드 오른쪽 배지 — 출발 전엔 D-n, 출발일엔 D-DAY, 여행 중엔 "여행 중 · n일째", 끝나면 "지난 여행".
+ * (예전엔 출발 다음 날부터 "D+1"이라 여행 중인지 끝났는지 알 수 없었다)
+ */
+export function tripBadge(start: string | null, end: string | null, today: string): string | null {
+  const s = day(start);
+  if (!s) return null;
+  const diff = daysBetween(today, s);
+  if (diff > 0) return `D-${diff}`;
+  if (diff === 0) return 'D-DAY';
+  const e = day(end) ?? s;
+  if (today > e) return '지난 여행';
+  return `여행 중 · ${-diff + 1}일째`;
+}
+
 /** 오늘 날짜(기기 시간대) YYYY-MM-DD */
 export function todayIso(now: Date = new Date()): string {
   const y = now.getFullYear();
