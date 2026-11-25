@@ -49,7 +49,7 @@ export const PURCHASE_NOTICE: string[] = [
   `${PRODUCT.name}은 ${PRODUCT.amount.toLocaleString('ko-KR')}원(부가세 포함)이며, 결제 즉시 ${PRODUCT.days}일 동안 이용할 수 있습니다.`,
   '자동으로 갱신되거나 다시 결제되지 않습니다.',
   `이용 중에 다시 구매하면 남은 기간에 ${PRODUCT.days}일, 웹 검색에 ${PRODUCT.web}번이 더해집니다.`,
-  '결제 후 7일 이내이고 PRO 전용 기능(웹 검색, 인생샷, 영수증 AI 입력)을 사용하지 않았다면 전액 환불받을 수 있습니다.',
+  '결제 후 7일 이내이고 PRO 전용 기능(웹 검색, 인생샷, 영수증 AI 입력, 지도 영역 검색)을 사용하지 않았다면 전액 환불받을 수 있습니다.',
   'PRO 전용 기능을 사용한 뒤에는 디지털 콘텐츠의 특성상 청약철회가 제한됩니다.',
   '미성년자가 법정대리인의 동의 없이 결제한 경우 본인 또는 법정대리인이 취소할 수 있습니다.',
   `환불·문의: ${SUPPORT_EMAIL}`,
@@ -63,7 +63,7 @@ function fmtDate(iso: string | null): string {
 
 export function planStatusText(p: PlanInfo | null): { title: string; sub: string } {
   if (!p) return { title: '확인 중이에요', sub: '' };
-  if (p.plan !== 'pro') return { title: '무료 이용 중', sub: 'PRO 이용권으로 웹 검색·인생샷·영수증 AI를 쓸 수 있어요.' };
+  if (p.plan !== 'pro') return { title: '무료 이용 중', sub: 'PRO 이용권으로 웹 검색·인생샷·영수증 AI·지도 영역 검색을 쓸 수 있어요.' };
   const parts: string[] = [];
   parts.push(p.expiresAt ? fmtDate(p.expiresAt) + '까지' : '기간 제한 없음');
   if (p.webLeft !== null) parts.push('웹 검색 남은 ' + p.webLeft + '번');

@@ -19,7 +19,7 @@ import {
 import type { LatLng } from './penModel';
 import { todayIso } from '../trips/tripListModel';
 import { createProjector, isOverlayUi } from './mapPixel';
-import { fetchMyPlan } from '../assistant/assistantClient';
+import { fetchMyPlan, reportProUse } from '../assistant/assistantClient';
 import { navigate } from '../router';
 
 export interface AreaSearchController {
@@ -281,6 +281,7 @@ export function mountAreaSearch(opts: {
       const key = 'area:' + (cat ?? 'q:' + query) + ':' + center.lat.toFixed(4) + ',' + center.lng.toFixed(4) + ':' + radius;
       const found = cat ? await searchNearbyCat(key, cat, center, radius) : await searchText(key, query ?? name, center, radius);
       useOne(kv(), userId, todayIso());
+      void reportProUse('area-search'); // 환불 판단용 사용 기록(서버)
       if (destroyed) return;
       results = found;
     } catch (e) {

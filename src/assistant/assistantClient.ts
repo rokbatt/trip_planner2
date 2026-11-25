@@ -148,3 +148,15 @@ export async function fetchMyPlanInfo(): Promise<PlanInfo> {
 export async function fetchMyPlan(): Promise<Plan> {
   return (await fetchMyPlanInfo()).plan;
 }
+
+/**
+ * PRO 기능을 썼다고 서버에 알린다 — 서버를 거치지 않는 PRO 기능(지도 영역 검색)용. 환불 판단의 "사용" 기록이 남는다.
+ * 실패해도 기능은 그대로 쓰게 둔다(조용히 무시).
+ */
+export async function reportProUse(feature: string): Promise<void> {
+  try {
+    await postAi({ kind: 'pro-use', feature });
+  } catch {
+    /* 기록 실패가 기능을 막지 않는다 */
+  }
+}
