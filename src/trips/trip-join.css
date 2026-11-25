@@ -42,6 +42,8 @@
   margin-bottom: 8px;
 }
 .tj-route svg { width: 18px; height: 18px; color: #8FD8F8; }
+.tj-members { white-space: nowrap; }
+.tj-members svg { width: 18px; height: 18px; flex: none; }
 
 .tj-name {
   font-size: 15px;
