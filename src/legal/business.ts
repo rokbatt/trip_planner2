@@ -32,8 +32,8 @@ export interface BusinessInfo {
 }
 
 export const BUSINESS_INFO: BusinessInfo = {
-  name: '',
-  ceo: '',
+  name: '몽실이',
+  ceo: '오성현',
   regNo: '',
   mailOrderNo: '',
   address: '',
