@@ -345,11 +345,30 @@ export function renderLogin(): void {
                   <p class="lp-now-meta">도보 9분 · 13:56 도착 예정</p>
                   <div class="lp-now-actions">
                     <span class="lp-now-btn is-primary">도착</span>
-                    <span class="lp-now-btn">출발</span>
-                    <span class="lp-now-btn">밀기</span>
+                    <span class="lp-now-btn">건너뛰기</span>
                   </div>
-                  <p class="lp-now-after">지금 속도면 오늘 마지막 일정 <strong>21:13 마무리</strong></p>
+                  <p class="lp-now-after">이 속도면 계획보다 12분 늦게 끝나요 · <strong>21:13 종료</strong></p>
+                  <div class="lp-phone-tabs" aria-hidden="true">
+                    <span class="is-on">일정</span><span>주변</span><span>지갑</span><span>회화</span><span>일행</span>
+                  </div>
                 </div>
+              </div>
+            </div>
+            <div class="lp-trip-feats reveal">
+              <div class="lp-trip-feat">
+                <p class="lp-trip-feat-tag">주변</p>
+                <h3>지금 여기서 걸어갈 수 있는 곳</h3>
+                <p>카페 · 맛집 · 환전소 · 편의점 · ATM · 약국을 내 위치 500m · 1km 안에서 바로 찾아요. 길찾기도 지금 있는 곳에서 출발해요.</p>
+              </div>
+              <div class="lp-trip-feat">
+                <p class="lp-trip-feat-tag">지갑</p>
+                <h3>돈과 예약을 한곳에</h3>
+                <p>쓴 돈은 그 자리에서 기록하고 정산까지 이어져요. 항공권 · 숙소 예약 서류는 휴대폰에 받아 두면 인터넷이 없어도 열려요.</p>
+              </div>
+              <div class="lp-trip-feat">
+                <p class="lp-trip-feat-tag">일행</p>
+                <h3>"어디야?" 한 번이면</h3>
+                <p>흩어진 일행에게 알림으로 물어보고, 상대가 보내기를 누를 때만 위치가 한 번 와요. 전날 저녁엔 내일 날씨도 알려 드려요.</p>
               </div>
             </div>
           </div>
