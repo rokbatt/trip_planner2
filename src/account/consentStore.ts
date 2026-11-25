@@ -67,6 +67,11 @@ export function shouldAskConsent(server: ServerConsentState, fresh: boolean): bo
   return server === 'missing' || (server === 'unavailable' && fresh);
 }
 
+/** 약관·방침 화면인가 — `/terms` · `/privacy` 경로나 `#terms` · `#privacy` 해시 */
+export function isLegalPage(pathname: string, hash = ''): boolean {
+  return /^\/(terms|privacy)\/?$/.test(pathname) || /^#\/?(terms|privacy)$/.test(hash);
+}
+
 /** 필수 항목이 전부 체크됐는가 */
 export function allRequiredChecked(checked: Record<string, boolean>, requiredKeys: readonly string[]): boolean {
   return requiredKeys.every((k) => checked[k] === true);
