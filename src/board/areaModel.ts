@@ -116,3 +116,35 @@ export function useOne(kv: KV | null, userId: string, today: string): number {
   }
   return Math.max(0, AREA_DAILY_LIMIT - n);
 }
+
+/* ── 순위 색(몽실이 구름 그라데이션) ──
+ * 1위 하늘색에서 아래로 갈수록 라벤더 → 분홍으로 흐른다. 결과 수에 맞춰 고르게 나눈다. */
+export const RANK_STOPS = ['#7EC8F2', '#8FB4F5', '#A99CF2', '#C79BEA', '#EE9EC8', '#F7A9A0'] as const;
+
+function hexToRgb(h: string): [number, number, number] {
+  const n = parseInt(h.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function rgbToHex([r, g, b]: [number, number, number]): string {
+  return '#' + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
+/** i번째(0부터) 결과의 색 — 결과가 n개일 때 그라데이션 위 위치 */
+export function rankColor(i: number, n: number): string {
+  const t = n <= 1 ? 0 : Math.min(1, Math.max(0, i / (n - 1)));
+  const pos = t * (RANK_STOPS.length - 1);
+  const k = Math.min(RANK_STOPS.length - 2, Math.floor(pos));
+  const f = pos - k;
+  const a = hexToRgb(RANK_STOPS[k]);
+  const b = hexToRgb(RANK_STOPS[k + 1]);
+  return rgbToHex([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f]);
+}
+
+/** 색을 흰색과 섞은 옅은 배경(ratio: 원래 색 비율) */
+export function tint(hex: string, ratio = 0.1): string {
+  const c = hexToRgb(hex);
+  return rgbToHex([c[0] * ratio + 255 * (1 - ratio), c[1] * ratio + 255 * (1 - ratio), c[2] * ratio + 255 * (1 - ratio)]);
+}
+
+/** 상위 몇 위까지 강조하나 */
+export const TOP_RANKS = 3;

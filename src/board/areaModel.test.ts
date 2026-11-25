@@ -80,3 +80,20 @@ describe('하루 횟수', () => {
     expect(remainingToday(kv, 'u', 'd')).toBe(0);
   });
 });
+
+describe('rankColor — 구름 그라데이션', () => {
+  it('1위는 하늘색, 꼴찌는 분홍, 가운데는 사이 색', async () => {
+    const { rankColor, RANK_STOPS } = await import('./areaModel');
+    expect(rankColor(0, 10)).toBe(RANK_STOPS[0]);
+    expect(rankColor(9, 10)).toBe(RANK_STOPS[RANK_STOPS.length - 1]);
+    expect(rankColor(0, 1)).toBe(RANK_STOPS[0]);
+    const mid = rankColor(5, 11);
+    expect(mid).toMatch(/^#[0-9A-F]{6}$/);
+    expect(mid).not.toBe(RANK_STOPS[0]);
+  });
+  it('tint는 흰색에 가까운 옅은 색', async () => {
+    const { tint } = await import('./areaModel');
+    expect(tint('#000000', 0.1)).toBe('#E6E6E6');
+    expect(tint('#7EC8F2', 0)).toBe('#FFFFFF');
+  });
+});
