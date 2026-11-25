@@ -48,7 +48,7 @@ const PRO = PRODUCTS.pro_30d;
 
 /** 이 서비스가 외부로 데이터를 보내는 곳 — api/*.ts와 src/supabase.ts 기준 */
 const SUBPROCESSORS: Array<[string, string, string]> = [
-  ['Supabase', '데이터베이스 · 파일 보관 · 로그인 처리', '싱가포르 등 프로젝트 생성 시 선택한 리전'],
+  ['Supabase', '데이터베이스 · 파일 보관 · 로그인 처리', '인도(뭄바이, AWS ap-south-1 리전)'],
   ['Cloudflare', '웹사이트 호스팅, 서버 기능 실행, 도메인 관리 및 문의 메일 전달', '미국 등 (전 세계 데이터센터)'],
   ['Google (OAuth)', '구글 계정 로그인 확인', '미국 등'],
   ['Google (Maps · Places · Routes)', '장소 검색, 지도 표시, 이동 시간 계산', '미국 등'],
