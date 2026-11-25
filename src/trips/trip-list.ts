@@ -391,7 +391,7 @@ export async function renderTripList(): Promise<HTMLElement> {
   };
 
   page.querySelector('#btn-new-trip')!.addEventListener('click', () => {
-    openCreateTripModal(refresh);
+    openCreateTripModal((tripId) => navigate(`board/${tripId}`));
   });
 
   const { trips, stale, failed } = await loadTrips();

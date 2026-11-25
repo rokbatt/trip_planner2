@@ -10,9 +10,10 @@ const ICON_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 
 /**
  * 새 여행 생성 모달 열기
- * onCreated: 생성 성공 시 호출되는 콜백 (여행 목록 새로고침용)
+ * onCreated: 생성 성공 시 새 여행 id로 호출된다 — 목록은 그 여행으로 바로 들어간다
+ *   (만든 직후 할 일은 장소 모으기라, 목록으로 돌아가 카드를 한 번 더 누르게 하지 않는다)
  */
-export function openCreateTripModal(onCreated: () => void): void {
+export function openCreateTripModal(onCreated: (tripId: string) => void): void {
   const overlay = document.createElement('div');
   overlay.className = 'tc-overlay';
 
@@ -23,35 +24,31 @@ export function openCreateTripModal(onCreated: () => void): void {
     '      <p class="tc-label">NEW TRAVEL PASS</p>',
     '      <h2 class="tc-title">새 여행 만들기</h2>',
     '    </div>',
-    '    <button class="tc-close" id="tc-close">' + ICON_CLOSE + '</button>',
+    '    <button type="button" class="tc-close" id="tc-close" aria-label="닫기">' + ICON_CLOSE + '</button>',
     '  </div>',
     '  <form id="tc-form">',
     '    <div class="tc-field">',
-    '      <label class="tc-field-label">여행 이름</label>',
+    '      <label class="tc-field-label" for="tc-name">여행 이름</label>',
     '      <input class="tc-input" id="tc-name" type="text" placeholder="예: 뉴욕 자유여행" required />',
     '    </div>',
     '    <div class="tc-field">',
-    '      <label class="tc-field-label">목적지 도시</label>',
+    '      <label class="tc-field-label" for="tc-city">목적지 도시</label>',
     '      <input class="tc-input" id="tc-city" type="text" placeholder="예: 방콕, 파타야 (여러 도시는 콤마로 구분)" />',
     '    </div>',
     '    <div class="tc-row">',
     '      <div class="tc-field">',
-    '        <label class="tc-field-label">출발일</label>',
+    '        <label class="tc-field-label" for="tc-start">출발일</label>',
     '        <input class="tc-input" id="tc-start" type="date" required />',
     '      </div>',
     '      <div class="tc-field">',
-    '        <label class="tc-field-label">복귀일</label>',
+    '        <label class="tc-field-label" for="tc-end">복귀일</label>',
     '        <input class="tc-input" id="tc-end" type="date" required />',
     '      </div>',
     '    </div>',
     '    <div class="tc-row">',
     '      <div class="tc-field">',
-    '        <label class="tc-field-label">인원</label>',
+    '        <label class="tc-field-label" for="tc-headcount">인원</label>',
     '        <input class="tc-input" id="tc-headcount" type="number" min="1" placeholder="2" />',
-    '      </div>',
-    '      <div class="tc-field">',
-    '        <label class="tc-field-label">테마 (선택)</label>',
-    '        <input class="tc-input" id="tc-theme" type="text" placeholder="맛집투어" />',
     '      </div>',
     '    </div>',
     '    <div class="tc-field">',
@@ -78,14 +75,15 @@ export function openCreateTripModal(onCreated: () => void): void {
 
   const arrivalPicker = mountAirportPicker(overlay.querySelector('#tc-arrival-mount') as HTMLElement, {
     label: '입국',
-    placeholder: '입국 공항 (예: 수완나품 BKK)',
+    placeholder: '입국 공항 (예: 수완나품 BKK — 도착하는 공항)',
   });
   const departurePicker = mountAirportPicker(overlay.querySelector('#tc-departure-mount') as HTMLElement, {
     label: '출국',
-    placeholder: '출국 공항 (예: 인천 ICN)',
+    placeholder: '출국 공항 (예: 프라하 PRG — 돌아오는 비행기)',
   });
 
   const close = () => {
+    document.removeEventListener('keydown', escHandler);
     overlay.classList.remove('open');
     setTimeout(() => overlay.remove(), 220);
   };
@@ -96,12 +94,10 @@ export function openCreateTripModal(onCreated: () => void): void {
     if (e.target === overlay) close();
   });
 
-  const escHandler = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      close();
-      document.removeEventListener('keydown', escHandler);
-    }
-  };
+  // 닫기 버튼·바깥 누르기로 닫아도 Esc 감시를 함께 뗀다(예전엔 Esc로 닫을 때만 떼서 열 때마다 쌓였다)
+  function escHandler(e: KeyboardEvent): void {
+    if (e.key === 'Escape') close();
+  }
   document.addEventListener('keydown', escHandler);
 
   const form = overlay.querySelector('#tc-form') as HTMLFormElement;
@@ -127,7 +123,7 @@ async function handleSubmit(
   overlay: HTMLElement,
   arrival: AirportValue,
   departure: AirportValue,
-  onCreated: () => void,
+  onCreated: (tripId: string) => void,
   close: () => void
 ): Promise<void> {
   const submitBtn = overlay.querySelector('#tc-submit') as HTMLButtonElement;
@@ -146,7 +142,6 @@ async function handleSubmit(
   const startDate = (overlay.querySelector('#tc-start') as HTMLInputElement).value;
   const endDate = (overlay.querySelector('#tc-end') as HTMLInputElement).value;
   const headcountRaw = (overlay.querySelector('#tc-headcount') as HTMLInputElement).value;
-  const theme = (overlay.querySelector('#tc-theme') as HTMLInputElement).value.trim();
 
   if (!name || !startDate || !endDate) {
     errorEl.textContent = '여행 이름과 날짜는 필수예요.';
@@ -175,7 +170,6 @@ async function handleSubmit(
         start_date: startDate,
         end_date: endDate,
         headcount: headcountRaw ? Number(headcountRaw) : null,
-        theme: theme || null,
         destinations: destinations.length ? destinations : null,
         owner_id: user.id,
       })
@@ -248,7 +242,7 @@ async function handleSubmit(
     }
 
     close();
-    onCreated();
+    onCreated(trip.id);
   } catch (err) {
     console.error('여행 생성 실패:', err);
     errorEl.textContent = '여행을 만들지 못했어요. 잠시 후 다시 시도해주세요.';

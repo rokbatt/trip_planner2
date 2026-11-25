@@ -108,7 +108,10 @@
 }
 .tc-input::placeholder { color: #A8B7C7; }
 
-.tc-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.tc-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+/* 날짜 입력칸은 브라우저가 정한 최소 폭이 있어 좁은 휴대폰에서 모달 밖으로 삐져나온다 — 칸 폭을 따르게 */
+.tc-row .tc-input { min-width: 0; }
+.tc-row .tc-input[type="date"] { padding-left: 10px; padding-right: 8px; }
 
 /* ── 항공편(입국/출국) ── */
 .tc-airport-group { display: flex; flex-direction: column; gap: 8px; }
