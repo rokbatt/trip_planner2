@@ -503,9 +503,9 @@ export function expenseShotHtml(): string {
  * ══════════════════════════════════════════════════════════ */
 export function boardShotHtml(): string {
   const cols: Array<[string, string, string[]]> = [
-    ['가고싶어', '#E24B4A', ['방콕 왕궁', '왓 아룬', '아시아티크']],
-    ['먹고싶어', '#1D9E75', ['크루아압쏜', '쩟페어 랏차다']],
-    ['하고싶어', '#7F77DD', ['피피섬 투어', 'Pimaan Thai Massage', '티추까 루프탑바']],
+    ['VISIT', '#E24B4A', ['방콕 왕궁', '왓 아룬', '아시아티크']],
+    ['FOOD', '#1D9E75', ['크루아압쏜', '쩟페어 랏차다']],
+    ['ACTIVITY', '#7F77DD', ['피피섬 투어', 'Pimaan Thai Massage', '티추까 루프탑바']],
   ];
   return `
     <div class="lp-board">
