@@ -5,28 +5,14 @@ import { signInWithGoogle } from '../auth/auth';
 import './trip-join.css';
 import { parseISODate } from '../utils/dates';
 import { escapeHtml } from '../utils/html';
+// 여행 목록 카드와 같은 공항 코드 표를 쓴다(따로 두면 같은 여행이 목록엔 PRG, 초대장엔 "프라하"로 보인다)
+import { toAirportCode } from './airports';
 
 const PENDING_INVITE_KEY = 'mongsil_pending_invite';
 
 const ICON_ROUTE_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
 const ICON_USERS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
 const ICON_WARNING = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/></svg>';
-
-const AIRPORT_CODE: Record<string, string> = {
-  '서울': 'ICN', '인천': 'ICN', '뉴욕': 'JFK', '방콕': 'BKK', '도쿄': 'NRT',
-  '오사카': 'KIX', '파리': 'CDG', '런던': 'LHR', '로마': 'FCO', '바르셀로나': 'BCN',
-  '싱가포르': 'SIN', '홍콩': 'HKG', '타이베이': 'TPE', '하노이': 'HAN',
-  '다낭': 'DAD', '나트랑': 'CXR', '발리': 'DPS', '푸켓': 'HKT', '오키나와': 'OKA',
-  '시드니': 'SYD', '두바이': 'DXB', '로스앤젤레스': 'LAX', '샌프란시스코': 'SFO',
-  '미국': 'JFK', '베트남': 'HAN', '태국': 'BKK', '일본': 'NRT', '유럽': 'CDG',
-};
-
-function toAirportCode(city: string): string {
-  const cleaned = city.trim();
-  if (AIRPORT_CODE[cleaned]) return AIRPORT_CODE[cleaned];
-  return cleaned.slice(0, 3).toUpperCase();
-}
-
 
 function formatDateShort(d: string): string {
   const dt = parseISODate(d);
@@ -64,7 +50,7 @@ export async function renderJoinPage(inviteCode: string | undefined): Promise<HT
       '  <div class="tj-card">',
       '    <div class="tj-eyebrow">TRAVEL INVITATION</div>',
       '    <div class="tj-name">여행에 초대되었어요</div>',
-      '    <div class="tj-dates" style="margin-bottom:24px;">로그인하면 자동으로 참여돼요</div>',
+      '    <div class="tj-dates" style="margin-bottom:24px;">로그인하면 여행 정보를 보고 바로 참여할 수 있어요</div>',
       '    <button class="tj-btn" id="tj-login">Google 계정으로 로그인</button>',
       '  </div>',
       '</div>',
@@ -96,7 +82,7 @@ export async function renderJoinPage(inviteCode: string | undefined): Promise<HT
   const destCode = toAirportCode(destCity);
   const dateRange = trip.start_date && trip.end_date
     ? formatDateShort(trip.start_date) + ' – ' + formatDateShort(trip.end_date)
-    : 'DATE TBD';
+    : '날짜 미정';
 
   page.innerHTML = [
     '<div class="tj-page">',
