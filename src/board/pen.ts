@@ -12,6 +12,7 @@
 import { supabase } from '../supabase';
 import { store } from '../store';
 import { escapeHtml } from '../utils/html';
+import { createProjector, isOverlayUi } from './mapPixel';
 import {
   PEN_WIDTH, formatDistance, isValidPath, memberColors, simplifyPath, straightDistance, type LatLng,
 } from './penModel';
@@ -81,7 +82,6 @@ export function mountPen(opts: {
   // 그리는 중 상태
   let stroke: LatLng[] | null = null;
   let liveLine: any = null;
-  const listeners: any[] = [];
 
   const myColor = () => (myId && colors.get(myId)) || '#F97316';
 
@@ -165,13 +165,16 @@ export function mountPen(opts: {
     });
   }
 
-  /* ── 켜고 끄기 ── */
+  /* ── 켜고 끄기 ──
+   * 지도 끌기 설정(draggable)은 건드리지 않는다 — 끄면 휠 확대·축소까지 막힌다(사용자 피드백).
+   * 대신 펜이 켜져 있는 동안 지도 위 누르기를 우리가 먼저 받아 지도·핀으로 보내지 않는다(아래 onDown). */
+  const mapDiv: HTMLElement = map.getDiv();
+  const projector = createProjector(g, map);
+
   function setActive(on: boolean): void {
     if (!myId) return;
     active = on;
-    map.setOptions(on
-      ? { draggable: false, draggableCursor: 'crosshair', disableDoubleClickZoom: true }
-      : { draggable: true, draggableCursor: null, disableDoubleClickZoom: false });
+    mapDiv.classList.toggle('bd-pen-on', on);
     if (!on) cancelStroke();
     renderTools();
   }
@@ -181,29 +184,48 @@ export function mountPen(opts: {
   };
   document.addEventListener('keydown', onKey);
 
-  /* ── 긋기 ── */
+  /* ── 긋기 — 브라우저 포인터 이벤트(캡처 단계) ──
+   * 핀 위에서 시작해도 핀이 눌리지 않고 선이 시작된다. 휠은 손대지 않으니 그리는 중에도 확대·축소가 된다. */
   function cancelStroke(): void {
     stroke = null;
     liveLine?.setMap(null);
     liveLine = null;
   }
 
-  listeners.push(map.addListener('mousedown', (e: any) => {
-    if (!active || !e.latLng) return;
-    stroke = [[e.latLng.lat(), e.latLng.lng()]];
+  const swallow = (e: Event) => {
+    if (!active || isOverlayUi(e.target)) return;
+    e.stopPropagation();
+    if (e.cancelable) e.preventDefault();
+  };
+  const onDown = (e: PointerEvent | MouseEvent) => {
+    if (!active || (e as MouseEvent).button !== 0 || isOverlayUi(e.target)) return;
+    e.stopPropagation();
+    if (e.cancelable) e.preventDefault();
+    if (stroke) return; // pointerdown 뒤 따라오는 mousedown
+    const ll = projector.toLatLng(e.clientX, e.clientY);
+    if (!ll) return;
+    stroke = [[ll.lat(), ll.lng()]];
     liveLine = new g.maps.Polyline({
-      path: [e.latLng], strokeColor: myColor(), strokeOpacity: 0.92, strokeWeight: PEN_WIDTH, clickable: false, map, zIndex: 60,
+      path: [ll], strokeColor: myColor(), strokeOpacity: 0.92, strokeWeight: PEN_WIDTH, clickable: false, map, zIndex: 60,
     });
-  }));
-  listeners.push(map.addListener('mousemove', (e: any) => {
-    if (!active || !stroke || !e.latLng) return;
-    stroke.push([e.latLng.lat(), e.latLng.lng()]);
-    liveLine?.getPath().push(e.latLng);
-  }));
-  listeners.push(map.addListener('mouseup', () => void finishStroke()));
-  // 지도 밖(핀 위·화면 밖)에서 버튼을 놓아도 끝낸다
-  const onDocUp = () => { if (stroke) void finishStroke(); };
-  document.addEventListener('mouseup', onDocUp);
+  };
+  const onMove = (e: PointerEvent) => {
+    if (!active || !stroke) return;
+    const ll = projector.toLatLng(e.clientX, e.clientY);
+    if (!ll) return;
+    stroke.push([ll.lat(), ll.lng()]);
+    liveLine?.getPath().push(ll);
+  };
+  // 지도 밖(화면 밖)에서 버튼을 놓아도 끝낸다
+  const onUp = () => { if (stroke) void finishStroke(); };
+  mapDiv.addEventListener('pointerdown', onDown, true);
+  mapDiv.addEventListener('mousedown', onDown, true);
+  // 펜이 켜져 있는 동안 핀 클릭·더블클릭 확대는 지도로 보내지 않는다
+  mapDiv.addEventListener('click', swallow, true);
+  mapDiv.addEventListener('dblclick', swallow, true);
+  document.addEventListener('pointermove', onMove, true);
+  document.addEventListener('pointerup', onUp, true);
+  document.addEventListener('mouseup', onUp, true);
 
   async function finishStroke(): Promise<void> {
     const raw = stroke;
@@ -325,11 +347,17 @@ export function mountPen(opts: {
     isActive: () => active,
     destroy() {
       destroyed = true;
-      if (active) map.setOptions({ draggable: true, draggableCursor: null, disableDoubleClickZoom: false });
+      mapDiv.classList.remove('bd-pen-on');
       cancelStroke();
       document.removeEventListener('keydown', onKey);
-      document.removeEventListener('mouseup', onDocUp);
-      listeners.forEach((l) => l?.remove?.());
+      mapDiv.removeEventListener('pointerdown', onDown, true);
+      mapDiv.removeEventListener('mousedown', onDown, true);
+      mapDiv.removeEventListener('click', swallow, true);
+      mapDiv.removeEventListener('dblclick', swallow, true);
+      document.removeEventListener('pointermove', onMove, true);
+      document.removeEventListener('pointerup', onUp, true);
+      document.removeEventListener('mouseup', onUp, true);
+      projector.destroy();
       drawn.forEach((d) => { d.line.setMap(null); d.label.setMap(null); });
       drawn.clear();
       if (channel) void supabase.removeChannel(channel);
