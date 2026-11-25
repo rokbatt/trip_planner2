@@ -122,3 +122,17 @@
   color: #94A3B8;
   font-size: 13px;
 }
+
+/* 로그인 전 초대 화면 — 브랜드와 구글 버튼(랜딩 시작 버튼과 같은 모양) */
+.tj-brand {
+  display: inline-flex; align-items: center; gap: 7px;
+  margin-bottom: 18px;
+  font-size: 15px; font-weight: 800; color: #0B2A5C; letter-spacing: -0.02em;
+}
+.tj-btn-google {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  background: #fff; color: #0B2A5C; border: 1px solid #CDEBFB;
+}
+.tj-btn-google:hover { background: #EAF3FC; }
+.tj-google-ic { width: 18px; height: 18px; flex: none; }
+.tj-dates, .tj-hint, .tj-name { word-break: keep-all; }
