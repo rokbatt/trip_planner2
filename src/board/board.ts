@@ -1010,15 +1010,35 @@ async function toggleBoardMapView(container: HTMLElement, tripId: string): Promi
   const mapView = container.querySelector('#bd-map-view') as HTMLElement | null;
   if (!layout || !mapView) return;
 
+  // PC: 왼쪽 "아이디어 체크인"과 점선 구분선은 그대로 두고, 게이트 4칸 자리만 지도로 바꾼다 —
+  //     지도를 보면서 장소를 계속 체크인할 수 있게. 지도 칸은 레이아웃 안 게이트 자리로 옮겨 넣는다.
+  // 폰: 칸이 위아래로 쌓여 있어 옆에 둘 자리가 없으므로 예전처럼 화면 전체를 지도로 바꾼다.
+  const inLayout = !isMobileBoard();
   if (!boardMapViewActive) {
     layout.hidden = false;
+    layout.classList.remove('is-map');
     mapView.hidden = true;
     return;
   }
 
-  layout.hidden = true;
+  if (inLayout) {
+    layout.hidden = false;
+    layout.classList.add('is-map');
+    if (mapView.parentElement !== layout) layout.appendChild(mapView);
+  } else {
+    layout.hidden = true;
+    if (mapView.parentElement !== container) container.insertBefore(mapView, layout.nextSibling);
+  }
   mapView.hidden = false;
   await renderBoardMapView(mapView, tripId);
+}
+
+/** 지도가 열려 있는 동안 장소가 늘거나 옮겨지면 지도를 다시 그린다(체크인하자마자 핀이 보이게) */
+function refreshBoardMapIfOpen(): void {
+  if (!boardMapViewActive || !boardContainer) return;
+  const mapView = boardContainer.querySelector('#bd-map-view') as HTMLElement | null;
+  const tripId = store.get('currentTrip')?.id;
+  if (mapView && !mapView.hidden && tripId) void renderBoardMapView(mapView, tripId);
 }
 
 /** STAY 지도(shortlist.ts)와 같은 물방울 모양 핀 — 게이트 색으로 채운 몸통 + 흰 테두리 +
@@ -1182,6 +1202,22 @@ async function renderBoardMapView(mapView: HTMLElement, tripId: string): Promise
   const infoWindow = new g.maps.InfoWindow();
   // 마우스오버/선택으로 확대된 핀을 원래 크기로 되돌리기 위해 기본 아이콘을 들고 있는다
   let selectedMarker: any = null;
+  // 마우스를 올릴 수 있는 기기(PC)면 올렸을 때 정보창, 터치 기기면 눌렀을 때 정보창
+  const canHover = typeof window.matchMedia === 'function' && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  let hideTimer: ReturnType<typeof setTimeout> | null = null;
+  function cancelHide(): void {
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+  }
+  /** 핀에서 정보창으로 마우스를 옮기는 사이 닫히지 않게 조금 기다렸다 닫는다 */
+  function scheduleHide(): void {
+    cancelHide();
+    hideTimer = setTimeout(() => {
+      hideTimer = null;
+      infoWindow.close();
+      selectedMarker?.__bdReset?.();
+      selectedMarker = null;
+    }, 220);
+  }
 
   places.forEach((p) => {
     const baseIcon = buildBoardMapMarkerIcon(g, p.mood, p.category);
@@ -1192,25 +1228,9 @@ async function renderBoardMapView(mapView: HTMLElement, tripId: string): Promise
       icon: baseIcon,
     });
 
-    marker.addListener('mouseover', () => {
-      if (marker === selectedMarker) return;
-      marker.setIcon(bigIcon);
-      marker.setZIndex(900);
-    });
-    marker.addListener('mouseout', () => {
-      if (marker === selectedMarker) return;
-      marker.setIcon(baseIcon);
-      marker.setZIndex(null);
-    });
-
-    marker.addListener('click', () => {
-      // 직전에 선택돼 있던 핀은 기본 크기로 되돌린다
-      if (selectedMarker && selectedMarker !== marker) selectedMarker.__bdReset?.();
-      selectedMarker = marker;
-      marker.setIcon(bigIcon);
-      marker.setZIndex(1000);
+    const infoHtml = () => {
       const gate = GATES.find((gt) => gt.key === p.mood);
-      infoWindow.setContent([
+      return [
         '<div class="bd-map-infowin">',
         p.photo_url ? '<div class="bd-map-infowin-photo" style="background-image:url(\'' + p.photo_url + '\')"></div>' : '',
         '<div class="bd-map-infowin-name">' + escapeHtml(p.name) + '</div>',
@@ -1218,14 +1238,42 @@ async function renderBoardMapView(mapView: HTMLElement, tripId: string): Promise
         typeof p.google_rating === 'number' ? '<div class="bd-map-infowin-rating">★ ' + p.google_rating.toFixed(1) + '</div>' : '',
         '<button type="button" class="bd-map-infowin-detail" id="bd-map-infowin-detail">상세보기</button>',
         '</div>',
-      ].join(''));
-      infoWindow.open({ map, anchor: marker });
+      ].join('');
+    };
+    const openDetail = () => mapEl.dispatchEvent(new CustomEvent('mongsil:openPlaceDetail', { detail: { place: p }, bubbles: true }));
+
+    /** 이 핀의 정보창을 연다 — 마우스를 올렸을 때(PC) 또는 눌렀을 때(터치) */
+    const showInfo = () => {
+      cancelHide();
+      if (selectedMarker && selectedMarker !== marker) selectedMarker.__bdReset?.();
+      selectedMarker = marker;
+      marker.setIcon(bigIcon);
+      marker.setZIndex(1000);
+      infoWindow.setContent(infoHtml());
+      infoWindow.open({ map, anchor: marker, shouldFocus: false });
       g.maps.event.addListenerOnce(infoWindow, 'domready', () => {
-        document.getElementById('bd-map-infowin-detail')?.addEventListener('click', () => {
-          mapEl.dispatchEvent(new CustomEvent('mongsil:openPlaceDetail', { detail: { place: p }, bubbles: true }));
-        });
+        document.getElementById('bd-map-infowin-detail')?.addEventListener('click', openDetail);
+        // 정보창 위에 마우스가 있는 동안은 닫지 않는다(상세보기 버튼을 누를 수 있게)
+        const inner = document.querySelector('.bd-map-infowin') as HTMLElement | null;
+        const box = ((inner?.closest('.gm-style-iw-c') as HTMLElement | null) ?? inner);
+        if (box && !box.dataset.bdHover) {
+          box.dataset.bdHover = '1';
+          box.addEventListener('mouseenter', cancelHide);
+          box.addEventListener('mouseleave', scheduleHide);
+        }
       });
-    });
+    };
+
+    if (canHover) {
+      // PC: 핀에 마우스를 올리면 정보창이 뜨고, 핀에서 벗어나면 잠깐 뒤 사라진다(정보창으로 옮겨 가면 유지).
+      // 핀을 누르면 바로 상세보기
+      marker.addListener('mouseover', showInfo);
+      marker.addListener('mouseout', scheduleHide);
+      marker.addListener('click', openDetail);
+    } else {
+      // 터치: 마우스오버가 없으므로 눌러서 정보창을 연다
+      marker.addListener('click', showInfo);
+    }
 
     // 선택 해제 시 되돌리는 방법을 마커 자신이 들고 있게 해서, 위 click 핸들러가
     // 다른 마커의 baseIcon을 몰라도 되도록 한다
@@ -1312,6 +1360,7 @@ function subscribeRealtime(tripId: string): void {
         if (document.querySelector('[data-place-id="' + row.id + '"]')) return;
 
         placesCache.set(row.id, row);
+        refreshBoardMapIfOpen();
         // 다른 여행지에 추가된 장소는 이 보드(활성 여행지)에 표시하지 않음
         if (boardActiveDest && !placeBelongsToDestination(row, boardActiveDest)) return;
 
@@ -1494,6 +1543,7 @@ function buildInbox(tripId: string, items: Place[]): HTMLElement {
     input.focus();
     if (newPlace) {
       placesCache.set(newPlace.id, newPlace);
+      refreshBoardMapIfOpen();
       markRecentlyMutated(newPlace.id);
       removeEmptyState(listEl);
       const el = createTicket(newPlace);
@@ -1743,6 +1793,7 @@ async function selectPrediction(prediction: UnifiedPrediction, tripId: string, i
   if (addResult) {
     const newPlace = addResult.place;
     placesCache.set(newPlace.id, newPlace);
+    refreshBoardMapIfOpen();
 
     if (addResult.isDuplicate) {
       // 이미 추가된 장소 — 새 카드를 만들지 않고, 기존 카드가 화면에 있으면 살짝 흔들어서 알려줌
@@ -2164,6 +2215,7 @@ async function addAiPickToInbox(tripId: string, name: string, destination: strin
 
     const newPlace = newAdd.place;
     placesCache.set(newPlace.id, newPlace);
+    refreshBoardMapIfOpen();
 
     if (newAdd.isDuplicate) {
       alert('"' + name + '"은 이미 이 여행에 추가되어 있어요.');
@@ -2406,7 +2458,10 @@ function renderGateListContent(listEl: HTMLElement, gateKey: string): void {
   updateZoneCount(listEl);
 }
 
-/** 그룹 멤버 카드들을 테두리 있는 박스 하나로 묶어서 보여준다 */
+/** 펼쳐 둔 그룹 id — 다시 그려도(실시간 반영·여행지 전환) 펼친 상태를 유지한다. 기본은 접힘 */
+const expandedGroups = new Set<string>();
+
+/** 그룹 멤버 카드들을 하나의 묶음으로 보여준다 — 접히면 맨 위 카드 + 겹친 두께, 펼치면 전부 */
 function buildGroupCluster(groupId: string, members: Place[], gateKey: string, clusterIndex: number): HTMLElement {
   const cluster = document.createElement('div');
   cluster.className = 'bd-group-cluster';
@@ -2418,6 +2473,15 @@ function buildGroupCluster(groupId: string, members: Place[], gateKey: string, c
   cluster.style.setProperty('--group-color', GROUP_COLOR_PALETTE[clusterIndex % GROUP_COLOR_PALETTE.length]);
 
   const name = members[0]?.group_name;
+  // 기본은 접힌 묶음 — 맨 위 장소 카드 하나만 보이고, 뒤에 카드가 겹쳐 쌓인 두께로 "여러 곳"임을 보여 준다.
+  // 그룹 선택 중인 게이트에서는 모든 카드를 골라야 하므로 펼친다.
+  const selecting = !!groupSelectState && groupSelectState.gateKey === gateKey;
+  const stackable = members.length > 1;
+  const collapsed = stackable && !selecting && !expandedGroups.has(groupId);
+  cluster.classList.toggle('is-collapsed', collapsed);
+  cluster.dataset.layers = String(Math.min(members.length - 1, 2));
+  if (collapsed) cluster.style.setProperty('--group-span', '1');
+
   cluster.innerHTML = [
     '<div class="bd-group-cluster-header">',
     '  <span class="bd-group-cluster-name">' + (name ? escapeHtml(name) : '그룹') + '</span>',
@@ -2425,10 +2489,26 @@ function buildGroupCluster(groupId: string, members: Place[], gateKey: string, c
     '  <button type="button" class="bd-group-cluster-dissolve" title="그룹 해제">' + ICON_CLEAR + '</button>',
     '</div>',
     '<div class="bd-group-cluster-body"></div>',
+    stackable && !selecting
+      ? '<button type="button" class="bd-group-toggle" aria-expanded="' + String(!collapsed) + '"' +
+        ' aria-label="' + escapeHtml((name || '그룹') + (collapsed ? ' 펼치기, ' + (members.length - 1) + '곳 더' : ' 접기')) + '">' +
+        '<b>' + (name ? escapeHtml(name) : '그룹') + '</b>' +
+        '<span class="bd-group-toggle-more">' + (collapsed ? '+' + (members.length - 1) : '접기') + '</span>' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + (collapsed ? 'M6 9l6 6 6-6' : 'M6 15l6-6 6 6') + '"/></svg>' +
+        '</button>'
+      : '',
   ].join('');
 
   const body = cluster.querySelector('.bd-group-cluster-body') as HTMLElement;
   members.forEach((m) => body.appendChild(createBoardingCard(m)));
+
+  cluster.querySelector('.bd-group-toggle')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (expandedGroups.has(groupId)) expandedGroups.delete(groupId);
+    else expandedGroups.add(groupId);
+    const listEl = cluster.parentElement as HTMLElement | null;
+    if (listEl) renderGateListContent(listEl, gateKey);
+  });
 
   cluster.querySelector('.bd-group-cluster-dissolve')?.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -2465,7 +2545,8 @@ function enterGroupSelectMode(originPlace: Place, existingGroupId: string | null
   groupSelectState = { gateKey, mode: existingGroupId ? 'add' : 'create', groupId: existingGroupId, lockedIds, selectedIds };
 
   col.classList.add('group-select-mode');
-  applySelectOverlays(listEl);
+  // 다시 그려서 접혀 있던 그룹을 펼친다(선택 표시는 renderGateListContent가 붙인다)
+  renderGateListContent(listEl, gateKey);
   renderGroupToolbar();
 
   groupSelectKeyHandler = (e: KeyboardEvent) => {
@@ -2570,6 +2651,8 @@ function exitGroupSelectMode(): void {
     const place = placesCache.get(cardEl.dataset.placeId ?? '');
     cardEl.draggable = !place?.group_id;
   });
+  // 선택하느라 펼쳤던 그룹을 원래(접힘/펼침) 상태로 되돌린다
+  if (listEl && listEl.isConnected) renderGateListContent(listEl, gateKey);
 }
 
 /** 선택 확정 — 새 그룹 생성 또는 기존 그룹에 멤버 추가 */
