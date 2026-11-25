@@ -11,13 +11,14 @@
 
 import { store } from '../store';
 import { escapeHtml } from '../utils/html';
-import { searchNearbyCat, searchText, type ExplorePlace } from '../mobile/exploreApi';
-import type { ExploreCat } from '../mobile/explore';
+import { fetchDetail, searchNearbyCat, searchText, type ExploreDetail, type ExplorePlace } from '../mobile/exploreApi';
+import { priceLabel, type ExploreCat } from '../mobile/explore';
 import {
   AREA_DAILY_LIMIT, AREA_SORTS, coveringCircle, filterAndSort, isUsableArea, remainingToday, useOne, type AreaSort,
 } from './areaModel';
 import { formatDistance, haversineMeters, type LatLng } from './penModel';
 import { todayIso } from '../trips/tripListModel';
+import { createProjector, isOverlayUi } from './mapPixel';
 
 export interface AreaSearchController {
   destroy(): void;
@@ -36,6 +37,8 @@ const CHOICES: Array<{ label: string; cat?: Exclude<ExploreCat, 'all'>; query?: 
 const ICON_AREA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9c0-3 3-5 7-5s7 2 7 5-2 4-2 7-2 4-5 4-6-2-6-5 1-3 1-6z" stroke-dasharray="2.5 2.5"/><circle cx="11" cy="11" r="2.5"/><path d="M13 13l3 3"/></svg>';
 const ICON_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const LONG_PRESS_MS = 400;
+/** 구글이 업종 이름을 안 줄 때 쓰는 한국어 분류 */
+const CAT_LABEL: Record<ExplorePlace['cat'], string> = { food: '음식점', cafe: '카페', sight: '관광지', stay: '숙소', amenity: '편의시설' };
 const MOVE_TOLERANCE_PX = 6;
 
 function kv(): Storage | null {
@@ -63,7 +66,6 @@ export function mountAreaSearch(opts: {
   let liveLine: any = null;
   let area: LatLng[] | null = null;
   let areaShape: any = null;
-  let lastLatLng: any = null;
   let pressTimer: ReturnType<typeof setTimeout> | null = null;
   let pressStart: { x: number; y: number } | null = null;
 
@@ -97,66 +99,54 @@ export function mountAreaSearch(opts: {
 
   function setArmed(on: boolean): void {
     armed = on;
-    map.setOptions(on ? { draggable: false, draggableCursor: 'crosshair' } : { draggable: true, draggableCursor: null });
+    // 지도 끌기는 끄지 않는다(끄면 휠 확대·축소도 막힌다) — 누르기는 아래 onDown이 먼저 받는다
+    mapDiv.classList.toggle('bd-area-armed', on);
     renderTool();
   }
 
-  /* ── 그리기 ──
-   * 버튼을 누른 채 움직이는 동안 구글 지도가 자기 mousemove를 안 줄 수 있어서, 화면 좌표 → 지도 좌표를
-   * 직접 바꾼다(빈 OverlayView의 projection). projection이 없으면 지도 이벤트로 대신한다. */
-  const listeners: any[] = [];
-  let projOverlay: any = null;
-  try {
-    projOverlay = new g.maps.OverlayView();
-    projOverlay.onAdd = () => undefined;
-    projOverlay.draw = () => undefined;
-    projOverlay.onRemove = () => undefined;
-    projOverlay.setMap(map);
-  } catch { projOverlay = null; }
-  const pixelToLatLng = (clientX: number, clientY: number): any => {
-    const proj = projOverlay?.getProjection?.();
-    if (!proj?.fromContainerPixelToLatLng) return null;
-    const r = mapDiv.getBoundingClientRect();
-    return proj.fromContainerPixelToLatLng(new g.maps.Point(clientX - r.left, clientY - r.top));
-  };
-  const addPoint = (ll: any) => {
-    if (!drawing || !ll) return;
-    drawing.push([ll.lat(), ll.lng()]);
-    liveLine?.getPath().push(ll);
-  };
-  listeners.push(map.addListener('mousemove', (e: any) => {
-    if (e.latLng) lastLatLng = e.latLng;
-    if (drawing && !projOverlay?.getProjection?.()) addPoint(e.latLng);
-  }));
-  listeners.push(map.addListener('mousedown', (e: any) => {
-    if (e.latLng) lastLatLng = e.latLng;
-    if (armed && !isPenActive()) beginDraw();
-  }));
+  /* ── 그리기 — 브라우저 포인터 이벤트 + 화면→지도 좌표(mapPixel) ── */
+  const projector = createProjector(g, map);
+  /** 꾹 누르기로 시작한 그리기 동안만 지도 끌기를 잠깐 끈다(버튼을 누른 채라 구글이 끌기로 받아 버리므로) */
+  let dragLocked = false;
 
-  function beginDraw(): void {
-    if (!lastLatLng) return;
+  function beginDraw(clientX: number, clientY: number): boolean {
+    const ll = projector.toLatLng(clientX, clientY);
+    if (!ll) return false;
     clearArea();
-    map.setOptions({ draggable: false, draggableCursor: 'crosshair' });
-    drawing = [[lastLatLng.lat(), lastLatLng.lng()]];
+    drawing = [[ll.lat(), ll.lng()]];
     liveLine = new g.maps.Polyline({
-      path: [lastLatLng], strokeColor: '#0B2A5C', strokeOpacity: 0.85, strokeWeight: 2, clickable: false, map, zIndex: 70,
+      path: [ll], strokeColor: '#0B2A5C', strokeOpacity: 0.85, strokeWeight: 2, clickable: false, map, zIndex: 70,
     });
+    mapDiv.classList.add('bd-area-drawing');
+    return true;
   }
 
-  // 꾹 누르기 감지 — 지도 DOM에서 직접 본다(지도 끌기가 시작되기 전에 끌기를 끈다)
-  const onDown = (e: MouseEvent) => {
-    if (e.button !== 0 || armed || isPenActive() || drawing) return;
-    if ((e.target as HTMLElement).closest('.bd-area-pop, .bd-pen-float, .gm-style-iw-c, button')) return;
+  const onDown = (e: PointerEvent | MouseEvent) => {
+    if ((e as MouseEvent).button !== 0 || isPenActive() || isOverlayUi(e.target)) return;
+    if (armed) {
+      // [영역 검색]을 누른 뒤 — 바로 그린다. 지도·핀으로 보내지 않는다
+      e.stopPropagation();
+      if (e.cancelable) e.preventDefault();
+      if (!drawing) beginDraw(e.clientX, e.clientY);
+      return;
+    }
+    if (drawing || pressTimer) return;
     pressStart = { x: e.clientX, y: e.clientY };
     pressTimer = setTimeout(() => {
       pressTimer = null;
-      if (pressStart) lastLatLng = pixelToLatLng(pressStart.x, pressStart.y) ?? lastLatLng;
-      beginDraw();
-      mapDiv.classList.add('bd-area-drawing');
+      if (!pressStart) return;
+      if (beginDraw(pressStart.x, pressStart.y)) {
+        dragLocked = true;
+        map.setOptions({ draggable: false });
+      }
     }, LONG_PRESS_MS);
   };
-  const onMove = (e: MouseEvent) => {
-    if (drawing) { const ll = pixelToLatLng(e.clientX, e.clientY); if (ll) addPoint(ll); }
+  const onMove = (e: PointerEvent | MouseEvent) => {
+    if (drawing) {
+      const ll = projector.toLatLng(e.clientX, e.clientY);
+      if (ll) { drawing.push([ll.lat(), ll.lng()]); liveLine?.getPath().push(ll); }
+      return;
+    }
     if (pressTimer && pressStart && Math.hypot(e.clientX - pressStart.x, e.clientY - pressStart.y) > MOVE_TOLERANCE_PX) {
       clearTimeout(pressTimer); // 움직였으면 평소 지도 끌기
       pressTimer = null;
@@ -167,9 +157,15 @@ export function mountAreaSearch(opts: {
     pressStart = null;
     if (drawing) finishDraw();
   };
+  const swallowClick = (e: Event) => {
+    if (armed || drawing) { e.stopPropagation(); }
+  };
+  mapDiv.addEventListener('pointerdown', onDown, true);
   mapDiv.addEventListener('mousedown', onDown, true);
-  document.addEventListener('mousemove', onMove, true);
-  document.addEventListener('mouseup', onUp);
+  mapDiv.addEventListener('click', swallowClick, true);
+  document.addEventListener('pointermove', onMove, true);
+  document.addEventListener('pointerup', onUp, true);
+  document.addEventListener('mouseup', onUp, true);
   const onKey = (e: KeyboardEvent) => {
     if (e.key !== 'Escape') return;
     if (drawing) { liveLine?.setMap(null); liveLine = null; drawing = null; restoreDrag(); }
@@ -180,7 +176,7 @@ export function mountAreaSearch(opts: {
 
   function restoreDrag(): void {
     mapDiv.classList.remove('bd-area-drawing');
-    if (!isPenActive()) map.setOptions({ draggable: true, draggableCursor: null });
+    if (dragLocked) { dragLocked = false; map.setOptions({ draggable: true }); }
   }
 
   function finishDraw(): void {
@@ -234,6 +230,7 @@ export function mountAreaSearch(opts: {
     error = '';
     results = [];
     added.clear();
+    openId = null;
     renderPanel();
     try {
       const key = 'area:' + (cat ?? 'q:' + query) + ':' + center.lat.toFixed(4) + ',' + center.lng.toFixed(4) + ':' + radius;
@@ -256,6 +253,44 @@ export function mountAreaSearch(opts: {
     return area ? filterAndSort(results, area, sort) : [];
   }
 
+  /** 펼친 결과(상세) — 상세는 처음 펼칠 때 한 번 받고 이 기기에 남는다(exploreApi 캐시) */
+  let openId: string | null = null;
+  const details = new Map<string, ExploreDetail | 'loading' | 'error'>();
+
+  async function loadDetail(p: ExplorePlace): Promise<void> {
+    if (details.has(p.id) && details.get(p.id) !== 'error') return;
+    details.set(p.id, 'loading');
+    try {
+      details.set(p.id, await fetchDetail(p.id));
+    } catch (e) {
+      console.warn('[area] 상세 실패:', e);
+      details.set(p.id, 'error');
+    }
+    if (!destroyed && openId === p.id) renderPanel();
+  }
+
+  function detailHtml(p: ExplorePlace): string {
+    const d = details.get(p.id);
+    if (!d || d === 'loading') return '<div class="bd-area-detail"><p class="bd-area-muted">정보를 불러오는 중…</p></div>';
+    if (d === 'error') return '<div class="bd-area-detail"><p class="bd-area-muted">상세 정보를 불러오지 못했어요.</p></div>';
+    const photo = d.photos[0]?.url ?? p.photo;
+    // 리뷰는 한국어를 먼저 — 없으면 첫 리뷰
+    const review = d.reviews.find((r) => /[가-힣]/.test(r.text)) ?? d.reviews[0];
+    return '<div class="bd-area-detail">' +
+      (photo ? '<div class="bd-area-photo" style="background-image:url(\'' + escapeHtml(photo) + '\')"></div>' : '') +
+      '<p class="bd-area-summary">' + (d.summary ? escapeHtml(d.summary) : '<span class="bd-area-muted">구글에 등록된 소개글이 없어요.</span>') + '</p>' +
+      '<dl class="bd-area-facts">' +
+      (p.todayHours ? '<div><dt>오늘</dt><dd>' + escapeHtml(p.todayHours) + '</dd></div>' : '') +
+      (p.address ? '<div><dt>주소</dt><dd>' + escapeHtml(p.address) + '</dd></div>' : '') +
+      (d.phone ? '<div><dt>전화</dt><dd>' + escapeHtml(d.phone) + '</dd></div>' : '') +
+      '</dl>' +
+      (review ? '<blockquote class="bd-area-review"><span>' + (review.rating != null ? '★' + review.rating + ' · ' : '') + escapeHtml(review.author) + (review.when ? ' · ' + escapeHtml(review.when) : '') + '</span>' + escapeHtml(review.text) + '</blockquote>' : '') +
+      '<div class="bd-area-links">' +
+      (d.mapsUrl ? '<a href="' + escapeHtml(d.mapsUrl) + '" target="_blank" rel="noopener">구글 지도에서 보기</a>' : '') +
+      (d.website ? '<a href="' + escapeHtml(d.website) + '" target="_blank" rel="noopener">웹사이트</a>' : '') +
+      '</div></div>';
+  }
+
   function renderPanel(): void {
     if (!panelHost) return;
     const list = sorted();
@@ -276,14 +311,25 @@ export function mountAreaSearch(opts: {
         : list.map((p, i) => {
           const st = added.get(p.id);
           const dist = c ? formatDistance(haversineMeters([c.lat, c.lng], [p.lat, p.lng])) : '';
-          return '<li class="bd-area-item' + (hoverId === p.id ? ' hover' : '') + '" data-id="' + escapeHtml(p.id) + '">' +
+          const open = openId === p.id;
+          // 두 번째 줄 — 무엇을 하는 곳인지 한국어로: 구글 업종 이름(예: "태국 음식점") · 가격대 · 영업 여부 · 거리
+          const facts = [
+            p.typeLabel ?? CAT_LABEL[p.cat],
+            priceLabel(p.priceLevel) ? '가격 ' + priceLabel(p.priceLevel) : null,
+            p.openNow === true ? '<span class="bd-area-open">영업 중</span>' : p.openNow === false ? '<span class="bd-area-closed">영업 종료</span>' : null,
+            '가운데서 ' + dist,
+          ].filter(Boolean);
+          return '<li class="bd-area-item' + (hoverId === p.id ? ' hover' : '') + (open ? ' open' : '') + '" data-id="' + escapeHtml(p.id) + '">' +
+            '<div class="bd-area-row">' +
             '<span class="bd-area-num">' + (i + 1) + '</span>' +
             '<div class="bd-area-info"><b>' + escapeHtml(p.name) + '</b>' +
-            '<small>' + (p.rating != null ? '★ ' + p.rating.toFixed(1) + (p.ratingCount ? ' (' + p.ratingCount.toLocaleString('ko-KR') + ')' : '') + ' · ' : '') +
-            '가운데서 ' + dist + (p.typeLabel ? ' · ' + escapeHtml(p.typeLabel) : '') + '</small></div>' +
+            '<small class="bd-area-rating">' + (p.rating != null ? '★ ' + p.rating.toFixed(1) + (p.ratingCount ? ' · 리뷰 ' + p.ratingCount.toLocaleString('ko-KR') : '') : '평점 없음') + '</small>' +
+            '<small>' + facts.map((f) => (String(f).startsWith('<span') ? f : escapeHtml(String(f)))).join(' · ') + '</small></div>' +
             '<button type="button" class="bd-area-add' + (st === 'added' || st === 'dup' ? ' done' : '') + '" data-add="' + escapeHtml(p.id) + '"' +
             (st === 'added' || st === 'dup' ? ' disabled' : '') + ' aria-label="' + escapeHtml(p.name) + ' 체크인에 담기">' +
-            (st === 'added' ? '담음' : st === 'dup' ? '있음' : st === 'fail' ? '다시' : '+') + '</button></li>';
+            (st === 'added' ? '담음' : st === 'dup' ? '있음' : st === 'fail' ? '다시' : '+') + '</button></div>' +
+            (open ? detailHtml(p) : '') +
+            '</li>';
         }).join('')) +
       '</ol>';
 
@@ -295,9 +341,14 @@ export function mountAreaSearch(opts: {
       li.addEventListener('mouseenter', () => setHover(li.dataset.id ?? null, false));
       li.addEventListener('mouseleave', () => setHover(null, false));
       li.addEventListener('click', (e) => {
-        if ((e.target as HTMLElement).closest('button')) return;
+        if ((e.target as HTMLElement).closest('button, a')) return;
         const p = results.find((x) => x.id === li.dataset.id);
-        if (p) map.panTo({ lat: p.lat, lng: p.lng });
+        if (!p) return;
+        // 줄을 누르면 그 자리에서 상세(사진·소개·영업시간·리뷰)를 펼친다. 다시 누르면 접는다
+        openId = openId === p.id ? null : p.id;
+        if (openId) { map.panTo({ lat: p.lat, lng: p.lng }); void loadDetail(p); }
+        renderPanel();
+        if (openId) (panelEl.querySelector('.bd-area-item.open') as HTMLElement | null)?.scrollIntoView({ block: 'nearest' });
       });
     });
     panelEl.querySelectorAll<HTMLButtonElement>('[data-add]').forEach((b) => {
@@ -356,6 +407,7 @@ export function mountAreaSearch(opts: {
     pins = [];
     results = [];
     hoverId = null;
+    openId = null;
     panelEl.hidden = true;
     panelEl.innerHTML = '';
     panelHost?.classList.remove('is-area');
@@ -369,13 +421,16 @@ export function mountAreaSearch(opts: {
       clearArea();
       if (pressTimer) clearTimeout(pressTimer);
       liveLine?.setMap(null);
+      mapDiv.removeEventListener('pointerdown', onDown, true);
       mapDiv.removeEventListener('mousedown', onDown, true);
-      document.removeEventListener('mousemove', onMove, true);
-      document.removeEventListener('mouseup', onUp);
+      mapDiv.removeEventListener('click', swallowClick, true);
+      document.removeEventListener('pointermove', onMove, true);
+      document.removeEventListener('pointerup', onUp, true);
+      document.removeEventListener('mouseup', onUp, true);
       document.removeEventListener('keydown', onKey);
-      listeners.forEach((l) => l?.remove?.());
-      projOverlay?.setMap?.(null);
-      if (armed) map.setOptions({ draggable: true, draggableCursor: null });
+      restoreDrag();
+      mapDiv.classList.remove('bd-area-armed');
+      projector.destroy();
       popEl.remove();
       panelEl.remove();
       toolsEl.innerHTML = '';
