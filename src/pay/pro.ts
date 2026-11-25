@@ -40,6 +40,7 @@ const COMPARE: { label: string; free: string; pro: string }[] = [
   { label: 'AI 어시스턴트 웹 검색', free: '—', pro: '하루 20번 · 이용권당 100번' },
   { label: '인생샷(근처 사진 명소 찾기)', free: '—', pro: '✓' },
   { label: '영수증·결제 캡처로 지출 추가', free: '—', pro: '✓' },
+  { label: '지도 영역 검색(PC · 그린 영역 안 맛집·카페·관광지 찾기)', free: '—', pro: '✓' },
   { label: '하루 AI 사용 횟수', free: '60번', pro: '150번' },
 ];
 
