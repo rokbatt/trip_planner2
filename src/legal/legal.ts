@@ -52,7 +52,7 @@ const SUBPROCESSORS: Array<[string, string, string]> = [
   ['Cloudflare', '웹사이트 호스팅, 서버 기능 실행, 도메인 관리 및 문의 메일 전달', '미국 등 (전 세계 데이터센터)'],
   ['Google (OAuth)', '구글 계정 로그인 확인', '미국 등'],
   ['Google (Maps · Places · Routes)', '장소 검색, 지도 표시, 이동 시간 계산', '미국 등'],
-  ['Google (Gemini)', '숙소 리뷰 요약, 일정 초안, 장소 설명 생성, 영수증·결제 화면 사진 읽기', '미국 등'],
+  ['Google (Gemini)', '숙소 리뷰 요약, 일정 초안, 장소 설명 생성, 영수증·결제 화면 사진 읽기, AI 어시스턴트 답변(올린 문서·메모, PRO 웹 검색), 인생샷 장소 추천', '미국 등'],
   ['Google (Gmail)', '고객 문의 메일 수신·답변', '미국 등'],
 ];
 
