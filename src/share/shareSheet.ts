@@ -95,7 +95,12 @@ export function openShareSheet(input: ShareInput): void {
     '<div class="ss-box" role="dialog" aria-modal="true" aria-label="' + escapeHtml(input.title) + '">',
     '  <div class="ss-head"><h2 class="ss-title">' + escapeHtml(input.title) + '</h2>',
     '    <button type="button" class="ss-close" aria-label="닫기"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>',
-    '  <div class="ss-apps">' + apps + '</div>',
+    // PC: 아이콘이 넘치면 좌우 화살표로 넘긴다(유튜브 공유 창과 같은 방식). 휴대폰은 격자라 넘칠 일이 없다
+    '  <div class="ss-apps-wrap">',
+    '    <button type="button" class="ss-nav is-prev" aria-label="이전" hidden><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>',
+    '    <div class="ss-apps">' + apps + '</div>',
+    '    <button type="button" class="ss-nav is-next" aria-label="다음" hidden><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>',
+    '  </div>',
     '  <div class="ss-link"><input class="ss-url" type="text" readonly value="' + escapeHtml(input.url) + '" aria-label="공유 링크" />',
     '    <button type="button" class="ss-copy">복사</button></div>',
     // 휴대폰: 설치된 앱(카카오톡 포함) 전부로 보내는 기기 공유를 큰 버튼으로 — 가장 많이 쓰는 길
@@ -115,6 +120,27 @@ export function openShareSheet(input: ShareInput): void {
   document.addEventListener('keydown', onKey);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   overlay.querySelector('.ss-close')!.addEventListener('click', close);
+
+  // 아이콘 줄 넘기기 — 넘칠 때만 화살표, 끝에 닿으면 그쪽 화살표를 숨긴다. 마우스 휠로도 옆으로 넘어간다
+  const row = overlay.querySelector('.ss-apps') as HTMLElement;
+  const prev = overlay.querySelector('.ss-nav.is-prev') as HTMLButtonElement;
+  const next = overlay.querySelector('.ss-nav.is-next') as HTMLButtonElement;
+  const syncNav = () => {
+    const max = row.scrollWidth - row.clientWidth;
+    prev.hidden = row.scrollLeft <= 2;
+    next.hidden = max <= 2 || row.scrollLeft >= max - 2;
+  };
+  const step = () => Math.max(120, row.clientWidth - 80);
+  prev.addEventListener('click', () => row.scrollBy({ left: -step(), behavior: 'smooth' }));
+  next.addEventListener('click', () => row.scrollBy({ left: step(), behavior: 'smooth' }));
+  row.addEventListener('scroll', syncNav, { passive: true });
+  row.addEventListener('wheel', (e) => {
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && row.scrollWidth > row.clientWidth) {
+      row.scrollLeft += e.deltaY;
+      e.preventDefault();
+    }
+  }, { passive: false });
+  requestAnimationFrame(syncNav);
 
   const urlEl = overlay.querySelector('.ss-url') as HTMLInputElement;
   urlEl.addEventListener('focus', () => urlEl.select());
