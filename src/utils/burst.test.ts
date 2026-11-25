@@ -78,3 +78,11 @@ describe('supabase/api_burst.sql', () => {
     expect(sql).toMatch(/grant execute on function public\.spend_api_burst\(uuid, text, int, int\) to service_role/);
   });
 });
+
+describe('서버를 거치지 않는 PRO 기능의 사용 기록(pro-use)', () => {
+  it('영역 검색이 환불 판단용 사용 기록을 남기도록 연결돼 있다', async () => {
+    const area = (await import('../board/areaSearch.ts?raw')).default;
+    expect(aiSrc).toMatch(/kind === 'pro-use'\) return handleProUse/);
+    expect(area).toMatch(/reportProUse\('area-search'\)/);
+  });
+});

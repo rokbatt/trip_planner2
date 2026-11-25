@@ -311,6 +311,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (kind === 'my-plan') return handleMyPlan(req, res);
   if (kind === 'receipt-read') return handleReceiptRead(req, res);
   if (kind === 'photo-spots') return handlePhotoSpots(req, res);
+  if (kind === 'pro-use') return handleProUse(req, res);
   return handleHotelReview(req, res);
 }
 
@@ -1458,7 +1459,7 @@ async function userPlan(sb: SupabaseLike, user: { id: string; email?: string | n
 }
 
 /**
- * PRO 전용 기능(웹 검색·인생샷·영수증 AI)을 썼다는 기록 — 환불 기준 "사용"의 근거(docs/PAYMENT_DESIGN.md 0장·8장).
+ * PRO 전용 기능(웹 검색·인생샷·영수증 AI·지도 영역 검색)을 썼다는 기록 — 환불 기준 "사용"의 근거(docs/PAYMENT_DESIGN.md 0장·8장).
  * api_usage에 kind 'pro'로 하루 횟수만 남긴다(상한 없음, 7일 보관 = 환불 기간). 기록 실패는 기능을 막지 않는다.
  */
 export const PRO_USE_KIND = 'pro';
@@ -1972,6 +1973,30 @@ export function parsePhotoSpots(text: string): PhotoSpot[] {
     if (out.length >= 6) break;
   }
   return out;
+}
+
+/**
+ * PRO 기능을 썼다는 기록만 남긴다 — 서버를 거치지 않는 PRO 기능(지도 영역 검색: 브라우저가 구글을 직접 부른다)이
+ * 환불 판단의 "사용" 근거에서 빠지지 않게(docs/PAYMENT_DESIGN.md 0장). 무료 사용자는 403이고, 기록은 api_usage 'pro'에 하루 횟수만 쌓인다.
+ */
+async function handleProUse(req: VercelRequest, res: VercelResponse) {
+  const supabase = makeSupabase();
+  const token = bearerToken(req.headers?.authorization);
+  if (!token || !supabase) {
+    res.status(401).json({ error: '로그인이 필요해요.' });
+    return;
+  }
+  const { data: authData, error: authError } = await supabase.auth.getUser(token);
+  if (authError || !authData?.user?.id) {
+    res.status(401).json({ error: '로그인이 만료됐어요. 다시 로그인해 주세요.' });
+    return;
+  }
+  if ((await userPlan(supabase, authData.user)) !== 'pro') {
+    res.status(403).json({ error: 'PRO 기능이에요.', code: 'pro_required' });
+    return;
+  }
+  await recordProUse(supabase, authData.user.id);
+  res.status(200).json({ ok: true });
 }
 
 async function handlePhotoSpots(req: VercelRequest, res: VercelResponse) {
