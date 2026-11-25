@@ -10,6 +10,7 @@ import './trip-list.css';
 import { openHelp } from '../onboarding/onboarding';
 import { parseISODate } from '../utils/dates';
 import { escapeHtml } from '../utils/html';
+import { readTripCache, saveTripCache, sortTrips, todayIso } from './tripListModel';
 
 type Trip = Database['public']['Tables']['trips']['Row'];
 
@@ -149,34 +150,48 @@ function formatPax(headcount: number | null): string {
 }
 
 /* ── 내 여행 목록 로드 ── */
-async function loadTrips(): Promise<Trip[]> {
-  const user = store.get('user');
-  if (!user) return [];
+function kv(): Storage | null {
+  try { return window.localStorage; } catch { return null; }
+}
 
-  const { data, error } = await supabase
-    .from('trip_members')
-    .select('trip_id, trips(*)')
-    .eq('user_id', user.id);
+/**
+ * 목록을 불러온다. 실패하면(오프라인·서버 오류) 이 기기에 남은 마지막 목록을 돌려주고 `stale`로 표시한다 —
+ * 실패를 "여행 없음"으로 보여 주면 비행기 안에서 여행이 사라진 줄 안다.
+ */
+async function loadTrips(): Promise<{ trips: Trip[]; stale: boolean; failed: boolean }> {
+  const user = store.get('user');
+  if (!user) return { trips: [], stale: false, failed: false };
+
+  let error: { message: string } | null = null;
+  let data: Array<{ trips: Trip | null }> | null = null;
+  try {
+    const res = await supabase.from('trip_members').select('trip_id, trips(*)').eq('user_id', user.id);
+    error = res.error;
+    data = res.data as Array<{ trips: Trip | null }> | null;
+  } catch (e) {
+    error = { message: String(e) };
+  }
 
   if (error) {
     console.error('여행 목록 로드 실패:', error.message);
-    return [];
+    const cached = readTripCache<Trip>(kv(), user.id);
+    if (cached) return { trips: sortTrips(cached, todayIso()), stale: true, failed: false };
+    return { trips: [], stale: false, failed: true };
   }
 
-  return (data ?? [])
-    .map((row: { trips: Trip | null }) => row.trips)
-    .filter((t): t is Trip => t !== null)
-    .sort((a: Trip, b: Trip) => {
-      const aTime = a.start_date ? new Date(a.start_date).getTime() : 0;
-      const bTime = b.start_date ? new Date(b.start_date).getTime() : 0;
-      return bTime - aTime;
-    });
+  const trips = (data ?? []).map((row) => row.trips).filter((t): t is Trip => t !== null);
+  saveTripCache(kv(), user.id, trips);
+  return { trips: sortTrips(trips, todayIso()), stale: false, failed: false };
 }
 
 /* ── 여행 카드 (보딩 패스) ── */
 function createTripCard(trip: Trip, index: number, onChanged: () => void): HTMLElement {
   const card = document.createElement('div');
   card.className = 'trip-card';
+  // 키보드로도 열 수 있게(Tab으로 이동, Enter·Space로 열기)
+  card.setAttribute('role', 'link');
+  card.tabIndex = 0;
+  card.setAttribute('aria-label', `${trip.name} 열기`);
   card.style.animationDelay = `${index * 0.1}s`;
 
   const destCity = trip.destinations?.[0] ?? trip.name;
@@ -273,9 +288,17 @@ function createTripCard(trip: Trip, index: number, onChanged: () => void): HTMLE
   `;
 
   // 카드 클릭 → 보드 이동
-  card.addEventListener('click', () => {
+  const open = () => {
     store.set('currentTrip', trip);
     navigate(`board/${trip.id}`);
+  };
+  card.addEventListener('click', open);
+  card.addEventListener('keydown', (e) => {
+    if (e.target !== card) return; // 안의 편집 버튼에서 누른 Enter는 그 버튼 몫
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      open();
+    }
   });
 
   // 편집 버튼 클릭 → 카드 클릭 이벤트로 전파 안 되게 막고 편집 모달 오픈
@@ -293,7 +316,7 @@ function createTripCard(trip: Trip, index: number, onChanged: () => void): HTMLE
 function navHtml(): string {
   const info = getUserInfo();
   const avatarInner = info?.avatar
-    ? `<img src="${info.avatar}" alt="" referrerpolicy="no-referrer" />`
+    ? `<img src="${escapeHtml(info.avatar)}" alt="" referrerpolicy="no-referrer" />`
     : escapeHtml(info?.name.charAt(0) ?? '?');
 
   return `
@@ -301,7 +324,7 @@ function navHtml(): string {
       <button type="button" class="tl-nav-logo" id="tl-logo" aria-label="몽실이 메인페이지로"><img src="/favicon.svg" alt="" width="26" height="26" />몽실이</button>
       <div class="tl-nav-profile">
         <button type="button" class="ob-help-btn" id="tl-help-btn" aria-label="도움말" title="도움말"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8 1c0 1.7-2.4 2.2-2.4 3.7"/><circle cx="12" cy="17.2" r="0.6" fill="currentColor"/></svg></button>
-        <button class="tl-nav-avatar-btn" id="tl-avatar">${avatarInner}</button>
+        <button class="tl-nav-avatar-btn" id="tl-avatar" aria-label="내 계정 메뉴">${avatarInner}</button>
         <div class="tl-dropdown" id="tl-dropdown">
           <div class="tl-dropdown-header">
             <div class="tl-dropdown-name">${escapeHtml(info?.name ?? '')}</div>
@@ -359,7 +382,7 @@ export async function renderTripList(): Promise<HTMLElement> {
   page.querySelector('#tl-dd-trips')?.addEventListener('click', () => navigate('trips'));
   page.querySelector('#tl-dd-settings')?.addEventListener('click', () => navigate('settings'));
   page.querySelector('#tl-dd-pro')?.addEventListener('click', () => navigate('pro'));
-  page.querySelector('#tl-dd-help')?.addEventListener('click', () => alert('문의하기 기능은 곧 구현 예정이에요!'));
+  page.querySelector('#tl-dd-help')?.addEventListener('click', () => { window.location.href = 'mailto:help@mongsil2.com'; });
   page.querySelector('#tl-dd-logout')?.addEventListener('click', signOut);
 
   const refresh = async () => {
@@ -371,10 +394,20 @@ export async function renderTripList(): Promise<HTMLElement> {
     openCreateTripModal(refresh);
   });
 
-  const trips = await loadTrips();
+  const { trips, stale, failed } = await loadTrips();
   const grid = page.querySelector('#trip-grid')!;
 
-  if (trips.length === 0) {
+  if (failed) {
+    grid.innerHTML = `
+      <div class="trip-empty">
+        ${ICON_SUITCASE}
+        <p class="trip-empty-text">여행 목록을 불러오지 못했어요</p>
+        <p class="trip-empty-hint">인터넷 연결을 확인한 뒤 다시 시도해 주세요</p>
+        <button type="button" class="trip-retry" id="trip-retry">다시 시도</button>
+      </div>
+    `;
+    grid.querySelector('#trip-retry')?.addEventListener('click', () => void refresh());
+  } else if (trips.length === 0) {
     grid.innerHTML = `
       <div class="trip-empty">
         ${ICON_SUITCASE}
@@ -384,6 +417,12 @@ export async function renderTripList(): Promise<HTMLElement> {
     `;
   } else {
     grid.innerHTML = '';
+    if (stale) {
+      const note = document.createElement('p');
+      note.className = 'trip-stale';
+      note.textContent = '인터넷에 연결되지 않아 마지막으로 불러온 목록을 보여 드려요';
+      grid.appendChild(note);
+    }
     trips.forEach((trip, i) => grid.appendChild(createTripCard(trip, i, refresh)));
   }
 

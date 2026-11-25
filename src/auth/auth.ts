@@ -27,6 +27,11 @@ export async function signOut(): Promise<void> {
     import('../pwa/push').then((m) => m.dropPushOnSignOut()).catch(() => undefined),
     new Promise((r) => setTimeout(r, 3000)),
   ]);
+  // 공용 기기에서 다음 사람에게 내 여행 이름·날짜가 남지 않게, 오프라인용으로 남긴 여행 목록도 지운다
+  const uid = store.get('user')?.id;
+  if (uid) {
+    try { localStorage.removeItem('mongsil:trips:' + uid); } catch { /* 저장소 차단 환경 */ }
+  }
   const { error } = await supabase.auth.signOut();
   if (error) console.error('로그아웃 실패:', error.message);
   store.set('user', null);

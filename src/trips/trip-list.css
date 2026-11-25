@@ -600,3 +600,27 @@
   .trip-card::before,
   .trip-card::after { display: none; }
 }
+
+/* 불러오기 실패 · 마지막 목록 표시 */
+.trip-retry {
+  margin-top: 18px;
+  padding: 10px 20px;
+  border: 1px solid #CDEBFB;
+  border-radius: 999px;
+  background: #fff;
+  color: #0B2A5C;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.trip-stale {
+  grid-column: 1 / -1;
+  margin: 0 0 4px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #FFF6E7;
+  color: #8A5A00;
+  font-size: 13px;
+}
+.trip-card:focus-visible { outline: 2px solid #2F80ED; outline-offset: 3px; }
