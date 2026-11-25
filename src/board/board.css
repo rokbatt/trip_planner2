@@ -60,6 +60,18 @@
 /* ── 지도로 보기: 화면 전체가 지도로 바뀜 ── */
 .bd-map-view { width: 100%; max-width: 1800px; margin: 0 auto; padding: 12px 28px 28px; box-sizing: border-box; }
 .bd-map-view[hidden] { display: none; }
+/* PC: 게이트 4칸 자리만 지도로 — 체크인 카운터와 점선 구분선은 그대로 남는다 */
+.bd-layout.is-map > .bd-gates { display: none; }
+.bd-layout.is-map > .bd-map-view {
+  flex: 4 1 0;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.bd-layout.is-map > .bd-map-view > .bd-map-view-canvas { flex: 1 1 auto; height: auto; min-height: max(420px, calc(100dvh - 240px)); }
 .bd-map-view-canvas {
   position: relative;
   width: 100%;
@@ -2059,3 +2071,52 @@
   font-weight: 700;
   cursor: pointer;
 }
+
+/* ── 그룹 묶음: 접힘(맨 위 카드 + 뒤에 겹친 카드 두께) / 펼침 ── */
+.bd-group-cluster.is-collapsed .bd-group-cluster-body {
+  position: relative;
+  isolation: isolate;
+  margin-bottom: 10px; /* 뒤에 겹친 카드가 아래로 비져 나올 자리 */
+}
+.bd-group-cluster.is-collapsed .bd-group-cluster-body > .bd-card:not(:first-child) { display: none; }
+.bd-group-cluster.is-collapsed .bd-group-cluster-body > .bd-card:first-child { position: relative; z-index: 2; }
+.bd-group-cluster.is-collapsed .bd-group-cluster-body::before,
+.bd-group-cluster.is-collapsed .bd-group-cluster-body::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: #FFFFFF;
+  border: 1px solid rgba(130,150,170,0.38);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(11,42,92,0.08);
+  pointer-events: none;
+}
+/* 바로 뒤 한 장 */
+.bd-group-cluster.is-collapsed .bd-group-cluster-body::before { left: 5px; right: 5px; transform: translateY(5px); z-index: 1; }
+/* 두 장 이상이면 한 장 더 */
+.bd-group-cluster.is-collapsed .bd-group-cluster-body::after { left: 10px; right: 10px; transform: translateY(10px); z-index: 0; background: #F8FBFE; }
+.bd-group-cluster.is-collapsed[data-layers="1"] .bd-group-cluster-body::after { display: none; }
+.bd-group-cluster.is-collapsed[data-layers="1"] .bd-group-cluster-body { margin-bottom: 5px; }
+
+.bd-group-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--group-color) 12%, white);
+  color: color-mix(in srgb, var(--group-color) 70%, #0B2A5C);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.bd-group-toggle b { flex: 1 1 auto; min-width: 0; text-align: left; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bd-group-toggle-more { flex: none; font-weight: 800; white-space: nowrap; }
+.bd-group-toggle svg { width: 13px; height: 13px; flex: none; }
+.bd-group-toggle:hover { background: color-mix(in srgb, var(--group-color) 20%, white); }
