@@ -22,6 +22,8 @@ import { apiFetch } from '../utils/apiFetch';
 import { escapeHtml } from '../utils/html';
 import { cleanPickName, pickSearchQueries } from './pickName';
 import { mountPen, type PenController } from './pen';
+import { mountAreaSearch, type AreaSearchController } from './areaSearch';
+import { toGooglePlaceResult, type ExplorePlace } from '../mobile/exploreApi';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type PlacesDbRow = Database['public']['Tables']['places_db']['Row'];
@@ -343,6 +345,8 @@ let boardMapEntries: Array<{ marker: any; mood: string }> = [];
 let boardMapClusterer: any = null;
 /** 지도 위 펜 도구(board/pen.ts) — 지도를 다시 그리거나 보드를 떠날 때 정리한다 */
 let boardPen: PenController | null = null;
+/** 지도 영역 검색(board/areaSearch.ts) */
+let boardArea: AreaSearchController | null = null;
 /** 범례에서 꺼둔 게이트들. 지도를 다시 열어도 유지되도록 모듈 수준에 둔다 */
 const boardMapHiddenMoods = new Set<string>();
 
@@ -419,6 +423,8 @@ export function teardownBoard(): void {
   boardMapViewActive = false;
   boardPen?.destroy();
   boardPen = null;
+  boardArea?.destroy();
+  boardArea = null;
   boardMapInstance = null;
   boardMapClusterer?.clearMarkers();
   boardMapClusterer = null;
@@ -1022,6 +1028,8 @@ async function toggleBoardMapView(container: HTMLElement, tripId: string): Promi
   if (!boardMapViewActive) {
     boardPen?.destroy();
     boardPen = null;
+    boardArea?.destroy();
+    boardArea = null;
     layout.hidden = false;
     layout.classList.remove('is-map');
     mapView.hidden = true;
@@ -1045,7 +1053,24 @@ function refreshBoardMapIfOpen(): void {
   if (!boardMapViewActive || !boardContainer) return;
   const mapView = boardContainer.querySelector('#bd-map-view') as HTMLElement | null;
   const tripId = store.get('currentTrip')?.id;
-  if (mapView && !mapView.hidden && tripId) void renderBoardMapView(mapView, tripId);
+  if (!mapView || mapView.hidden || !tripId) return;
+  const mapEl = mapView.querySelector('#bd-map-view-canvas') as HTMLElement | null;
+  const g = (window as any).google;
+  // 지도가 이미 떠 있으면 핀만 다시 꽂는다(펜 그림·영역 검색 결과·보던 위치 유지). 아직 없으면 처음부터 그린다
+  if (boardMapInstance && mapEl?.isConnected && g?.maps) {
+    populateBoardMarkers(g, boardMapInstance, mapEl, boardMapPlaces());
+    applyBoardMapMoodFilter();
+  } else {
+    void renderBoardMapView(mapView, tripId);
+  }
+}
+
+/** 지도에 올릴 장소 — 활성 여행지의, 좌표가 있는 장소 */
+function boardMapPlaces(): Place[] {
+  return (boardActiveDest
+    ? Array.from(placesCache.values()).filter((p) => placeBelongsToDestination(p, boardActiveDest!))
+    : Array.from(placesCache.values())
+  ).filter((p) => p.lat != null && p.lng != null);
 }
 
 /** STAY 지도(shortlist.ts)와 같은 물방울 모양 핀 — 게이트 색으로 채운 몸통 + 흰 테두리 +
@@ -1157,7 +1182,7 @@ async function renderBoardMapView(mapView: HTMLElement, tripId: string): Promise
       escapeHtml(BOARD_GATE_LEGEND_LABEL[gt.key] ?? gt.label) +
       '</button>'),
     '  <span class="bd-map-legend-hint">칩을 눌러 켜고 끌 수 있어요</span>',
-    '  <div class="bd-map-tools" id="bd-map-tools"></div>',
+    '  <div class="bd-map-tools" id="bd-map-tools"><span class="bd-tool-slot" id="bd-tool-pen"></span><span class="bd-tool-slot" id="bd-tool-area"></span></div>',
     '</div>',
   ].join('');
 
@@ -1175,10 +1200,7 @@ async function renderBoardMapView(mapView: HTMLElement, tripId: string): Promise
   const g = (window as any).google;
   if (!g?.maps) return;
 
-  const places = (boardActiveDest
-    ? Array.from(placesCache.values()).filter((p) => placeBelongsToDestination(p, boardActiveDest!))
-    : Array.from(placesCache.values())
-  ).filter((p) => p.lat != null && p.lng != null);
+  const places = boardMapPlaces();
 
   // 담은 장소가 없어도 여행지 좌표가 있으면 지도를 띄운다 — 펜으로 동선을 미리 그어 보거나 영역을 골라 찾아볼 수 있게
   const destCenter = boardActiveDest && boardActiveDest.lat != null && boardActiveDest.lng != null
@@ -1213,18 +1235,45 @@ async function renderBoardMapView(mapView: HTMLElement, tripId: string): Promise
   // 도구(펜) — 지도를 다시 그릴 때마다 새로 붙인다(PC 전용: 마우스로 긋는 도구라 터치 기기에선 숨긴다)
   boardPen?.destroy();
   boardPen = null;
-  const toolsEl = mapView.querySelector('#bd-map-tools') as HTMLElement | null;
+  boardArea?.destroy();
+  boardArea = null;
+  const penSlot = mapView.querySelector('#bd-tool-pen') as HTMLElement | null;
+  const areaSlot = mapView.querySelector('#bd-tool-area') as HTMLElement | null;
   const canPen = typeof window.matchMedia === 'function' && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
-  if (toolsEl && canPen) {
+  if (penSlot && canPen) {
     boardPen = mountPen({
       g,
       map,
-      toolsEl,
+      toolsEl: penSlot,
       tripId,
       destinationId: boardActiveDest && !isSyntheticDestination(boardActiveDest.id) ? boardActiveDest.id : null,
     });
   }
+  if (areaSlot && canPen) {
+    boardArea = mountAreaSearch({
+      g,
+      map,
+      toolsEl: areaSlot,
+      // 결과는 왼쪽 체크인 칸에 — 지도를 좁히지 않는다
+      panelHost: boardContainer?.querySelector('.bd-layout.is-map .bd-inbox') as HTMLElement | null,
+      isPenActive: () => !!boardPen?.isActive(),
+      onAdd: (p) => addExploreToInbox(tripId, p),
+    });
+  }
 
+  const bounds = populateBoardMarkers(g, map, mapEl, places);
+
+  bindBoardMapLegendFilter(mapView);
+
+  if (!bounds.isEmpty()) map.fitBounds(bounds, 48);
+}
+
+/**
+ * 지도에 장소 핀을 (다시) 꽂는다 — 처음 열 때와, 지도를 연 채로 장소가 늘었을 때 둘 다 쓴다.
+ * 지도 전체를 다시 만들지 않아서 펜 그림·영역 검색 결과·보던 위치가 그대로 남는다.
+ * 돌려주는 bounds는 처음 열 때 화면 맞추기용이다.
+ */
+function populateBoardMarkers(g: any, map: any, mapEl: HTMLElement, places: Place[]): any {
   boardMapClusterer?.clearMarkers();
   boardMapClusterer = null;
   boardMapMarkers.forEach((m) => m.setMap(null));
@@ -1344,9 +1393,7 @@ async function renderBoardMapView(mapView: HTMLElement, tripId: string): Promise
     },
   });
 
-  bindBoardMapLegendFilter(mapView);
-
-  if (!bounds.isEmpty()) map.fitBounds(bounds, 48);
+  return bounds;
 }
 
 /** 범례 칩 = 게이트별 표시/숨김 토글. 담은 장소가 많아지면 네 게이트가 한 지도에 다 겹쳐서
@@ -1821,33 +1868,50 @@ async function selectPrediction(prediction: UnifiedPrediction, tripId: string, i
     return;
   }
 
-  const listEl = document.getElementById('inbox-list');
   const addResult = await addRichIdea(tripId, null, result);
-
-  if (addResult) {
-    const newPlace = addResult.place;
-    placesCache.set(newPlace.id, newPlace);
-    refreshBoardMapIfOpen();
-
-    if (addResult.isDuplicate) {
-      // 이미 추가된 장소 — 새 카드를 만들지 않고, 기존 카드가 화면에 있으면 살짝 흔들어서 알려줌
-      const existingEl = document.querySelector('[data-place-id="' + newPlace.id + '"]') as HTMLElement | null;
-      if (existingEl) {
-        existingEl.classList.remove('shake');
-        void existingEl.offsetWidth;
-        existingEl.classList.add('shake');
-      }
-    } else if (listEl) {
-      markRecentlyMutated(newPlace.id);
-      removeEmptyState(listEl);
-      const el = createTicket(newPlace);
-      listEl.appendChild(el);
-      triggerLightSweep(el);
-      updateZoneCount(listEl);
-      revealInboxOnMobile();
-    }
-  }
+  if (addResult) showAddedInInbox(addResult);
   if (!isMobileBoard()) input.focus();
+}
+
+/** 구글 장소를 담은 결과를 화면에 반영 — 새 장소면 체크인 대기줄에 카드, 이미 있던 장소면 그 카드를 흔들어 알린다 */
+function showAddedInInbox(addResult: { place: Place; isDuplicate: boolean }): void {
+  const listEl = document.getElementById('inbox-list');
+  const newPlace = addResult.place;
+  placesCache.set(newPlace.id, newPlace);
+  refreshBoardMapIfOpen();
+
+  if (addResult.isDuplicate) {
+    // 이미 추가된 장소 — 새 카드를 만들지 않고, 기존 카드가 화면에 있으면 살짝 흔들어서 알려줌
+    const existingEl = document.querySelector('[data-place-id="' + newPlace.id + '"]') as HTMLElement | null;
+    if (existingEl) {
+      existingEl.classList.remove('shake');
+      void existingEl.offsetWidth;
+      existingEl.classList.add('shake');
+    }
+  } else if (listEl) {
+    markRecentlyMutated(newPlace.id);
+    removeEmptyState(listEl);
+    const el = createTicket(newPlace);
+    listEl.appendChild(el);
+    triggerLightSweep(el);
+    updateZoneCount(listEl);
+    revealInboxOnMobile();
+  }
+}
+
+/** 영역 검색 결과의 [+] — 휴대폰 '주변'에서 담을 때와 같은 변환·사진 옮기기를 거쳐 체크인 대기줄에 담는다 */
+async function addExploreToInbox(tripId: string, p: ExplorePlace): Promise<'added' | 'dup' | 'fail'> {
+  try {
+    const gr = toGooglePlaceResult(p);
+    const photoUrl = gr.photoUrl ? await rehostPhoto(gr.photoUrl, p.id) : null;
+    const res = await addRichIdea(tripId, null, { ...gr, photoUrl });
+    if (!res) return 'fail';
+    showAddedInInbox(res);
+    return res.isDuplicate ? 'dup' : 'added';
+  } catch (e) {
+    console.warn('[area] 담기 실패:', e);
+    return 'fail';
+  }
 }
 
 function buildInboxEmpty(): string {
