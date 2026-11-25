@@ -75,11 +75,11 @@ export function openCreateTripModal(onCreated: (tripId: string) => void): void {
 
   const arrivalPicker = mountAirportPicker(overlay.querySelector('#tc-arrival-mount') as HTMLElement, {
     label: '입국',
-    placeholder: '입국 공항 (예: 수완나품 BKK)',
+    placeholder: '입국 공항 (예: 수완나품 BKK — 도착하는 공항)',
   });
   const departurePicker = mountAirportPicker(overlay.querySelector('#tc-departure-mount') as HTMLElement, {
     label: '출국',
-    placeholder: '출국 공항 (예: 인천 ICN)',
+    placeholder: '출국 공항 (예: 프라하 PRG — 돌아오는 비행기)',
   });
 
   const close = () => {
