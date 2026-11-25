@@ -1470,6 +1470,51 @@ async function recordProUse(sb: SupabaseLike, userId: string): Promise<void> {
   }
 }
 
+/* ══════════════════ 짧은 시간 연타 상한 (supabase/api_burst.sql) ══════════════════
+ * PRO 사용자도 무분별하게 쓰지 못하게 — 3분 안에 정해진 횟수를 넘기면 풀릴 때까지 막는다(2026-11-25 사용자 요청).
+ * 하루 상한(spendDailyQuota)과 별개다. 돈이 드는 외부 호출 직전에만 센다 — 캐시에서 나온 결과는 세지 않는다.
+ * 막힌 시도는 횟수를 늘리지 않는다(계속 눌러도 잠금이 길어지지 않고 가장 오래된 시도가 창 밖으로 나가면 풀린다).
+ * app_roles의 admin·unlimited(운영자·지인)는 세지 않는다. 표·함수가 없거나 오류면 막지 않는다(없어도 동작).
+ */
+export const BURST_WINDOW_SECONDS = 180;
+export const BURST_LIMITS = { web: 5, 'photo-spots': 4, receipt: 6 } as const;
+export type BurstKind = keyof typeof BURST_LIMITS;
+
+/** 막혔을 때 보여 줄 안내 — 풀리기까지 남은 시간을 분·초로 */
+export function burstMessage(waitSeconds: number): string {
+  const s = Math.max(1, Math.round(waitSeconds));
+  const t = s >= 60 ? Math.floor(s / 60) + '분' + (s % 60 ? ' ' + (s % 60) + '초' : '') : s + '초';
+  return '짧은 시간에 너무 많이 시도했어요. ' + t + ' 뒤에 다시 시도해 주세요.';
+}
+
+/** 0이면 통과, 0보다 크면 막힘(풀리기까지 남은 초) */
+export async function spendBurst(sb: SupabaseLike, user: { id: string; email?: string | null }, kind: BurstKind): Promise<number> {
+  try {
+    const email = String(user.email ?? '').toLowerCase();
+    if (email) {
+      const { data: role } = await sb.from('app_roles').select('role').eq('email', email).maybeSingle();
+      if (role && (role.role === 'admin' || role.role === 'unlimited')) return 0;
+    }
+    const { data, error } = await (sb as any).rpc('spend_api_burst', {
+      p_user: user.id,
+      p_kind: kind,
+      p_limit: BURST_LIMITS[kind],
+      p_window_seconds: BURST_WINDOW_SECONDS,
+    });
+    if (error) return 0;
+    return typeof data === 'number' && data > 0 ? data : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** 막혔으면 429로 답하고 true. 호출한 쪽은 바로 끝낸다 */
+function replyIfBurstBlocked(res: VercelResponse, waitSeconds: number): boolean {
+  if (waitSeconds <= 0) return false;
+  res.status(429).json({ error: burstMessage(waitSeconds), code: 'burst_limited', retryAfter: waitSeconds });
+  return true;
+}
+
 /** 이용권의 PRO 웹 검색 남은 수에서 1을 뺀다(supabase/payments.sql spend_web_left). 0이면 false. 함수가 없거나 오류면 막지 않는다 */
 async function spendWebLeft(sb: SupabaseLike, userId: string): Promise<boolean> {
   try {
@@ -1676,6 +1721,8 @@ async function handleDocQAWeb(
     res.status(500).json({ error: 'GEMINI_API_KEY가 설정되지 않았어요.' });
     return;
   }
+  // 3분 안 연타 상한 — 캐시 확인 뒤, 돈이 드는 호출 직전(하루 상한·이용권 횟수를 쓰기 전)
+  if (replyIfBurstBlocked(res, await spendBurst(supabase, user, 'web'))) return;
   // 웹 검색은 비용이 커서 따로 센다(표가 없거나 오류면 막지 않는다 — 다른 상한과 같은 원칙)
   const { data: allowed, error: quotaError } = await supabase.rpc('spend_api_quota', { p_user: user.id, p_kind: 'web', p_limit: WEB_QA_DAILY_LIMIT });
   if (!quotaError && allowed === false) {
@@ -1864,6 +1911,8 @@ async function handleReceiptRead(req: VercelRequest, res: VercelResponse) {
     res.status(500).json({ error: 'GEMINI_API_KEY가 설정되지 않았어요.' });
     return;
   }
+  // 3분 안 연타 상한(영수증 읽기는 사진 한 장마다 한 번 센다)
+  if (replyIfBurstBlocked(res, await spendBurst(supabase, authData.user, 'receipt'))) return;
   if (!(await spendDailyQuota(req, 'ai'))) {
     res.status(429).json({ error: QUOTA_EXCEEDED_MESSAGE, quotaExceeded: true });
     return;
@@ -1967,6 +2016,8 @@ async function handlePhotoSpots(req: VercelRequest, res: VercelResponse) {
     res.status(500).json({ error: 'GEMINI_API_KEY가 설정되지 않았어요.' });
     return;
   }
+  // 3분 안 연타 상한 — 캐시 확인 뒤, 돈이 드는 호출 직전
+  if (replyIfBurstBlocked(res, await spendBurst(supabase, authData.user, 'photo-spots'))) return;
   if (!(await spendDailyQuota(req, 'ai'))) {
     res.status(429).json({ error: QUOTA_EXCEEDED_MESSAGE, quotaExceeded: true });
     return;
