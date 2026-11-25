@@ -26,6 +26,31 @@
 
 /* ── 무대: 제품 화면 + 말풍선 ── */
 .ls-stage { position: relative; }
+.ls-more { display: none; }
+@media (max-width: 620px) {
+  .ls-stage.is-folded .ls-frame {
+    max-height: 560px;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(180deg, #000 72%, transparent 100%);
+    mask-image: linear-gradient(180deg, #000 72%, transparent 100%);
+  }
+  .ls-stage.is-folded .ls-more {
+    display: block;
+    margin: -8px auto 14px;
+    position: relative;
+    z-index: 3;
+    padding: 10px 20px;
+    border: 1px solid #CDEBFB;
+    border-radius: 999px;
+    background: #fff;
+    color: #0B2A5C;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 4px 14px rgba(11,42,92,0.08);
+    cursor: pointer;
+  }
+}
 .ls-callout {
   position: absolute;
   z-index: 2;
