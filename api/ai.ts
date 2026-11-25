@@ -1513,11 +1513,14 @@ export const WEB_QA_DAILY_LIMIT = 20;
 /** 이용권 하나에 들어 있는 웹 검색 수 — 안내 문구용(실제 값은 src/pay/products.ts와 DB가 가진다) */
 export const WEB_PER_PASS = 100;
 
-/** 웹 검색 답변 형식: ###ANSWER### 본문 / ###USED### 줄마다 "- 자료 제목" */
+/** 웹 검색 답변 형식: ###ANSWER### 본문 / ###USED### 줄마다 "- 자료 제목"
+ * 웹 출처는 답변 아래에 webSources로 따로 보여주므로, 모델이 그래도 문장에 남길 수 있는
+ * "(웹)" 표시는 답 텍스트에서 지운다(프롬프트 지시만으론 가끔 안 지켜짐). */
 export function parseWebAnswer(text: string): { answer: string; usedTitles: string[] } {
   const a = text.indexOf('###ANSWER###');
   const u = text.indexOf('###USED###');
-  const answer = (a >= 0 ? text.slice(a + 12, u > a ? u : undefined) : u >= 0 ? text.slice(0, u) : text).trim();
+  const rawAnswer = (a >= 0 ? text.slice(a + 12, u > a ? u : undefined) : u >= 0 ? text.slice(0, u) : text).trim();
+  const answer = rawAnswer.replace(/\s*\(웹\)/g, '');
   const usedTitles = u >= 0
     ? text.slice(u + 10).split('\n').map((l) => l.replace(/^\s*[-*•]\s*/, '').trim()).filter((l) => l && l !== '없음').slice(0, 10)
     : [];
@@ -1695,7 +1698,7 @@ async function handleDocQAWeb(
     '규칙:',
     '- 예약 시각·예약번호·숙소처럼 [내 자료]에 있는 내용은 [내 자료]를 따른다. "직접 입력한 정보"가 있으면 그게 최신이다.',
     '- [내 자료]에 없는 일반 정보(운영 시간·입장료·교통·날씨 경향·현지 팁 등)는 웹 검색으로 찾아 답한다.',
-    '- 웹에서 찾은 내용은 문장 끝에 "(웹)"을 붙인다. 확실하지 않으면 확인이 필요하다고 말한다. 지어내지 않는다.',
+    '- 웹에서 찾은 내용도 문장에 "(웹)" 같은 표시를 붙이지 말고 자연스럽게 답한다(출처는 답변 아래에 따로 보여준다). 확실하지 않으면 확인이 필요하다고 말한다. 지어내지 않는다.',
     '- 검색어에는 사람 이름·예약번호·여권번호·연락처·이메일을 절대 넣지 않는다. 장소·도시·날짜 같은 일반 정보만 쓴다.',
     '- 한국어로 간결하게(2~6문장).',
     '',
