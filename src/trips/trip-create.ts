@@ -50,10 +50,6 @@ export function openCreateTripModal(onCreated: (tripId: string) => void): void {
     '        <label class="tc-field-label" for="tc-headcount">인원</label>',
     '        <input class="tc-input" id="tc-headcount" type="number" min="1" placeholder="2" />',
     '      </div>',
-    '      <div class="tc-field">',
-    '        <label class="tc-field-label" for="tc-theme">테마 (선택)</label>',
-    '        <input class="tc-input" id="tc-theme" type="text" placeholder="맛집투어" />',
-    '      </div>',
     '    </div>',
     '    <div class="tc-field">',
     '      <label class="tc-field-label">항공편 (선택)</label>',
@@ -146,7 +142,6 @@ async function handleSubmit(
   const startDate = (overlay.querySelector('#tc-start') as HTMLInputElement).value;
   const endDate = (overlay.querySelector('#tc-end') as HTMLInputElement).value;
   const headcountRaw = (overlay.querySelector('#tc-headcount') as HTMLInputElement).value;
-  const theme = (overlay.querySelector('#tc-theme') as HTMLInputElement).value.trim();
 
   if (!name || !startDate || !endDate) {
     errorEl.textContent = '여행 이름과 날짜는 필수예요.';
@@ -175,7 +170,6 @@ async function handleSubmit(
         start_date: startDate,
         end_date: endDate,
         headcount: headcountRaw ? Number(headcountRaw) : null,
-        theme: theme || null,
         destinations: destinations.length ? destinations : null,
         owner_id: user.id,
       })
