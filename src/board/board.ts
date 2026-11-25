@@ -1199,7 +1199,8 @@ async function renderBoardMapView(mapView: HTMLElement, tripId: string): Promise
   boardMapEntries = [];
 
   const bounds = new g.maps.LatLngBounds();
-  const infoWindow = new g.maps.InfoWindow();
+  // 마우스를 올릴 때마다 정보창이 화면 안에 들어오도록 지도가 따라 움직이면 보던 위치를 잃는다 — 자동 이동 끔
+  const infoWindow = new g.maps.InfoWindow({ disableAutoPan: true });
   // 마우스오버/선택으로 확대된 핀을 원래 크기로 되돌리기 위해 기본 아이콘을 들고 있는다
   let selectedMarker: any = null;
   // 마우스를 올릴 수 있는 기기(PC)면 올렸을 때 정보창, 터치 기기면 눌렀을 때 정보창
@@ -2489,12 +2490,10 @@ function buildGroupCluster(groupId: string, members: Place[], gateKey: string, c
     '  <button type="button" class="bd-group-cluster-dissolve" title="그룹 해제">' + ICON_CLEAR + '</button>',
     '</div>',
     '<div class="bd-group-cluster-body"></div>',
-    stackable && !selecting
-      ? '<button type="button" class="bd-group-toggle" aria-expanded="' + String(!collapsed) + '"' +
-        ' aria-label="' + escapeHtml((name || '그룹') + (collapsed ? ' 펼치기, ' + (members.length - 1) + '곳 더' : ' 접기')) + '">' +
-        '<b>' + (name ? escapeHtml(name) : '그룹') + '</b>' +
-        '<span class="bd-group-toggle-more">' + (collapsed ? '+' + (members.length - 1) : '접기') + '</span>' +
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + (collapsed ? 'M6 9l6 6 6-6' : 'M6 15l6-6 6 6') + '"/></svg>' +
+    // 펼쳤을 때만 아래에 작은 "접기" — 접혀 있을 땐 맨 위 카드를 누르면 펼쳐진다(별도 줄 없이 깔끔하게)
+    stackable && !selecting && !collapsed
+      ? '<button type="button" class="bd-group-fold" aria-label="' + escapeHtml((name || '그룹') + ' 접기') + '">접기' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>' +
         '</button>'
       : '',
   ].join('');
@@ -2502,13 +2501,32 @@ function buildGroupCluster(groupId: string, members: Place[], gateKey: string, c
   const body = cluster.querySelector('.bd-group-cluster-body') as HTMLElement;
   members.forEach((m) => body.appendChild(createBoardingCard(m)));
 
-  cluster.querySelector('.bd-group-toggle')?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (expandedGroups.has(groupId)) expandedGroups.delete(groupId);
-    else expandedGroups.add(groupId);
+  const rerender = () => {
     const listEl = cluster.parentElement as HTMLElement | null;
     if (listEl) renderGateListContent(listEl, gateKey);
+  };
+  cluster.querySelector('.bd-group-fold')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    expandedGroups.delete(groupId);
+    rerender();
   });
+  if (collapsed) {
+    // 접힌 묶음의 맨 위 카드를 누르면 상세 대신 펼친다 — 캡처 단계에서 먼저 받아 카드의 원래 클릭(상세 열기)으로 가지 않게.
+    // 카드의 ⋮ 메뉴 같은 버튼은 그대로 동작한다
+    cluster.addEventListener('click', (e) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest('.bd-card') || t.closest('button, a, input, .bd-card-menu')) return;
+      e.stopPropagation();
+      e.preventDefault();
+      expandedGroups.add(groupId);
+      rerender();
+    }, true);
+    const top = body.querySelector('.bd-card') as HTMLElement | null;
+    if (top) {
+      top.title = (name || '그룹') + ' · ' + members.length + '곳 — 눌러서 펼치기';
+      top.setAttribute('aria-expanded', 'false');
+    }
+  }
 
   cluster.querySelector('.bd-group-cluster-dissolve')?.addEventListener('click', (e) => {
     e.stopPropagation();
