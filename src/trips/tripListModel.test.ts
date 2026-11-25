@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readTripCache, saveTripCache, sortTrips, todayIso } from './tripListModel';
+import { readTripCache, saveTripCache, sortTrips, todayIso, tripBadge } from './tripListModel';
 
 const t = (id: string, start: string | null, end: string | null) => ({ id, start_date: start, end_date: end });
 
@@ -48,5 +48,22 @@ describe('여행 목록 보관', () => {
     kv.setItem('mongsil:trips:u1', '{not json');
     expect(readTripCache(kv, 'u1')).toBeNull();
     expect(readTripCache(null, 'u1')).toBeNull();
+  });
+});
+
+describe('tripBadge — 카드 배지', () => {
+  it('출발 전 · 출발일 · 여행 중 · 끝난 뒤', () => {
+    expect(tripBadge('2026-12-18', '2026-12-22', '2026-12-08')).toBe('D-10');
+    expect(tripBadge('2026-12-18', '2026-12-22', '2026-12-18')).toBe('D-DAY');
+    expect(tripBadge('2026-12-18', '2026-12-22', '2026-12-19')).toBe('여행 중 · 2일째');
+    expect(tripBadge('2026-12-18', '2026-12-22', '2026-12-22')).toBe('여행 중 · 5일째');
+    expect(tripBadge('2026-12-18', '2026-12-22', '2026-12-23')).toBe('지난 여행');
+  });
+  it('달·해를 넘겨도 맞다', () => {
+    expect(tripBadge('2027-01-02', '2027-01-05', '2026-12-31')).toBe('D-2');
+    expect(tripBadge('2026-12-30', '2027-01-03', '2027-01-01')).toBe('여행 중 · 3일째');
+  });
+  it('날짜가 없으면 배지 없음', () => {
+    expect(tripBadge(null, null, '2026-12-19')).toBeNull();
   });
 });
