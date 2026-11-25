@@ -2119,3 +2119,69 @@
 }
 .bd-group-fold:hover { opacity: 1; background: color-mix(in srgb, var(--group-color) 12%, white); }
 .bd-group-fold svg { width: 12px; height: 12px; }
+
+/* ── 지도 도구 줄(범례 오른쪽) — 펜 · (영역 검색) ── */
+.bd-map-tools { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; padding-left: 12px; border-left: 1px solid rgba(130,150,170,0.3); }
+.bd-map-tools:empty { display: none; }
+.bd-tool-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid rgba(130,150,170,0.3);
+  border-radius: 999px;
+  background: #FFFFFF;
+  color: #0B2A5C;
+  font: inherit; font-size: 11.5px; font-weight: 600;
+  cursor: pointer;
+}
+.bd-tool-btn svg { width: 14px; height: 14px; flex: none; }
+.bd-tool-btn:hover:not(:disabled) { border-color: #8FD8F8; }
+.bd-tool-btn.on { background: #0B2A5C; color: #FFFFFF; border-color: #0B2A5C; }
+.bd-tool-btn.sub { color: #475569; }
+.bd-tool-btn:disabled { opacity: 0.45; cursor: default; }
+.bd-tool-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--dot); box-shadow: 0 0 0 2px #FFFFFF; flex: none; }
+.bd-tool-btn.on .bd-tool-dot { box-shadow: 0 0 0 2px #0B2A5C, 0 0 0 3px rgba(255,255,255,0.7); }
+.bd-tool-person {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: rgba(11,42,92,0.05);
+  color: #334155;
+  font: inherit; font-size: 11px;
+  cursor: pointer;
+}
+.bd-tool-person.off { opacity: 0.45; text-decoration: line-through; }
+.bd-tool-note { font-size: 11px; color: #8A5A00; background: #FFF6E7; border-radius: 999px; padding: 3px 9px; }
+
+/* 선 끝 직선거리 라벨 — 구글 마커 라벨에 붙는 클래스 */
+.bd-pen-dist {
+  background: rgba(11,42,92,0.9);
+  padding: 2px 7px;
+  border-radius: 999px;
+  transform: translateY(-17px);
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(11,42,92,0.25);
+}
+
+/* 담은 장소가 없을 때 지도 위 안내 */
+.bd-map-view-note {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 5;
+  padding: 7px 14px; border-radius: 999px;
+  background: rgba(255,255,255,0.95); box-shadow: 0 4px 14px rgba(11,42,92,0.12);
+  font-size: 12px; color: #475569; white-space: nowrap; pointer-events: none;
+}
+
+/* 펜을 켰을 때 · 선이 있을 때 지도 왼쪽 위에 떠 있는 작은 바 */
+.bd-pen-float {
+  position: absolute; top: 10px; left: 10px; z-index: 6;
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  max-width: calc(100% - 20px);
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.94);
+  box-shadow: 0 4px 16px rgba(11,42,92,0.14);
+}
+.bd-pen-float[hidden] { display: none; }
+.bd-pen-float-hint { font-size: 11px; color: #64748B; padding: 0 4px 0 6px; white-space: nowrap; }
+/* 오른쪽 아래 채팅 버튼(약 60px)에 도구 버튼이 가리지 않게 범례 줄 오른쪽을 비워 둔다 */
+.bd-layout.is-map .bd-map-view-legend { padding-right: 72px; }

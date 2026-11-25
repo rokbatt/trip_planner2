@@ -21,6 +21,7 @@ import { parseISODate } from '../utils/dates';
 import { apiFetch } from '../utils/apiFetch';
 import { escapeHtml } from '../utils/html';
 import { cleanPickName, pickSearchQueries } from './pickName';
+import { mountPen, type PenController } from './pen';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type PlacesDbRow = Database['public']['Tables']['places_db']['Row'];
@@ -340,6 +341,8 @@ let boardMapMarkers: any[] = [];
 /** 마커를 게이트(mood)와 짝지어 들고 있는 목록 — 범례 필터가 게이트별로 켜고 끄는 데 씀 */
 let boardMapEntries: Array<{ marker: any; mood: string }> = [];
 let boardMapClusterer: any = null;
+/** 지도 위 펜 도구(board/pen.ts) — 지도를 다시 그리거나 보드를 떠날 때 정리한다 */
+let boardPen: PenController | null = null;
 /** 범례에서 꺼둔 게이트들. 지도를 다시 열어도 유지되도록 모듈 수준에 둔다 */
 const boardMapHiddenMoods = new Set<string>();
 
@@ -414,6 +417,8 @@ export function teardownBoard(): void {
   exitGroupSelectMode();
   closeAiExportModal();
   boardMapViewActive = false;
+  boardPen?.destroy();
+  boardPen = null;
   boardMapInstance = null;
   boardMapClusterer?.clearMarkers();
   boardMapClusterer = null;
@@ -1015,6 +1020,8 @@ async function toggleBoardMapView(container: HTMLElement, tripId: string): Promi
   // 폰: 칸이 위아래로 쌓여 있어 옆에 둘 자리가 없으므로 예전처럼 화면 전체를 지도로 바꾼다.
   const inLayout = !isMobileBoard();
   if (!boardMapViewActive) {
+    boardPen?.destroy();
+    boardPen = null;
     layout.hidden = false;
     layout.classList.remove('is-map');
     mapView.hidden = true;
@@ -1150,6 +1157,7 @@ async function renderBoardMapView(mapView: HTMLElement, tripId: string): Promise
       escapeHtml(BOARD_GATE_LEGEND_LABEL[gt.key] ?? gt.label) +
       '</button>'),
     '  <span class="bd-map-legend-hint">칩을 눌러 켜고 끌 수 있어요</span>',
+    '  <div class="bd-map-tools" id="bd-map-tools"></div>',
     '</div>',
   ].join('');
 
@@ -1172,14 +1180,18 @@ async function renderBoardMapView(mapView: HTMLElement, tripId: string): Promise
     : Array.from(placesCache.values())
   ).filter((p) => p.lat != null && p.lng != null);
 
-  if (places.length === 0) {
+  // 담은 장소가 없어도 여행지 좌표가 있으면 지도를 띄운다 — 펜으로 동선을 미리 그어 보거나 영역을 골라 찾아볼 수 있게
+  const destCenter = boardActiveDest && boardActiveDest.lat != null && boardActiveDest.lng != null
+    ? { lat: boardActiveDest.lat, lng: boardActiveDest.lng }
+    : null;
+  if (places.length === 0 && !destCenter) {
     mapEl.innerHTML = '<div class="bd-map-view-empty">지도에 표시할 장소가 아직 없어요.<br/>구글 검색으로 담은 장소(좌표가 있는 장소)부터 지도에 표시돼요.</div>';
     return;
   }
 
   mapEl.innerHTML = '';
-  const avgLat = places.reduce((s, p) => s + p.lat!, 0) / places.length;
-  const avgLng = places.reduce((s, p) => s + p.lng!, 0) / places.length;
+  const avgLat = places.length ? places.reduce((s, p) => s + p.lat!, 0) / places.length : destCenter!.lat;
+  const avgLng = places.length ? places.reduce((s, p) => s + p.lng!, 0) / places.length : destCenter!.lng;
 
   // 구글 기본 POI 아이콘을 눌러 우리 핀이 묻히지 않게 함(MAP_STYLE_BOARD 주석 참고).
   // clickableIcons:false — 구글 POI를 눌러도 구글 정보창이 뜨지 않게(우리 정보창만 뜨도록)
@@ -1191,6 +1203,27 @@ async function renderBoardMapView(mapView: HTMLElement, tripId: string): Promise
     clickableIcons: false,
   });
   boardMapInstance = map;
+  if (places.length === 0) {
+    const note = document.createElement('div');
+    note.className = 'bd-map-view-note';
+    note.textContent = '아직 담은 장소가 없어요 · 체크인에서 장소를 담으면 핀이 생겨요';
+    mapEl.appendChild(note);
+  }
+
+  // 도구(펜) — 지도를 다시 그릴 때마다 새로 붙인다(PC 전용: 마우스로 긋는 도구라 터치 기기에선 숨긴다)
+  boardPen?.destroy();
+  boardPen = null;
+  const toolsEl = mapView.querySelector('#bd-map-tools') as HTMLElement | null;
+  const canPen = typeof window.matchMedia === 'function' && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  if (toolsEl && canPen) {
+    boardPen = mountPen({
+      g,
+      map,
+      toolsEl,
+      tripId,
+      destinationId: boardActiveDest && !isSyntheticDestination(boardActiveDest.id) ? boardActiveDest.id : null,
+    });
+  }
 
   boardMapClusterer?.clearMarkers();
   boardMapClusterer = null;

@@ -965,6 +965,32 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['push_subscriptions']['Insert']>;
         Relationships: [];
       };
+      /** IDEAS 지도 펜 그림 — supabase/board_drawings.sql (없으면 펜 선은 그 화면에서만 보인다) */
+      board_drawings: {
+        Row: {
+          id: string;
+          trip_id: string;
+          destination_id: string | null;
+          user_id: string;
+          color: string;
+          /** [[위도, 경도], ...] */
+          path: [number, number][];
+          distance_m: number | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          trip_id: string;
+          destination_id?: string | null;
+          user_id: string;
+          color: string;
+          path: [number, number][];
+          distance_m?: number | null;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['board_drawings']['Insert']>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
