@@ -21,9 +21,9 @@ describe('planFrom (무료 · PRO)', () => {
 });
 
 describe('parseWebAnswer', () => {
-  it('답과 사용한 자료 제목을 나눈다', () => {
+  it('답과 사용한 자료 제목을 나눈다 — 모델이 남긴 "(웹)" 표시는 지운다', () => {
     const t = '###ANSWER###\n프라하 성은 17시에 닫아요(웹).\n###USED###\n- 프라하 일정 메모\n- 없음\n';
-    expect(parseWebAnswer(t)).toEqual({ answer: '프라하 성은 17시에 닫아요(웹).', usedTitles: ['프라하 일정 메모'] });
+    expect(parseWebAnswer(t)).toEqual({ answer: '프라하 성은 17시에 닫아요.', usedTitles: ['프라하 일정 메모'] });
   });
   it('표시가 없으면 전체를 답으로', () => {
     expect(parseWebAnswer('그냥 답')).toEqual({ answer: '그냥 답', usedTitles: [] });
