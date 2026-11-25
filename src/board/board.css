@@ -2326,3 +2326,22 @@
 }
 .bd-area-add-big:hover:not(:disabled) { background: #0E3676; }
 .bd-area-add-big.done { background: #EBF7EF; color: #16A34A; cursor: default; }
+
+/* 상세 패널 리뷰는 잘리지 않게 전부 — 패널 안에서 휠·끌기로 내려 본다 */
+.bd-area-sheet .bd-area-review { display: block; -webkit-line-clamp: unset; overflow: visible; }
+.bd-area-sheet-body { overscroll-behavior: contain; cursor: grab; }
+.bd-area-sheet-body.is-dragging { cursor: grabbing; user-select: none; }
+.bd-area-sheet-body a, .bd-area-sheet-body button { cursor: pointer; }
+
+/* 1위 왕관 — 숫자 "1" 동그라미 오른쪽 위에 비스듬히 */
+.bd-area-item .bd-area-num { position: relative; overflow: visible; }
+.bd-area-crown {
+  position: absolute; top: -12px; right: -11px;
+  width: 21px; height: 18px;
+  transform: rotate(26deg);
+  filter: drop-shadow(0 1px 1.5px rgba(160,110,10,0.35));
+  pointer-events: none;
+}
+.bd-area-crown-inline { width: 13px; height: 11px; margin-right: 4px; vertical-align: -1px; }
+/* 1위 왕관이 목록 위쪽 경계에 잘리지 않게 */
+.bd-area-list { padding-top: 8px; padding-right: 2px; }

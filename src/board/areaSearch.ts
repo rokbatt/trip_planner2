@@ -37,6 +37,10 @@ const CHOICES: Array<{ label: string; cat?: Exclude<ExploreCat, 'all'>; query?: 
 const ICON_AREA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9c0-3 3-5 7-5s7 2 7 5-2 4-2 7-2 4-5 4-6-2-6-5 1-3 1-6z" stroke-dasharray="2.5 2.5"/><circle cx="11" cy="11" r="2.5"/><path d="M13 13l3 3"/></svg>';
 const ICON_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const LONG_PRESS_MS = 400;
+/** 1위 번호 동그라미 오른쪽 위에 비스듬히 얹는 작은 왕관(금색 + 흰 테두리로 어떤 배경에서도 또렷하게) */
+const CROWN_PATH = 'M3 17.5 L1.5 6.5 L7 10.5 L12 3 L17 10.5 L22.5 6.5 L21 17.5 Z';
+const CROWN = '<svg class="bd-area-crown" viewBox="0 0 24 21" aria-hidden="true"><path d="' + CROWN_PATH + '" fill="#F5C04A" stroke="#FFFFFF" stroke-width="2.2" stroke-linejoin="round"/><path d="M3.6 15.2h16.8" stroke="#E0A526" stroke-width="1.6"/><circle cx="12" cy="3" r="1.6" fill="#FFE08A"/></svg>';
+const CROWN_INLINE = '<svg class="bd-area-crown-inline" viewBox="0 0 24 21" aria-hidden="true"><path d="' + CROWN_PATH + '" fill="#F5C04A" stroke="#E0A526" stroke-width="1.2" stroke-linejoin="round"/></svg>';
 /** 구글이 업종 이름을 안 줄 때 쓰는 한국어 분류 */
 const CAT_LABEL: Record<ExplorePlace['cat'], string> = { food: '음식점', cafe: '카페', sight: '관광지', stay: '숙소', amenity: '편의시설' };
 const MOVE_TOLERANCE_PX = 6;
@@ -262,6 +266,33 @@ export function mountAreaSearch(opts: {
   detailEl.className = 'bd-area-sheet';
   detailEl.hidden = true;
   mapDiv.appendChild(detailEl);
+  // 패널은 지도 안에 떠 있어서, 그대로 두면 패널 위 휠·끌기를 지도가 가져가 확대·이동해 버린다 →
+  // 패널 안에서 일어난 입력은 지도로 올려 보내지 않는다(패널 안 스크롤이 된다)
+  for (const type of ['wheel', 'pointerdown', 'mousedown', 'touchstart', 'dblclick', 'contextmenu']) {
+    detailEl.addEventListener(type, (e) => e.stopPropagation(), { passive: true });
+  }
+  // 마우스로 끌어서 내리기 — 리뷰처럼 긴 내용을 휠 없이도 볼 수 있게(링크·버튼 위에서는 평소대로 누름)
+  let dragScroll: { y: number; top: number; el: HTMLElement; moved: boolean } | null = null;
+  detailEl.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest('a, button')) return;
+    const body = detailEl.querySelector('.bd-area-sheet-body') as HTMLElement | null;
+    if (!body || !body.contains(e.target as Node)) return;
+    dragScroll = { y: e.clientY, top: body.scrollTop, el: body, moved: false };
+  });
+  const onDragMove = (e: PointerEvent) => {
+    if (!dragScroll) return;
+    const dy = e.clientY - dragScroll.y;
+    if (!dragScroll.moved && Math.abs(dy) < 4) return;
+    dragScroll.moved = true;
+    dragScroll.el.classList.add('is-dragging');
+    dragScroll.el.scrollTop = dragScroll.top - dy;
+  };
+  const onDragEnd = () => {
+    dragScroll?.el.classList.remove('is-dragging');
+    dragScroll = null;
+  };
+  document.addEventListener('pointermove', onDragMove);
+  document.addEventListener('pointerup', onDragEnd);
 
   function addBtnHtml(p: ExplorePlace, big = false): string {
     const st = added.get(p.id);
@@ -338,7 +369,7 @@ export function mountAreaSearch(opts: {
           '</div>'
         : '') +
       '<div class="bd-area-sheet-body">' +
-      (i >= 0 ? '<span class="bd-area-sheet-rank">' + (i === 0 ? '👑 ' : '') + (i + 1) + '위</span>' : '') +
+      (i >= 0 ? '<span class="bd-area-sheet-rank">' + (i === 0 ? CROWN_INLINE : '') + (i + 1) + '위</span>' : '') +
       '<h3>' + escapeHtml(p.name) + '</h3>' +
       '<p class="bd-area-sheet-meta"><b>' + (p.rating != null ? '★ ' + p.rating.toFixed(1) : '평점 없음') + '</b>' +
       (p.ratingCount ? ' · 리뷰 ' + p.ratingCount.toLocaleString('ko-KR') : '') + ' · ' + escapeHtml(p.typeLabel ?? CAT_LABEL[p.cat]) +
@@ -386,7 +417,7 @@ export function mountAreaSearch(opts: {
           const openTxt = p.openNow === true ? '<span class="bd-area-open">영업 중</span>' : p.openNow === false ? '<span class="bd-area-closed">영업 종료</span>' : '';
           return '<li class="bd-area-item' + (top ? ' top' : '') + (hoverId === p.id ? ' hover' : '') + (openId === p.id ? ' open' : '') + '" data-id="' + escapeHtml(p.id) + '"' +
             ' style="--rank:' + color + ';--rank-bg:' + tint(color, 0.12) + ';--rank-bg2:' + tint(color, 0.22) + '">' +
-            '<span class="bd-area-num">' + (i === 0 ? '👑' : String(i + 1)) + '</span>' +
+            '<span class="bd-area-num">' + String(i + 1) + (i === 0 ? CROWN : '') + '</span>' +
             '<div class="bd-area-info"><b><span class="bd-area-name">' + escapeHtml(p.name) + '</span>' + (top ? '<i class="bd-area-rankchip">' + (i + 1) + '위</i>' : '') + '</b>' +
             '<small class="bd-area-rating">' + (p.rating != null ? '★ ' + p.rating.toFixed(1) + (p.ratingCount ? ' · 리뷰 ' + p.ratingCount.toLocaleString('ko-KR') : '') : '평점 없음') + '</small>' +
             '<small>' + kind + (openTxt ? ' · ' + openTxt : '') + '</small></div>' +
@@ -488,6 +519,8 @@ export function mountAreaSearch(opts: {
       popEl.remove();
       panelEl.remove();
       detailEl.remove();
+      document.removeEventListener('pointermove', onDragMove);
+      document.removeEventListener('pointerup', onDragEnd);
       toolsEl.innerHTML = '';
     },
   };
