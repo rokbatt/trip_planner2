@@ -17,6 +17,7 @@ import {
   canClaimLocalConsent,
   fetchServerConsent,
   isFreshSignup,
+  isLegalPage,
   newConsentRecord,
   shouldAskConsent,
   readLocalConsent,
@@ -95,8 +96,18 @@ export function openConsentModal(mode: Mode): Promise<boolean> {
     all.addEventListener('change', () => { boxes.forEach((b) => { b.checked = all.checked; }); refresh(); });
     boxes.forEach((b) => b.addEventListener('change', refresh));
 
-    // 닫을 수 없다(Esc·바깥 누르기 없음) — 동의하거나 거절하거나 둘 중 하나다
-    const onKey = (_e: KeyboardEvent) => {};
+    // 닫을 수 없다(Esc·바깥 누르기 없음) — 동의하거나 거절하거나 둘 중 하나다.
+    // Tab 초점은 창 안에서만 돈다(뒤 화면으로 빠져나가면 키보드·화면낭독기 사용자가 길을 잃는다)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const f = Array.from(overlay.querySelectorAll<HTMLElement>('input, a[href], button:not([disabled])'));
+      if (!f.length) return;
+      const first = f[0];
+      const last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      else if (!overlay.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+    };
     document.addEventListener('keydown', onKey);
 
     const finish = (result: boolean) => {
@@ -144,6 +155,9 @@ export async function syncConsentAfterLogin(user: { id: string; created_at?: str
 
     const fresh = isFreshSignup(user.created_at);
     if (!shouldAskConsent(server.state, fresh)) return;
+    // 동의 창의 "보기"는 약관·방침을 새 탭으로 연다. 그 탭에서까지 창을 띄우면 읽어야 할 본문을 가린다 —
+    // 문서 화면에서는 묻지 않는다(원래 탭의 동의 창이 그대로 기다리고 있다)
+    if (isLegalPage(window.location.pathname, window.location.hash)) return;
     if (regateOpen) return;
     regateOpen = true;
     try {

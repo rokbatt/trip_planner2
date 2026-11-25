@@ -26,6 +26,7 @@ import {
   canClaimLocalConsent,
   fetchServerConsent,
   isCurrentConsent,
+  isLegalPage,
   newConsentRecord,
   readLocalConsent,
   saveServerConsent,
@@ -195,5 +196,20 @@ describe('로그인 직후 동의 — 새 가입자만', () => {
     expect(shouldAskConsent('unavailable', true)).toBe(true);
     expect(shouldAskConsent('unavailable', false)).toBe(false);
     expect(shouldAskConsent('recorded', true)).toBe(false);
+  });
+});
+
+describe('isLegalPage — 문서 화면에서는 동의 창을 띄우지 않는다', () => {
+  it('약관·방침 경로와 해시를 알아본다', () => {
+    expect(isLegalPage('/terms')).toBe(true);
+    expect(isLegalPage('/privacy/')).toBe(true);
+    expect(isLegalPage('/', '#terms')).toBe(true);
+    expect(isLegalPage('/', '#/privacy')).toBe(true);
+  });
+  it('다른 화면은 아니다', () => {
+    expect(isLegalPage('/')).toBe(false);
+    expect(isLegalPage('/', '#trips')).toBe(false);
+    expect(isLegalPage('/terms-old')).toBe(false);
+    expect(isLegalPage('/', '#trip/abc/terms')).toBe(false);
   });
 });
