@@ -86,10 +86,15 @@ function openWelcome(afterStart: () => void): void {
   });
 }
 
-/** 내 여행 화면에서 "시작하기" — 여행이 없으면 새 여행 만들기를 연다 */
+/**
+ * 내 여행 화면에서 "시작하기" — 여행이 없으면 새 여행 만들기를, 있으면 맨 앞 여행을 연다.
+ * (여행이 있는데 아무것도 안 하면 "건너뛰기"와 똑같아 버튼이 고장 난 것처럼 보인다 —
+ *  초대로 먼저 여행에 들어간 사람·다른 기기에서 처음 연 사람이 이 경우다. 여행을 열면 그 화면 가이드가 이어진다)
+ */
 function startFromTrips(): void {
-  const hasTrips = !!document.querySelector('#trip-grid .trip-card');
-  if (!hasTrips) document.querySelector<HTMLButtonElement>('#btn-new-trip')?.click();
+  const first = document.querySelector<HTMLElement>('#trip-grid .trip-card');
+  if (first) first.click();
+  else document.querySelector<HTMLButtonElement>('#btn-new-trip')?.click();
 }
 
 /* ── 페이지 가이드 ── */
