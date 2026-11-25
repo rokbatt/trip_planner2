@@ -100,8 +100,8 @@ function heroBtnHtml(): string {
 
 function heroNoteHtml(): string {
   const info = getUserInfo();
-  if (info) return `<p class="lp-hero-note">WELCOME, ${escapeHtml(info.name).toUpperCase()}</p>`;
-  return `<p class="lp-hero-note">GATE OPEN · NO CARD REQUIRED</p>`;
+  if (info) return `<p class="lp-hero-note">${escapeHtml(info.name)}님, 다시 오셨네요</p>`;
+  return `<p class="lp-hero-note">무료로 시작 · 카드 등록 없음</p>`;
 }
 
 function ctaBandBtnHtml(): string {
