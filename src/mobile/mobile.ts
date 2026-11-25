@@ -4995,6 +4995,8 @@ function openNearInMap(placeId?: string): void {
 
 /** 일정 장소 상세의 "인생샷" — 지도 탭 인생샷을 **이 장소 기준**으로 연다(현재 위치가 아니라) */
 function openPhotoFromStop(): void {
+  // 인생샷은 PRO 기능 — 무료로 확인됐으면 바로 요금제·결제 화면으로
+  if (proLocked()) { navigate('pro'); return; }
   const found = detailKey ? findStop(detailKey) : null;
   const st = found?.stop;
   if (!st || st.lat == null || st.lng == null) return;
@@ -5677,6 +5679,8 @@ function bind(): void {
   root.querySelectorAll('[data-mapview]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const v = (btn as HTMLElement).dataset.mapview!;
+      // 인생샷 칩 — 무료로 확인됐으면 빈 안내 화면 대신 바로 요금제·결제 화면으로
+      if (v === 'photo' && proLocked()) { navigate('pro'); return; }
       exNear = null;
       exQuery = '';
       exPhoto = v === 'photo';

@@ -101,9 +101,11 @@ export function mountAreaSearch(opts: {
    * 주의: 이 검색은 브라우저가 구글 지도 서비스를 직접 부르는 구조라 이 잠금은 화면 수준이다 — 서버가 막는 게 아니다.
    * (구글 키는 사이트 주소로 제한돼 있어 다른 곳에서는 못 쓴다. 서버에서 막으려면 검색을 서버로 옮겨야 한다) */
   let isPro = false;
+  let planKnown = false;
   void fetchMyPlan().then((p) => {
     if (destroyed) return;
     isPro = p === 'pro';
+    planKnown = true;
     renderTool();
   });
 
@@ -127,20 +129,9 @@ export function mountAreaSearch(opts: {
     toolsEl.querySelector('[data-tool="area"]')?.addEventListener('click', () => setArmed(!armed));
   }
 
-  /** 무료 사용자에게 보이는 안내 — 지도 위 선택 창 자리를 쓴다 */
-  function showUpsell(): void {
-    popEl.innerHTML =
-      '<div class="bd-area-pop-head"><b>영역 검색은 PRO 전용이에요</b><span></span>' +
-      '<button type="button" class="bd-area-x" data-act="close" aria-label="닫기">' + ICON_CLOSE + '</button></div>' +
-      '<p class="bd-area-upsell">지도에서 영역을 그리면 그 안의 맛집·카페·관광지를 평점순으로 모아서 보여 줘요.</p>' +
-      '<div class="bd-area-upsell-actions"><button type="button" class="bd-area-go" data-act="pro">PRO 알아보기</button></div>';
-    popEl.hidden = false;
-    popEl.querySelector('[data-act="close"]')?.addEventListener('click', () => { popEl.hidden = true; });
-    popEl.querySelector('[data-act="pro"]')?.addEventListener('click', () => navigate('pro'));
-  }
-
   function setArmed(on: boolean): void {
-    if (on && !isPro) { showUpsell(); return; }
+    // 무료로 확인됐으면 바로 요금제·결제 화면으로(2026-11-25 사용자 결정). 확인 중이면 PRO일 수 있어 기다린다
+    if (on && !isPro) { if (planKnown) navigate('pro'); return; }
     armed = on;
     // 지도 끌기는 끄지 않는다(끄면 휠 확대·축소도 막힌다) — 누르기는 아래 onDown이 먼저 받는다
     mapDiv.classList.toggle('bd-area-armed', on);
