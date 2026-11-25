@@ -246,7 +246,7 @@ export function renderLogin(): void {
               <div class="lp-split-text">
                 <h2 class="lp-sec-title">친구들과<br>함께 채워가는 보드</h2>
                 <p class="lp-sec-desc">
-                  가고싶어 · 먹고싶어 · 하고싶어. 무드별로 카드를 쌓고 드래그로 옮겨요.
+                  VISIT · FOOD · ACTIVITY. 게이트별로 카드를 쌓고 드래그로 옮겨요.
                   아직 아무것도 안 정해진 상태가 가장 자유로운 순간이니까요.
                 </p>
               </div>
