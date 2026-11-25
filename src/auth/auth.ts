@@ -472,6 +472,7 @@ export function renderLogin(): void {
   document.getElementById('dd-logout')?.addEventListener('click', signOut);
 
   setupScrollEffects();
+  setupShotFolds();
   observeReveals();
 }
 
@@ -489,6 +490,26 @@ function setupScrollEffects(): void {
   };
   window.addEventListener('scroll', onScroll, { passive: true });
   onScroll();
+}
+
+/* 휴대폰에서는 큰 예시 화면(STAY·ROUTE·TIMELINE·EXPENSE)을 앞부분만 보여 주고 "더 보기"로 펼친다.
+   그대로 두면 랜딩이 PC의 1.5배 길이가 돼 Companion·시작 버튼까지 내려가기 전에 떠난다.
+   접기는 CSS(max-width: 620px)에서만 걸리므로 PC에서는 버튼도 접힘도 없다. */
+function setupShotFolds(): void {
+  document.querySelectorAll<HTMLElement>('.ls-stage > .ls-frame').forEach((frame) => {
+    const stage = frame.parentElement!;
+    stage.classList.add('is-folded');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ls-more';
+    btn.textContent = '예시 화면 더 보기';
+    btn.setAttribute('aria-expanded', 'false');
+    btn.addEventListener('click', () => {
+      stage.classList.remove('is-folded');
+      btn.remove();
+    });
+    frame.after(btn);
+  });
 }
 
 function observeReveals(): void {
