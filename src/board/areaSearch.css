@@ -1,0 +1,178 @@
+/* 지도 영역 검색(areaSearch.ts) — IDEAS·ROUTE 공용. 도구 버튼 모양은 펜(board)도 같이 쓴다 */
+.bd-tool-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid rgba(130,150,170,0.3);
+  border-radius: 999px;
+  background: #FFFFFF;
+  color: #0B2A5C;
+  font: inherit; font-size: 11.5px; font-weight: 600;
+  cursor: pointer;
+}
+.bd-tool-btn svg { width: 14px; height: 14px; flex: none; }
+.bd-tool-btn:hover:not(:disabled) { border-color: #8FD8F8; }
+.bd-tool-btn.on { background: #0B2A5C; color: #FFFFFF; border-color: #0B2A5C; }
+.bd-tool-btn.sub { color: #475569; }
+.bd-tool-btn:disabled { opacity: 0.45; cursor: default; }
+
+/* ── 영역 검색 ── */
+.bd-tool-slot { display: inline-flex; align-items: center; gap: 6px; }
+.bd-tool-slot:empty { display: none; }
+.bd-area-drawing, .bd-area-drawing * { cursor: crosshair !important; }
+
+/* 영역을 다 그린 뒤 지도 위에 뜨는 "무엇을 찾을까" */
+.bd-area-pop {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 7;
+  width: min(420px, calc(100% - 24px));
+  padding: 12px 14px 14px;
+  border-radius: 16px;
+  background: #FFFFFF;
+  box-shadow: 0 10px 30px rgba(11,42,92,0.18);
+}
+.bd-area-pop[hidden] { display: none; }
+.bd-area-pop-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.bd-area-pop-head b { font-size: 13.5px; color: #0B2A5C; }
+.bd-area-pop-head span { font-size: 11px; color: #94A3B8; margin-right: auto; }
+.bd-area-x { display: grid; place-items: center; width: 26px; height: 26px; border: none; border-radius: 50%; background: #F1F5F9; color: #64748B; cursor: pointer; flex: none; }
+.bd-area-x svg { width: 13px; height: 13px; }
+.bd-area-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.bd-area-chip { padding: 6px 12px; border: 1px solid #CDEBFB; border-radius: 999px; background: #F8FBFE; color: #0B2A5C; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.bd-area-chip:hover:not(:disabled) { background: #EAF6FD; border-color: #8FD8F8; }
+.bd-area-form { display: flex; gap: 6px; }
+.bd-area-input { flex: 1; min-width: 0; padding: 8px 12px; border: 1px solid #CDEBFB; border-radius: 10px; font: inherit; font-size: 12.5px; }
+.bd-area-go { padding: 8px 14px; border: none; border-radius: 10px; background: #0B2A5C; color: #fff; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+.bd-area-chip:disabled, .bd-area-go:disabled, .bd-area-input:disabled { opacity: 0.45; cursor: default; }
+.bd-area-limit { margin-top: 8px; font-size: 11.5px; color: #8A5A00; }
+
+/* 결과 목록 — 왼쪽 체크인 칸 안(입력칸 아래). 여는 동안 추천·검색 사이트·대기줄은 잠시 접는다 */
+.bd-inbox.is-area > *:not(.bd-inbox-header):not(.bd-inbox-form):not(.bd-area-panel) { display: none; }
+.bd-area-panel { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; margin-top: 12px; }
+.bd-area-panel[hidden] { display: none; }
+.bd-area-panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.bd-area-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 0.14em; color: #0B7CC4; }
+.bd-area-panel-head h3 { font-size: 16px; font-weight: 800; color: #0B2A5C; margin-top: 2px; }
+.bd-area-panel-head h3 em { font-style: normal; font-size: 12px; font-weight: 600; color: #64748B; margin-left: 4px; }
+.bd-area-sorts { display: flex; gap: 4px; margin: 10px 0 8px; padding: 3px; border-radius: 10px; background: #F1F5F9; }
+.bd-area-sort { flex: 1; padding: 6px 4px; border: none; border-radius: 8px; background: transparent; color: #64748B; font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.bd-area-sort.on { background: #FFFFFF; color: #0B2A5C; box-shadow: 0 1px 3px rgba(11,42,92,0.12); }
+.bd-area-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; gap: 4px; }
+.bd-area-item { padding: 8px; border-radius: 10px; cursor: pointer; }
+.bd-area-row { display: flex; align-items: center; gap: 9px; }
+.bd-area-item.open { background: #F5FAFE; box-shadow: inset 0 0 0 1px #CDEBFB; cursor: default; }
+.bd-area-item.open .bd-area-row { cursor: pointer; }
+.bd-area-item:hover, .bd-area-item.hover { background: #EAF6FD; }
+.bd-area-num { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: #0B2A5C; color: #fff; font-size: 10px; font-weight: 700; flex: none; }
+.bd-area-item.hover .bd-area-num { background: #2F80ED; }
+.bd-area-info { flex: 1; min-width: 0; }
+.bd-area-info b { display: block; font-size: 13px; color: #0B2A5C; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bd-area-info small { display: block; font-size: 11px; color: #64748B; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bd-area-add { flex: none; min-width: 34px; height: 28px; padding: 0 8px; border: 1px solid #CDEBFB; border-radius: 8px; background: #FFFFFF; color: #0B2A5C; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.bd-area-add:hover:not(:disabled) { background: #0B2A5C; color: #fff; }
+.bd-area-add.done { border-color: transparent; background: #EBF7EF; color: #16A34A; font-size: 11px; cursor: default; }
+.bd-area-empty { padding: 28px 8px; text-align: center; font-size: 12.5px; line-height: 1.6; color: #94A3B8; }
+/* 지도 모드의 체크인 칸은 지도 높이에 맞춰 멈추고, 영역 검색 목록은 그 안에서 스크롤한다 */
+.bd-layout.is-map > .bd-inbox { max-height: max(480px, calc(100dvh - 190px)); overflow: hidden; }
+/* 펜·영역 검색이 켜져 있는 동안 지도 위 커서는 십자 — 핀 위에서도 */
+.bd-pen-on, .bd-pen-on *, .bd-area-armed, .bd-area-armed * { cursor: crosshair !important; }
+
+/* 결과 두 번째 줄 · 펼친 상세 */
+.bd-area-info small.bd-area-rating { color: #B45309; font-weight: 600; }
+.bd-area-open { color: #16A34A; font-weight: 600; }
+.bd-area-closed { color: #DC2626; font-weight: 600; }
+.bd-area-detail { margin: 10px 0 2px 29px; display: flex; flex-direction: column; gap: 8px; }
+.bd-area-photo { height: 120px; border-radius: 10px; background: #E2E8F0 center / cover no-repeat; }
+.bd-area-summary { font-size: 12.5px; line-height: 1.6; color: #1E293B; word-break: keep-all; }
+.bd-area-muted { color: #94A3B8; font-size: 12px; }
+.bd-area-facts { display: flex; flex-direction: column; gap: 3px; margin: 0; }
+.bd-area-facts div { display: flex; gap: 8px; font-size: 11.5px; line-height: 1.5; }
+.bd-area-facts dt { flex: none; width: 28px; color: #94A3B8; }
+.bd-area-facts dd { margin: 0; color: #334155; word-break: keep-all; }
+.bd-area-review {
+  margin: 0; padding: 8px 10px; border-left: 3px solid #CDEBFB; border-radius: 0 8px 8px 0; background: #FFFFFF;
+  font-size: 11.5px; line-height: 1.55; color: #334155;
+  display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden;
+}
+.bd-area-review span { display: block; font-size: 10.5px; color: #94A3B8; margin-bottom: 2px; }
+.bd-area-links { display: flex; gap: 12px; }
+.bd-area-links a { font-size: 11.5px; font-weight: 600; color: #0B7CC4; text-decoration: none; }
+.bd-area-links a:hover { text-decoration: underline; }
+/* 결과의 "무엇을 하는 곳" 줄은 잘리지 않게 두 줄까지 */
+.bd-area-info small:last-child { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ── 영역 검색 목록: 몽실이 구름 그라데이션(하늘 → 라벤더 → 분홍) + 상위 3위 강조 ── */
+.bd-area-list { gap: 6px; }
+.bd-area-item { display: flex; align-items: center; gap: 10px; background: var(--rank-bg, #F5FAFE); }
+.bd-area-item:hover, .bd-area-item.hover { background: var(--rank-bg2, #EAF6FD); }
+.bd-area-item.open { background: var(--rank-bg2, #EAF6FD); box-shadow: inset 0 0 0 2px var(--rank, #2F80ED); }
+.bd-area-item .bd-area-num,
+.bd-area-item.hover .bd-area-num {
+  background: linear-gradient(135deg, var(--rank, #0B2A5C), color-mix(in srgb, var(--rank, #0B2A5C) 75%, #F7A9A0));
+  box-shadow: 0 1px 3px rgba(11,42,92,0.15);
+  width: 22px; height: 22px; font-size: 10.5px;
+}
+.bd-area-item.top { box-shadow: inset 3px 0 0 var(--rank); }
+.bd-area-item.top.open { box-shadow: inset 3px 0 0 var(--rank), inset 0 0 0 2px var(--rank); }
+.bd-area-item.top .bd-area-num { width: 27px; height: 27px; font-size: 12.5px; box-shadow: 0 0 0 2.5px #FFFFFF, 0 0 0 4px var(--rank), 0 2px 6px rgba(11,42,92,0.15); }
+.bd-area-info b { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.bd-area-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.bd-area-rankchip {
+  flex: none; font-style: normal; font-size: 10px; font-weight: 800;
+  color: color-mix(in srgb, var(--rank) 75%, #0B2A5C); background: #FFFFFF;
+  border: 1px solid var(--rank); border-radius: 999px; padding: 0 6px; line-height: 16px;
+}
+
+/* ── 상세: 지도 왼쪽에 크게 ── */
+.bd-area-sheet {
+  position: absolute; left: 12px; top: 12px; bottom: 12px; z-index: 8;
+  width: min(400px, 46%);
+  display: flex; flex-direction: column; overflow: hidden;
+  background: #FFFFFF; border-radius: 18px;
+  box-shadow: 0 14px 40px rgba(11,42,92,0.22);
+}
+.bd-area-sheet[hidden] { display: none; }
+.bd-area-sheet-x { position: absolute; top: 10px; right: 10px; z-index: 2; background: rgba(255,255,255,0.92); box-shadow: 0 2px 8px rgba(11,42,92,0.15); width: 30px; height: 30px; }
+.bd-area-sheet-photos { flex: none; }
+.bd-area-sheet-hero { height: 210px; background: #E2E8F0 center / cover no-repeat; }
+.bd-area-sheet-thumbs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; margin-top: 3px; }
+.bd-area-sheet-thumbs div { height: 64px; background: #E2E8F0 center / cover no-repeat; }
+.bd-area-sheet-body { flex: 1 1 auto; overflow-y: auto; padding: 16px 18px 12px; }
+.bd-area-sheet-rank {
+  display: inline-block; margin-bottom: 6px; padding: 2px 9px; border-radius: 999px;
+  background: color-mix(in srgb, var(--rank) 16%, white); color: color-mix(in srgb, var(--rank) 70%, #0B2A5C);
+  font-size: 11px; font-weight: 800;
+}
+.bd-area-sheet h3 { font-size: 20px; font-weight: 800; color: #0B2A5C; letter-spacing: -0.02em; word-break: keep-all; }
+.bd-area-sheet-meta { margin: 5px 0 12px; font-size: 12.5px; color: #64748B; }
+.bd-area-sheet-meta b { color: #B45309; }
+.bd-area-sheet-summary { font-size: 14px; line-height: 1.7; color: #1E293B; word-break: keep-all; margin-bottom: 14px; }
+.bd-area-sheet h4 { font-size: 12px; font-weight: 800; color: #475569; margin: 4px 0 8px; }
+.bd-area-sheet .bd-area-review { margin-bottom: 8px; background: #F8FBFE; border-left-color: var(--rank); -webkit-line-clamp: 6; font-size: 12.5px; }
+.bd-area-sheet .bd-area-links { margin-top: 6px; }
+.bd-area-sheet-foot { flex: none; padding: 12px 18px 14px; border-top: 1px solid #EEF2F7; }
+.bd-area-add-big {
+  width: 100%; padding: 11px; border: none; border-radius: 12px;
+  background: #0B2A5C; color: #FFFFFF; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+}
+.bd-area-add-big:hover:not(:disabled) { background: #0E3676; }
+.bd-area-add-big.done { background: #EBF7EF; color: #16A34A; cursor: default; }
+
+/* 상세 패널 리뷰는 잘리지 않게 전부 — 패널 안에서 휠·끌기로 내려 본다 */
+.bd-area-sheet .bd-area-review { display: block; -webkit-line-clamp: unset; overflow: visible; }
+.bd-area-sheet-body { overscroll-behavior: contain; cursor: grab; }
+.bd-area-sheet-body.is-dragging { cursor: grabbing; user-select: none; }
+.bd-area-sheet-body a, .bd-area-sheet-body button { cursor: pointer; }
+
+/* 1위 왕관 — 숫자 "1" 동그라미 오른쪽 위에 비스듬히 */
+.bd-area-item .bd-area-num { position: relative; overflow: visible; }
+.bd-area-crown {
+  position: absolute; top: -12px; right: -11px;
+  width: 21px; height: 18px;
+  transform: rotate(26deg);
+  filter: drop-shadow(0 1px 1.5px rgba(160,110,10,0.35));
+  pointer-events: none;
+}
+.bd-area-crown-inline { width: 13px; height: 11px; margin-right: 4px; vertical-align: -1px; }
+/* 1위 왕관이 목록 위쪽 경계에 잘리지 않게 */
+.bd-area-list { padding-top: 8px; padding-right: 2px; }
+
+.bd-area-pro { margin-left: 4px; padding: 2px 8px; border: 0; border-radius: 999px; background: #0B2A5C; color: #fff; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }

@@ -96,10 +96,11 @@ describe('도움말 그림 · PRO 표시', () => {
       }
     }
   });
-  it('영역 검색은 PRO 전용임을 제목 표시와 본문에 밝힌다', () => {
+  it('영역 검색은 무료 하루 3번 · PRO 20번임을 본문에 밝히고 ROUTE에서도 열린다', () => {
     const a = HELP_ARTICLES.find((x) => x.id === 'ideas-area')!;
-    expect(a.badge).toBe('PRO');
-    expect((a.paragraphs ?? []).join(' ')).toContain('PRO 기능');
+    expect(a.badge).toBe('PC');
+    expect((a.paragraphs ?? []).join(' ')).toContain('무료로 하루 3번, PRO는 하루 20번');
+    expect(a.gates).toContain('route');
     expect(a.images?.length).toBeGreaterThanOrEqual(1);
   });
   it('그룹·펜·영역 검색 글이 IDEAS 화면에서 열린다', () => {

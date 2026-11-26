@@ -71,6 +71,8 @@ import {
 import type { DayFrame, PlanItem, Point } from './planModel';
 import { loadDocUsers, loadSharedDocuments, loadPersonalDocuments, getUnlockedUserId, setUnlockedUserId, verifyPin, normalizeDocCategory } from '../docs/docsStore';
 import { resolveDocSource } from '../assistant/assistant';
+import { mountAreaSearch, type AreaSearchController } from '../board/areaSearch';
+import { toGooglePlaceResult, type ExplorePlace } from '../mobile/exploreApi';
 import type { TripDocUser } from '../types/database';
 // 화면에 뜨는 숫자(이동시간·거리·요금·체류시간)는 TIMELINE과 반드시 같아야 하므로
 // 순수 계산은 전부 공용 모듈 하나에서만 가져온다 — utils/travelEstimate.ts 상단 설명 참고.
@@ -315,6 +317,8 @@ let syncRetryTimer: ReturnType<typeof setTimeout> | null = null;
 let remoteReloadTimer: ReturnType<typeof setTimeout> | null = null;
 
 let mapInstance: any = null;
+/** 지도 영역 검색(board/areaSearch.ts) */
+let routeArea: AreaSearchController | null = null;
 let mapMarkers: any[] = [];
 let routePolylines: any[] = [];
 let placeCardOverlay: any = null;
@@ -395,6 +399,8 @@ export function teardownRoute(): void {
   timeOverride.clear();
   legModeOverride.clear();
   lodgingRevisitPurpose.clear();
+  routeArea?.destroy();
+  routeArea = null;
   mapInstance = null;
   mapMarkers = [];
   routePolylines = [];
@@ -1355,6 +1361,7 @@ function buildPageHtml(): string {
     '    <div class="rt-daytabs" id="rt-daytabs" data-tour="route-days"></div>',
     '    <div class="rt-toolbar-right">',
     '      <button type="button" class="rt-to-timeline-top" id="rt-to-timeline-top" data-tour="route-to-timeline">' + IC_ARROW + ' 타임라인으로</button>',
+    '      <div class="bd-tool-slot rt-area-slot" id="rt-tool-area"></div>',
     '      <div class="rt-searchbox" id="rt-searchbox-top" title="지도에 실제 장소를 검색해서 핀으로 찍어요 · Enter로 검색">' +
       IC_SEARCH +
       '<input type="text" id="rt-search-top" placeholder="지도에서 장소 검색 (Enter)" />' +
@@ -1377,6 +1384,7 @@ function buildPageHtml(): string {
     '    <div class="rt-map-col">',
     '      <div class="rt-map-wrap">',
     '        <div id="rt-map" class="rt-map"></div>',
+    '        <div class="rt-area-host" id="rt-area-host"></div>',
 
     '        <div class="rt-float-search" id="rt-float-search" data-tour="route-library">',
     '          <div class="rt-float-search-input">',
@@ -1666,6 +1674,23 @@ async function addSearchResultToDay(p: Place, container: HTMLElement, cacheSourc
   // "검색해서 찾은 곳을 담는다"는 명확한 단발성 액션이라, 여기서만큼은 디바운스를 건너뛰고
   // 바로 기다려서 반환 전에 DB 반영을 확정한다.
   await syncPlan();
+}
+
+/** 영역 검색 결과의 [+] — 이미 지금 DAY에 있으면 dup, 아니면 장소로 저장하고 지금 DAY에 담는다 */
+async function addExploreToDay(p: ExplorePlace, container: HTMLElement): Promise<'added' | 'dup' | 'fail'> {
+  const gr = toGooglePlaceResult(p);
+  const day = activeDay();
+  const existing = candidatePlaces.find((cp) => gr.place_id && cp.google_place_id === gr.place_id);
+  if (existing && day?.stopIds.includes(existing.id)) return 'dup';
+  if (existing) {
+    pushHistory();
+    appendStopBeforeEndAnchor(day, existing.id);
+    refreshAll(container, { refit: false });
+    await syncPlan();
+    return 'added';
+  }
+  await addSearchResultToDay(googleResultToPlace(gr), container, 'area_search');
+  return candidatePlaces.some((cp) => cp.google_place_id === gr.place_id) ? 'added' : 'fail';
 }
 
 function filteredCandidates(): Place[] {
@@ -3434,6 +3459,22 @@ async function initMap(container: HTMLElement): Promise<void> {
 
   addMapTypeToggle(g, mapInstance);
   addStopInfoPanel(g, mapInstance);
+
+  // 영역 검색(PC) — IDEAS와 같은 모듈이라 하루 횟수·요금제·사용 기록을 함께 쓴다. 담으면 지금 DAY에 들어간다
+  routeArea?.destroy();
+  routeArea = null;
+  const areaSlot = container.querySelector('#rt-tool-area') as HTMLElement | null;
+  const canHover = typeof window.matchMedia === 'function' && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  if (areaSlot && canHover) {
+    routeArea = mountAreaSearch({
+      g,
+      map: mapInstance,
+      toolsEl: areaSlot,
+      panelHost: container.querySelector('#rt-area-host') as HTMLElement | null,
+      isPenActive: () => adhocMode,
+      onAdd: (p) => addExploreToDay(p, container),
+    });
+  }
 
   // 지도 빈 곳 클릭 = 장소 카드/강조 해제 (원칙 3-3 명시적 해제 수단)
   mapInstance.addListener('click', () => {

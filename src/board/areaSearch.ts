@@ -6,7 +6,8 @@
  *  · 다 그리면 지도 위에 [맛집][카페][관광지][쇼핑][술집] + 직접 입력 → 찾기.
  *  · 결과는 **왼쪽 체크인 칸**에 목록으로(지도를 좁히지 않으려고), 지도에는 번호 작은 핀.
  *    정렬 3가지, [+]로 체크인에 담기. 목록 ↔ 핀 마우스 올리면 서로 강조.
- *  · 검색은 휴대폰 '주변' 탭과 같은 함수·캐시(mobile/exploreApi)를 쓴다. 하루 20번(이 기기·사용자별).
+ *  · 검색은 휴대폰 '주변' 탭과 같은 함수·캐시(mobile/exploreApi)를 쓴다. 하루 PRO 20번 · 무료 3번(이 기기·사용자별,
+ *    IDEAS와 ROUTE가 같은 횟수를 나눠 쓴다 — areaModel).
  */
 
 import { store } from '../store';
@@ -14,13 +15,14 @@ import { escapeHtml } from '../utils/html';
 import { fetchDetail, searchNearbyCat, searchText, type ExploreDetail, type ExplorePlace } from '../mobile/exploreApi';
 import type { ExploreCat } from '../mobile/explore';
 import {
-  AREA_DAILY_LIMIT, AREA_SORTS, TOP_RANKS, coveringCircle, filterAndSort, isUsableArea, rankColor, remainingToday, tint, useOne, type AreaSort,
+  AREA_FREE_DAILY_LIMIT, AREA_SORTS, areaDailyLimit, usedToday, TOP_RANKS, coveringCircle, filterAndSort, isUsableArea, rankColor, remainingToday, tint, useOne, type AreaSort,
 } from './areaModel';
 import type { LatLng } from './penModel';
 import { todayIso } from '../trips/tripListModel';
 import { createProjector, isOverlayUi } from './mapPixel';
 import { fetchMyPlan, reportProUse } from '../assistant/assistantClient';
 import { goPro } from '../pay/proEntry';
+import './areaSearch.css';
 
 export interface AreaSearchController {
   destroy(): void;
@@ -96,8 +98,8 @@ export function mountAreaSearch(opts: {
   let pins: any[] = [];
   let hoverId: string | null = null;
 
-  /* ── PRO 전용(2026-11 사용자 결정) ──
-   * 요금제는 화면 표시용으로 한 번 읽어 둔다. 확인되기 전·실패하면 무료로 본다(유료 기능을 실수로 열지 않는다).
+  /* ── 무료 하루 3번 · PRO 하루 20번(2026-11 사용자 결정) ──
+   * 요금제는 한 번 읽어 둔다. 확인되기 전·실패하면 무료 횟수로 본다(유료 횟수를 실수로 열지 않는다).
    * 주의: 이 검색은 브라우저가 구글 지도 서비스를 직접 부르는 구조라 이 잠금은 화면 수준이다 — 서버가 막는 게 아니다.
    * (구글 키는 사이트 주소로 제한돼 있어 다른 곳에서는 못 쓴다. 서버에서 막으려면 검색을 서버로 옮겨야 한다) */
   let isPro = false;
@@ -108,6 +110,8 @@ export function mountAreaSearch(opts: {
     planKnown = true;
     renderTool();
   });
+
+  const limit = () => areaDailyLimit(isPro);
 
   const popEl = document.createElement('div');
   popEl.className = 'bd-area-pop';
@@ -121,17 +125,20 @@ export function mountAreaSearch(opts: {
 
   /* ── 도구 버튼 ── */
   function renderTool(): void {
-    const left = remainingToday(kv(), userId, todayIso());
+    const left = remainingToday(kv(), userId, todayIso(), limit());
     toolsEl.innerHTML =
       '<button type="button" class="bd-tool-btn' + (armed ? ' on' : '') + '" data-tool="area" aria-pressed="' + armed + '" ' +
-      'title="' + (isPro ? '영역 검색 — 지도를 꾹 누른 채 영역을 그려도 돼요 (오늘 ' + left + '번 남음)' : '영역 검색은 PRO 전용이에요') + '">' +
-      ICON_AREA + '<span>영역 검색</span>' + (isPro ? '' : '<i class="bd-pro-chip">PRO</i>') + '</button>';
+      'title="영역 검색 — 지도를 꾹 누른 채 영역을 그려도 돼요 (오늘 ' + left + '번 남음' + (isPro ? '' : ' · 무료 하루 ' + AREA_FREE_DAILY_LIMIT + '번') + ')">' +
+      ICON_AREA + '<span>영역 검색</span></button>';
     toolsEl.querySelector('[data-tool="area"]')?.addEventListener('click', () => setArmed(!armed));
   }
 
   function setArmed(on: boolean): void {
-    // 무료로 확인됐으면 바로 요금제·결제 화면으로(2026-11-25 사용자 결정). 확인 중이면 PRO일 수 있어 기다린다
-    if (on && !isPro) { if (planKnown) goPro('area'); return; }
+    // 무료 횟수를 다 썼으면 PRO 안내(요금제 화면으로)
+    if (on && remainingToday(kv(), userId, todayIso(), limit()) <= 0) {
+      if (!isPro && planKnown) goPro('area');
+      return;
+    }
     armed = on;
     // 지도 끌기는 끄지 않는다(끄면 휠 확대·축소도 막힌다) — 누르기는 아래 onDown이 먼저 받는다
     mapDiv.classList.toggle('bd-area-armed', on);
@@ -144,7 +151,6 @@ export function mountAreaSearch(opts: {
   let dragLocked = false;
 
   function beginDraw(clientX: number, clientY: number): boolean {
-    if (!isPro) return false;
     const ll = projector.toLatLng(clientX, clientY);
     if (!ll) return false;
     clearArea();
@@ -166,7 +172,7 @@ export function mountAreaSearch(opts: {
       return;
     }
     // 무료 사용자는 꾹 누르기를 영역 그리기로 쓰지 않는다(지도는 평소처럼 움직이고, 안내 창도 띄우지 않는다)
-    if (!isPro || drawing || pressTimer) return;
+    if (drawing || pressTimer) return;
     pressStart = { x: e.clientX, y: e.clientY };
     pressTimer = setTimeout(() => {
       pressTimer = null;
@@ -234,18 +240,24 @@ export function mountAreaSearch(opts: {
 
   /* ── 무엇을 찾을지 ── */
   function showPop(): void {
-    const left = remainingToday(kv(), userId, todayIso());
+    const left = remainingToday(kv(), userId, todayIso(), limit());
     popEl.innerHTML =
-      '<div class="bd-area-pop-head"><b>이 영역에서 찾기</b><span>오늘 ' + left + '/' + AREA_DAILY_LIMIT + '번 남음</span>' +
+      '<div class="bd-area-pop-head"><b>이 영역에서 찾기</b><span>오늘 ' + left + '/' + limit() + '번 남음</span>' +
       '<button type="button" class="bd-area-x" data-act="close" aria-label="영역 지우기">' + ICON_CLOSE + '</button></div>' +
       '<div class="bd-area-chips">' +
       CHOICES.map((c, i) => '<button type="button" class="bd-area-chip" data-choice="' + i + '"' + (left ? '' : ' disabled') + '>' + c.label + '</button>').join('') +
       '</div>' +
       '<form class="bd-area-form"><input type="text" class="bd-area-input" placeholder="직접 입력 (예: 야경, 쌀국수)" maxlength="40"' + (left ? '' : ' disabled') + ' />' +
       '<button type="submit" class="bd-area-go"' + (left ? '' : ' disabled') + '>찾기</button></form>' +
-      (left ? '' : '<p class="bd-area-limit">오늘 영역 검색을 다 썼어요. 내일 다시 쓸 수 있어요.</p>');
+      (left
+        ? ''
+        : isPro
+        ? '<p class="bd-area-limit">오늘 영역 검색을 다 썼어요. 내일 다시 쓸 수 있어요.</p>'
+        : '<p class="bd-area-limit">오늘 무료 ' + AREA_FREE_DAILY_LIMIT + '번을 다 썼어요. PRO는 하루 ' + areaDailyLimit(true) + '번까지 쓸 수 있어요. ' +
+          '<button type="button" class="bd-area-pro" data-act="pro">PRO 보기</button></p>');
     popEl.hidden = false;
     popEl.querySelector('[data-act="close"]')?.addEventListener('click', clearArea);
+    popEl.querySelector('[data-act="pro"]')?.addEventListener('click', () => goPro('area'));
     popEl.querySelectorAll<HTMLElement>('[data-choice]').forEach((b) => {
       b.addEventListener('click', () => { const c = CHOICES[Number(b.dataset.choice)]; void run(c.label, c.cat, c.query); });
     });
@@ -258,8 +270,8 @@ export function mountAreaSearch(opts: {
   }
 
   async function run(name: string, cat?: Exclude<ExploreCat, 'all'>, query?: string): Promise<void> {
-    if (!area || loading || !isPro) return;
-    if (remainingToday(kv(), userId, todayIso()) <= 0) { showPop(); return; }
+    if (!area || loading) return;
+    if (remainingToday(kv(), userId, todayIso(), limit()) <= 0) { showPop(); return; }
     const { center, radius } = coveringCircle(area);
     label = name;
     loading = true;
@@ -271,8 +283,9 @@ export function mountAreaSearch(opts: {
     try {
       const key = 'area:' + (cat ?? 'q:' + query) + ':' + center.lat.toFixed(4) + ',' + center.lng.toFixed(4) + ':' + radius;
       const found = cat ? await searchNearbyCat(key, cat, center, radius) : await searchText(key, query ?? name, center, radius);
-      useOne(kv(), userId, todayIso());
-      void reportProUse('area-search'); // 환불 판단용 사용 기록(서버)
+      // 무료 몫(하루 3번)을 넘긴 PRO 사용만 PRO 기능 사용으로 기록한다(환불 판단용, 서버)
+      if (isPro && usedToday(kv(), userId, todayIso()) >= AREA_FREE_DAILY_LIMIT) void reportProUse('area-search');
+      useOne(kv(), userId, todayIso(), limit());
       if (destroyed) return;
       results = found;
     } catch (e) {
