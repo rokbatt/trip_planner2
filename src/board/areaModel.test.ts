@@ -97,3 +97,15 @@ describe('rankColor — 구름 그라데이션', () => {
     expect(tint('#7EC8F2', 0)).toBe('#FFFFFF');
   });
 });
+
+describe('무료 하루 3번 · PRO 20번 (IDEAS·ROUTE 같은 횟수)', () => {
+  it('무료는 3번, PRO는 같은 날 쓴 횟수를 이어서 20번까지', async () => {
+    const { areaDailyLimit, AREA_FREE_DAILY_LIMIT } = await import('./areaModel');
+    const m = new Map<string, string>();
+    const kv = { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v) };
+    expect(areaDailyLimit(false)).toBe(AREA_FREE_DAILY_LIMIT);
+    for (let i = 0; i < 3; i++) useOne(kv, 'u', 'd', areaDailyLimit(false));
+    expect(remainingToday(kv, 'u', 'd', areaDailyLimit(false))).toBe(0);
+    expect(remainingToday(kv, 'u', 'd', areaDailyLimit(true))).toBe(AREA_DAILY_LIMIT - 3);
+  });
+});

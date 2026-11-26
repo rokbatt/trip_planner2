@@ -3,7 +3,7 @@
  *
  *  · 그린 영역(다각형)을 덮는 원(가운데 + 반경)으로 Google에 묻고, 돌아온 결과 중 **영역 안**만 남긴다.
  *  · 정렬 3가지: 평점 높은 순 / 리뷰 많은 순 / 영역 가운데서 가까운 순.
- *  · 하루 20번(사용자 결정, 무료) — 이 기기·사용자별로 센다.
+ *  · 하루 PRO 20번 · 무료 3번(사용자 결정) — 이 기기·사용자별로 센다. IDEAS·ROUTE가 같은 횟수를 나눠 쓴다.
  */
 
 import { haversineMeters, type LatLng } from './penModel';
@@ -17,6 +17,12 @@ export const AREA_SORTS: Array<{ key: AreaSort; label: string }> = [
 ];
 
 export const AREA_DAILY_LIMIT = 20;
+export const AREA_FREE_DAILY_LIMIT = 3;
+
+/** 이 사용자의 하루 횟수 */
+export function areaDailyLimit(isPro: boolean): number {
+  return isPro ? AREA_DAILY_LIMIT : AREA_FREE_DAILY_LIMIT;
+}
 export const AREA_MIN_RADIUS = 150;
 export const AREA_MAX_RADIUS = 50_000;
 
@@ -102,19 +108,24 @@ function readQuota(kv: KV | null, userId: string, today: string): number {
 }
 
 /** 오늘 남은 횟수 */
-export function remainingToday(kv: KV | null, userId: string, today: string): number {
-  return Math.max(0, AREA_DAILY_LIMIT - readQuota(kv, userId, today));
+export function remainingToday(kv: KV | null, userId: string, today: string, limit = AREA_DAILY_LIMIT): number {
+  return Math.max(0, limit - readQuota(kv, userId, today));
 }
 
 /** 한 번 썼다고 적는다 — 남은 횟수를 돌려준다 */
-export function useOne(kv: KV | null, userId: string, today: string): number {
+/** 오늘 쓴 횟수 */
+export function usedToday(kv: KV | null, userId: string, today: string): number {
+  return readQuota(kv, userId, today);
+}
+
+export function useOne(kv: KV | null, userId: string, today: string, limit = AREA_DAILY_LIMIT): number {
   const n = readQuota(kv, userId, today) + 1;
   try {
     kv?.setItem(QUOTA_PREFIX + userId, JSON.stringify({ date: today, n }));
   } catch {
     /* 저장 못 하면 세지 못할 뿐 — 검색은 그대로 */
   }
-  return Math.max(0, AREA_DAILY_LIMIT - n);
+  return Math.max(0, limit - n);
 }
 
 /* ── 순위 색(몽실이 구름 그라데이션) ──

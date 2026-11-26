@@ -1364,3 +1364,17 @@ a.rt-stopinfo-leg:hover .rt-stopinfo-leg-gmaps { color: var(--rt-blue); }
     color: var(--rt-ink-3);
   }
 }
+
+/* ── 영역 검색(board/areaSearch.ts 공용) — 도구 버튼은 상단, 결과 목록은 지도 왼쪽 위 카드 ── */
+.rt-area-slot .bd-tool-btn { height: 36px; padding: 0 12px; border-radius: 10px; }
+.rt-area-host { display: none; }
+.rt-area-host.is-area {
+  position: absolute; top: 16px; left: 16px; bottom: 16px; z-index: 5;
+  width: 300px; display: flex; flex-direction: column; min-height: 0;
+  padding: 4px 14px 14px; box-sizing: border-box;
+  background: #FFFFFF; border: 1px solid var(--rt-line); border-radius: 14px; box-shadow: var(--rt-shadow-lg);
+}
+.rt-area-host .bd-area-list { overflow-y: auto; min-height: 0; flex: 1 1 auto; }
+/* 결과를 보는 동안 장소 검색 카드는 잠시 숨기고, 상세는 목록 오른쪽에 연다 */
+.rt-map-wrap:has(.rt-area-host.is-area) .rt-float-search { display: none; }
+.rt-map-wrap:has(.rt-area-host.is-area) .bd-area-sheet { left: 328px; }
