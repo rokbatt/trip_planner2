@@ -287,7 +287,7 @@ async function mapWithLimit<T, R>(items: T[], limit: number, fn: (item: T) => Pr
 /** 문서 하나를 질문에 쓸 수 있는 자료로 바꾼다 — 파일이 없으면 저장된 필드를 그대로 쓴다.
  *  파일이 있으면 ① 이 탭에 저장된 요약(새로고침해도 유지) → ② 서버(저장된 요약이 있으면 그걸 주고,
  *  없을 때만 AI가 파일을 읽는다) 순서로 찾는다. 그래서 AI가 읽는 건 문서당 처음 한 번뿐이다. */
-async function resolveDocSource(
+export async function resolveDocSource(
   tripId: string,
   doc: TripDocument,
   stats: { tab: number; server: number; fresh: number; failed: number }

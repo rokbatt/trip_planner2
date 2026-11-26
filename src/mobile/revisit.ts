@@ -18,6 +18,7 @@
 
 import type { TlDay, TlStop } from '../timeline/dayModel';
 import { distanceM } from './geo';
+import { mealSlotOf } from '../route/planModel';
 import type { Database } from '../types/database';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -33,7 +34,8 @@ export function findRevisitPlace(
   placeById: Map<string, Place>,
   basecampIds: Set<string>
 ): Place | null {
-  if (!stop.purpose || stop.place) return null;
+  // "장소 미정" 식사 자리는 숙소가 아니다
+  if (!stop.purpose || stop.place || mealSlotOf(stop.purpose)) return null;
   const name = norm(stop.customName ?? stop.name);
   const camps = [...basecampIds].map((id) => placeById.get(id)).filter((p): p is Place => !!p);
 
