@@ -167,6 +167,33 @@ export function openHelpCenter(ctx: HelpContext): void {
     );
   }
 
+  /** 단계 목록 — images의 after(몇 번째 단계 뒤)에 맞춰 그림을 끼워 넣는다. after가 없거나 단계가 없으면 단계 아래에 모은다 */
+  function figureHtml(im: NonNullable<HelpArticle['images']>[number]): string {
+    // 도움말 창이 좁아 그림 속 글씨가 작다 — 누르면 새 탭에서 원본 크기로 연다
+    return '<figure class="ob-help-fig"><a href="' + esc(im.src) + '" target="_blank" rel="noopener" title="눌러서 크게 보기">' +
+      '<img src="' + esc(im.src) + '" alt="' + esc(im.alt) + '" loading="lazy" /></a>' +
+      '<figcaption>' + esc(im.caption) + ' · 눌러서 크게 보기</figcaption></figure>';
+  }
+
+  function stepsHtml(a: HelpArticle): string {
+    const imgs = a.images ?? [];
+    const steps = a.steps ?? [];
+    if (!steps.length) return imgs.map(figureHtml).join('');
+    const placed = (n: number) => imgs.filter((im) => im.after === n).map(figureHtml).join('');
+    const rest = imgs.filter((im) => im.after == null || im.after < 1 || im.after > steps.length).map(figureHtml).join('');
+    // 그림이 단계 사이에 들어가면 목록이 끊기므로, 번호가 이어지게 start를 준다
+    let html = '';
+    let from = 0;
+    const cuts = [...new Set(imgs.map((im) => im.after).filter((n): n is number => !!n && n >= 1 && n <= steps.length))].sort((x, y) => x - y);
+    for (const cut of cuts.concat(steps.length === cuts[cuts.length - 1] ? [] : [steps.length])) {
+      const part = steps.slice(from, cut);
+      if (part.length) html += '<ol class="ob-help-steps" start="' + (from + 1) + '" style="counter-reset: ob-step ' + from + '">' + part.map((s) => '<li>' + esc(s) + '</li>').join('') + '</ol>';
+      html += placed(cut);
+      from = cut;
+    }
+    return html + rest;
+  }
+
   function articleHtml(a: HelpArticle, from: View): string {
     const cat = HELP_CATEGORIES.find((x) => x.key === a.category)!;
     const backLabel = from.kind === 'category' ? cat.label : '도움말 홈';
@@ -177,9 +204,9 @@ export function openHelpCenter(ctx: HelpContext): void {
     return (
       '<button type="button" class="ob-help-back" data-back>' + IC.back + esc(backLabel) + '</button>' +
       '<div class="ob-help-sec-label">' + esc(cat.label) + '</div>' +
-      '<h3 class="ob-help-title">' + statusHtml + esc(a.title) + '</h3>' +
+      '<h3 class="ob-help-title">' + statusHtml + esc(a.title) + (a.badge ? '<span class="ob-help-badge is-' + a.badge.toLowerCase() + '">' + esc(a.badge === 'PRO' ? 'PRO 전용' : 'PC 전용') + '</span>' : '') + '</h3>' +
       '<p class="ob-help-lead">' + esc(a.summary) + '</p>' +
-      (a.steps?.length ? '<ol class="ob-help-steps">' + a.steps.map((s) => '<li>' + esc(s) + '</li>').join('') + '</ol>' : '') +
+      stepsHtml(a) +
       (a.paragraphs?.length ? a.paragraphs.map((p) => '<p class="ob-help-p">' + esc(p) + '</p>').join('') : '') +
       (tour
         ? '<div class="ob-help-tourbox">' +

@@ -35,8 +35,8 @@ describe('검색', () => {
 });
 
 describe('현재 페이지 우선', () => {
-  it('IDEAS: 사용법 → GATE → 장소 추가 → Monthly Picks → 지도', () => {
-    expect(ids(articlesForGate('ideas')).slice(0, 5)).toEqual(['plan-ideas', 'ideas-gates', 'ideas-add', 'ideas-picks', 'ideas-map']);
+  it('IDEAS: 사용법 → GATE → 장소 추가 → Monthly Picks → 지도 → 그룹 → 펜 → 영역 검색', () => {
+    expect(ids(articlesForGate('ideas')).slice(0, 8)).toEqual(['plan-ideas', 'ideas-gates', 'ideas-add', 'ideas-picks', 'ideas-map', 'ideas-group', 'ideas-pen', 'ideas-area']);
   });
   it('게이트가 없으면(내 여행 화면) 빈 목록', () => {
     expect(articlesForGate(null)).toEqual([]);
@@ -82,5 +82,32 @@ describe('내용 정합성', () => {
   it('FAQ에는 지원 상태가 붙어 있다', () => {
     for (const a of HELP_ARTICLES.filter((x) => x.category === 'faq')) expect(a.status, a.id).toBeTruthy();
     expect(articleById('faq-receipt')?.status).toBe('no');
+  });
+});
+
+describe('도움말 그림 · PRO 표시', () => {
+  const files = Object.keys(import.meta.glob('../../public/help/*.webp')).map((f) => '/help/' + f.split('/').pop());
+  it('글이 쓰는 그림 파일이 실제로 있고, 끼워 넣을 단계 번호가 맞다', () => {
+    for (const a of HELP_ARTICLES) {
+      for (const im of a.images ?? []) {
+        expect(files, a.id + ' ' + im.src).toContain(im.src);
+        expect(im.alt.length, a.id).toBeGreaterThan(3);
+        if (im.after != null) expect(im.after, a.id).toBeLessThanOrEqual(a.steps?.length ?? 0);
+      }
+    }
+  });
+  it('영역 검색은 PRO 전용임을 제목 표시와 본문에 밝힌다', () => {
+    const a = HELP_ARTICLES.find((x) => x.id === 'ideas-area')!;
+    expect(a.badge).toBe('PRO');
+    expect((a.paragraphs ?? []).join(' ')).toContain('PRO 기능');
+    expect(a.images?.length).toBeGreaterThanOrEqual(1);
+  });
+  it('그룹·펜·영역 검색 글이 IDEAS 화면에서 열린다', () => {
+    for (const id of ['ideas-group', 'ideas-pen', 'ideas-area']) expect(HELP_ARTICLES.find((x) => x.id === id)?.gates).toContain('ideas');
+  });
+  it('"영역"·"펜"·"그룹"으로 검색하면 해당 글이 나온다', () => {
+    for (const [q, id] of [['영역', 'ideas-area'], ['펜', 'ideas-pen'], ['그룹', 'ideas-group']] as const) {
+      expect(searchHelp(HELP_ARTICLES, q).map((r) => r.id), q).toContain(id);
+    }
   });
 });

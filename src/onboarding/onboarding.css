@@ -585,3 +585,12 @@
 @media (max-width: 768px) and (prefers-reduced-motion: reduce) {
   .ob-welcome { animation: none; }
 }
+
+/* 도움말 글 안의 화면 그림 · 제목 옆 표시(PRO·PC) */
+.ob-help-fig { margin: 4px 0 16px; }
+.ob-help-fig img { display: block; width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--ob-line, #E3EEF7); background: #F4F8FD; }
+.ob-help-fig figcaption { margin-top: 6px; font-size: 12px; line-height: 1.5; color: #64748B; text-align: center; word-break: keep-all; }
+.ob-help-badge { display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; vertical-align: 2px; }
+.ob-help-badge.is-pro { color: #fff; background: linear-gradient(135deg, #8FB4F5, #C79BEA); }
+.ob-help-badge.is-pc { color: #0B7CC4; background: #EAF6FD; }
+.ob-help-fig a { display: block; cursor: zoom-in; }
