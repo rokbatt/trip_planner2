@@ -40,6 +40,7 @@
 import { supabase } from '../supabase';
 import { store } from '../store';
 import { navigate } from '../router';
+import { goPro } from '../pay/proEntry';
 import { subscribeRoutePlan, unsubscribeRoutePlan, resetRouteStorageProbe, loadRoutePlan, saveRouteDay } from '../route/routeStore';
 import type { StoredStop } from '../route/routeStore';
 import { loadTripDayModel, scheduleFor, stopLegKey, todaysHoursLine, hoursWarning, toStoredStops } from '../timeline/dayModel';
@@ -4996,7 +4997,7 @@ function openNearInMap(placeId?: string): void {
 /** 일정 장소 상세의 "인생샷" — 지도 탭 인생샷을 **이 장소 기준**으로 연다(현재 위치가 아니라) */
 function openPhotoFromStop(): void {
   // 인생샷은 PRO 기능 — 무료로 확인됐으면 바로 요금제·결제 화면으로
-  if (proLocked()) { navigate('pro'); return; }
+  if (proLocked()) { goPro('photo'); return; }
   const found = detailKey ? findStop(detailKey) : null;
   const st = found?.stop;
   if (!st || st.lat == null || st.lng == null) return;
@@ -5539,8 +5540,8 @@ function bind(): void {
   });
   // ── 지갑: 사진으로 추가 ──
   // 잠긴 PRO 기능의 안내 → 요금제 화면(#pro)
-  root.querySelector('#mb-wal-photo-lock')?.addEventListener('click', () => navigate('pro'));
-  root.querySelectorAll('[data-progo]').forEach((b) => b.addEventListener('click', () => navigate('pro')));
+  root.querySelector('#mb-wal-photo-lock')?.addEventListener('click', () => goPro('receipt'));
+  root.querySelectorAll('[data-progo]').forEach((b) => b.addEventListener('click', () => goPro('photo')));
   root.querySelector('#mb-wal-photo-in')?.addEventListener('change', (e) => {
     const input = e.target as HTMLInputElement;
     const files = Array.from(input.files ?? []);
@@ -5680,7 +5681,7 @@ function bind(): void {
     btn.addEventListener('click', () => {
       const v = (btn as HTMLElement).dataset.mapview!;
       // 인생샷 칩 — 무료로 확인됐으면 빈 안내 화면 대신 바로 요금제·결제 화면으로
-      if (v === 'photo' && proLocked()) { navigate('pro'); return; }
+      if (v === 'photo' && proLocked()) { goPro('photo'); return; }
       exNear = null;
       exQuery = '';
       exPhoto = v === 'photo';

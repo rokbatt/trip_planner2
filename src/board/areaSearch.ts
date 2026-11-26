@@ -20,7 +20,7 @@ import type { LatLng } from './penModel';
 import { todayIso } from '../trips/tripListModel';
 import { createProjector, isOverlayUi } from './mapPixel';
 import { fetchMyPlan, reportProUse } from '../assistant/assistantClient';
-import { navigate } from '../router';
+import { goPro } from '../pay/proEntry';
 
 export interface AreaSearchController {
   destroy(): void;
@@ -131,7 +131,7 @@ export function mountAreaSearch(opts: {
 
   function setArmed(on: boolean): void {
     // 무료로 확인됐으면 바로 요금제·결제 화면으로(2026-11-25 사용자 결정). 확인 중이면 PRO일 수 있어 기다린다
-    if (on && !isPro) { if (planKnown) navigate('pro'); return; }
+    if (on && !isPro) { if (planKnown) goPro('area'); return; }
     armed = on;
     // 지도 끌기는 끄지 않는다(끄면 휠 확대·축소도 막힌다) — 누르기는 아래 onDown이 먼저 받는다
     mapDiv.classList.toggle('bd-area-armed', on);
