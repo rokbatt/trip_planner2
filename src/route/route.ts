@@ -66,7 +66,7 @@ import { requestDayOrder, requestTripAnchors, requestDayDetail } from './aiPlan'
 import type { AiPlanPlace, AiDayDetailResult, AnchorMode, TripAnchor } from './aiPlan';
 import {
   assignDays, orderByDistance, weaveMeals, arrivalBuffer, departureBuffer, mealPurpose, mealSlotOf, purposeLabel,
-  DAY_START, DAY_END, MEAL_DWELL, MEAL_LABEL, RETURN_PURPOSE,
+  DAY_START, DAY_END, MEAL_DWELL, MEAL_LABEL, MEAL_SLOTS, MEAL_TIME, RETURN_PURPOSE, FREE_KINDS, freePurpose, isPlaceholderPurpose,
 } from './planModel';
 import type { DayFrame, PlanItem, Point } from './planModel';
 import { loadDocUsers, loadSharedDocuments, loadPersonalDocuments, getUnlockedUserId, setUnlockedUserId, verifyPin, normalizeDocCategory } from '../docs/docsStore';
@@ -2271,7 +2271,7 @@ function optimizedOrder(day: RouteDay): { order: string[]; totalMin: number } {
     const arrive = clock + estimateLegWithOverride(at, p).min;
     clock = Math.max(arrive, fixedMin(p) ?? arrive) + dwellOf(p);
     // "장소 미정" 식사는 바로 앞 정류지 자리에서 먹는 것으로 둔다
-    if (mealSlotOf(lodgingRevisitPurpose.get(p.id))) { p.lat = at.lat; p.lng = at.lng; }
+    if (isPlaceholderPurpose(lodgingRevisitPurpose.get(p.id))) { p.lat = at.lat; p.lng = at.lng; }
     at = p;
     seq.push(p);
   };
@@ -2767,6 +2767,67 @@ const LODGING_REVISIT_MAXLEN = 40;
 /** "숙소 들르기" 목적 입력 모달 — 확정하면 그 순간 기준 이 DAY의 숙소를 목적지로 하는
  *  재방문 스탑을 만들어 끝 앵커 바로 앞에 끼워 넣는다(appendStopBeforeEndAnchor와 동일한
  *  자리 규칙 — "장소 추가"와 똑같이 자연스럽게 시작/끝 숙소 사이에 들어감). */
+/** 식사·카페처럼 장소를 정하지 않은 일정을 하루 중간에 끼운다 — 바로 앞 정류지 자리에 두고, 나중에 장소를 정하면 된다 */
+function openFreeStopModal(container: HTMLElement): void {
+  const options = [
+    ...MEAL_SLOTS.map((s) => ({ purpose: mealPurpose(s), label: MEAL_LABEL[s], dwell: MEAL_DWELL[s], time: MEAL_TIME[s], icon: IC_FORK })),
+    ...FREE_KINDS.map((k) => ({ purpose: freePurpose(k.key), label: k.label, dwell: k.dwell, time: null as number | null, icon: k.key === 'shop' ? IC_BAG : k.key === 'rest' ? IC_SOFA : IC_COFFEE })),
+  ];
+  document.querySelector('.rt-ai-modal-backdrop')?.remove();
+  const backdrop = document.createElement('div');
+  backdrop.className = 'rt-ai-modal-backdrop';
+  backdrop.innerHTML = [
+    '<div class="rt-ai-modal rt-revisit-modal" role="dialog" aria-modal="true" aria-label="식사·카페 넣기">',
+    '  <div class="rt-ai-modal-head">',
+    '    <div><div class="rt-ai-modal-eyebrow">DAY ' + (days.findIndex((d) => d.id === activeDay().id) + 1 + dayNumberOffset) + '</div>',
+    '    <div class="rt-ai-modal-title">어떤 일정을 넣을까요?</div></div>',
+    '    <button type="button" class="rt-ai-modal-close" id="rt-free-close" aria-label="닫기">✕</button>',
+    '  </div>',
+    '  <div class="rt-ai-modal-body">',
+    '    <div class="rt-revisit-presets">',
+    options.map((o, i) =>
+      '<button type="button" class="rt-revisit-chip" data-i="' + i + '"><span class="rt-revisit-chip-icon">' + o.icon + '</span><span>' + escapeHtml(o.label) + '</span></button>'
+    ).join(''),
+    '    </div>',
+    '    <div class="rt-ai-notes-hint">장소는 정하지 않은 자리로 들어가요. 시각과 위치는 일정에서 바꿀 수 있어요.</div>',
+    '  </div>',
+    '</div>',
+  ].join('\n');
+  const close = () => { backdrop.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+  backdrop.querySelector('#rt-free-close')?.addEventListener('click', close);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+  document.addEventListener('keydown', onKey);
+
+  backdrop.querySelectorAll<HTMLElement>('.rt-revisit-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const o = options[Number(chip.dataset.i)];
+      close();
+      const day = activeDay();
+      // 바로 앞 정류지(끝 앵커 앞) 자리에 둔다 — 이동시간이 0으로 계산돼 일정이 밀리지 않는다
+      const probe = [...day.stopIds];
+      const dayIndex = days.findIndex((d) => d.id === day.id);
+      const endIdx = (() => {
+        const { endId, startId } = dayAnchorIds(dayIndex);
+        const i = endId && endId !== startId ? probe.indexOf(endId) : -1;
+        return i !== -1 ? i : fixedTailIndex(day, dayIndex) !== -1 ? fixedTailIndex(day, dayIndex) : probe.length;
+      })();
+      const prev = [...probe.slice(0, endIdx)].reverse().map((id) => placeById.get(id)).find((p) => p && p.lat != null && p.lng != null)
+        ?? basecampForDay(dayIndex);
+      if (!prev || prev.lat == null || prev.lng == null) return;
+      const p = makeRevisitPlace(makeAdhocPlace(o.label, prev.lat, prev.lng), o.purpose);
+      placeById.set(p.id, p);
+      customDwellStore.set(p.id, o.dwell);
+      if (o.time != null) timeOverride.set(timeKey(day.id, p.id), minToHHMM(o.time));
+      pushHistory();
+      appendStopBeforeEndAnchor(day, p.id);
+      refreshAll(container, { refit: false });
+      void syncPlan();
+    });
+  });
+  document.body.appendChild(backdrop);
+}
+
 function openLodgingRevisitModal(container: HTMLElement): void {
   const day = activeDay();
   const dayIndex = days.findIndex((d) => d.id === day.id);
@@ -3124,7 +3185,7 @@ function renderRightPanel(container: HTMLElement): void {
         // "순서 정리" 버튼(optimizedOrder)을 누르면 그때만 다시 양 끝으로 고정된다.
         '<div class="rt-panel-stop' + (highlighted ? ' rt-highlighted' : '') + (revisitPurpose ? ' rt-panel-stop-revisit' : '') +
           '" draggable="true" data-place-id="' + p.id + '" title="드래그해서 순서 바꾸기">',
-        '  <span class="rt-panel-badge" style="' + badgeStyle + '">' + (revisitPurpose ? (mealSlotOf(revisitPurpose) ? IC_FORK : IC_LODGING) : displayNum) + '</span>',
+        '  <span class="rt-panel-badge" style="' + badgeStyle + '">' + (revisitPurpose ? (isPlaceholderPurpose(revisitPurpose) ? (mealSlotOf(revisitPurpose) ? IC_FORK : IC_COFFEE) : IC_LODGING) : displayNum) + '</span>',
         '  <div class="rt-panel-name-col"><div class="rt-panel-name">' + escapeHtml(p.name) + '</div><div class="rt-panel-sub">' +
           escapeHtml(revisitPurpose ? purposeLabel(revisitPurpose) ?? '잠깐 들르기 · ' + revisitPurpose : p.category || (isBasecamp ? '숙소' : '')) + '</div></div>',
         timeOrDwellHtml,
@@ -3211,6 +3272,9 @@ function renderRightPanel(container: HTMLElement): void {
       (basecampForDay(dayIndex) ? '' : ' disabled') +
       ' title="낮에 숙소에 짐을 두거나 쉬러 잠깐 들르는 것처럼, 하루 중간에 숙소로 돌아오는 지점을 추가해요">' +
       IC_LODGING + ' 숙소 들르기</button>',
+    '  <button type="button" class="rt-panel-action" id="rt-panel-add-free"' +
+      ' title="식사·카페처럼 장소를 정하지 않은 일정을 하루 중간에 끼워 넣어요">' +
+      IC_COFFEE + ' 식사·카페 넣기</button>',
     '  <button type="button" class="rt-panel-action primary" id="rt-panel-optimize"' + (s.visitCount < 2 ? ' disabled' : '') +
       ' title="' + (s.visitCount < 2 ? '장소가 2곳 이상일 때 정렬할 수 있어요' : '가까운 순서로 다시 정렬해요') + '">' + IC_SPARK + ' 순서 정리</button>',
     '</div>',
@@ -3330,6 +3394,7 @@ function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
     renderRightPanel(container);
   });
   el.querySelector('#rt-panel-add-revisit')?.addEventListener('click', () => openLodgingRevisitModal(container));
+  el.querySelector('#rt-panel-add-free')?.addEventListener('click', () => openFreeStopModal(container));
   el.querySelector('#rt-panel-daydetail')?.addEventListener('click', () => void runDayDetail(container));
   el.querySelector('#rt-ai-notice-close')?.addEventListener('click', () => {
     aiPlanNotice = null;
