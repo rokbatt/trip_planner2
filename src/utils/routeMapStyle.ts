@@ -15,9 +15,9 @@ import type { CatKey } from './travelEstimate';
 export const ROUTE_LINE_COLOR = '#1E7BFF';
 export const ROUTE_LINE_CASING = '#0A4FB8';
 // 8px에서 15% 줄인 값(사용자 요청)
-export const ROUTE_LINE_WEIGHT = 6.8;
+export const ROUTE_LINE_WEIGHT = 6.12; // 6.8의 90%(2026-11-26 사용자 요청)
 /** 경로선 바깥 테두리 두께(선 양쪽 합) */
-export const ROUTE_CASING_EXTRA = 2.55;
+export const ROUTE_CASING_EXTRA = 2.3;
 export const START_GREEN = '#16A34A';
 export const END_RED = '#E5383B';
 export const STOP_RING = '#0A4FB8';
@@ -234,7 +234,7 @@ export function drawRouteLeg(
   opts: { selected?: boolean; dimmed?: boolean; zIndex?: number } = {}
 ): { casing: any; main: any } {
   const opacity = opts.dimmed ? 0.45 : 1;
-  const weight = opts.selected ? ROUTE_LINE_WEIGHT + 1 : ROUTE_LINE_WEIGHT;
+  const weight = opts.selected ? ROUTE_LINE_WEIGHT + 0.9 : ROUTE_LINE_WEIGHT;
   const z = opts.zIndex ?? (opts.selected ? 12 : 10);
   const casing = new g.maps.Polyline({
     map,
@@ -258,7 +258,7 @@ export function drawRouteLeg(
     icons: opts.dimmed
       ? []
       : [{
-          icon: { path: g.maps.SymbolPath.FORWARD_OPEN_ARROW, scale: 2, strokeColor: '#FFFFFF', strokeOpacity: 0.95, strokeWeight: 2 },
+          icon: { path: g.maps.SymbolPath.FORWARD_OPEN_ARROW, scale: 1.8, strokeColor: '#FFFFFF', strokeOpacity: 0.95, strokeWeight: 1.8 },
           offset: '24px',
           repeat: '56px',
         }],
