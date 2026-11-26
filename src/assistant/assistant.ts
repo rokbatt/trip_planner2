@@ -154,6 +154,27 @@ function isRefreshDue(): boolean {
   return needsSourceRefresh({ stale: sourcesStale, lastLoadedAt, now: Date.now(), maxAgeMs: SOURCES_MAX_AGE_MS });
 }
 
+/**
+ * 여행에 들어오면 공용 문서를 미리 읽어 둔다 — Assistant를 열었을 때 기다리지 않게.
+ * 개인 문서는 PIN을 풀기 전엔 조회하지 않으므로 여기서 읽지 않는다.
+ * 결과는 resolveDocSource가 이 탭(sessionStorage)과 서버에 저장하고, 패널을 열면 loadSources가 그걸 바로 쓴다.
+ * AI가 새로 읽는 건 서버에도 요약이 없는(새로 올린·파일을 바꾼) 문서뿐이다.
+ */
+const prefetchedTrips = new Set<string>();
+export async function prefetchSharedDocSources(tripId: string): Promise<void> {
+  if (prefetchedTrips.has(tripId) || !isStorageReady()) return;
+  prefetchedTrips.add(tripId);
+  try {
+    const shared = await loadSharedDocuments(tripId);
+    const stats = { tab: 0, server: 0, fresh: 0, failed: 0 };
+    await mapWithLimit(shared.filter((d) => d.file_path), 2, (doc) => resolveDocSource(tripId, doc, stats));
+    console.log('[Assistant] 공용 문서 미리 읽기: 이 탭 ' + stats.tab + ' · 서버 ' + stats.server + ' · 새로 읽음 ' + stats.fresh + ' · 실패 ' + stats.failed);
+  } catch (e) {
+    prefetchedTrips.delete(tripId); // 다음에 들어올 때 다시 시도
+    console.warn('[Assistant] 공용 문서 미리 읽기 실패:', (e as Error).message);
+  }
+}
+
 export function teardownAssistantPanel(): void {
   rootEl = null;
 }
@@ -287,6 +308,8 @@ async function mapWithLimit<T, R>(items: T[], limit: number, fn: (item: T) => Pr
 /** 문서 하나를 질문에 쓸 수 있는 자료로 바꾼다 — 파일이 없으면 저장된 필드를 그대로 쓴다.
  *  파일이 있으면 ① 이 탭에 저장된 요약(새로고침해도 유지) → ② 서버(저장된 요약이 있으면 그걸 주고,
  *  없을 때만 AI가 파일을 읽는다) 순서로 찾는다. 그래서 AI가 읽는 건 문서당 처음 한 번뿐이다. */
+const digestInFlight = new Map<string, ReturnType<typeof requestDocDigest>>();
+
 export async function resolveDocSource(
   tripId: string,
   doc: TripDocument,
@@ -322,14 +345,21 @@ export async function resolveDocSource(
   }
 
   try {
-    const result = await requestDocDigest({
-      documentId: doc.id,
-      title: doc.title,
-      category,
-      filePath: doc.file_path,
-      fileType: doc.file_type ?? 'application/octet-stream',
-      updatedAt: doc.updated_at,
-    });
+    // 미리 읽기와 패널이 같은 문서를 동시에 읽으면 한 번만 요청한다
+    const flightKey = doc.id + '|' + doc.file_path;
+    let pending = digestInFlight.get(flightKey);
+    if (!pending) {
+      pending = requestDocDigest({
+        documentId: doc.id,
+        title: doc.title,
+        category,
+        filePath: doc.file_path,
+        fileType: doc.file_type ?? 'application/octet-stream',
+        updatedAt: doc.updated_at,
+      }).finally(() => digestInFlight.delete(flightKey));
+      digestInFlight.set(flightKey, pending);
+    }
+    const result = await pending;
     if (result.cached) stats.server++;
     else stats.fresh++;
     const facts = result.readable ? result.facts : [];
