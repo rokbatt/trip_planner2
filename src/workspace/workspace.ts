@@ -206,6 +206,11 @@ export async function renderWorkspace(tripId: string, subPath?: string): Promise
 
   const activeGate = subPath || defaultGateFor(window.innerWidth);
 
+  // 공용 문서를 뒤에서 미리 읽어 둔다(Assistant 대기 줄이기) — 화면을 먼저 그리고 한가할 때
+  const prefetch = () => { void import('../assistant/assistant').then((m) => m.prefetchSharedDocSources(tripId)); };
+  if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(prefetch, { timeout: 4000 });
+  else setTimeout(prefetch, 2000);
+
   page.innerHTML = [
     '<div class="ws-sidebar" id="ws-sidebar"></div>',
     '<div class="ws-mobile-overlay" id="ws-overlay"></div>',
