@@ -46,7 +46,7 @@ import { composeFileDocDigest, needsSourceRefresh } from './docSource';
 import { personalNotice, planPersonalVault } from './personalVault';
 import type { PersonalState } from './personalVault';
 import { store } from '../store';
-import { navigate } from '../router';
+import { goPro } from '../pay/proEntry';
 
 const IC_SPARKLE =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18"/></svg>';
@@ -396,7 +396,7 @@ function mountShell(): void {
   rootEl.querySelector('#ws-ai-web')?.addEventListener('click', () => {
     if (myPlan !== 'pro') {
       // 무료로 확인됐으면 바로 요금제·결제 화면으로(2026-11-25 사용자 결정). 아직 확인 중이면 PRO일 수 있으니 기다리게 한다
-      if (myPlan === 'free') { navigate('pro'); return; }
+      if (myPlan === 'free') { goPro('web'); return; }
       const hint = rootEl?.querySelector('#ws-ai-web-hint') as HTMLElement | null;
       if (hint) hint.textContent = '확인 중이에요…';
       return;
