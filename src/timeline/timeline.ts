@@ -20,6 +20,7 @@
  *   날씨·혼잡도·예약 상태처럼 근거 데이터가 없는 정보는 아예 만들지 않는다.
  */
 
+import { mealSlotOf, purposeLabel } from '../route/planModel';
 import { supabase } from '../supabase';
 import { store } from '../store';
 import { setActiveDestinationId, isSyntheticDestination, placeBelongsToDestination } from '../trips/destinations';
@@ -1265,9 +1266,9 @@ function revisitStopCardHtml(
     '  <div class="tl-col-spine"><span class="tl-spine-line"></span><span class="tl-dot tl-dot-revisit"><i></i></span></div>',
     '  <div class="tl-col-card">',
     '    <div class="tl-legcard tl-revisitcard">',
-    '      <span class="tl-legcard-icon tl-revisit-icon">' + IC_LODGING + '</span>',
-    '      <span class="tl-legcard-mode">숙소 들르기</span>',
-    '      <div class="tl-legcard-info"><span class="tl-legcard-stats"><b>' + escapeHtml(stop.purpose ?? '') + '</b></span></div>',
+    '      <span class="tl-legcard-icon tl-revisit-icon">' + (mealSlotOf(stop.purpose) ? MAP_CAT_ICON.FOOD : IC_LODGING) + '</span>',
+    '      <span class="tl-legcard-mode">' + (mealSlotOf(stop.purpose) ? '식사' : '숙소 들르기') + '</span>',
+    '      <div class="tl-legcard-info"><span class="tl-legcard-stats"><b>' + escapeHtml(purposeLabel(stop.purpose) ?? stop.purpose ?? '') + '</b></span></div>',
     '      <button type="button" class="tl-tool tl-tool-remove" data-key="' + stop.key + '" title="일정에서 빼기" aria-label="' + escapeHtml(stop.purpose ?? '') + ' 빼기">' + IC_TRASH + '</button>',
     '    </div>',
     '  </div>',

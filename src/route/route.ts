@@ -62,8 +62,16 @@ import {
   ROUTE_LINE_CASING,
 } from '../utils/routeMapStyle';
 import type { LatLngLit, StopRole } from '../utils/routeMapStyle';
-import { requestRoutePlan, requestDayDetail } from './aiPlan';
-import type { AiPlanPlace, AiRoutePlanResult, AiDayDetailResult, AiStaySegment } from './aiPlan';
+import { requestDayOrder, requestTripAnchors, requestDayDetail } from './aiPlan';
+import type { AiPlanPlace, AiDayDetailResult, AnchorMode, TripAnchor } from './aiPlan';
+import {
+  assignDays, orderByDistance, weaveMeals, arrivalBuffer, departureBuffer, mealPurpose, mealSlotOf, purposeLabel,
+  DAY_START, DAY_END, MEAL_DWELL, MEAL_LABEL, RETURN_PURPOSE,
+} from './planModel';
+import type { DayFrame, PlanItem, Point } from './planModel';
+import { loadDocUsers, loadSharedDocuments, loadPersonalDocuments, getUnlockedUserId, setUnlockedUserId, verifyPin, normalizeDocCategory } from '../docs/docsStore';
+import { resolveDocSource } from '../assistant/assistant';
+import type { TripDocUser } from '../types/database';
 // 화면에 뜨는 숫자(이동시간·거리·요금·체류시간)는 TIMELINE과 반드시 같아야 하므로
 // 순수 계산은 전부 공용 모듈 하나에서만 가져온다 — utils/travelEstimate.ts 상단 설명 참고.
 import {
@@ -81,6 +89,7 @@ import {
   fmtCostSummary,
   summarizeCosts,
   minToHHMM,
+  hhmmToMin,
   parseTimeInput,
   CAT_COLOR,
   STRAIGHT_TO_ROAD,
@@ -2272,126 +2281,279 @@ async function undoAiRoutePlan(container: HTMLElement): Promise<void> {
  * AI에게 "언제 어느 숙소에 묵는지"를 알려줘야 그 구간에 맞는 동선을 짜고, 숙소를 옮기는
  * 날 무리하게 첫 숙소 쪽으로 되돌아가는 동선을 안 짠다.
  */
-function buildAiStaySegments(): AiStaySegment[] {
-  const segs: Array<{ startDayIndex: number; endDayIndex: number; place: Place | null }> = [];
-  for (let i = 0; i < days.length; i++) {
-    const place = basecampForDay(i);
-    const last = segs[segs.length - 1];
-    if (last && (last.place?.id ?? null) === (place?.id ?? null)) {
-      last.endDayIndex = i;
-    } else {
-      segs.push({ startDayIndex: i, endDayIndex: i, place });
+/* ── AI 일정 짜기: 구조는 코드(planModel.ts), Day 안 순서만 AI ── */
+
+/** 도착·출발 — 문서 > 여행 설정 > 없음(온종일). 추측하지 않는다 */
+interface ResolvedAnchor {
+  date: string | null;
+  time: string | null;
+  mode: AnchorMode | null;
+  place: string | null;
+  /** 근거 — 문서 제목 또는 '여행 설정' */
+  source: string | null;
+}
+interface PlanAnchors {
+  arrival: ResolvedAnchor | null;
+  departure: ResolvedAnchor | null;
+  /** 개인 문서가 있는데 잠겨 있다 — 잠금을 풀면 더 정확해진다고 제안한다 */
+  docUsers: TripDocUser[];
+  unlocked: boolean;
+  docCount: number;
+}
+
+const ANCHOR_DOC_CATEGORIES = new Set(['FLIGHT', 'TRANSPORT', 'TICKET']);
+
+async function detectPlanAnchors(): Promise<PlanAnchors> {
+  const tripId = currentTripId;
+  const unlockedId = getUnlockedUserId(tripId);
+  const [shared, personal, docUsers] = await Promise.all([
+    loadSharedDocuments(tripId).catch(() => []),
+    unlockedId ? loadPersonalDocuments(tripId, unlockedId).catch(() => []) : Promise.resolve([]),
+    loadDocUsers(tripId).catch(() => []),
+  ]);
+  const docs = [...shared, ...personal].filter((d) => ANCHOR_DOC_CATEGORIES.has(normalizeDocCategory(d.category)));
+  const stats = { tab: 0, server: 0, fresh: 0, failed: 0 };
+  const sources = await Promise.all(docs.map((d) => resolveDocSource(tripId, d, stats).catch(() => null)));
+  const docLines = docs
+    .map((d, i) => {
+      const lines = (sources[i]?.digest ?? '').split(' · ').map((s) => s.trim()).filter(Boolean);
+      if (d.day_start) lines.push('관련 일정: DAY ' + d.day_start + (d.day_end && d.day_end !== d.day_start ? '~' + d.day_end : '') + ' (여행 전체 기준)');
+      if (d.region) lines.push('지역: ' + d.region);
+      return { title: d.title, lines };
+    })
+    .filter((d) => d.lines.length > 0);
+
+  const ordered = [...allDestinations].sort((a, b) => (a.start_date ?? '').localeCompare(b.start_date ?? ''));
+  const at = ordered.findIndex((d) => d.id === activeDestId);
+  const startDate = dayDateISO(0);
+  const endDate = dayDateISO(days.length - 1);
+
+  let found: { arrival: TripAnchor | null; departure: TripAnchor | null } = { arrival: null, departure: null };
+  if (docLines.length && startDate && endDate) {
+    try {
+      found = await requestTripAnchors({
+        destinationName: activeDestName,
+        startDate,
+        endDate,
+        prevDestinationName: at > 0 ? ordered[at - 1].name : null,
+        nextDestinationName: at >= 0 && at < ordered.length - 1 ? ordered[at + 1].name : null,
+        docs: docLines,
+      });
+    } catch (e) {
+      console.warn('[Route] 문서에서 도착·출발 찾기 실패:', (e as Error).message);
     }
   }
-  return segs.map((s) => ({
-    startDayIndex: s.startDayIndex,
-    endDayIndex: s.endDayIndex,
-    basecamp: s.place ? toAiPlace(s.place) : null,
-  }));
+
+  const fromSettings = (airport: string | null, time: string | null): ResolvedAnchor | null =>
+    airport || time ? { date: null, time, mode: airport ? 'FLIGHT' : null, place: airport, source: '여행 설정' } : null;
+  const merge = (doc: TripAnchor | null, set: ResolvedAnchor | null): ResolvedAnchor | null => {
+    if (!doc) return set;
+    return { date: doc.date, time: doc.time ?? set?.time ?? null, mode: doc.mode, place: doc.place ?? set?.place ?? null, source: doc.source };
+  };
+  return {
+    arrival: merge(found.arrival, fromSettings(activeDestArrivalAirport, activeDestArrivalTime)),
+    departure: merge(found.departure, fromSettings(activeDestDepartureAirport, activeDestDepartureTime)),
+    docUsers,
+    unlocked: !!unlockedId,
+    docCount: docs.length,
+  };
 }
 
-/** AI가 짠 일정을 모듈 상태에 반영. 반환값은 실제로 배치된 장소 수 */
-function applyAiRoutePlan(result: AiRoutePlanResult): number {
-  const seen = new Set<string>();
-
-  // 전체 DAY를 새로 짜는 것이므로 기존 배치·도착시각·수동 이동수단은 비운다.
-  // (장소별 메모는 장소에 딸린 사용자 기록이라 그대로 둔다 — 그 장소가 새 일정에도 남으면 계속 보인다)
-  days.forEach((d) => { d.stopIds = []; });
-  timeOverride.clear();
-  legModeOverride.clear();
-
-  result.days.forEach((rd) => {
-    const day = days[rd.dayIndex];
-    if (!day) return;
-    // 숙소를 나눈 여행은 DAY마다 기준 숙소가 다를 수 있어(basecampForDay), "그날의" 숙소만 걸러낸다.
-    // 공항은 애초에 AI에게 태그(P숫자)로 주어지지 않으므로 s.placeId로 나올 일이 없다.
-    const dayBasecampId = basecampForDay(rd.dayIndex)?.id ?? null;
-    rd.stops.forEach((s) => {
-      // 서버가 이미 걸렀지만, 그 사이 장소가 지워졌을 수도 있으니 화면 기준으로 한 번 더 확인
-      if (!placeById.has(s.placeId) || s.placeId === dayBasecampId || seen.has(s.placeId)) return;
-      seen.add(s.placeId);
-      day.stopIds.push(s.placeId);
-      if (s.arriveTime) timeOverride.set(timeKey(day.id, s.placeId), s.arriveTime);
-    });
-  });
-
-  // AI는 이 DAY의 시작/끝 앵커(숙소/공항)를 모르므로, 여기서 다시 채워 넣는다
-  // (도착 공항의 초기 도착시각도 ensureDayAnchors가 이 시점에 함께 심어준다).
-  days.forEach((d) => ensureDayAnchors(d));
-
-  return seen.size;
+/** 문서에만 있는 역·터미널 — 이름으로 찾아 좌표를 얻는다(여행 설정의 공항이 있으면 그걸 쓴다) */
+async function anchorPlace(a: ResolvedAnchor | null, settingsPlace: Place | null): Promise<Place | null> {
+  if (settingsPlace) return settingsPlace;
+  if (!a?.place) return null;
+  const near = basecamp?.lat != null && basecamp?.lng != null ? { center: { lat: basecamp.lat, lng: basecamp.lng }, radius: 50000 } : undefined;
+  const hits = await searchPlacesByText(a.place + (activeDestName ? ' ' + activeDestName : ''), near);
+  const hit = hits[0];
+  return hit && hit.lat != null && hit.lng != null && Number.isFinite(hit.lat) && Number.isFinite(hit.lng) ? makeAdhocPlace(hit.name, hit.lat, hit.lng) : null;
 }
 
-async function runAiRoutePlan(container: HTMLElement): Promise<void> {
+function anchorLine(label: string, a: ResolvedAnchor | null, dateISO: string | null): string {
+  if (!a) return label + ': 정보 없음 — 온종일 일정으로 잡아요';
+  const onDay = !a.date || a.date === dateISO;
+  const when = [a.date ? a.date.slice(5).replace('-', '/') : '', a.time ?? '시각 미상'].filter(Boolean).join(' ');
+  return label + ': ' + when + (a.place ? ' · ' + a.place : '') + (a.source ? ' (' + a.source + ')' : '') +
+    (onDay ? '' : ' — 이 여행지 날짜와 달라 시각은 반영하지 않아요');
+}
+
+function isMealPlace(p: Place): boolean {
+  if (p.mood !== '먹고싶어' && p.category !== '음식점') return false;
+  return !['카페', '베이커리', '바'].includes(p.category ?? '');
+}
+
+/** AI 일정 짜기 — 모든 장소를 Day에 배분하고(그룹은 같은 Day), 식사를 끼우고, 숙소에서 시작해 숙소(또는 역·공항)에서 끝낸다 */
+async function runAiRoutePlan(container: HTMLElement, anchors: PlanAnchors): Promise<void> {
   if (aiPlanBusy) return;
-  if (!activeDestId) {
-    window.alert('여행지를 먼저 선택해 주세요.');
-    return;
-  }
-  if (candidatePlaces.length < 2) {
-    window.alert('AI가 일정을 짜려면 Brainstorm에서 분류한 장소가 2곳 이상 필요해요.');
-    return;
-  }
-  // 이미 짜둔 동선이 있으면 덮어쓰기 전에 확인 (실행 취소로 되돌릴 수 있음을 함께 안내)
-  // 숙소/공항 앵커만 있고 실제로 담은 곳이 하나도 없으면 "이미 짜둔 동선"으로 치지 않는다
-  // (안 그러면 완전히 빈 트립에서도 앵커 때문에 항상 확인창이 떠서 불필요하게 성가심)
   const hasExisting = days.some((d, i) => d.stopIds.some((id) => {
     const p = placeById.get(id);
     return p && !isAnyAnchor(p, i);
   }));
-  if (hasExisting && !window.confirm('지금까지 담은 모든 DAY의 동선을 AI 추천으로 바꿀까요?\n도착 시각과 직접 지정한 이동수단도 함께 초기화돼요. (적용 후 "되돌리기"로 지금 상태로 복구할 수 있어요)')) {
+  if (hasExisting && !window.confirm('지금까지 담은 모든 DAY의 동선을 AI 추천으로 바꿀까요?\n도착 시각과 직접 지정한 이동수단도 함께 초기화돼요. (적용 후 "되돌리기"로 원래대로 돌릴 수 있어요)')) {
     return;
   }
 
   aiPlanBusy = true;
-  aiPlanProgressLabel = null;
+  aiPlanProgressLabel = '일정 틀 잡는 중…';
   aiPlanNotice = null;
   aiPlanUndo = null;
   renderRightPanel(container);
   updateAiPlanButton(container);
 
   try {
-    const result = await requestRoutePlan(
-      {
-        destinationId: activeDestId,
-        destinationName: activeDestName || currentTrip?.name || '',
-        dayCount: days.length,
-        startDate: dayRangeStartDate,
-        staySegments: buildAiStaySegments(),
-        arrivalAirport: activeDestArrivalAirport,
-        arrivalTime: activeDestArrivalTime,
-        departureAirport: activeDestDepartureAirport,
-        departureTime: activeDestDepartureTime,
-        places: candidatePlaces.filter((p) => p.lat != null && p.lng != null).map((p) => toAiPlace(p)),
-        planNotes: activeDestAiPlanNotes,
-      },
-      (done, total) => {
-        aiPlanProgressLabel = done <= 1 ? '전체 그림 짜는 중…' : 'Day ' + (done - 1) + '/' + (total - 1) + ' 짜는 중…';
-        updateAiPlanButton(container);
-      }
-    );
+    const last = days.length - 1;
+    const arr = anchors.arrival && (!anchors.arrival.date || anchors.arrival.date === dayDateISO(0)) ? anchors.arrival : null;
+    const dep = anchors.departure && (!anchors.departure.date || anchors.departure.date === dayDateISO(last)) ? anchors.departure : null;
+    const [arrPlace, depPlace] = await Promise.all([
+      arr ? anchorPlace(arr, arrivalAirportPlace()) : Promise.resolve(arrivalAirportPlace()),
+      dep ? anchorPlace(dep, departureAirportPlace()) : Promise.resolve(departureAirportPlace()),
+    ]);
+    const pt = (p: Place | null): Point | null => (p && p.lat != null && p.lng != null ? { lat: p.lat, lng: p.lng } : null);
 
-    // 반영하기 **전에** 쓸 만한 결과인지 먼저 확인한다 — 먼저 지우고 나서 판단하면
-    // 결과가 비었을 때 기존 동선만 날아간다. (DAY마다 숙소가 다를 수 있어 그날 기준으로 판단)
-    const planned = result.days.reduce((n, d) => {
-      const dayBasecampId = basecampForDay(d.dayIndex)?.id ?? null;
-      return n + d.stops.filter((s) => placeById.has(s.placeId) && s.placeId !== dayBasecampId).length;
-    }, 0);
-    if (planned === 0) {
-      window.alert('AI가 배치할 장소를 찾지 못했어요. 잠시 후 다시 시도해 주세요.');
+    const frames: DayFrame[] = days.map((_, i) => {
+      const arrMin = i === 0 && arr?.time ? hhmmToMin(arr.time) : null;
+      const depMin = i === last && dep?.time ? hhmmToMin(dep.time) : null;
+      return {
+        startMin: arrMin != null ? arrMin + arrivalBuffer(arr!.mode) : DAY_START,
+        endMin: depMin != null ? depMin - departureBuffer(dep!.mode) : DAY_END,
+        start: pt(i === 0 && arrPlace ? arrPlace : startHotelForDay(i)),
+        end: pt(i === last && depPlace ? depPlace : basecampForDay(i)),
+      };
+    });
+
+    const hotelIds = new Set(days.map((_, i) => [basecampForDay(i)?.id, startHotelForDay(i)?.id]).flat().filter(Boolean));
+    const planPlaces = candidatePlaces.filter(
+      (p) => p.lat != null && p.lng != null && !p.id.startsWith('adhoc-') && !isRevisitId(p.id) && p.mood !== '숙소' && !hotelIds.has(p.id)
+    );
+    if (planPlaces.length === 0) {
+      window.alert('일정에 넣을 장소가 없어요. Brainstorm에서 장소를 분류해 주세요.');
       return;
     }
+    const items: PlanItem[] = planPlaces.map((p) => ({
+      id: p.id,
+      lat: p.lat!,
+      lng: p.lng!,
+      groupId: p.group_id,
+      isMeal: isMealPlace(p),
+      dwellMin: dwellMinutes(catKeyFor(p.mood, p.category)),
+      rating: p.google_rating,
+    }));
+    const itemById = new Map(items.map((i) => [i.id, i]));
+    const assigned = assignDays(items, frames);
+
+    // Day 안 순서 — AI가 모든 장소를 돌려주면 그 순서, 아니면 거리순
+    const needAi = assigned.map((a, i) => (a.ids.length >= 2 ? i : -1)).filter((i) => i >= 0);
+    let done = 0;
+    aiPlanProgressLabel = 'Day 순서 정하는 중…';
+    updateAiPlanButton(container);
+    const summaries = new Map<number, string>();
+    let aiFallback = 0;
+    const orders = await Promise.all(
+      assigned.map(async (a, i) => {
+        const fallback = () => orderByDistance(a.ids.map((id) => itemById.get(id)!), frames[i].start, frames[i].end);
+        if (a.ids.length < 2) return a.ids;
+        const pointOf = (p: Place | null) => (p ? { name: p.name, lat: p.lat, lng: p.lng } : null);
+        try {
+          const r = await requestDayOrder({
+            destinationId: activeDestId!,
+            destinationName: activeDestName || currentTrip?.name || '',
+            dayIndex: i,
+            startTime: minToHHMM(frames[i].startMin),
+            endTime: minToHHMM(frames[i].endMin),
+            start: pointOf(i === 0 && arrPlace ? arrPlace : startHotelForDay(i)),
+            end: pointOf(i === last && depPlace ? depPlace : basecampForDay(i)),
+            places: a.ids.map((id) => toAiPlace(placeById.get(id)!)),
+            planNotes: activeDestAiPlanNotes,
+          });
+          if (r.summary) summaries.set(i, r.summary);
+          const ok = new Set(a.ids);
+          const order = r.order.filter((id) => ok.has(id));
+          if (r.complete && order.length === a.ids.length) return order;
+          aiFallback += 1;
+          return fallback();
+        } catch (e) {
+          console.warn('[Route] Day ' + (i + 1) + ' 순서 AI 실패 — 거리순으로:', (e as Error).message);
+          aiFallback += 1;
+          return fallback();
+        } finally {
+          done += 1;
+          aiPlanProgressLabel = 'Day 순서 ' + done + '/' + needAi.length;
+          updateAiPlanButton(container);
+        }
+      })
+    );
 
     snapshotBeforeAiPlan();
     days.forEach((d) => pushHistory(d.id));
-    const usedCount = applyAiRoutePlan(result);
+    days.forEach((d) => { d.stopIds = []; });
+    timeOverride.clear();
+    legModeOverride.clear();
 
-    aiPlanNotice = {
-      notes: result.notes,
-      usedCount,
-      skippedCount: Math.max(0, candidatePlaces.length - usedCount),
-      cached: result.cached,
-    };
+    let placed = 0;
+    let mealsTbd = 0;
+    days.forEach((day, i) => {
+      const seq = weaveMeals(orders[i], itemById, assigned[i].meals, frames[i]);
+      const ids: string[] = [];
+      if (i === 0 && arrPlace) {
+        if (!placeById.has(arrPlace.id)) { placeById.set(arrPlace.id, arrPlace); candidatePlaces.push(arrPlace); }
+        ids.push(arrPlace.id);
+        if (arr?.time) timeOverride.set(timeKey(day.id, arrPlace.id), arr.time);
+      } else {
+        const h = startHotelForDay(i);
+        if (h) ids.push(h.id);
+        // 도착 시각은 알지만 공항·역을 지도에서 못 찾았으면 숙소에서 그 시각 이후로 시작한다
+        if (h && i === 0 && arr?.time) timeOverride.set(timeKey(day.id, h.id), minToHHMM(frames[0].startMin));
+      }
+      for (const e of seq) {
+        if (e.kind === 'place') {
+          ids.push(e.id);
+          placed += 1;
+        } else if (e.placeId) {
+          ids.push(e.placeId);
+          placed += 1;
+          timeOverride.set(timeKey(day.id, e.placeId), minToHHMM(e.arriveMin));
+        } else if (e.at) {
+          const m = makeRevisitPlace(makeAdhocPlace(MEAL_LABEL[e.slot], e.at.lat, e.at.lng), mealPurpose(e.slot));
+          placeById.set(m.id, m);
+          customDwellStore.set(m.id, MEAL_DWELL[e.slot]);
+          timeOverride.set(timeKey(day.id, m.id), minToHHMM(e.arriveMin));
+          ids.push(m.id);
+          mealsTbd += 1;
+        }
+      }
+      const endHotel = basecampForDay(i);
+      if (i === last && depPlace) {
+        if (!placeById.has(depPlace.id)) { placeById.set(depPlace.id, depPlace); candidatePlaces.push(depPlace); }
+        ids.push(depPlace.id);
+        if (dep?.time) {
+          const t = hhmmToMin(dep.time);
+          if (t != null) timeOverride.set(timeKey(day.id, depPlace.id), minToHHMM(Math.max(0, t - (dep.mode === 'FLIGHT' ? 120 : 30))));
+          memoStore.set(depPlace.id, (dep.mode === 'FLIGHT' ? '비행기 ' : dep.mode === 'TRAIN' ? '기차 ' : '') + dep.time + ' 출발' + (dep.source ? ' · ' + dep.source : ''));
+        }
+      } else if (endHotel && !ids.includes(endHotel.id)) {
+        ids.push(endHotel.id);
+      } else if (endHotel) {
+        // 숙소에서 시작한 날은 같은 숙소로 돌아와 끝낸다(같은 id를 두 번 담을 수 없어 "숙소로 돌아가기" 정류지로)
+        const r = makeRevisitPlace(endHotel, RETURN_PURPOSE);
+        placeById.set(r.id, r);
+        ids.push(r.id);
+      }
+      day.stopIds = ids;
+      ensureDayAnchors(day);
+    });
+
+    const notes = [
+      anchorLine('도착', anchors.arrival, dayDateISO(0)),
+      anchorLine('출발', anchors.departure, dayDateISO(last)),
+      ...assigned.map((a, i) => (a.overBy > 30 ? 'DAY ' + (i + 1 + dayNumberOffset) + '은 시간이 빠듯해요(약 ' + fmtMin(a.overBy) + ' 넘침). 몇 곳을 다른 날로 옮겨 보세요.' : '')),
+      arr?.place && !arrPlace ? '도착 장소(' + arr.place + ')를 지도에서 찾지 못해 숙소에서 시작했어요.' : '',
+      dep?.place && !depPlace ? '출발 장소(' + dep.place + ')를 지도에서 찾지 못해 숙소에서 끝냈어요.' : '',
+      mealsTbd ? '담은 식당이 모자란 식사 ' + mealsTbd + '번은 "장소 미정"으로 넣었어요.' : '',
+      aiFallback ? aiFallback + '개 Day는 AI 답이 불완전해 거리순으로 정했어요.' : '',
+      ...[...summaries.entries()].sort((a, b) => a[0] - b[0]).map(([i, s]) => 'DAY ' + (i + 1 + dayNumberOffset) + ': ' + s),
+    ].filter(Boolean).join('\n');
+
+    aiPlanNotice = { notes, usedCount: placed, skippedCount: Math.max(0, items.length - placed), cached: false };
     await syncPlan();
   } catch (e) {
     window.alert((e as Error).message);
@@ -2446,6 +2608,7 @@ function openAiPlanNotesModal(container: HTMLElement): void {
     '  <div class="rt-ai-modal-body">',
     '    <div class="rt-ai-notes-hint">비워둬도 괜찮아요. 적어두면 AI가 매번 그대로 참고해요 —' +
       ' 예) "휴양 위주로 여유롭게", "1일차는 밤 늦게 도착하니 쉬는 날로", "마사지는 저녁에 가고 싶어"</div>',
+    '    <div class="rt-ai-anchors" id="rt-ai-anchors"><div class="rt-ai-anchors-line">문서에서 도착·출발 정보를 찾는 중…</div></div>',
     '    <textarea class="rt-ai-notes-input" id="rt-ai-notes-input" rows="4" placeholder="예: 아이 동반이라 낮잠 시간이 필요해요. 맛집 위주로 다니고 싶어요.">' +
       escapeHtml(activeDestAiPlanNotes ?? '') +
       '</textarea>',
@@ -2468,13 +2631,54 @@ function openAiPlanNotesModal(container: HTMLElement): void {
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
   document.addEventListener('keydown', onKey);
 
-  backdrop.querySelector('#rt-ai-notes-start')?.addEventListener('click', () => {
+  // 도착·출발은 문서에서 먼저 찾아 보여주고, 그 값으로 짠다 — 개인 문서가 잠겨 있으면 풀기를 제안
+  let anchorsP = detectPlanAnchors();
+  const anchorsEl = backdrop.querySelector('#rt-ai-anchors') as HTMLElement;
+  const showAnchors = async () => {
+    const a = await anchorsP;
+    if (!anchorsEl.isConnected) return;
+    const locked = a.docUsers.length > 0 && !a.unlocked;
+    anchorsEl.innerHTML = [
+      '<div class="rt-ai-anchors-line">' + escapeHtml(anchorLine('도착', a.arrival, dayDateISO(0))) + '</div>',
+      '<div class="rt-ai-anchors-line">' + escapeHtml(anchorLine('출발', a.departure, dayDateISO(days.length - 1))) + '</div>',
+      a.docCount === 0 ? '<div class="rt-ai-anchors-hint">DOCUMENTS에 항공권·기차표를 올리면 도착·출발 시각을 맞춰서 짜요.</div>' : '',
+      locked
+        ? '<form class="rt-ai-unlock" id="rt-ai-unlock"><div class="rt-ai-anchors-hint">개인 문서의 잠금을 풀면 개인 문서 내용까지 반영해 더 정확한 일정을 짤 수 있어요.</div>' +
+          (a.docUsers.length > 1
+            ? '<select id="rt-ai-unlock-who" aria-label="보관함 선택">' + a.docUsers.map((u) => '<option value="' + escapeHtml(u.id) + '">' + escapeHtml(u.name) + '</option>').join('') + '</select>'
+            : '') +
+          '<input id="rt-ai-unlock-pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="PIN 4자리" aria-label="PIN" />' +
+          '<button type="submit">잠금 풀기</button><span class="rt-ai-unlock-msg" id="rt-ai-unlock-msg"></span></form>'
+        : '',
+    ].join('');
+    anchorsEl.querySelector('#rt-ai-unlock')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const who = (anchorsEl.querySelector('#rt-ai-unlock-who') as HTMLSelectElement | null)?.value ?? a.docUsers[0].id;
+      const user = a.docUsers.find((u) => u.id === who);
+      const pin = (anchorsEl.querySelector('#rt-ai-unlock-pin') as HTMLInputElement).value.trim();
+      const msg = anchorsEl.querySelector('#rt-ai-unlock-msg') as HTMLElement;
+      if (!user || !(await verifyPin(user, pin))) {
+        msg.textContent = 'PIN이 맞지 않아요.';
+        return;
+      }
+      setUnlockedUserId(currentTripId, user.id);
+      anchorsEl.innerHTML = '<div class="rt-ai-anchors-line">개인 문서까지 다시 찾는 중…</div>';
+      anchorsP = detectPlanAnchors();
+      void showAnchors();
+    });
+  };
+  void showAnchors();
+
+  backdrop.querySelector('#rt-ai-notes-start')?.addEventListener('click', async () => {
     const textarea = backdrop.querySelector('#rt-ai-notes-input') as HTMLTextAreaElement;
     const notes = textarea.value.trim().slice(0, 1000);
     activeDestAiPlanNotes = notes || null;
     if (activeDestId) void updateDestination(activeDestId, { ai_plan_notes: activeDestAiPlanNotes });
+    const startBtn = backdrop.querySelector('#rt-ai-notes-start') as HTMLButtonElement;
+    startBtn.disabled = true;
+    const anchors = await anchorsP;
     close();
-    void runAiRoutePlan(container);
+    void runAiRoutePlan(container, anchors);
   });
 
   document.body.appendChild(backdrop);
@@ -2741,7 +2945,7 @@ function aiPlanNoticeHtml(): string {
     '  </div>',
     '  <div class="rt-ai-notice-meta">' + n.usedCount + '곳 배치' + skipped + (n.cached ? ' · 저장된 추천' : '') + '</div>',
     n.notes ? '  <div class="rt-ai-notice-body">' + escapeHtml(n.notes) + '</div>' : '',
-    '  <div class="rt-ai-notice-foot">영업시간·인기 동선·이동 효율 순으로 배치한 <b>추천안</b>이에요. 직접 옮겨서 다듬어도 좋아요.</div>',
+    '  <div class="rt-ai-notice-foot">모든 장소를 지역별로 Day에 나누고 식사 시간을 맞춘 <b>추천안</b>이에요. 직접 옮겨서 다듬어도 좋아요.</div>',
     // 기본 Ctrl+Z는 활성 DAY만 되돌리므로, 전체를 한 번에 되돌리는 수단을 따로 준다
     aiPlanUndo
       ? '  <button type="button" class="rt-ai-notice-undo" id="rt-ai-notice-undo">' + IC_UNDO + ' 적용 전으로 되돌리기</button>'
@@ -2850,9 +3054,9 @@ function renderRightPanel(container: HTMLElement): void {
         // "순서 정리" 버튼(optimizedOrder)을 누르면 그때만 다시 양 끝으로 고정된다.
         '<div class="rt-panel-stop' + (highlighted ? ' rt-highlighted' : '') + (revisitPurpose ? ' rt-panel-stop-revisit' : '') +
           '" draggable="true" data-place-id="' + p.id + '" title="드래그해서 순서 바꾸기">',
-        '  <span class="rt-panel-badge" style="' + badgeStyle + '">' + (revisitPurpose ? IC_LODGING : displayNum) + '</span>',
+        '  <span class="rt-panel-badge" style="' + badgeStyle + '">' + (revisitPurpose ? (mealSlotOf(revisitPurpose) ? IC_FORK : IC_LODGING) : displayNum) + '</span>',
         '  <div class="rt-panel-name-col"><div class="rt-panel-name">' + escapeHtml(p.name) + '</div><div class="rt-panel-sub">' +
-          escapeHtml(revisitPurpose ? '잠깐 들르기 · ' + revisitPurpose : p.category || (isBasecamp ? '숙소' : '')) + '</div></div>',
+          escapeHtml(revisitPurpose ? purposeLabel(revisitPurpose) ?? '잠깐 들르기 · ' + revisitPurpose : p.category || (isBasecamp ? '숙소' : '')) + '</div></div>',
         timeOrDwellHtml,
         !isAnchor
           ? '  <button type="button" class="rt-panel-remove" data-place-id="' + p.id + '" title="동선에서 빼기" aria-label="' + escapeHtml(p.name) + ' 동선에서 빼기">✕</button>'

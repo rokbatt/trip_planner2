@@ -37,6 +37,7 @@
  *   입장료·예약 필요 여부처럼 근거가 아예 없는 값은 지어내지 않고 "확인 필요"로 남긴다.
  */
 
+import { purposeLabel } from '../route/planModel';
 import { supabase } from '../supabase';
 import { store } from '../store';
 import { navigate } from '../router';
@@ -1882,7 +1883,7 @@ function stopRowHtml(
   // 본다. 없으면 공항·숙소처럼 유형만, 그것도 없으면 줄을 지운다(빈 자리를 남기지 않는다).
   const sub = place?.address || (stop.cat === 'AIRPORT' || stop.cat === 'STAY' ? CAT_LABEL[stop.cat] : '');
   // "숙소 들르기"(짐 두기 등)는 일반 방문과 구분되게 목적을 한 줄로 — 주소는 상세에서 본다
-  const revisit = stop.purpose ? '숙소 들르기' + (stop.purpose.trim() ? ' · ' + stop.purpose.trim() : '') : '';
+  const revisit = stop.purpose ? purposeLabel(stop.purpose) ?? '숙소 들르기' + (stop.purpose.trim() ? ' · ' + stop.purpose.trim() : '') : '';
 
   return [
     '<div class="mb-row' + (isNow ? ' is-now' : '') + (done ? ' is-done' : '') + (skipped ? ' is-skipped' : '') + '">',

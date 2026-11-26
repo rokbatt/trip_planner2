@@ -3,16 +3,9 @@
  *
  * POST /api/ai — 요청 body의 `kind`로 분기한다.
  *   kind 생략 | 'hotel-review' : 숙소 AI 리뷰 요약 (Google Search 그라운딩)
- *   kind 'route-plan-macro'    : Brainstorm 장소들을 Day별 테마+장소 풀로 1차 배분(가벼운 호출 1번)
- *   kind 'route-plan-day'      : route-plan-macro가 나눠준 그 Day의 장소 풀을 세부 배치(Day마다 호출)
+ *   kind 'route-plan-day'      : 코드(src/route/planModel.ts)가 정한 Day의 장소들을 방문 순서로(Day마다)
+ *   kind 'trip-anchors'        : 사용자 문서에서 여행지 도착·출발(시각·공항/역)을 적힌 그대로 찾기
  *   kind 'day-detail'          : 특정 DAY의 세부 일정·예산 추천(참고용)
- *
- * route-plan-macro/route-plan-day가 "매크로→세부 2단계"로 나뉜 이유 — 예전엔 전체 여행을
- * 프롬프트 1번에 다 몰아서 짰는데, 그러면 (1) Day마다 다른 사정(도착일이라 일정 없음,
- * 마사지는 저녁에 등)을 반영할 여지가 프롬프트 안에서 뭉개지고 (2) 장소 중복 배치를 사후에
- * 걸러내는 수밖에 없었다. macro가 먼저 Day별로 장소를 겹치지 않게 나눠주면, day는 그
- * 풀만 보고 그 Day에만 맞는 규칙을 명확히 반영해 상세 배치할 수 있고, 장소 풀이 서로
- * 안 겹치니 여러 Day를 동시에 호출해도 안전하다(클라이언트 aiPlan.ts가 오케스트레이션).
  *
  * ⚠️ 왜 한 파일에 다 들어있나 — Vercel Hobby 플랜은 **배포당 서버리스 함수 12개**가 한도라
  *    (Claude.md 3-7) 새 엔드포인트 파일을 만들 수 없다. 그래서 route-matrix.ts가 body 형태로
@@ -302,7 +295,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // kind 생략 = 기존 숙소 리뷰 요약 (이 파일이 hotel-review-summary.ts였을 때의 호출 형태 호환)
   const kind = String((req.body ?? {}).kind ?? 'hotel-review');
-  if (kind === 'route-plan-macro') return handleRoutePlanMacro(req, res);
+  if (kind === 'trip-anchors') return handleTripAnchors(req, res);
   if (kind === 'route-plan-day') return handleRoutePlanDay(req, res);
   if (kind === 'day-detail') return handleDayDetail(req, res);
   if (kind === 'place-brief') return handlePlaceBrief(req, res);
@@ -461,10 +454,15 @@ async function handleHotelReview(req: VercelRequest, res: VercelResponse) {
   res.status(200).json({ ...result, cached: false });
 }
 
-/* ══════════════════ 2. AI 일정 짜기 (매크로 → Day별 세부, 2단계) ══════════════════ */
+/* ══════════════════ 2. AI 일정 짜기 — Day 안의 방문 순서 + 문서에서 도착·출발 찾기 ══════════════════ */
+/*
+ * Day 배분·식사·숙소 출발/도착은 클라이언트 코드(src/route/planModel.ts)가 정한다. 예전엔 Gemini가
+ * Day 배분까지 해서 장소를 빼먹고 도착 시각을 추측했다. 여기서는 (1) 정해진 Day 안의 순서만,
+ * (2) 사용자가 올린 문서에서 도착·출발 정보를 "적힌 그대로" 뽑는 일만 한다.
+ */
 
-/** 매크로 단계 프롬프트가 무한정 커지지 않도록 하는 상한 — 초과분은 평점 높은 순으로 자른다 */
-const MAX_PLAN_PLACES = 80;
+/** 한 Day에 줄 수 있는 장소 상한 — 프롬프트가 무한정 커지지 않게 */
+const MAX_DAY_PLACES = 30;
 
 interface PlanPlaceIn {
   id: string;
@@ -477,17 +475,12 @@ interface PlanPlaceIn {
   hours?: string[] | null;
 }
 
-/** 카테고리별 "보통 이 시간대에 가는 곳" 힌트 — AI가 이동 효율만 보고 마사지샵을 오전부터
- *  넣는 식으로 시간대 성격을 무시하지 않도록 각 장소 줄에 붙여준다. 값이 없는 카테고리
- *  (마사지/스파처럼 구글 카테고리 매핑에 없는 것들)는 프롬프트의 별도 규칙 문구가 이름
- *  키워드로 커버한다 — 카테고리 테이블에 다 담을 수 없어서. */
+/** 카테고리별 "보통 이 시간대에 가는 곳" 힌트 — 이동 효율만 보고 시간대 성격을 무시하지 않게 */
 const CATEGORY_TIME_HINT: Record<string, string> = {
   '카페': '보통 오전~낮 방문',
   '베이커리': '보통 오전~낮 방문(브런치 성격)',
-  '음식점': '끼니 시간대(점심/저녁) 방문',
   '바': '보통 저녁~밤 방문',
   '나이트라이프': '저녁~밤 전용, 낮 시간대는 피할 것',
-  '관광명소': '오전~오후 아무 때나 무난',
   '박물관': '오전~오후(폐관 시간 유의)',
   '미술관': '오전~오후(폐관 시간 유의)',
   '공원': '오전~늦은 오후 무난, 노을 명소면 늦은 오후 선호',
@@ -495,325 +488,64 @@ const CATEGORY_TIME_HINT: Record<string, string> = {
   '테마파크': '개장 직후(오전 일찍) 시작 권장 — 체류시간이 긺',
 };
 
-/** 장소 한 줄 요약 — 토큰을 아끼려고 있는 정보만 짧게 붙인다 */
 function planPlaceLine(tag: string, p: PlanPlaceIn): string {
-  const bits = [tag + ' ' + p.name];
-  if (p.category) bits.push('분류:' + p.category);
-  if (p.mood) bits.push('사용자태그:' + p.mood);
+  const bits = [tag + ' ' + String(p.name ?? '').slice(0, 80)];
+  if (p.category) bits.push('분류:' + String(p.category).slice(0, 30));
   if (typeof p.rating === 'number') bits.push('평점:' + p.rating);
-  if (p.lat != null && p.lng != null) bits.push('좌표:' + p.lat.toFixed(4) + ',' + p.lng.toFixed(4));
-  if (Array.isArray(p.hours) && p.hours.length) bits.push('영업시간:' + p.hours.join(' / '));
+  if (typeof p.lat === 'number' && typeof p.lng === 'number' && Number.isFinite(p.lat) && Number.isFinite(p.lng)) {
+    bits.push('좌표:' + p.lat.toFixed(4) + ',' + p.lng.toFixed(4));
+  }
+  if (Array.isArray(p.hours) && p.hours.length) bits.push('영업시간:' + p.hours.slice(0, 7).map((h) => String(h).slice(0, 60)).join(' / '));
   const hint = p.category ? CATEGORY_TIME_HINT[p.category] : undefined;
   if (hint) bits.push('시간대힌트:' + hint);
   return bits.join(' | ');
 }
 
-/** 마사지/스파처럼 구글 카테고리 매핑에 없어 CATEGORY_TIME_HINT로 못 잡는 곳들 — 이름
- *  키워드로 이 규칙을 항상 함께 준다(매크로/세부 프롬프트 공통). */
-const TIME_FIT_RULE =
-  '장소 성격별 적정 시간대: "시간대힌트"가 붙은 곳은 그 힌트를 지켜. 힌트가 없어도 이름에 ' +
-  '마사지·스파·사우나·온천·Spa·Massage 같은 단어가 있으면 휴식 목적이 자연스러우니 특별한 ' +
-  '이유가 없는 한 그날 늦은 오후~마지막 순서로 배치해. 이동 효율(가까우니까 먼저 들르는 것)보다 ' +
-  '이 시간대 적합성이 우선이야.';
-
-interface StaySegmentIn {
-  startDayIndex: number;
-  endDayIndex: number;
-  basecamp: PlanPlaceIn | null;
+function pointLine(label: string, p: { name?: unknown; lat?: unknown; lng?: unknown } | null | undefined): string {
+  if (!p) return label + ': 정보 없음';
+  const lat = Number(p.lat);
+  const lng = Number(p.lng);
+  const coord = Number.isFinite(lat) && Number.isFinite(lng) ? ' (좌표:' + lat.toFixed(4) + ',' + lng.toFixed(4) + ')' : '';
+  return label + ': ' + String(p.name ?? '').slice(0, 80) + coord;
 }
 
-/** 숙소 구간 안내 — 나뉘어 있으면 "이 DAY 범위엔 이 숙소" 형태로 전부 나열. 매크로/세부 공통 */
-function staySegmentLines(segments: StaySegmentIn[]): string[] {
-  return segments.map((s) => {
-    const dayLabel = s.startDayIndex === s.endDayIndex ? 'DAY ' + (s.startDayIndex + 1) : 'DAY ' + (s.startDayIndex + 1) + '~' + (s.endDayIndex + 1);
-    if (!s.basecamp) return dayLabel + ': 숙소 정보 없음';
-    const coord = s.basecamp.lat != null && s.basecamp.lng != null ? ' (좌표:' + s.basecamp.lat.toFixed(4) + ',' + s.basecamp.lng.toFixed(4) + ')' : '';
-    return dayLabel + ': ' + s.basecamp.name + coord;
-  });
-}
-
-/** 도착일 안내 — 매크로(그 Day를 비울지 판단하는 근거)와 세부(그 Day 안에서 시작 시각 규칙) 공통 */
-function arrivalGuidance(arrivalAirport: string, arrivalTime: string, forMacro: boolean): string {
-  if (!arrivalTime && !arrivalAirport) return '';
-  const base =
-    '⚠️ DAY 1은 숙소가 아니라 공항에서 시작한다.' +
-    (arrivalAirport ? ' 도착 공항: ' + arrivalAirport + '.' : '') +
-    (arrivalTime ? ' 비행기 도착 예정 시각: ' + arrivalTime + '.' : '');
-  if (forMacro) {
-    return (
-      base +
-      ' 도착 시각이 늦은 저녁(대략 19~20시 이후)이면 입국심사·수하물 수취·이동 시간을 감안할 때' +
-      ' 그날은 특별한 일정 없이 숙소로 이동만 하는 게 자연스러워 — 사용자 요청사항에 이미 이 Day에' +
-      ' 대한 지시가 있으면 그걸 따르고, 없으면 이 기준으로 DAY 1을 "empty: true, placeIds: []"로 비워도 돼.'
-    );
-  }
-  return (
-    base +
-    ' 입국심사·수하물 수취·공항에서 숙소까지 이동 시간을 감안해 도착 시각보다 최소 1시간 30분' +
-    ' 이후부터 일정을 시작해. 첫 stop은 공항에서 숙소로 가는 동선에서 크게 벗어나지 않는 곳으로 골라.'
-  );
-}
-
-/** 출발일 안내 — arrivalGuidance와 동일한 이유로 매크로/세부 공통 */
-function departureGuidance(departureAirport: string, departureTime: string, forMacro: boolean): string {
-  if (!departureTime && !departureAirport) return '';
-  const base =
-    '⚠️ 마지막 DAY는 숙소가 아니라 공항에서 끝난다(출국).' +
-    (departureAirport ? ' 출발 공항: ' + departureAirport + '.' : '') +
-    (departureTime ? ' 비행기 출발 예정 시각: ' + departureTime + '.' : '');
-  if (forMacro) {
-    return (
-      base +
-      ' 출발 시각이 이른 아침(대략 9시 이전)이면 체크아웃·공항 이동 시간을 감안할 때 그날은' +
-      ' 일정 없이 바로 공항으로 가는 게 자연스러워 — 사용자 요청사항에 지시가 있으면 그걸 따르고,' +
-      ' 없으면 이 기준으로 마지막 DAY를 비워도 돼.'
-    );
-  }
-  return (
-    base +
-    ' 체크아웃·공항 이동·탑승수속 시간을 감안해 출발 시각보다 최소 3시간 전에는 마지막 일정이' +
-    ' 끝나도록 짜. 마지막 stop은 공항으로 가는 동선에서 크게 벗어나지 않는 곳으로 골라.'
-  );
-}
-
-/** 사용자가 직접 남긴 자유 텍스트 요청사항 — 있으면 프롬프트 맨 위, 최우선으로 강조해서 넣는다.
- *  구조화하지 않고 원문 그대로 전달(원칙 3-1 — 우리가 해석/가공하지 않음). */
-function planNotesBlock(planNotes: string): string {
-  if (!planNotes) return '';
-  return (
-    '⚠️⚠️ 사용자가 직접 남긴 요청사항(이 여행의 컨셉·니즈·특정 Day 지시 등) — 다른 어떤 규칙보다' +
-    ' 우선해서 반영해:\n"' + planNotes + '"'
-  );
-}
-
-/* ── 2-1. 매크로: Day별 테마 + 장소 풀 나누기 ── */
-
-const ROUTE_PLAN_MACRO_SCHEMA = {
-  type: 'OBJECT',
-  properties: {
-    days: {
-      type: 'ARRAY',
-      items: {
-        type: 'OBJECT',
-        properties: {
-          dayIndex: { type: 'INTEGER' },
-          theme: { type: 'STRING' },
-          empty: { type: 'BOOLEAN' },
-          placeIds: { type: 'ARRAY', items: { type: 'STRING' } },
-        },
-        required: ['dayIndex', 'placeIds'],
-      },
-    },
-    notes: { type: 'STRING' },
-  },
-  required: ['days'],
-};
-
-async function handleRoutePlanMacro(req: VercelRequest, res: VercelResponse) {
-  const body = (req.body ?? {}) as Record<string, any>;
-  const destinationId = String(body.destinationId ?? '');
-  const destinationName = String(body.destinationName ?? '');
-  const dayCount = Number(body.dayCount);
-  const startDate = body.startDate ? String(body.startDate) : '';
-  const rawSegments: StaySegmentIn[] = Array.isArray(body.staySegments) ? body.staySegments : [];
-  const arrivalAirport = body.arrivalAirport ? String(body.arrivalAirport).trim() : '';
-  const arrivalTime = body.arrivalTime ? String(body.arrivalTime).trim() : '';
-  const departureAirport = body.departureAirport ? String(body.departureAirport).trim() : '';
-  const departureTime = body.departureTime ? String(body.departureTime).trim() : '';
-  const rawPlaces: PlanPlaceIn[] = Array.isArray(body.places) ? body.places : [];
-  const planNotes = body.planNotes ? String(body.planNotes).trim().slice(0, 1000) : '';
-
-  if (!destinationId || !Number.isFinite(dayCount) || dayCount < 1) {
-    res.status(400).json({ error: 'destinationId와 dayCount가 필요해요.' });
-    return;
-  }
-  if (rawPlaces.length < 2) {
-    res.status(400).json({ error: '일정을 짜려면 장소가 2곳 이상 필요해요.' });
-    return;
-  }
-
-  const segments: StaySegmentIn[] =
-    rawSegments.length > 0 ? rawSegments : [{ startDayIndex: 0, endDayIndex: dayCount - 1, basecamp: null }];
-
-  const places = [...rawPlaces]
-    .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0) || a.id.localeCompare(b.id))
-    .slice(0, MAX_PLAN_PLACES);
-
-  const signature = [
-    dayCount,
-    arrivalAirport,
-    arrivalTime,
-    departureAirport,
-    departureTime,
-    planNotes,
-    segments.map((s) => s.startDayIndex + '-' + s.endDayIndex + ':' + (s.basecamp?.id ?? 'none')).join(','),
-    places.map((p) => p.id).sort().join(','),
-  ].join('|');
-  const cacheKey = 'route-plan-macro:' + destinationId + ':' + stableHash(signature);
-
-  const supabase = makeSupabase();
-  const cached = await readPlanCache(supabase, cacheKey);
-  if (cached) {
-    res.status(200).json({ ...cached, cached: true });
-    return;
-  }
-
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (!geminiKey) {
-    res.status(500).json({ error: 'GEMINI_API_KEY가 설정되지 않았어요.' });
-    return;
-  }
-
-  const tagToId = new Map<string, string>();
-  const lines = places.map((p, i) => {
-    const tag = 'P' + (i + 1);
-    tagToId.set(tag, p.id);
-    return planPlaceLine(tag, p);
-  });
-
-  const hasMultipleSegments = segments.length > 1;
-
-  const prompt = [
-    '너는 여행 동선 설계 전문가야. 아래 정보를 보고 ' + dayCount + '일치 여행을 Day별로 나눠줘.',
-    '지금은 큰 그림만 잡는 단계야 — 각 Day의 테마와 "이 Day에 어울리는 후보 장소들"만 나누면 되고,',
-    '방문 순서나 정확한 시각까지 정할 필요는 없어(그건 다음 단계에서 Day별로 따로 정해).',
-    '',
-    planNotesBlock(planNotes),
-    '',
-    destinationName ? '여행지: ' + destinationName : '',
-    startDate ? '첫날 날짜: ' + startDate : '',
-    '일수: ' + dayCount + '일 (dayIndex는 0부터 시작. 0 = 첫째 날)',
-    '',
-    hasMultipleSegments ? '숙소 — 여행 중 숙소를 옮긴다(구간별로 다름):' : '숙소(매일 여기서 출발/도착):',
-    ...staySegmentLines(segments),
-    hasMultipleSegments
-      ? '⚠️ 숙소를 옮기는 마지막 날(각 구간의 마지막 DAY)에는 밤 늦게 그 숙소에서 멀리 떨어진 곳에 있지 않도록,' +
-        ' 다음 숙소 방향이나 이동이 편한 동선의 장소 위주로 그 Day에 배정해.'
-      : '',
-    '',
-    arrivalGuidance(arrivalAirport, arrivalTime, true),
-    departureGuidance(departureAirport, departureTime, true),
-    '',
-    '후보 장소 목록 (반드시 아래 대괄호 앞의 태그 P숫자로만 지칭할 것):',
-    ...lines,
-    '',
-    TIME_FIT_RULE,
-    '',
-    '배분 규칙:',
-    '- 각 태그(P숫자)는 최대 한 Day에만 배정해(같은 태그를 두 Day에 겹쳐 넣지 마). 전부 다 쓸 필요는 없어 —',
-    '  애매하거나 넘치는 곳은 어느 Day에도 안 넣고 빼도 돼.',
-    '- Day당 3~6개 정도의 넉넉한 풀로 나눠줘(다음 단계에서 그중 실제로 갈 곳만 추려).',
-    '- theme은 그 Day의 전체 흐름을 한 줄(20자 내외)로 — 예: "시내 관광 위주, 활동적", "휴양 중심, 저녁 마사지로 마무리".',
-    '- empty:true로 비우는 Day는 placeIds도 빈 배열이어야 해.',
-    '- notes에는 이 여행 전체에 대해 사용자가 알아두면 좋은 점을 2~3문장으로 적어(요청사항을 어떻게 반영했는지 포함).',
-  ]
-    .filter(Boolean)
-    .join('\n');
-
-  if (!(await spendDailyQuota(req, 'ai'))) {
-    res.status(429).json({ error: QUOTA_EXCEEDED_MESSAGE, quotaExceeded: true });
-    return;
-  }
-  const { data, error } = await callGeminiJson('gemini-2.5-flash-lite', geminiKey, prompt, ROUTE_PLAN_MACRO_SCHEMA);
-  if (error) {
-    res.status(502).json({ error });
-    return;
-  }
-
-  // Gemini가 없는 태그를 지어내거나 같은 장소를 두 Day에 겹쳐 넣을 수 있으므로 서버에서 정리한다.
-  const used = new Set<string>();
-  const daysOut: Array<{ dayIndex: number; theme: string; empty: boolean; placeIds: string[] }> = [];
-  const rawDays = Array.isArray(data?.days) ? data.days : [];
-
-  for (const d of rawDays) {
-    const dayIndex = Number(d?.dayIndex);
-    if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex >= dayCount) continue;
-    if (daysOut.some((x) => x.dayIndex === dayIndex)) continue;
-
-    const empty = !!d?.empty;
-    const placeIds: string[] = [];
-    if (!empty) {
-      for (const tag of Array.isArray(d?.placeIds) ? d.placeIds : []) {
-        const placeId = tagToId.get(String(tag ?? '').trim());
-        if (!placeId || used.has(placeId)) continue;
-        used.add(placeId);
-        placeIds.push(placeId);
-      }
-    }
-    daysOut.push({ dayIndex, theme: String(d?.theme ?? '').slice(0, 60), empty, placeIds });
-  }
-
-  if (daysOut.every((d) => d.placeIds.length === 0)) {
-    res.status(502).json({ error: 'AI가 Day를 나누지 못했어요. 잠시 후 다시 시도해 주세요.' });
-    return;
-  }
-
-  // 어떤 Day에도 안 들어간 태그는 여기서 "빈 Day"로 채워 클라이언트가 dayCount만큼 다 갖게 한다
-  for (let i = 0; i < dayCount; i++) {
-    if (!daysOut.some((d) => d.dayIndex === i)) daysOut.push({ dayIndex: i, theme: '', empty: true, placeIds: [] });
-  }
-
-  const result = {
-    days: daysOut.sort((a, b) => a.dayIndex - b.dayIndex),
-    notes: String(data?.notes ?? '').slice(0, 600),
-  };
-
-  await writePlanCache(supabase, cacheKey, 'route-plan-macro', result);
-  res.status(200).json({ ...result, cached: false });
-}
-
-/* ── 2-2. 세부: 매크로가 나눠준 그 Day의 장소 풀을 실제 방문 순서·시각으로 배치 ── */
+const HHMM = /^\d{1,2}:\d{2}$/;
 
 const ROUTE_PLAN_DAY_SCHEMA = {
   type: 'OBJECT',
   properties: {
     summary: { type: 'STRING' },
-    stops: {
-      type: 'ARRAY',
-      items: {
-        type: 'OBJECT',
-        properties: { id: { type: 'STRING' }, arriveTime: { type: 'STRING' } },
-        required: ['id'],
-      },
-    },
+    order: { type: 'ARRAY', items: { type: 'STRING' } },
   },
-  required: ['stops'],
+  required: ['order'],
 };
 
+/** 정해진 Day의 장소들을 방문 순서로 — 하나도 빼지 않는다. 다 들어오지 않은 답은 캐시하지 않는다 */
 async function handleRoutePlanDay(req: VercelRequest, res: VercelResponse) {
   const body = (req.body ?? {}) as Record<string, any>;
-  const destinationId = String(body.destinationId ?? '');
-  const destinationName = String(body.destinationName ?? '');
+  const destinationId = String(body.destinationId ?? '').slice(0, 80);
+  const destinationName = String(body.destinationName ?? '').slice(0, 80);
   const dayIndex = Number(body.dayIndex);
-  const dayCount = Number(body.dayCount);
-  const theme = body.theme ? String(body.theme).trim() : '';
-  const basecamp: PlanPlaceIn | null = body.basecamp ?? null;
-  const isArrivalDay = !!body.isArrivalDay;
-  const isDepartureDay = !!body.isDepartureDay;
-  const arrivalAirport = body.arrivalAirport ? String(body.arrivalAirport).trim() : '';
-  const arrivalTime = body.arrivalTime ? String(body.arrivalTime).trim() : '';
-  const departureAirport = body.departureAirport ? String(body.departureAirport).trim() : '';
-  const departureTime = body.departureTime ? String(body.departureTime).trim() : '';
-  const places: PlanPlaceIn[] = Array.isArray(body.places) ? body.places : [];
+  const startTime = HHMM.test(String(body.startTime ?? '')) ? String(body.startTime) : '';
+  const endTime = HHMM.test(String(body.endTime ?? '')) ? String(body.endTime) : '';
+  const places: PlanPlaceIn[] = (Array.isArray(body.places) ? body.places : []).slice(0, MAX_DAY_PLACES);
   const planNotes = body.planNotes ? String(body.planNotes).trim().slice(0, 1000) : '';
+  const start = body.start && typeof body.start === 'object' ? body.start : null;
+  const end = body.end && typeof body.end === 'object' ? body.end : null;
 
   if (!destinationId || !Number.isInteger(dayIndex) || dayIndex < 0) {
     res.status(400).json({ error: 'destinationId와 dayIndex가 필요해요.' });
     return;
   }
-  if (places.length === 0) {
-    res.status(400).json({ error: '이 Day에 배정된 장소가 없어요.' });
+  if (places.length < 2) {
+    res.status(400).json({ error: '순서를 정할 장소가 2곳 이상 필요해요.' });
     return;
   }
 
   const signature = [
-    dayIndex,
-    theme,
-    basecamp?.id ?? 'none',
-    isArrivalDay ? arrivalAirport + '@' + arrivalTime : '',
-    isDepartureDay ? departureAirport + '@' + departureTime : '',
-    planNotes,
-    places.map((p) => p.id).sort().join(','),
+    'v2', dayIndex, startTime, endTime, planNotes,
+    pointLine('s', start), pointLine('e', end),
+    places.map((p) => String(p.id)).sort().join(','),
   ].join('|');
   const cacheKey = 'route-plan-day:' + destinationId + ':' + dayIndex + ':' + stableHash(signature);
 
@@ -833,48 +565,27 @@ async function handleRoutePlanDay(req: VercelRequest, res: VercelResponse) {
   const tagToId = new Map<string, string>();
   const lines = places.map((p, i) => {
     const tag = 'P' + (i + 1);
-    tagToId.set(tag, p.id);
+    tagToId.set(tag, String(p.id));
     return planPlaceLine(tag, p);
   });
 
-  const basecampLine = basecamp
-    ? basecamp.name + (basecamp.lat != null && basecamp.lng != null ? ' (좌표:' + basecamp.lat.toFixed(4) + ',' + basecamp.lng.toFixed(4) + ')' : '')
-    : '숙소 정보 없음';
-
   const prompt = [
-    '너는 여행 동선 설계 전문가야. 아래는 여행의 한 Day(이 Day만)에 대한 정보야.',
-    '이 Day에 배정된 후보 장소들 중 실제로 방문할 곳을 골라 순서와 도착 시각까지 정해줘.',
+    '너는 여행 동선 설계 전문가야. 아래는 하루 동안 갈 장소 목록이야. 방문 순서만 정해줘.',
     '',
-    planNotesBlock(planNotes),
-    '',
+    planNotes ? '사용자 요청사항(순서에 반영할 수 있는 것만 반영): "' + planNotes + '"' : '',
     destinationName ? '여행지: ' + destinationName : '',
-    'DAY ' + (dayIndex + 1) + ' / 전체 ' + dayCount + '일',
-    theme ? '이 Day의 테마: ' + theme : '',
-    '숙소(오늘 여기서 출발/도착): ' + basecampLine,
+    pointLine('출발 지점', start) + (startTime ? ' — ' + startTime + '부터 움직일 수 있음' : ''),
+    pointLine('마지막 도착 지점', end) + (endTime ? ' — ' + endTime + '까지 도착해야 함' : ''),
     '',
-    isArrivalDay ? arrivalGuidance(arrivalAirport, arrivalTime, false) : '',
-    isDepartureDay ? departureGuidance(departureAirport, departureTime, false) : '',
-    '',
-    '오늘의 후보 장소 목록 (반드시 아래 대괄호 앞의 태그 P숫자로만 지칭할 것):',
+    '장소 목록 (대괄호 없이 태그 P숫자로만 지칭):',
     ...lines,
     '',
-    '다음 우선순위를 **이 순서 그대로** 지켜서 배치해줘.',
-    '0순위 — 사용자 요청사항: 위에 사용자 요청사항이 있다면(영업시간과 정면으로 충돌하지 않는 선에서) 최우선으로 반영해.',
-    '1순위 — 영업시간: 영업시간 정보가 주어진 곳은 반드시 문 여는 시간대에 방문하도록 배치해.',
-    '   정기 휴무가 있으면 그 요일을 피해. 정보가 없으면 그 장소 종류의 일반적인 운영시간을 상식선에서 가정해.',
-    '2순위 — ' + TIME_FIT_RULE,
-    '3순위 — 실제 여행객이 많이 택하는 동선: 같은 지역/같은 테마끼리 자연스럽게 묶어서 돌아.',
-    '4순위 — 이동 효율: 위 순위를 다 지킨 뒤 동률인 경우에만, 숙소를 기준으로 좌표상 가까운 곳끼리 묶어',
-    '   하루 안에서 왔다 갔다 되돌아가는 동선이 생기지 않게 순서를 정해.',
-    '',
     '규칙:',
-    '- 하루에 3~5곳 정도가 적당해. 이 Day의 후보를 다 넣을 필요 없어 — 안 맞는 곳은 빼도 돼.',
-    '- 같은 장소를 두 번 넣지 마.',
-    '- 끼니때(점심 12시 전후, 저녁 18시 전후)에는 가능하면 음식점 성격의 장소를 배치해.',
-    '- arriveTime은 24시간 "HH:MM" 형식으로, 그 장소에 도착하는 시각을 적어.',
-    '  숙소(또는 도착일은 공항)에서 출발하는 시간과 장소 간 이동시간을 현실적으로 감안해.',
-    '- summary는 오늘 동선을 한 문장(40자 이내)으로 설명해.',
-    '- 숙소/공항은 stops에 넣지 마. 화면에서 자동으로 출발지로 붙는다.',
+    '- 목록의 **모든 태그를 정확히 한 번씩** order에 넣어. 하나도 빼거나 더하지 마.',
+    '- 식사는 따로 끼워 넣으니 신경 쓰지 마.',
+    '- 우선순위: (1) 영업시간 안에 방문 (2) 시간대힌트 (3) 같은 지역끼리 묶어 되돌아가지 않는 동선, 출발 지점에서 가까운 곳부터 시작해 마지막 도착 지점 쪽에서 끝나게.',
+    '- 이름에 마사지·스파·Spa·Massage가 있으면 늦은 오후~마지막 순서.',
+    '- summary는 오늘 동선을 한 문장(40자 이내)으로.',
   ]
     .filter(Boolean)
     .join('\n');
@@ -890,24 +601,144 @@ async function handleRoutePlanDay(req: VercelRequest, res: VercelResponse) {
   }
 
   const used = new Set<string>();
-  const stops: Array<{ placeId: string; arriveTime: string | null }> = [];
-  for (const s of Array.isArray(data?.stops) ? data.stops : []) {
-    const placeId = tagToId.get(String(s?.id ?? '').trim());
-    if (!placeId || used.has(placeId)) continue;
-    used.add(placeId);
-    const t = String(s?.arriveTime ?? '').trim();
-    stops.push({ placeId, arriveTime: /^\d{1,2}:\d{2}$/.test(t) ? t.padStart(5, '0') : null });
+  const order: string[] = [];
+  for (const t of Array.isArray(data?.order) ? data.order : []) {
+    const id = tagToId.get(String(t ?? '').trim().replace(/^\[|\]$/g, ''));
+    if (!id || used.has(id)) continue;
+    used.add(id);
+    order.push(id);
   }
+  const complete = order.length === places.length;
+  const result = { dayIndex, summary: String(data?.summary ?? '').slice(0, 120), order, complete };
 
-  const result = {
-    dayIndex,
-    summary: String(data?.summary ?? '').slice(0, 120),
-    stops,
-  };
-
-  await writePlanCache(supabase, cacheKey, 'route-plan-day', result);
+  // 빠진 장소가 있는 답은 저장하지 않는다 — 저장하면 같은 나쁜 답이 계속 다시 나온다
+  if (complete) await writePlanCache(supabase, cacheKey, 'route-plan-day', result);
   res.status(200).json({ ...result, cached: false });
 }
+
+/* ── 문서에서 이 여행지의 도착·출발 찾기 ── */
+
+const TRIP_ANCHORS_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    arrival: {
+      type: 'OBJECT',
+      nullable: true,
+      properties: {
+        date: { type: 'STRING' }, time: { type: 'STRING' }, place: { type: 'STRING' },
+        mode: { type: 'STRING', enum: ['FLIGHT', 'TRAIN', 'BUS', 'OTHER'] }, source: { type: 'STRING' },
+      },
+    },
+    departure: {
+      type: 'OBJECT',
+      nullable: true,
+      properties: {
+        date: { type: 'STRING' }, time: { type: 'STRING' }, place: { type: 'STRING' },
+        mode: { type: 'STRING', enum: ['FLIGHT', 'TRAIN', 'BUS', 'OTHER'] }, source: { type: 'STRING' },
+      },
+    },
+  },
+};
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function cleanAnchor(a: any, dates: Set<string>, titles: Set<string>) {
+  if (!a || typeof a !== 'object') return null;
+  const date = ISO_DATE.test(String(a.date ?? '')) && dates.has(String(a.date)) ? String(a.date) : null;
+  const t = String(a.time ?? '').trim();
+  const time = HHMM.test(t) ? t.padStart(5, '0') : null;
+  const place = String(a.place ?? '').trim().slice(0, 80) || null;
+  const mode = ['FLIGHT', 'TRAIN', 'BUS', 'OTHER'].includes(String(a.mode)) ? String(a.mode) : 'OTHER';
+  const source = titles.has(String(a.source ?? '')) ? String(a.source) : null;
+  if (!date || (!time && !place) || !source) return null;
+  return { date, time, place, mode, source };
+}
+
+/**
+ * 사용자가 올린 문서(제목·메모·AI가 파일에서 뽑은 사실)에서 이 여행지로 들어오는/나가는 이동을 찾는다.
+ * 적혀 있지 않은 값은 null — 비행기 출발 시각으로 도착 시각을 계산해 내지 않는다(원칙 3-1).
+ */
+async function handleTripAnchors(req: VercelRequest, res: VercelResponse) {
+  const body = (req.body ?? {}) as Record<string, any>;
+  const destinationName = String(body.destinationName ?? '').trim().slice(0, 80);
+  const startDate = String(body.startDate ?? '');
+  const endDate = String(body.endDate ?? '');
+  const prevName = String(body.prevDestinationName ?? '').trim().slice(0, 80);
+  const nextName = String(body.nextDestinationName ?? '').trim().slice(0, 80);
+  const docs: Array<{ title: string; lines: string[] }> = (Array.isArray(body.docs) ? body.docs : [])
+    .slice(0, 20)
+    .map((d: any) => ({
+      title: String(d?.title ?? '').trim().slice(0, 100),
+      lines: (Array.isArray(d?.lines) ? d.lines : []).slice(0, 20).map((l: unknown) => String(l).slice(0, 300)),
+    }))
+    .filter((d: { title: string }) => d.title);
+
+  if (!destinationName || !ISO_DATE.test(startDate) || !ISO_DATE.test(endDate) || startDate > endDate) {
+    res.status(400).json({ error: '여행지 이름과 날짜가 필요해요.' });
+    return;
+  }
+  if (!docs.length) {
+    res.status(200).json({ arrival: null, departure: null, cached: false });
+    return;
+  }
+
+  // 여행지 기간 앞뒤 하루까지 허용(밤 비행기로 전날 출발 등)
+  const dates = new Set<string>();
+  const d0 = new Date(startDate + 'T00:00:00Z');
+  const d1 = new Date(endDate + 'T00:00:00Z');
+  for (let t = d0.getTime() - 86400000; t <= d1.getTime() + 86400000 && dates.size < 40; t += 86400000) {
+    dates.add(new Date(t).toISOString().slice(0, 10));
+  }
+  const titles = new Set(docs.map((d) => d.title));
+
+  const signature = ['v1', destinationName, startDate, endDate, prevName, nextName, JSON.stringify(docs)].join('|');
+  const cacheKey = 'trip-anchors:' + stableHash(signature);
+  const supabase = makeSupabase();
+  const cached = await readPlanCache(supabase, cacheKey);
+  if (cached) {
+    res.status(200).json({ ...cached, cached: true });
+    return;
+  }
+
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    res.status(500).json({ error: 'GEMINI_API_KEY가 설정되지 않았어요.' });
+    return;
+  }
+
+  const prompt = [
+    '아래는 여행자가 올린 예약 문서들에서 뽑은 내용이야. 여행지 "' + destinationName + '"(' + startDate + ' ~ ' + endDate + ')에',
+    '들어오는 이동(arrival)과 나가는 이동(departure)을 찾아줘.',
+    prevName ? '이 여행지 바로 앞 여행지: ' + prevName : '이 여행지가 여행의 첫 여행지일 수 있음',
+    nextName ? '이 여행지 바로 다음 여행지: ' + nextName : '이 여행지가 여행의 마지막 여행지일 수 있음',
+    '',
+    '규칙 (반드시 지킬 것):',
+    '- 문서에 **적혀 있는 값만** 써. 적혀 있지 않으면 그 칸은 비우고, 이동 자체를 못 찾으면 null.',
+    '- arrival.time은 ' + destinationName + '에 **도착하는** 시각이야. 출발 시각만 적혀 있으면 time은 비워(비행시간으로 계산하지 마).',
+    '- departure.time은 ' + destinationName + '에서 **떠나는** 시각.',
+    '- place는 ' + destinationName + ' 쪽 공항·역·터미널 이름을 문서에 적힌 그대로(예: "Praha hlavní nádraží", "바츨라프 하벨 공항").',
+    '- date는 YYYY-MM-DD, time은 HH:MM(24시간). source는 근거 문서의 제목을 그대로.',
+    '',
+    '문서:',
+    ...docs.map((d) => '■ ' + d.title + '\n' + d.lines.map((l) => '  - ' + l).join('\n')),
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  if (!(await spendDailyQuota(req, 'ai'))) {
+    res.status(429).json({ error: QUOTA_EXCEEDED_MESSAGE, quotaExceeded: true });
+    return;
+  }
+  const { data, error } = await callGeminiJson('gemini-2.5-flash-lite', geminiKey, prompt, TRIP_ANCHORS_SCHEMA);
+  if (error) {
+    res.status(502).json({ error });
+    return;
+  }
+  const result = { arrival: cleanAnchor(data?.arrival, dates, titles), departure: cleanAnchor(data?.departure, dates, titles) };
+  await writePlanCache(supabase, cacheKey, 'trip-anchors', result);
+  res.status(200).json({ ...result, cached: false });
+}
+
 
 /* ══════════════════ 3. DAY 세부 계획 (참고용 · 추후 프리미엄) ══════════════════ */
 

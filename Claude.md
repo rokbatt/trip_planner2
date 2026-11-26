@@ -109,6 +109,7 @@
 ### ROUTE / TIMELINE
 - ROUTE가 숙소·공항 앵커까지 순서대로 저장하므로 TIMELINE은 앵커를 다시 계산하지 않고 저장된 순서를 신뢰한다.
 - 공항 정류지는 `places` 행이 없다(`customName`만). 사진·평점은 `trip_destinations.arrival/departure_photo_url`(+`_rating/_lat/_lng`)을 읽어 `buildAirportPlaceMap`으로 합성한다 — 빠뜨리면 공항 카드만 사진이 안 뜬다.
+- **AI 일정 짜기는 구조를 코드가 정한다**(`route/planModel.ts`). Day 시간 틀(도착·출발: 문서 `trip-anchors` > 여행 설정 > 없으면 온종일, 추측 금지) → 모든 장소를 Day에 배분(그룹은 같은 Day) → 식사 슬롯(식당이 모자라면 "장소 미정" 식사, `stop_purpose='meal:*'`) → 숙소 출발·숙소 복귀(`return:hotel`) / 마지막 날은 다음 이동 출발지. AI(`route-plan-day`)는 Day 안 순서만 맡고, 불완전한 답은 캐시하지 않고 거리순으로 대신한다.
 - 장소 상세의 AI 요약·Don't Miss 등은 항상 `AI` 표시, 근거 없으면 옅은 `?`.
 - 새 색을 추가할 땐 두 테마 모두에 값을 준다.
 
