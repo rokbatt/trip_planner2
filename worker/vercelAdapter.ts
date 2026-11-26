@@ -152,7 +152,7 @@ export async function runVercelHandler(handler: VercelStyleHandler, request: Req
   try {
     await handler(req, out.res);
   } catch (e) {
-    // 원문 오류는 로그에만 남기고 사용자에게는 일반 문구만 보낸다(Claude.md 5-11)
+    // 원문 오류는 로그에만 남기고 사용자에게는 일반 문구만 보낸다(Claude.md 6장)
     console.error('[worker] handler error:', e);
     if (!out.isFinished()) return jsonError(500, '서버에서 문제가 생겼어요. 잠시 후 다시 시도해 주세요.');
   }

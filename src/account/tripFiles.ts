@@ -1,7 +1,7 @@
 /**
  * 여행 문서 파일(Storage 비공개 버킷 `trip-docs`) 지우기.
  *
- * 경로는 `{trip_id}/{shared|personal}/{uuid}.{ext}`(Claude.md 5-5). 여행을 지울 때(trip-edit.ts)와
+ * 경로는 `{trip_id}/{shared|personal}/{uuid}.{ext}`(Claude.md 5장). 여행을 지울 때(trip-edit.ts)와
  * 계정을 지울 때(accountStore.ts) 둘 다 필요해서 여기 한 곳에 둔다.
  *
  * ⚠️ 순서가 중요하다 — 반드시 **DB 행을 지우기 전에** 부른다. Storage의 삭제 정책

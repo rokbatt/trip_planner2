@@ -28,7 +28,7 @@ import { store } from '../store';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { Database, TripExpense, TripExpenseBudget } from '../types/database';
 // 돈에 관한 숫자(집계·정산·환율 변환)는 MOBILE 지갑과 공유한다 — 같은 트립인데 PC와 폰의
-// 정산 결과가 다르면 그 자체가 버그이므로 계산은 expenseModel 하나만 쓴다(Claude.md 5-3).
+// 정산 결과가 다르면 그 자체가 버그이므로 계산은 expenseModel 하나만 쓴다(Claude.md 5장).
 import {
   EXPENSE_CATEGORIES,
   CATEGORY_META,

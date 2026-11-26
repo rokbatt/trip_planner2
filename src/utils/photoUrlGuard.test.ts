@@ -6,7 +6,7 @@ import backfillSrc from '../../api/backfill-photos.ts?raw';
 
 /**
  * 사진 재호스팅 서버가 서버 Google 키를 붙여도 되는 주소를 고르는 규칙.
- * 이 규칙이 느슨해지면 아무 서버에나 서버 키가 넘어간다(Claude.md 5-11).
+ * 이 규칙이 느슨해지면 아무 서버에나 서버 키가 넘어간다(Claude.md 6장).
  */
 
 const PID = 'ChIJjYPUa8GZ4jARi9fgigQOiR8';

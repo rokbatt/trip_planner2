@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { checkPublicUrlShape, isPrivateAddress, isValidLinkId, safePublicFetch } from '../../api/cache-photo';
 
 /**
- * 링크 미리보기 서버가 대신 요청해도 되는 주소의 규칙(SSRF 방어, Claude.md 5-11).
+ * 링크 미리보기 서버가 대신 요청해도 되는 주소의 규칙(SSRF 방어, Claude.md 6장).
  * 느슨해지면 서버 안쪽에서만 닿는 주소(클라우드 메타데이터·사설망)를 바깥에서 열 수 있다.
  */
 
