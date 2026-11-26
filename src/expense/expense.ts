@@ -69,6 +69,16 @@ import './expense.css';
 import { todayLocalISO } from '../utils/dates';
 import { escapeHtml } from '../utils/html';
 
+/**
+ * 저장 실패 안내 — 사용자에게는 일반 문구만 보여 준다. DB 준비(supabase/trip_expenses.sql) 같은 개발자용 힌트는
+ * 콘솔에만 남긴다(예전엔 "supabase/trip_expenses.sql을 실행했는지 확인해주세요"가 화면 알림창에 그대로 떴다).
+ */
+function alertSaveFailed(what: string): void {
+  console.warn('[expense] ' + what + ' 실패 — supabase/trip_expenses.sql 마이그레이션(settled_at 등)이 실행됐는지 확인하세요.');
+  alert(what + ' 못했어요. 잠시 후 다시 시도해 주세요. 계속 안 되면 help@mongsil2.com으로 알려 주세요.');
+}
+
+
 /* ── UI 전용 아이콘 (카테고리 아이콘은 expenseModel의 CATEGORY_META에 있다) ── */
 const IC_DOTS = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
 const IC_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
@@ -299,7 +309,7 @@ async function setSettled(ids: string[], settled: boolean): Promise<void> {
     console.error('정산 상태 저장 실패:', error.message);
     expenses = expenses.map((e) => (prev.has(e.id) ? { ...e, settled_at: prev.get(e.id) ?? null } : e));
     refreshActiveTabData();
-    alert('정산 상태를 저장하지 못했어요. supabase/trip_expenses.sql(settled_at 컬럼)을 실행했는지 확인해주세요.');
+    alertSaveFailed('정산 상태를 저장하지');
   }
 }
 
@@ -994,7 +1004,7 @@ function renderQuickAddBody(container: HTMLElement): void {
       saveBtn.textContent = '저장';
       if (error) {
         console.error('지출 추가 실패:', error.message);
-        alert('저장에 실패했어요. supabase/trip_expenses.sql 마이그레이션이 실행됐는지 확인해주세요.');
+        alertSaveFailed('지출을 저장하지');
         return;
       }
       if (data) expenses.push(...(data as TripExpense[]));
@@ -1007,7 +1017,7 @@ function renderQuickAddBody(container: HTMLElement): void {
       saveBtn.textContent = '저장';
       if (error) {
         console.error('지출 추가 실패:', error.message);
-        alert('저장에 실패했어요. supabase/trip_expenses.sql 마이그레이션이 실행됐는지 확인해주세요.');
+        alertSaveFailed('지출을 저장하지');
         return;
       }
       if (data) expenses.push(data as TripExpense);
@@ -1778,7 +1788,7 @@ function openSheet(editing: TripExpense | null): void {
       const { data, error } = await supabase.from('trip_expenses').insert(payloads).select();
       if (error) {
         console.error('지출 추가 실패:', error.message);
-        alert('저장에 실패했어요. supabase/trip_expenses.sql 마이그레이션이 실행됐는지 확인해주세요.');
+        alertSaveFailed('지출을 저장하지');
         saveBtn.disabled = false;
         saveBtn.textContent = '추가하기';
         return;
@@ -1789,7 +1799,7 @@ function openSheet(editing: TripExpense | null): void {
       const { data, error } = await supabase.from('trip_expenses').insert(payload).select().single();
       if (error) {
         console.error('지출 추가 실패:', error.message);
-        alert('저장에 실패했어요. supabase/trip_expenses.sql 마이그레이션이 실행됐는지 확인해주세요.');
+        alertSaveFailed('지출을 저장하지');
         saveBtn.disabled = false;
         saveBtn.textContent = '추가하기';
         return;
