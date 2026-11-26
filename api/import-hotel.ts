@@ -64,7 +64,7 @@ async function rehostPhotoInline(
 }
 
 // ── 사용량 상한 (BEGIN — api/ai·destination-zones·hotel-score·import-hotel·monthly-picks·nearby-infra·nearby-search·route-matrix에 같은 내용이 있다. 고치면 모두 고친다) ──
-/* 사용자당 하루 상한(Claude.md 5-11, supabase/api_usage.sql). 돈이 드는 외부 호출 직전에만 센다 — 캐시에서 나온 결과는 세지 않는다.
+/* 사용자당 하루 상한(Claude.md 6장, supabase/api_usage.sql). 돈이 드는 외부 호출 직전에만 센다 — 캐시에서 나온 결과는 세지 않는다.
  * - 로그인 토큰이 없으면 세지 않고 통과한다(서버 로그인 확인을 켜기 전까지 — 예전 화면을 쓰는 기기를 막지 않기 위해)
  * - app_roles에 admin·unlimited로 등록된 이메일은 세지 않는다(관리자·지인 예외)
  * - 표가 없거나 오류가 나면 통과한다(있으면 좋고 없어도 동작) */

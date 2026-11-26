@@ -31,7 +31,7 @@ import {
 } from '../route/routeStore';
 import type { StoredStop } from '../route/routeStore';
 // 하루를 시간축에 올리는 규칙은 MOBILE 화면과 공유한다 — 같은 DAY인데 두 화면의 도착 시각이
-// 다르면 그 자체가 버그이므로, 변환·시각 계산은 dayModel 하나만 쓴다(Claude.md 5-3).
+// 다르면 그 자체가 버그이므로, 변환·시각 계산은 dayModel 하나만 쓴다(Claude.md 5장).
 import {
   loadDayModel,
   scheduleFor,
@@ -318,7 +318,7 @@ async function loadTrip(tripId: string): Promise<Trip | null> {
 
 /**
  * 저장된 동선을 하루 모델로 변환해 모듈 상태에 싣는다.
- * 변환·시각 계산 규칙은 dayModel이 단일 기준이고(5-3), 여기서는 그 결과를 화면 상태에
+ * 변환·시각 계산 규칙은 dayModel이 단일 기준이고(5장), 여기서는 그 결과를 화면 상태에
  * 옮겨 담기만 한다 — MOBILE 화면도 같은 loadDayModel을 쓰므로 두 화면의 일정이 어긋나지 않는다.
  */
 async function buildDays(trip: Trip, isStale?: () => boolean): Promise<boolean> {

@@ -22,7 +22,7 @@
  *
  * ⚠️ 일정 데이터·시각 계산은 **직접 하지 않는다.** `timeline/dayModel.ts`의 loadDayModel과
  *    scheduleFor를 그대로 쓴다 — 같은 DAY인데 PC와 폰의 도착 시각이 다르면 그 자체가
- *    버그이기 때문이다(Claude.md 5-3). 이 파일에는 표현(마크업·색·아이콘)만 있다.
+ *    버그이기 때문이다(Claude.md 5장). 이 파일에는 표현(마크업·색·아이콘)만 있다.
  *
  * **실제 도착 기록 → 남은 일정 자동 재계산.** 오늘 DAY의 카드에서 "도착"을 누르면
  * `stopProgress.ts`가 `trip_stop_progress`에 실제 시각을 저장하고, `scheduleFor`에 그 값을
@@ -146,7 +146,7 @@ import { PHRASES, LANG_LABEL, SPEECH_LANG, SITUATION_LABEL, languageForDestinati
 type Place = Database['public']['Tables']['places']['Row'];
 type Trip = Database['public']['Tables']['trips']['Row'];
 
-/* ══════════════ 아이콘 (얇은 선 — 이모지 금지, Claude.md 5-3) ══════════════ */
+/* ══════════════ 아이콘 (얇은 선 — 이모지 금지, Claude.md 5장) ══════════════ */
 
 const IC = {
   logo: '<svg viewBox="0 0 462 478" aria-hidden="true"><clipPath id="mb-pin"><path d="M236 39C132 39 49 119 49 219C49 278 83 326 125 375C163 419 206 460 225 474C231 478 241 478 247 474C266 460 309 419 347 375C389 326 424 278 424 219C424 119 340 39 236 39Z"/></clipPath><g clip-path="url(#mb-pin)"><path fill="#5F86F2" d="M35 25H440V218C393 235 365 268 324 286C279 306 244 294 207 275C168 255 145 238 128 238C100 238 78 257 62 286C43 257 35 239 35 210Z"/><path fill="#8DBCF0" d="M35 270C66 239 91 229 128 238C160 246 177 269 207 282C226 291 244 297 263 297C251 349 240 415 236 490H35Z"/><path fill="#4562E8" d="M440 176C399 192 371 219 342 244C311 270 282 291 246 293C269 313 296 328 326 331C367 335 402 318 440 298Z"/></g><circle cx="236.5" cy="218.5" r="76" fill="#FFF"/></svg>',
@@ -220,7 +220,7 @@ const EX_ICON: Record<ExploreCat, string> = { all: IC.grid, food: IC.food, cafe:
 /** 일정 장소 상세 "이 근처 둘러보기" 칩 아이콘 */
 const NEAR_ICON: Record<NearbyKey, string> = { cafe: IC.coffee, exchange: IC.exchange, food: IC.food, convenience: IC.shop, atm: IC.card, pharmacy: IC.cross };
 
-/** 날씨 아이콘 — weather.ts의 WeatherIcon과 1:1. 이모지를 쓰지 않는다(Claude.md 5-3). */
+/** 날씨 아이콘 — weather.ts의 WeatherIcon과 1:1. 이모지를 쓰지 않는다(Claude.md 5장). */
 const WX_ICON: Record<Weather['icon'], string> = {
   sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4"/></svg>',
   cloud: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 11.1 3.5 3.5 0 0 0 7 18z"/></svg>',
@@ -5121,7 +5121,7 @@ function dontMissHtml(stop: TlStop, brief: PlaceBrief | null, loading: boolean, 
       links,
     ].join('');
   }
-  // 브리핑은 있는데 이 섹션만 비어 있으면 "다시 생성" — 반쪽 캐시를 건너뛰는 경로(5-3의 실제 버그)
+  // 브리핑은 있는데 이 섹션만 비어 있으면 "다시 생성" — 반쪽 캐시를 건너뛰는 경로(5장의 실제 버그)
   if (brief) {
     return [
       '<button class="mb-ai-btn ghost" data-brief="' + escapeHtml(key) + '" data-force="1">' + IC.refresh + '다시 생성</button>',
@@ -5239,7 +5239,7 @@ function pdReviewsHtml(stop: TlStop): string {
 
 /* ══════════════ 사진 주입 ══════════════ */
 
-/** 사진 주소를 style 속성에 직접 끼워 넣지 않는다 — 따옴표·괄호가 섞이면 CSS가 깨진다(5-3) */
+/** 사진 주소를 style 속성에 직접 끼워 넣지 않는다 — 따옴표·괄호가 섞이면 CSS가 깨진다(5장) */
 /** 불러오지 못한 사진 URL — 다시 그릴 때 깨진 사진 대신 처음부터 대체 화면을 보여준다 */
 const brokenPhotos = new Set<string>();
 /** 이미 한 번 확인 중이거나 확인한 URL(같은 사진을 렌더마다 다시 확인하지 않게) */

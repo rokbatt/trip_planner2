@@ -7,7 +7,7 @@ import infraSrc from '../../api/nearby-infra.ts?raw';
 import searchSrc from '../../api/nearby-search.ts?raw';
 
 /**
- * 공유 캐시(placeId 키)를 만들 때 쓰는 "Google에서 장소 확인" 규칙(Claude.md 5-11, 캐시 오염 방지).
+ * 공유 캐시(placeId 키)를 만들 때 쓰는 "Google에서 장소 확인" 규칙(Claude.md 6장, 캐시 오염 방지).
  */
 
 const PID = 'ChIJjYPUa8GZ4jARi9fgigQOiR8';

@@ -10,7 +10,7 @@ import infraSrc from '../../api/nearby-infra.ts?raw';
 import searchSrc from '../../api/nearby-search.ts?raw';
 import routeSrc from '../../api/route-matrix.ts?raw';
 
-/** 사용자당 하루 상한(Claude.md 5-11, supabase/api_usage.sql) */
+/** 사용자당 하루 상한(Claude.md 6장, supabase/api_usage.sql) */
 
 describe('하루 상한 숫자', () => {
   it('사용자와 정한 값이다(AI 60 · 검색 40 · 주변 시설 20 · 길찾기 60)', () => {

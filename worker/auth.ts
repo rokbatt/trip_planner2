@@ -1,5 +1,5 @@
 /**
- * 서버 주소(/api/*) 로그인 확인 — 모든 요청이 지나는 Worker 입구 한 곳에서 한다(Claude.md 5-11 "치명" 항목).
+ * 서버 주소(/api/*) 로그인 확인 — 모든 요청이 지나는 Worker 입구 한 곳에서 한다(Claude.md 6장 "치명" 항목).
  *
  * - 앱은 이미 모든 /api 호출에 로그인 토큰을 붙인다(src/utils/apiFetch.ts). 토큰이 없거나 틀리면 401.
  * - 예외: 비밀값으로 따로 지키는 관리·정리 주소(ADMIN_SECRET · CRON_SECRET), 자체 확인하는 /api/notify,

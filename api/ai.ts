@@ -204,7 +204,7 @@ function extractBullets(text: string, marker: string, otherMarkers: string[]): s
 // ── 장소 확인 (BEGIN — api/ai.ts·hotel-score.ts·nearby-infra.ts·nearby-search.ts에 같은 내용이 있다. 고치면 넷 다 고친다) ──
 /* 캐시 키는 Google 장소 ID인데 내용(이름·주소·좌표)을 화면이 보내면, 누군가 남의 장소 ID에 가짜 값을 넣어
  * 모든 사용자에게 보이는 캐시를 오염시킬 수 있다. 그래서 캐시를 새로 만들 땐 서버가 Google에서 직접 확인한
- * 값만 쓰고, 확인하지 못하면 결과는 돌려주되 캐시에는 남기지 않는다(Claude.md 5-11).
+ * 값만 쓰고, 확인하지 못하면 결과는 돌려주되 캐시에는 남기지 않는다(Claude.md 6장).
  * 요금: 좌표만 = Place Details Essentials, 이름까지 = Pro. 둘 다 장소당 캐시를 처음 만들 때 1회뿐이다. */
 const VERIFY_PLACE_ID_RE = /^[A-Za-z0-9_-]{10,300}$/;
 
@@ -245,7 +245,7 @@ export async function lookupPlace(placeId: unknown, serverKey: string | undefine
 // ── 장소 확인 (END) ──
 
 // ── 사용량 상한 (BEGIN — api/ai·destination-zones·hotel-score·import-hotel·monthly-picks·nearby-infra·nearby-search·route-matrix에 같은 내용이 있다. 고치면 모두 고친다) ──
-/* 사용자당 하루 상한(Claude.md 5-11, supabase/api_usage.sql). 돈이 드는 외부 호출 직전에만 센다 — 캐시에서 나온 결과는 세지 않는다.
+/* 사용자당 하루 상한(Claude.md 6장, supabase/api_usage.sql). 돈이 드는 외부 호출 직전에만 센다 — 캐시에서 나온 결과는 세지 않는다.
  * - 로그인 토큰이 없으면 세지 않고 통과한다(서버 로그인 확인을 켜기 전까지 — 예전 화면을 쓰는 기기를 막지 않기 위해)
  * - app_roles에 admin·unlimited로 등록된 이메일은 세지 않는다(관리자·지인 예외)
  * - 표가 없거나 오류가 나면 통과한다(있으면 좋고 없어도 동작) */
@@ -1808,7 +1808,7 @@ async function handleDocQAWeb(
  * - 사진은 **저장하지 않는다**. Gemini로 보내 읽기만 하고 결과(가게·금액·통화·날짜)만 돌려준다.
  * - 저장은 사용자가 화면에서 확인·수정한 뒤 기존 지출 저장 경로로 한다(원칙 3-1: AI 값을 바로 넣지 않음).
  * - 영수증·결제 화면에는 개인정보가 담기므로 Gemini **유료 등급**에서만 켠다 →
- *   환경 변수 RECEIPT_AI_ENABLED=true일 때만 동작(5-11).
+ *   환경 변수 RECEIPT_AI_ENABLED=true일 때만 동작(6장).
  */
 
 const RECEIPT_CATEGORIES = ['FLIGHT', 'STAY', 'TRANSPORT', 'FOOD', 'ACTIVITY', 'SHOPPING', 'ETC'] as const;
