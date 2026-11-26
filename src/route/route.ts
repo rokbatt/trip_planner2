@@ -754,10 +754,22 @@ function appendStopBeforeEndAnchor(day: RouteDay, placeId: string): void {
   // 굳이 앞에 끼울 필요 없이 그냥 맨 끝에 붙이면 이미 앵커 뒤(=시작과 끝 사이)에 놓인다.
   // 앵커가 시작/끝으로 서로 다른 두 개일 때만(DAY1의 공항→숙소, 전환일의 숙소A→숙소B 등)
   // 뒤쪽 앵커 바로 앞에 끼워 넣어야 한다.
-  if (!endId || endId === startId) { day.stopIds.push(placeId); return; }
-  const endIdx = day.stopIds.indexOf(endId);
-  if (endIdx === -1) { day.stopIds.push(placeId); return; }
-  day.stopIds.splice(endIdx, 0, placeId);
+  const endIdx = endId && endId !== startId ? day.stopIds.indexOf(endId) : -1;
+  if (endIdx !== -1) { day.stopIds.splice(endIdx, 0, placeId); return; }
+  // AI 일정이 붙인 끝(숙소로 돌아가기·마지막 날 출발 역)이 있으면 그 앞에
+  const tail = fixedTailIndex(day, dayIndex);
+  if (tail !== -1) { day.stopIds.splice(tail, 0, placeId); return; }
+  day.stopIds.push(placeId);
+}
+
+/** 하루의 맨 끝에 고정된 정류지 — "숙소로 돌아가기"이거나, 마지막 날 맨 끝의 직접 넣은 지점(출발 역). 없으면 -1 */
+function fixedTailIndex(day: RouteDay, dayIndex: number): number {
+  const i = day.stopIds.length - 1;
+  if (i < 1) return -1;
+  const id = day.stopIds[i];
+  if (lodgingRevisitPurpose.get(id) === RETURN_PURPOSE) return i;
+  if (dayIndex === days.length - 1 && id.startsWith('adhoc-')) return i;
+  return -1;
 }
 
 /* ── 실행 취소 / 다시 실행 (DAY별 stopIds 스냅샷) ── */
@@ -2213,37 +2225,70 @@ function optimizedOrder(day: RouteDay): { order: string[]; totalMin: number } {
     return { order: [...day.stopIds], totalMin: computeDaySummary(day).totalMin };
   }
 
-  const startPt = (startId ? placeById.get(startId) : null) ?? pts[0];
-  const endPt = endId && endId !== startPt.id ? placeById.get(endId) ?? null : null;
+  // 양 끝은 고정 — 시작 앵커(첫날 문서로 넣은 역·공항이면 그것), 끝 앵커 또는 "숙소로 돌아가기"·마지막 날 출발 역
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  const isAdhoc = (p: Place) => p.id.startsWith('adhoc-');
+  const startPt = dayIndex === 0 && isAdhoc(first) ? first : (startId ? placeById.get(startId) : null) ?? first;
+  let endPt = endId && endId !== startPt.id ? placeById.get(endId) ?? null : null;
+  // "숙소로 돌아가기"는 어디에 있든 끝으로
+  const ret = pts.find((p) => lodgingRevisitPurpose.get(p.id) === RETURN_PURPOSE);
+  if (!endPt && ret) endPt = ret;
+  if (!endPt && last.id !== startPt.id) {
+    const keepLast = lodgingRevisitPurpose.get(last.id) === RETURN_PURPOSE || (dayIndex === days.length - 1 && isAdhoc(last)) || last.id === endId;
+    if (keepLast) endPt = last;
+  }
   const middle = pts.filter((p) => p.id !== startPt.id && (!endPt || p.id !== endPt.id));
 
-  const used = new Set<number>();
-  const orderedMiddleIds: string[] = [];
+  // 시각을 정해 둔 정류지(식사 등)는 거리순에서 빼고, 그 시각에 맞는 자리에 다시 끼운다
+  const fixedMin = (p: Place) => {
+    const v = timeOverride.get(timeKey(day.id, p.id));
+    return v ? hhmmToMin(v) : null;
+  };
+  const timed = middle.filter((p) => fixedMin(p) != null).sort((a, b) => fixedMin(a)! - fixedMin(b)!);
+  // "숙소 들르기"(짐 두기 등)는 숙소 좌표라 거리순이면 늘 맨 앞으로 온다 — 하루 중 원래 있던 비율 위치를 지킨다
+  const isUserRevisit = (p: Place) => lodgingRevisitPurpose.has(p.id) && fixedMin(p) == null;
+  const revisits = middle.map((p, i) => ({ p, at: middle.length > 1 ? i / (middle.length - 1) : 0 })).filter((r) => isUserRevisit(r.p));
+  const loose = middle.filter((p) => fixedMin(p) == null && !isUserRevisit(p));
+
+  const nn: Place[] = [];
   let cur = startPt;
-  let totalMin = 0;
-  for (let k = 0; k < middle.length; k++) {
-    let best = -1;
-    let bestKm = Infinity;
-    for (let i = 0; i < middle.length; i++) {
-      if (used.has(i)) continue;
-      const km = haversineKm(cur.lat!, cur.lng!, middle[i].lat!, middle[i].lng!);
-      if (km < bestKm) {
-        bestKm = km;
-        best = i;
-      }
-    }
-    used.add(best);
-    const leg = estimateLegWithOverride(cur, middle[best]);
-    totalMin += leg.min;
-    orderedMiddleIds.push(middle[best].id);
-    cur = middle[best];
-  }
-  if (endPt) {
-    totalMin += estimateLegWithOverride(cur, endPt).min;
+  const rest = [...loose];
+  while (rest.length) {
+    let best = 0;
+    rest.forEach((p, i) => {
+      if (haversineKm(cur.lat!, cur.lng!, p.lat!, p.lng!) < haversineKm(cur.lat!, cur.lng!, rest[best].lat!, rest[best].lng!)) best = i;
+    });
+    cur = rest.splice(best, 1)[0];
+    nn.push(cur);
   }
 
-  const order = [startPt.id, ...orderedMiddleIds, ...(endPt ? [endPt.id] : [])];
-  return { order, totalMin };
+  const dwellOf = (p: Place) => customDwellStore.get(p.id) ?? dwellMinutes(catKeyFor(p.mood, p.category));
+  const seq: Place[] = [startPt];
+  let clock = fixedMin(startPt) ?? DAY_START;
+  let at: Place = startPt;
+  const visit = (p: Place) => {
+    const arrive = clock + estimateLegWithOverride(at, p).min;
+    clock = Math.max(arrive, fixedMin(p) ?? arrive) + dwellOf(p);
+    // "장소 미정" 식사는 바로 앞 정류지 자리에서 먹는 것으로 둔다
+    if (mealSlotOf(lodgingRevisitPurpose.get(p.id))) { p.lat = at.lat; p.lng = at.lng; }
+    at = p;
+    seq.push(p);
+  };
+  for (const p of nn) {
+    while (timed.length && clock + estimateLegWithOverride(at, p).min + dwellOf(p) > fixedMin(timed[0])! + 30) visit(timed.shift()!);
+    visit(p);
+  }
+  timed.forEach(visit);
+  for (const r of revisits) {
+    const k = 1 + Math.round(r.at * (seq.length - 1));
+    seq.splice(Math.min(seq.length, Math.max(1, k)), 0, r.p);
+  }
+  if (endPt) seq.push(endPt);
+
+  let totalMin = 0;
+  for (let k = 0; k < seq.length - 1; k++) totalMin += estimateLegWithOverride(seq[k], seq[k + 1]).min;
+  return { order: seq.map((p) => p.id), totalMin };
 }
 
 /* ══════════════ AI 일정 추천 (Gemini) ══════════════ */
@@ -3214,6 +3259,8 @@ function bindRightPanelEvents(container: HTMLElement, el: HTMLElement): void {
       if (parsed) timeOverride.set(timeKey(activeDay().id, id), parsed);
       // 형식이 잘못됐으면 조용히 되돌림(재렌더가 계산값으로 복구)
       renderRightPanel(container);
+      // 시각만 바꿔도 저장한다 — renderRightPanel은 저장을 예약하지 않는다
+      scheduleSave();
     };
     input.addEventListener('change', commit);
     input.addEventListener('keydown', (e) => {
