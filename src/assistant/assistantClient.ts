@@ -144,6 +144,16 @@ export async function fetchMyPlanInfo(): Promise<PlanInfo> {
   }
 }
 
+/**
+ * 요금제를 다시 물어야 하나 — 이미 PRO로 확인됐으면 더 묻지 않고, 무료·모름이면 일정 시간이 지났을 때 다시 묻는다.
+ * (잠긴 PRO 기능을 눌러 결제 화면에서 이용권을 사고 돌아왔을 때, 예전 "무료" 값이 남아 있어서 또 결제 화면으로 보내면 안 된다)
+ */
+export const PLAN_RECHECK_MS = 20_000;
+export function planRecheckDue(plan: Plan | null, askedAt: number, now: number = Date.now()): boolean {
+  if (plan === 'pro') return false;
+  return askedAt === 0 || now - askedAt >= PLAN_RECHECK_MS;
+}
+
 /** 내 요금제 — 화면 표시용(잠금·배지) */
 export async function fetchMyPlan(): Promise<Plan> {
   return (await fetchMyPlanInfo()).plan;

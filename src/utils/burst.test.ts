@@ -86,3 +86,16 @@ describe('서버를 거치지 않는 PRO 기능의 사용 기록(pro-use)', () =
     expect(area).toMatch(/reportProUse\('area-search'\)/);
   });
 });
+
+describe('요금제 다시 확인 정책(결제 화면에서 이용권을 사고 돌아온 경우)', () => {
+  it('PRO로 확인됐으면 더 묻지 않는다', async () => {
+    const { planRecheckDue } = await import('../assistant/assistantClient');
+    expect(planRecheckDue('pro', 1, 999_999_999)).toBe(false);
+  });
+  it('처음이거나 무료·모름이면 20초 뒤에 다시 묻는다', async () => {
+    const { planRecheckDue, PLAN_RECHECK_MS } = await import('../assistant/assistantClient');
+    expect(planRecheckDue(null, 0, 5)).toBe(true);
+    expect(planRecheckDue('free', 1000, 1000 + PLAN_RECHECK_MS - 1)).toBe(false);
+    expect(planRecheckDue('free', 1000, 1000 + PLAN_RECHECK_MS)).toBe(true);
+  });
+});

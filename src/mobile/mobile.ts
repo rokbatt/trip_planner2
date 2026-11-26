@@ -140,7 +140,7 @@ import { takeWhereParams, askWhere, sendHere, positionOnce, agoLabel, type Where
 import { directionsUrl, originChoices, type DirPoint, type Origin, type TravelHint } from './directions';
 import { readReceiptPhoto, toDraft, chargedRate, MAX_PHOTOS_PER_IMPORT, type PhotoDraft } from './receiptImport';
 import { searchPhotoSpots, instagramTagUrl, type SpotInfo, type SpotSource } from './photoSpots';
-import { fetchMyPlan, type Plan } from '../assistant/assistantClient';
+import { fetchMyPlan, planRecheckDue, type Plan } from '../assistant/assistantClient';
 import { PHRASES, LANG_LABEL, SPEECH_LANG, SITUATION_LABEL, languageForDestination, situationsForDay, type Situation } from './phrasebook';
 
 type Place = Database['public']['Tables']['places']['Row'];
@@ -2274,11 +2274,16 @@ let spotInfo = new Map<string, SpotInfo>();
  * 모르는 동안(null)은 막지 않는다 — 서버가 PRO가 아니면 403과 안내 문구를 돌려준다.
  */
 let myPlan: Plan | null = null;
-let myPlanAsked = false;
+let myPlanAt = 0;
 function ensureMyPlan(): void {
-  if (myPlanAsked) return;
-  myPlanAsked = true;
-  void fetchMyPlan().then((p) => { myPlan = p; if (p !== 'pro') render(); });
+  // PRO로 확인됐으면 더 묻지 않고, 무료·모름이면 20초가 지났을 때 다시 묻는다(결제 화면에서 이용권을 사고 돌아온 경우)
+  if (!planRecheckDue(myPlan, myPlanAt)) return;
+  myPlanAt = Date.now();
+  void fetchMyPlan().then((p) => {
+    const was = myPlan;
+    myPlan = p;
+    if (was !== p) render();
+  });
 }
 /** 요금제가 무료로 확인됐으면 PRO 기능(인생샷·영수증 읽기)을 화면에서 잠근다 */
 const proLocked = (): boolean => myPlan === 'free';

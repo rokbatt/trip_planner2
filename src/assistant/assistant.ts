@@ -36,7 +36,7 @@ import {
   normalizeNoteCategory,
 } from '../docs/docsStore';
 import { escapeHtml } from '../docs/docsIcons';
-import { requestAssistantAnswer, requestDocDigest, fetchMyPlanInfo } from './assistantClient';
+import { requestAssistantAnswer, requestDocDigest, fetchMyPlanInfo, planRecheckDue } from './assistantClient';
 import type { AssistantSource, Plan, WebSource } from './assistantClient';
 import { safeHttpUrl } from '../utils/html';
 import type { TripDocUser, TripDocument } from '../types/database';
@@ -73,7 +73,9 @@ let myPlan: Plan | null = null;
 /** 이용권의 PRO 웹 검색 남은 수(null = 제한 없음·모름) — 안내 문구용, 실제 차감은 서버 */
 let webLeft: number | null = null;
 
+let planAt = 0;
 function refreshPlan(): void {
+  planAt = Date.now();
   void fetchMyPlanInfo().then((p) => { myPlan = p.plan; webLeft = p.webLeft; updateFormState(); });
 }
 let planAsked = false;
@@ -134,7 +136,8 @@ export function renderAssistantPanel(container: HTMLElement, tripId: string): vo
   mountShell();
   renderList();
   updateFormState();
-  if (!planAsked) {
+  // 처음이거나, 무료로 알고 있는데 시간이 지났으면 다시 확인한다(결제 화면에서 이용권을 사고 돌아온 경우)
+  if (!planAsked || planRecheckDue(myPlan, planAt)) {
     planAsked = true;
     refreshPlan();
   }
@@ -396,9 +399,15 @@ function mountShell(): void {
   rootEl.querySelector('#ws-ai-web')?.addEventListener('click', () => {
     if (myPlan !== 'pro') {
       // 무료로 확인됐으면 바로 요금제·결제 화면으로(2026-11-25 사용자 결정). 아직 확인 중이면 PRO일 수 있으니 기다리게 한다
-      if (myPlan === 'free') { goPro('web'); return; }
       const hint = rootEl?.querySelector('#ws-ai-web-hint') as HTMLElement | null;
       if (hint) hint.textContent = '확인 중이에요…';
+      // 누르는 순간 요금제를 한 번 더 확인한다 — 방금 이용권을 샀는데 옛 값으로 결제 화면에 또 보내지 않게
+      void fetchMyPlanInfo().then((p) => {
+        myPlan = p.plan; webLeft = p.webLeft; planAt = Date.now();
+        if (p.plan === 'pro') { webOn = true; updateFormState(); return; }
+        if (hint) hint.textContent = '';
+        goPro('web');
+      });
       return;
     }
     webOn = !webOn;
