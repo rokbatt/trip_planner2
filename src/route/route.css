@@ -875,14 +875,15 @@ a.rt-stopinfo-leg:hover .rt-stopinfo-leg-gmaps { color: var(--rt-blue); }
 .rt-legs-real-btn:hover { color: var(--rt-navy); }
 .rt-legs-real-btn:disabled { color: var(--rt-ink-4); cursor: default; text-decoration: none; }
 
-.rt-panel-actions { display: flex; gap: 8px; padding: 0 12px 14px; flex-shrink: 0; }
+.rt-panel-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 12px 14px; flex-shrink: 0; }
 .rt-panel-action {
-  flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
+  flex: 1 1 calc(50% - 4px); display: flex; align-items: center; justify-content: center; gap: 5px; white-space: nowrap;
   padding: 10px; border-radius: 11px; border: 1px solid var(--rt-line);
   background: #fff; color: var(--rt-ink); font-size: 11.5px; font-weight: 700; cursor: pointer;
   font-family: inherit;
   transition: border-color var(--rt-ease), background var(--rt-ease), box-shadow var(--rt-ease);
 }
+.rt-panel-action.primary { flex-basis: 100%; }
 .rt-panel-action:hover:not(:disabled) { border-color: var(--rt-sky); background: #F5FBFE; box-shadow: var(--rt-shadow-sm); }
 .rt-panel-action svg { width: 13px; height: 13px; }
 .rt-panel-action.primary { background: var(--rt-navy); border-color: var(--rt-navy); color: #fff; }

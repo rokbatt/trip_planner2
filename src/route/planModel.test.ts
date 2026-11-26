@@ -93,3 +93,16 @@ describe('weaveMeals', () => {
     expect(seq.filter((e) => e.kind === 'place')).toHaveLength(7);
   });
 });
+
+describe('장소 미정 일정(식사 외)', () => {
+  it('free 목적 왕복과 라벨, 숙소 들르기와 구분', async () => {
+    const { freePurpose, freeKindOf, purposeLabel, isPlaceholderPurpose, RETURN_PURPOSE } = await import('./planModel');
+    expect(freeKindOf(freePurpose('cafe'))?.label).toBe('카페');
+    expect(purposeLabel(freePurpose('shop'))).toBe('쇼핑 · 장소 미정');
+    expect(isPlaceholderPurpose(freePurpose('rest'))).toBe(true);
+    expect(isPlaceholderPurpose(mealPurpose('lunch'))).toBe(true);
+    expect(isPlaceholderPurpose('짐 두기')).toBe(false);
+    expect(isPlaceholderPurpose(RETURN_PURPOSE)).toBe(false);
+    expect(freeKindOf('free:unknown')).toBeNull();
+  });
+});

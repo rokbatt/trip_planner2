@@ -30,6 +30,27 @@ export function mealSlotOf(purpose: string | null | undefined): MealSlot | null 
   return MEAL_SLOTS.includes(s) ? s : null;
 }
 
+/** 사용자가 직접 끼우는 "장소 미정" 일정(식사 외) — route_stops.stop_purpose에 'free:<key>' */
+const FREE_PREFIX = 'free:';
+export const FREE_KINDS = [
+  { key: 'cafe', label: '카페', dwell: 60 },
+  { key: 'snack', label: '간식', dwell: 30 },
+  { key: 'shop', label: '쇼핑', dwell: 90 },
+  { key: 'rest', label: '자유 시간', dwell: 60 },
+] as const;
+export type FreeKey = (typeof FREE_KINDS)[number]['key'];
+export function freePurpose(key: FreeKey): string {
+  return FREE_PREFIX + key;
+}
+export function freeKindOf(purpose: string | null | undefined): (typeof FREE_KINDS)[number] | null {
+  if (!purpose || !purpose.startsWith(FREE_PREFIX)) return null;
+  return FREE_KINDS.find((k) => k.key === purpose.slice(FREE_PREFIX.length)) ?? null;
+}
+/** 식사 자리·카페 같은 "장소 미정" 일정인가(숙소 들르기·복귀와 구분) */
+export function isPlaceholderPurpose(purpose: string | null | undefined): boolean {
+  return !!mealSlotOf(purpose) || !!freeKindOf(purpose);
+}
+
 /** AI 일정이 하루 끝에 붙이는 "숙소로 돌아가기"(숙소 들르기와 같은 저장 방식) */
 export const RETURN_PURPOSE = 'return:hotel';
 
@@ -37,6 +58,8 @@ export const RETURN_PURPOSE = 'return:hotel';
 export function purposeLabel(purpose: string | null | undefined): string | null {
   const slot = mealSlotOf(purpose);
   if (slot) return MEAL_LABEL[slot] + ' · 장소 미정';
+  const free = freeKindOf(purpose);
+  if (free) return free.label + ' · 장소 미정';
   if (purpose === RETURN_PURPOSE) return '숙소로 돌아가기';
   return null;
 }
