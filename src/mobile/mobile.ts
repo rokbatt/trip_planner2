@@ -4163,7 +4163,7 @@ function menuSheetHtml(): string {
       row('docs', IC.doc, '예약 서류 올리기', '항공권 · 바우처 · 여권 사본'),
     ]),
     group('요금제', [
-      row('pro', IC.star, '요금제 · PRO', myPlan === 'pro' ? '웹 검색 · 인생샷 · 영수증 AI 이용 중' : '웹 검색 · 인생샷 · 영수증 AI', myPlan === 'pro' ? 'PRO' : myPlan === 'free' ? '무료' : ''),
+      row('pro', IC.star, '요금제 · PRO', myPlan === 'pro' ? '웹 검색 · 인생샷 · 가이드 · 영수증 AI 이용 중' : '웹 검색 · 인생샷 · 가이드 · 영수증 AI', myPlan === 'pro' ? 'PRO' : myPlan === 'free' ? '무료' : ''),
     ]),
     group('도움말 · 계정', [
       row('help', IC.help, '도움말 · 사용 안내'),
