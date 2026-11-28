@@ -47,7 +47,7 @@ describe('유료 조항 스위치', () => {
     expect(PURCHASE_NOTICE.join(' ')).toContain('자동으로 갱신되거나 다시 결제되지 않습니다');
     expect(terms).toContain('자동으로 갱신되거나 다시 결제되지 않습니다');
     expect(terms).toContain('7일 이내');
-    expect(terms).toContain('웹 검색, 인생샷, 영수증 AI 입력, 지도 영역 검색의 하루 4번째 이후 사용');
+    expect(terms).toContain('웹 검색, 인생샷, 가이드, 영수증 AI 입력, 지도 영역 검색의 하루 4번째 이후 사용');
     expect(terms).toContain('4,900원');
   });
 });
