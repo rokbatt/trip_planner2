@@ -68,6 +68,7 @@ export function openCreateTripModal(onCreated: (tripId: string) => void): void {
     '</div>',
   ].join('\n');
 
+  overlay.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('open'));
 

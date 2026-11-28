@@ -1821,6 +1821,7 @@ function bindOptionsMenu(container: HTMLElement): void {
       '<div class="rt-options-divider"></div>',
       '<button type="button" class="danger" id="rt-opt-reset">' + IC_TRASH + ' 모든 DAY 동선 초기화</button>',
     ].join('');
+    menu.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
     document.body.appendChild(menu);
     const r = btn.getBoundingClientRect();
     menu.style.top = r.bottom + 8 + 'px';
@@ -1901,6 +1902,7 @@ function openRouteDestSwitcher(container: HTMLElement, anchor: HTMLElement): voi
   const pop = document.createElement('div');
   pop.className = 'rt-dest-switcher';
   pop.innerHTML = '<div class="rt-dest-switch-title">여행지 변경</div><div class="rt-dest-switch-list">' + items + '</div>';
+  pop.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(pop);
 
   const r = anchor.getBoundingClientRect();
@@ -2050,6 +2052,7 @@ function openModeOverridePopover(key: string, anchor?: HTMLElement): void {
         '" target="_blank" rel="noopener noreferrer">' + IC_EXTLINK + ' 구글맵에서 경로 보기</a>'
       : '',
   ].join('');
+  pop.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(pop);
   const r = anchor?.getBoundingClientRect();
   if (r) {
@@ -2751,6 +2754,7 @@ function openAiPlanNotesModal(container: HTMLElement): void {
     void runAiRoutePlan(container, anchors);
   });
 
+  backdrop.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(backdrop);
   (backdrop.querySelector('#rt-ai-notes-input') as HTMLTextAreaElement)?.focus();
 }
@@ -2825,6 +2829,7 @@ function openFreeStopModal(container: HTMLElement): void {
       void syncPlan();
     });
   });
+  backdrop.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(backdrop);
 }
 
@@ -2909,6 +2914,7 @@ function openLodgingRevisitModal(container: HTMLElement): void {
     void syncPlan();
   });
 
+  backdrop.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(backdrop);
 }
 
@@ -3057,6 +3063,7 @@ function openDayDetailModal(dayLabel: string, r: AiDayDetailResult): void {
   backdrop.querySelector('#rt-ai-close')?.addEventListener('click', close);
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
   document.addEventListener('keydown', onKey);
+  backdrop.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(backdrop);
 }
 

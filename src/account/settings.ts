@@ -167,6 +167,7 @@ function openWithdrawModal(userId: string, email: string): void {
         </div>
       </div>
     </div>`;
+  overlay.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('open'));
 

@@ -550,6 +550,7 @@ function openDestSwitcher(host: HTMLElement, tripId: string, anchor: HTMLElement
   const pop = document.createElement('div');
   pop.className = 'tl-dest-switcher';
   pop.innerHTML = '<div class="tl-dest-switch-title">여행지 변경</div><div class="tl-dest-switch-list">' + items + '</div>';
+  pop.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(pop);
   destSwitcherEl = pop;
 

@@ -108,6 +108,7 @@ export function openShareSheet(input: ShareInput): void {
     '  <p class="ss-note">링크를 받은 사람이 로그인하면 이 여행에 함께하게 돼요.</p>',
     '</div>',
   ].join('');
+  overlay.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('open'));
 
