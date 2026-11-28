@@ -3,8 +3,16 @@
 # 규칙이 여러 개 맞으면 값이 이어 붙는다 — 그래서 /assets/*는 "! Cache-Control"로 앞 규칙 값을 지우고 새로 단다.
 
 # 기본: index.html, sw.js, manifest 등은 새 배포가 바로 보이도록 매번 확인
+# 보안 기본값 — 다른 사이트가 이 앱을 iframe에 넣어 누르게 만드는 것(클릭재킹)을 막고, 파일 형식 추측을 끈다.
+# 리퍼러는 다른 사이트에 출처(도메인)만 보낸다 — 구글 지도 키의 "웹사이트 제한"은 출처로 맞추므로 그대로 동작한다.
+# 위치는 이 사이트만(도착 자동 기록·주변), 카메라·마이크는 쓰지 않는다(영수증은 파일 선택으로 받는다).
+# CSP(스크립트 출처 제한)는 구글 지도·포트원·카카오 SDK를 실제 배포에서 확인한 뒤에 따로 넣는다.
 /*
   Cache-Control: no-cache, no-store, must-revalidate
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), usb=(), geolocation=(self)
 
 # 해시가 붙은 빌드 파일은 내용이 바뀌면 이름이 바뀌니 1년 캐시
 /assets/*

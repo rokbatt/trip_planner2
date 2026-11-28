@@ -194,7 +194,7 @@ Cloudflare Observability(서버) / `utils/errorReport.ts` → `client_errors`(�
 
 ### 미해결 (해결하면 지운다)
 - 높음: 주소별 "그 여행 멤버인가" 확인 / Vercel 옛 주소(`mongsil2.vercel.app/api/*`) 정리(5단계) / 오류 감지 보강.
-- 중간: `cache-photo`·`destination-zones` 오류 원인 / 초대 코드(6자리·만료 없음) 강화 / 보안 헤더(CSP) / Places 필드 등급·자동완성 세션 / 자유 입력 캐시의 정리 대상 누락 / 외부 호출 타임아웃 / 의존성 취약점 / Google 장소 정보 보관 범위 / `google.maps.Marker` → `AdvancedMarkerElement` / 방콕 외 도시 `stay_zones` 큐레이션 / 영역 검색 서버 강제.
+- 중간: `cache-photo`·`destination-zones` 오류 원인 / 초대 코드(6자리·만료 없음) 강화 / CSP(기본 보안 헤더는 `public/_headers`에 있음) / Places 필드 등급·자동완성 세션 / 자유 입력 캐시의 정리 대상 누락 / 외부 호출 타임아웃(Gemini는 45초 적용, 나머지 api 파일 점검) / 개발 도구 의존성 취약점(vite·vitest — 배포 번들에는 0건) / Google 장소 정보 보관 범위 / `google.maps.Marker` → `AdvancedMarkerElement` / 방콕 외 도시 `stay_zones` 큐레이션 / 영역 검색 서버 강제.
 
 ---
 
