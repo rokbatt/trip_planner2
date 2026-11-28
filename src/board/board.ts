@@ -24,6 +24,7 @@ import { cleanPickName, pickSearchQueries } from './pickName';
 import { mountPen, type PenController } from './pen';
 import { mountAreaSearch, type AreaSearchController } from './areaSearch';
 import { toGooglePlaceResult, type ExplorePlace } from '../mobile/exploreApi';
+import { boardPinIcon, BOARD_PIN_HOVER_SCALE } from '../utils/routeMapStyle';
 
 type Place = Database['public']['Tables']['places']['Row'];
 type PlacesDbRow = Database['public']['Tables']['places_db']['Row'];
@@ -155,39 +156,8 @@ const MAP_STYLE_BOARD = [
   { featureType: 'transit', elementType: 'labels.icon', stylers: [{ saturation: -50 }, { lightness: 30 }] },
 ];
 
-/** 아이콘 svg 문자열에서 <svg> 껍데기만 벗겨 내부 마크업만 남긴다 — 핀 색상과 통일하기 위해
- *  감싸는 <g>에서 색/굵기를 한 번에 지정(STAY 지도의 pinIconInner와 동일한 방식). */
-function pinIconInner(svg: string): string {
-  return svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
-}
-
-/** 반지름 r인 원(중심 cx,cy)에 외부 접선 두 개를 그어 tip에서 만나는 "물방울(핀)" 윤곽 경로 —
- *  STAY 지도(shortlist.ts)의 pinTearPath와 같은 수식. 화면이 서로 달라 모듈을 공유하지
- *  않고 복제했다(board.ts가 shortlist.ts 전체를 끌고 들어오면 번들이 얽힘). */
-function pinTearPath(cx: number, cy: number, r: number, tipY: number): string {
-  const d = tipY - cy;
-  const phi = Math.acos(r / d);
-  const a1 = Math.PI / 2 - phi;
-  const a2 = Math.PI / 2 + phi;
-  const t1x = cx + r * Math.cos(a1);
-  const t1y = cy + r * Math.sin(a1);
-  const t2x = cx + r * Math.cos(a2);
-  const t2y = cy + r * Math.sin(a2);
-  return (
-    'M' + t1x + ' ' + t1y +
-    ' A' + r + ' ' + r + ' 0 1 0 ' + t2x + ' ' + t2y +
-    ' L' + cx + ' ' + tipY +
-    ' Z'
-  );
-}
-
-const BOARD_PIN_HEAD_R = 15.6; // 13 * 1.2 — 핀 전체 크기를 20% 키워달라는 요청
-const BOARD_PIN_TAIL_RATIO = 1.45;
-/** 핀 바깥 흰 테두리 두께 — 지도 배경색과 상관없이 핀이 또렷하게 떠 보이는 핵심.
- *  머리 반지름과 같은 비율로 키워서 두께감이 이전과 동일하게 유지되도록 함. */
-const BOARD_PIN_RING = 2.16; // 1.8 * 1.2
-/** 마우스오버/선택 시 핀 확대 배율 */
-const BOARD_PIN_HOVER_SCALE = 1.22;
+/* 핀 모양(물방울 + 흰 테두리 + 흰 원 안 아이콘)과 크기 상수는 utils/routeMapStyle.ts의 boardPinIcon —
+ * Companion 주변 지도도 같은 핀을 쓴다. */
 
 /* ── 규칙 기반 분류 (진짜 AI 아님) ──
  * 키워드 매칭 점수로 게이트를 추천. 향후 Gemini 연동 시 이 함수만 교체하면 됨. */
@@ -1089,47 +1059,7 @@ function buildBoardMapMarkerIcon(
     BOARD_CATEGORY_PIN_ICON[category ?? ''] ||
     BOARD_MOOD_PIN_FALLBACK[mood ?? ''] ||
     BD_PIN_IC_LANDMARK;
-  const scale = opts?.scale ?? 1;
-  const r = BOARD_PIN_HEAD_R * scale;
-  const tail = r * BOARD_PIN_TAIL_RATIO;
-  const ring = BOARD_PIN_RING * scale;
-  const pad = 6 * scale;
-  // 원래 도형(그림자 포함)을 ring만큼 사방으로 띄운 캔버스 — 테두리가 잘리지 않게
-  const w = Math.ceil(r * 2 + pad + ring * 2);
-  const h = Math.ceil(r + tail + pad + ring * 2);
-  const cx = w / 2;
-  const tipY = h - ring - pad / 2;
-  const headCy = tipY - tail;
-  const whiteR = r - r * 0.26;
-  // 아이콘이 흰 원을 꽉 채우면 관람차·과녁처럼 선이 많은 그림이 뭉개져서 살짝 여백을 둔다
-  const iconSize = whiteR * 1.42;
-  const iconScale = iconSize / 24;
-  // 화면상 실제 획 두께를 고정(1.65px)하기 위해 아이콘 축소배율만큼 되곱해준다
-  const iconStroke = 1.65 / iconScale;
-
-  const tear = pinTearPath(cx, headCy, r, tipY);
-  const shadow =
-    '<ellipse cx="' + cx + '" cy="' + (tipY + r * 0.1) + '" rx="' + r * 0.42 + '" ry="' + r * 0.15 + '" fill="rgba(11,42,92,0.18)"/>';
-  const inner =
-    '<g transform="translate(' + (cx - iconSize / 2) + ',' + (headCy - iconSize / 2) + ') scale(' + iconScale +
-    ')" fill="none" stroke="' + color + '" stroke-width="' + iconStroke +
-    '" stroke-linecap="round" stroke-linejoin="round">' + pinIconInner(iconSvg) + '</g>';
-
-  const svg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
-    shadow +
-    // 같은 경로를 흰 굵은 선으로 한 번 먼저 그려 바깥 테두리를 만들고, 그 위에 색을 채운다
-    '<path d="' + tear + '" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="' + ring * 2 + '" stroke-linejoin="round"/>' +
-    '<path d="' + tear + '" fill="' + color + '"/>' +
-    '<circle cx="' + cx + '" cy="' + headCy + '" r="' + whiteR + '" fill="#FFFFFF"/>' +
-    inner +
-    '</svg>';
-
-  return {
-    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
-    scaledSize: new g.maps.Size(w, h),
-    anchor: new g.maps.Point(cx, tipY),
-  };
+  return boardPinIcon(g, color, iconSvg, opts?.scale ?? 1);
 }
 
 /** 클러스터에 묶인 마커들 중 가장 많은 게이트의 색을 고른다(동률이면 먼저 나온 쪽).

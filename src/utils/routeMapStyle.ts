@@ -70,6 +70,46 @@ export function pinTearPath(cx: number, cy: number, r: number, tipY: number): st
   return 'M' + t1x + ' ' + t1y + ' A' + r + ' ' + r + ' 0 1 0 ' + t2x + ' ' + t2y + ' L' + cx + ' ' + tipY + ' Z';
 }
 
+/* ── IDEAS 보드 지도 핀(흰 테두리 물방울 + 흰 원 안 선 아이콘) — 보드와 Companion 주변 지도가 같이 쓴다 ── */
+export const BOARD_PIN_HEAD_R = 15.6;
+export const BOARD_PIN_TAIL_RATIO = 1.45;
+/** 핀 바깥 흰 테두리 두께 — 지도 배경색과 상관없이 핀이 또렷하게 떠 보이는 핵심 */
+export const BOARD_PIN_RING = 2.16;
+/** 마우스오버/선택 시 핀 확대 배율 */
+export const BOARD_PIN_HOVER_SCALE = 1.22;
+
+/** 보드 핀 모양의 마커 아이콘 — color는 테두리·아이콘 색, icon은 24×24 선 아이콘 svg */
+export function boardPinIcon(g: any, color: string, icon: string, scale = 1): any {
+  const r = BOARD_PIN_HEAD_R * scale;
+  const tail = r * BOARD_PIN_TAIL_RATIO;
+  const ring = BOARD_PIN_RING * scale;
+  const pad = 6 * scale;
+  // 원래 도형(그림자 포함)을 ring만큼 사방으로 띄운 캔버스 — 테두리가 잘리지 않게
+  const w = Math.ceil(r * 2 + pad + ring * 2);
+  const h = Math.ceil(r + tail + pad + ring * 2);
+  const cx = w / 2;
+  const tipY = h - ring - pad / 2;
+  const headCy = tipY - tail;
+  const whiteR = r - r * 0.26;
+  // 아이콘이 흰 원을 꽉 채우면 선이 많은 그림이 뭉개져서 살짝 여백을 둔다
+  const iconSize = whiteR * 1.42;
+  const iconScale = iconSize / 24;
+  // 화면상 실제 획 두께를 고정(1.65px)하기 위해 아이콘 축소배율만큼 되곱한다
+  const iconStroke = 1.65 / iconScale;
+  const tear = pinTearPath(cx, headCy, r, tipY);
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+    '<ellipse cx="' + cx + '" cy="' + (tipY + r * 0.1) + '" rx="' + r * 0.42 + '" ry="' + r * 0.15 + '" fill="rgba(11,42,92,0.18)"/>' +
+    // 같은 경로를 흰 굵은 선으로 한 번 먼저 그려 바깥 테두리를 만들고, 그 위에 색을 채운다
+    '<path d="' + tear + '" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="' + ring * 2 + '" stroke-linejoin="round"/>' +
+    '<path d="' + tear + '" fill="' + color + '"/>' +
+    '<circle cx="' + cx + '" cy="' + headCy + '" r="' + whiteR + '" fill="#FFFFFF"/>' +
+    '<g transform="translate(' + (cx - iconSize / 2) + ',' + (headCy - iconSize / 2) + ') scale(' + iconScale +
+    ')" fill="none" stroke="' + color + '" stroke-width="' + iconStroke + '" stroke-linecap="round" stroke-linejoin="round">' + iconInner(icon) + '</g>' +
+    '</svg>';
+  return { url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg), scaledSize: new g.maps.Size(w, h), anchor: new g.maps.Point(cx, tipY) };
+}
+
 /** 24×24 선 아이콘을 (cx,cy) 중심, 한 변 size 픽셀로 그린다 */
 export function markerIconSvg(icon: string, cx: number, cy: number, size: number, color: string, strokeWidth: number): string {
   return '<g transform="translate(' + (cx - size / 2) + ',' + (cy - size / 2) + ') scale(' + size / 24 + ')" color="' + color +

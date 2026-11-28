@@ -121,7 +121,7 @@ import { savedDocPaths, saveDocOffline, loadOfflineDoc, removeOfflineDoc, type O
 import { fetchWeather, resetWeatherCache } from './weather';
 import type { Weather } from './weather';
 import { loadGoogleMapsScript, suggestGateFromCategory } from '../utils/googleMaps';
-import { stopRole, stopRoleColor, routeStopMarker, svgMarkerIcon, legPathOrArc, drawRouteLeg, MAP_CAT_ICON, LODGING_REVISIT_COLOR } from '../utils/routeMapStyle';
+import { stopRole, stopRoleColor, routeStopMarker, svgMarkerIcon, legPathOrArc, drawRouteLeg, MAP_CAT_ICON, LODGING_REVISIT_COLOR, boardPinIcon, BOARD_PIN_HOVER_SCALE } from '../utils/routeMapStyle';
 import { insertGooglePlace, rehostPhoto } from '../trips/addGooglePlace';
 import {
   EXPLORE_CATS, CAT_SHORT, DEFAULT_FILTERS, RADIUS_OPTIONS, catDef, priceLabel, straightMeters, straightLabel, fmtMeters,
@@ -2999,22 +2999,17 @@ function syncUserDot(g: any): void {
 }
 
 const EX_MARKER_COLOR: Record<ExplorePlace['cat'], string> = { food: '#E2574C', cafe: '#9A6B3F', sight: '#7F77DD', stay: '#0B2A5C', amenity: '#15966D' };
-const EX_MARKER_GLYPH: Record<ExplorePlace['cat'], string> = {
-  food: '<path d="M10 6v6m-2-6v3.5a2 2 0 0 0 4 0V6M10 12v6M15.5 6c-1.2 0-2 1.6-2 3.5S14.3 13 15.5 13V18" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/>',
-  cafe: '<path d="M8 10h7v3.2a3 3 0 0 1-3 3h-1a3 3 0 0 1-3-3zM15 11h1.2a1.6 1.6 0 0 1 0 3.2H15" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/>',
-  sight: '<path d="M8.2 10.4h7.6l-1.2-2.4H9.4zM9.5 10.4v5M14.5 10.4v5M7.8 15.8h8.4" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/>',
-  stay: '<path d="M7.5 16V9M7.5 13.5h9V16M10.5 13.5V11h4.5a1.5 1.5 0 0 1 1.5 1.5v1" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/>',
-  amenity: '<path d="M8.5 10h7l-.7 6.5H9.2zM10 10V9a2 2 0 0 1 4 0v1" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/>',
+/** 주변 지도 핀 — IDEAS 보드 지도와 같은 모양(흰 테두리 물방울 + 흰 원 안 아이콘, routeMapStyle.boardPinIcon) */
+const EX_PIN_ICON: Record<ExplorePlace['cat'], string> = {
+  food: MAP_CAT_ICON.FOOD,
+  cafe: '<svg viewBox="0 0 24 24"><path d="M4 8h13v6a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V8Z"/><path d="M17 9h1.5a2.5 2.5 0 0 1 0 5H17"/><path d="M8 2v2M11 2v2M14 2v2"/></svg>',
+  sight: MAP_CAT_ICON.VISIT,
+  stay: MAP_CAT_ICON.STAY,
+  amenity: MAP_CAT_ICON.SHOPPING,
 };
 
 function exMarkerIcon(g: any, p: ExplorePlace, selected: boolean): any {
-  const s = Math.round((selected ? 44 : 32) * OTHER_PIN_SCALE);
-  const ring = selected ? '<circle cx="12" cy="12" r="11" fill="none" stroke="#2F86D6" stroke-width="2.2"/>' : '';
-  const svg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="' + s + '" height="' + Math.round(s * 1.25) + '" viewBox="0 0 24 30">' +
-    '<path d="M12 29s9-8.4 9-16A9 9 0 0 0 3 13c0 7.6 9 16 9 16z" fill="' + EX_MARKER_COLOR[p.cat] + '" stroke="#fff" stroke-width="1.4"/>' +
-    ring + '<g transform="translate(0 0.5)">' + EX_MARKER_GLYPH[p.cat] + '</g></svg>';
-  return { url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg), scaledSize: new g.maps.Size(s, Math.round(s * 1.25)), anchor: new g.maps.Point(s / 2, Math.round(s * 1.25)) };
+  return boardPinIcon(g, EX_MARKER_COLOR[p.cat], EX_PIN_ICON[p.cat], selected ? BOARD_PIN_HOVER_SCALE : 1);
 }
 
 /** 마커를 누르면 → 목록에서 그 카드를 강조하고 보이게. 카드를 누르면 → 상세(지도는 그 장소로) */
