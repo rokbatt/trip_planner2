@@ -999,6 +999,11 @@ export interface Database {
         Args: Record<string, never>;
         Returns: void;
       };
+      /* 여행에서 나가기 — supabase/leave_trip.sql */
+      leave_trip: {
+        Args: { p_trip_id: string };
+        Returns: void;
+      };
       get_trip_by_invite_code: {
         Args: { p_invite_code: string };
         Returns: {

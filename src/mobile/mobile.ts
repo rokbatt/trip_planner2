@@ -4117,7 +4117,7 @@ async function testPush(): Promise<void> {
 
 let menuOpen = false;
 
-type MenuKey = 'push' | 'weather' | 'test' | 'geo' | 'plan' | 'expense' | 'docs' | 'help' | 'account' | 'trips' | 'pro';
+type MenuKey = 'push' | 'weather' | 'test' | 'geo' | 'plan' | 'expense' | 'docs' | 'help' | 'account' | 'trips' | 'pro' | 'members';
 
 function menuSheetHtml(): string {
   ensureMyPlan();
@@ -4167,6 +4167,7 @@ function menuSheetHtml(): string {
     ]),
     group('도움말 · 계정', [
       row('help', IC.help, '도움말 · 사용 안내'),
+      row('members', IC.people, '여행 멤버 · 나가기', '멤버 보기 · 이 여행에서 나가기'),
       row('account', IC.lock, '계정 · 개인정보 · 탈퇴', '로그아웃, 약관'),
     ]),
     '  </div>',
@@ -4206,6 +4207,7 @@ function onMenu(key: MenuKey): void {
     case 'account': menuOpen = false; navigate('settings'); return;
     case 'pro': menuOpen = false; navigate('pro'); return;
     case 'trips': menuOpen = false; navigate('trips'); return;
+    case 'members': menuOpen = false; render(); void import('../trips/leaveTrip').then((m) => m.openTripMembers(currentTripId)); return;
   }
 }
 

@@ -380,7 +380,7 @@ function buildMemberAvatars(members: TripMemberLite[]): string {
     ? '<div class="ws-avatar ws-avatar-overflow">+' + overflow + '</div>'
     : '';
 
-  return '<div class="ws-member-avatars" id="ws-member-avatars">' + avatarsHtml + overflowHtml + '</div>';
+  return '<button type="button" class="ws-member-avatars is-btn" id="ws-member-avatars" title="여행 멤버 · 나가기" aria-label="여행 멤버 보기">' + avatarsHtml + overflowHtml + '</button>';
 }
 
 /** 우측 슬라이드 패널 (Drawer) — Collaborate / Assistant 세그먼트 컨트롤 */
@@ -607,6 +607,10 @@ function bindEvents(page: HTMLElement, tripId: string): void {
   });
 
   page.querySelector('#ws-help-btn')?.addEventListener('click', () => openHelp());
+  // 멤버 아바타 → 멤버 창(나가기) — 아바타는 멤버를 불러온 뒤에 다시 그려지므로 헤더에서 위임한다
+  page.querySelector('#ws-header')?.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).closest('#ws-member-avatars')) void import('../trips/leaveTrip').then((m) => m.openTripMembers(tripId));
+  });
   page.querySelector('#ws-nav-help')?.addEventListener('click', () => {
     sidebar.classList.remove('mobile-open');
     overlay?.classList.remove('visible');

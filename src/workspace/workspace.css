@@ -951,6 +951,12 @@
   display: flex;
   align-items: center;
 }
+/* 눌러서 멤버 창을 연다 */
+.ws-member-avatars.is-btn {
+  padding: 3px 4px; margin: 0; border: 0; border-radius: 999px; background: none; cursor: pointer; font: inherit;
+}
+.ws-member-avatars.is-btn:hover { background: rgba(11,42,92,0.06); }
+.ws-member-avatars.is-btn:focus-visible { outline: 2px solid #2F86D6; outline-offset: 1px; }
 
 .ws-avatar {
   width: 32px;
