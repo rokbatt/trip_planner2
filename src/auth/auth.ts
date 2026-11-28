@@ -354,7 +354,7 @@ export function renderLogin(): void {
                   </div>
                   <p class="lp-now-after">이 속도면 계획보다 12분 늦게 끝나요 · <strong>21:13 종료</strong></p>
                   <div class="lp-phone-tabs" aria-hidden="true">
-                    <span class="is-on">일정</span><span>주변</span><span>지갑</span><span>도슨트</span><span>일행</span>
+                    <span class="is-on">일정</span><span>주변</span><span>지갑</span><span>가이드</span><span>일행</span>
                   </div>
                 </div>
               </div>

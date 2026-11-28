@@ -1,4 +1,4 @@
-/* 도슨트 탭(guide.ts) — 사진이 먼저 말을 걸고, 글은 읽기 편하게 */
+/* 가이드 탭(guide.ts) — 사진이 먼저 말을 걸고, 글은 읽기 편하게 */
 .gd { display: flex; flex-direction: column; gap: 14px; }
 .gd-head h2 { margin: 2px 0 0; font-size: 22px; line-height: 1.25; font-weight: 800; letter-spacing: -0.02em; color: var(--mb-ink); }
 .gd-head p { margin: 4px 0 0; font-size: 13.5px; color: var(--mb-muted); }

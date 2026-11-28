@@ -12,7 +12,7 @@ export const PRO_FEATURE_NAMES: Record<ProFeature, string> = {
   photo: '인생샷',
   receipt: '영수증·결제 캡처로 지출 추가',
   area: '영역 검색',
-  guide: '도슨트(알고 가는 여행 가이드)',
+  guide: '가이드(알고 가는 여행)',
 };
 
 const KEY = 'mongsil:pro-from';
