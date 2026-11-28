@@ -40,6 +40,7 @@ const COMPARE: { label: string; free: string; pro: string }[] = [
   { label: 'AI 어시스턴트(내 서류·메모)', free: '✓', pro: '✓' },
   { label: 'AI 어시스턴트 웹 검색', free: '—', pro: '✓' },
   { label: '인생샷', free: '—', pro: '✓' },
+  { label: '도슨트(관광지·맛집·가는 길 이야기)', free: '—', pro: '✓' },
   { label: '영수증·결제 캡처로 지출 추가', free: '—', pro: '✓' },
   { label: '지도 영역 검색(PC)', free: '하루 3번', pro: '하루 20번' },
   { label: '하루 AI 사용 횟수', free: '60번', pro: '150번' },
@@ -48,6 +49,7 @@ const COMPARE: { label: string; free: string; pro: string }[] = [
 /** PRO에서 쓸 수 있는 기능 카드 — 숫자는 products.ts·api/ai.ts의 값과 같다 */
 const FEATURES: { icon: string; bg: string; title: string; tag?: string; desc: string }[] = [
   { icon: '🔎', bg: '#EAF6FD', title: 'AI 어시스턴트 웹 검색', tag: '하루 20번 · 이용권당 100번', desc: '내 서류·메모에 없는 운영 시간, 입장료, 교통까지 웹에서 찾아 출처와 함께 답해요.' },
+  { icon: '📖', bg: '#FFF6E7', title: '도슨트', tag: '휴대폰', desc: '오늘 갈 관광지의 역사와 볼거리, 식당의 대표 메뉴와 가격대, 가는 길에 지나치는 곳의 유래를 사진과 함께 읽어요.' },
   { icon: '📸', bg: '#F4F0FE', title: '인생샷 장소 찾기', desc: '지금 있는 곳 근처의 사진 명소를 찾아 구글 지도에서 확인해 보여 줘요.' },
   { icon: '🧾', bg: '#EDFBF4', title: '영수증·결제 캡처로 지출 추가', desc: '사진만 올리면 가게·금액·통화를 읽어 지출 초안을 만들어 줘요.' },
   { icon: '🗺️', bg: '#FDF1F7', title: '지도 영역 검색', tag: 'PC · 하루 20번(무료 3번)', desc: '지도에서 영역을 그리면 그 안의 맛집·카페·관광지를 평점순으로 모아 보여 줘요.' },
@@ -73,7 +75,7 @@ function fmtDate(iso: string | null): string {
 
 export function planStatusText(p: PlanInfo | null): { title: string; sub: string } {
   if (!p) return { title: '확인 중이에요', sub: '' };
-  if (p.plan !== 'pro') return { title: '무료 이용 중', sub: 'PRO 이용권으로 웹 검색·인생샷·영수증 AI를 쓰고, 지도 영역 검색을 하루 20번까지 쓸 수 있어요.' };
+  if (p.plan !== 'pro') return { title: '무료 이용 중', sub: 'PRO 이용권으로 웹 검색·인생샷·도슨트·영수증 AI를 쓰고, 지도 영역 검색을 하루 20번까지 쓸 수 있어요.' };
   const parts: string[] = [];
   parts.push(p.expiresAt ? fmtDate(p.expiresAt) + '까지' : '기간 제한 없음');
   if (p.webLeft !== null) parts.push('웹 검색 남은 ' + p.webLeft + '번');
@@ -118,7 +120,7 @@ function buyHtml(configured: boolean, isPro: boolean): string {
     '<p class="pro-pname">' + esc(PRODUCT.name) + '</p>',
     '<div class="pro-price"><b class="pro-price-num">' + amount + '</b><span class="pro-price-unit">원</span></div>',
     '<p class="pro-vat">부가세 포함 · ' + PRODUCT.days + '일 이용 · 자동 갱신 없음</p>',
-    '<div class="pro-chips">' + ['웹 검색 ' + PRODUCT.web + '번', '인생샷', '영수증 AI', '영역 검색 하루 20번', 'AI 하루 150번'].map((c) => '<span class="pro-chip">' + esc(c) + '</span>').join('') + '</div>',
+    '<div class="pro-chips">' + ['웹 검색 ' + PRODUCT.web + '번', '인생샷', '도슨트', '영수증 AI', '영역 검색 하루 20번', 'AI 하루 150번'].map((c) => '<span class="pro-chip">' + esc(c) + '</span>').join('') + '</div>',
   ].join('');
   if (!configured) {
     return head + '<button type="button" class="pro-cta" disabled>결제 준비 중이에요</button><p class="pro-fine">열리면 이 화면에서 바로 구매할 수 있어요.</p>';
@@ -226,7 +228,7 @@ export function renderProPage(): HTMLElement {
       <header class="pro-hero">
         <span class="pro-eyebrow">MONGSIL PRO</span>
         <h1 class="pro-title">여행 중 궁금한 걸,<br>더 빠르게 찾아요</h1>
-        <p class="pro-sub">PRO ${PRODUCT.days}일 이용권 하나로 웹 검색 어시스턴트, 인생샷, 영수증 AI를 쓰고 영역 검색도 하루 20번까지 써요.<br>자동으로 갱신되지 않아서, 필요한 여행 동안만 쓰면 돼요.</p>
+        <p class="pro-sub">PRO ${PRODUCT.days}일 이용권 하나로 웹 검색 어시스턴트, 인생샷, 도슨트, 영수증 AI를 쓰고 영역 검색도 하루 20번까지 써요.<br>자동으로 갱신되지 않아서, 필요한 여행 동안만 쓰면 돼요.</p>
         <div class="pro-status" id="pro-status"><b>확인 중이에요</b></div>
       </header>
 

@@ -133,7 +133,7 @@
 - **방침은 코드의 사실 기술이다.** 위치·파일·사진·메모·새 외부 API/AI·기기 저장을 건드리면 `src/legal/legal.ts`를 같이 고친다. 방침이 코드와 어긋나는 것 자체가 법 위반.
 
 ### Companion(모바일)
-- 계획 단계는 PC, 여행 중엔 폰. 스크롤 컨테이너는 `.mb-scroll` 하나(TIMELINE 페이저만 예외).
+- 계획 단계는 PC, 여행 중엔 폰. 하단 탭: 일정 · 주변 · 지갑 · **도슨트(PRO, `mobile/guide.ts`)** · 일행. 도슨트는 장소·구간별 글을 서버가 한 번만 만들어(공유 캐시) 모두가 나눠 쓰고, 이 기기에 30일 저장한다. 가는 길 이야기는 AI가 말한 이름을 브라우저 Places로 **실제 장소로 확인**하고 길에서 350m 안인 것만 남긴다(3-1). 탭·제목 이름은 `GUIDE_*` 상수 한 곳. 스크롤 컨테이너는 `.mb-scroll` 하나(TIMELINE 페이저만 예외).
 - 지갑은 `trip_documents`를 읽는다(DOCUMENTS와 같은 자료). 지출은 WALLET을 처음 열 때만 불러온다(3-2). 금액을 못 환산하면 지어내지 않고 "원화 환산 없이 저장돼요"로 밝힌다.
 - 길찾기는 Google Maps 딥링크(`directionsHref`, 비용 0). 출발지는 기본 현재 위치, 상세에서 바꿀 수 있다(`mobile/directions.ts`).
 - 진행 기록(`trip_stop_progress`)은 낙관적 갱신. 날씨는 Open-Meteo(키 없음). GPS 자동 체크인 `mobile/geo.ts`. 오프라인(서류·일정 열람, 누른 기록은 나중에 전송)은 `offline/`.
@@ -170,7 +170,7 @@
 - 앱에서 `/api/*`는 `fetch`가 아니라 **`utils/apiFetch.ts`의 `apiFetch`**(토큰을 붙임). 토큰이 없으면 Worker 입구(`worker/auth.ts`)가 401(`AUTH_EXEMPT` 예외). 비상시 `API_AUTH=off`.
 - **하루 상한**(`supabase/api_usage.sql`): AI 60(PRO 150) · 장소 검색 40 · 주변 시설 20 · 길찾기 60. **돈이 드는 외부 호출 직전에만** 센다(캐시 결과는 세지 않음). 관리자·지인 예외는 `app_roles`(이메일 + `admin`/`unlimited`). 새 유료 호출은 같은 블록을 복사하고 `dailyQuota.test.ts`에 더한다.
 - **연타 상한**(`supabase/api_burst.sql`, `spend_api_burst`, `api/ai.ts`의 `BURST_LIMITS`): PRO도 3분 안 몰아치기를 막는다. 관리자·unlimited 제외, 오류 시 열어 둔다(fail open). 이 SQL을 안 돌려도 앱은 동작한다.
-- 요금제: 판정은 `api/ai.ts`의 `planFrom`/`userPlan` 한 곳 — `app_roles` admin·unlimited → PRO, `user_plans.plan='pro'`이고 만료 전 → PRO, **표가 없거나 조회 실패면 무료**. 화면 표시는 `kind:'my-plan'`, 실제 허용은 기능마다 서버가 다시 확인. PRO = 30일 이용권. PRO 기능: 어시스턴트 웹 검색(이용권당 100·하루 20), 인생샷 `photo-spots`, 영수증 읽기 `receipt-read`(`RECEIPT_AI_ENABLED=true`일 때만, 지금 꺼짐), 지도 영역 검색. PRO 기능을 쓰면 `recordProUse`/`pro-use`로 `api_usage` kind `pro`에 남긴다(환불 기준). 무료 사용자가 PRO 기능을 누르면 `goPro(feature)`로 `#pro`로 보내고, 돌아왔을 때 요금제는 `planRecheckDue`로 다시 확인한다.
+- 요금제: 판정은 `api/ai.ts`의 `planFrom`/`userPlan` 한 곳 — `app_roles` admin·unlimited → PRO, `user_plans.plan='pro'`이고 만료 전 → PRO, **표가 없거나 조회 실패면 무료**. 화면 표시는 `kind:'my-plan'`, 실제 허용은 기능마다 서버가 다시 확인. PRO = 30일 이용권. PRO 기능: 어시스턴트 웹 검색(이용권당 100·하루 20), 인생샷 `photo-spots`, 도슨트 `place-story`·`route-story`, 영수증 읽기 `receipt-read`(`RECEIPT_AI_ENABLED=true`일 때만, 지금 꺼짐), 지도 영역 검색(무료 하루 3번·PRO 20번). PRO 기능을 쓰면 `recordProUse`/`pro-use`로 `api_usage` kind `pro`에 남긴다(환불 기준). 무료 사용자가 PRO 기능을 누르면 `goPro(feature)`로 `#pro`로 보내고, 돌아왔을 때 요금제는 `planRecheckDue`로 다시 확인한다.
 
 ### 비용
 - 비싼 호출: Gemini 검색 그라운딩, Places의 **Enterprise 필드**(평점·사진·영업시간·예약 가능), 사진. 필드 마스크로 등급을 관리하고 목록 단계에선 필수 필드만(주변 탐색 목록은 `isReservable`을 받지 않는다, `exploreApi.ts`).
