@@ -5,6 +5,8 @@
  *   kind 생략 | 'hotel-review' : 숙소 AI 리뷰 요약 (Google Search 그라운딩)
  *   kind 'route-plan-day'      : 코드(src/route/planModel.ts)가 정한 Day의 장소들을 방문 순서로(Day마다)
  *   kind 'trip-anchors'        : 사용자 문서에서 여행지 도착·출발(시각·공항/역)을 적힌 그대로 찾기
+ *   kind 'place-story'         : (PRO) 도슨트 — 관광지 역사·관람 포인트·팁 / 식당 대표 메뉴·가격대·팁 (웹 검색, 장소별 공유 캐시)
+ *   kind 'route-story'         : (PRO) 도슨트 — 두 장소 사이 길에서 지나치기 쉬운 곳의 유래(웹 검색, 구간별 공유 캐시)
  *   kind 'day-detail'          : 특정 DAY의 세부 일정·예산 추천(참고용)
  *
  * ⚠️ 왜 한 파일에 다 들어있나 — Vercel Hobby 플랜은 **배포당 서버리스 함수 12개**가 한도라
@@ -304,6 +306,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (kind === 'my-plan') return handleMyPlan(req, res);
   if (kind === 'receipt-read') return handleReceiptRead(req, res);
   if (kind === 'photo-spots') return handlePhotoSpots(req, res);
+  if (kind === 'place-story') return handlePlaceStory(req, res);
+  if (kind === 'route-story') return handleRouteStory(req, res);
   if (kind === 'pro-use') return handleProUse(req, res);
   return handleHotelReview(req, res);
 }
@@ -1309,7 +1313,7 @@ async function recordProUse(sb: SupabaseLike, userId: string): Promise<void> {
  * app_roles의 admin·unlimited(운영자·지인)는 세지 않는다. 표·함수가 없거나 오류면 막지 않는다(없어도 동작).
  */
 export const BURST_WINDOW_SECONDS = 180;
-export const BURST_LIMITS = { web: 5, 'photo-spots': 4, receipt: 6 } as const;
+export const BURST_LIMITS = { web: 5, 'photo-spots': 4, receipt: 6, 'place-story': 10, 'route-story': 10 } as const;
 export type BurstKind = keyof typeof BURST_LIMITS;
 
 /** 막혔을 때 보여 줄 안내 — 풀리기까지 남은 시간을 분·초로 */
@@ -1804,6 +1808,290 @@ export function parsePhotoSpots(text: string): PhotoSpot[] {
     if (out.length >= 6) break;
   }
   return out;
+}
+
+/* ══════════════════ 도슨트 — 장소 이야기 · 가는 길 이야기 (PRO) ══════════════════
+ * Companion "도슨트" 탭용. 관광지는 역사·관람 포인트·팁, 식당은 대표 메뉴·가격대·팁을, 두 장소 사이는
+ * 지나가며 놓치기 쉬운 곳의 유래를 알려 준다. 웹 검색(그라운딩)으로 쓰고 출처를 같이 준다.
+ * 원칙 3-1: 확인되지 않은 건 쓰지 않고 항목을 비운다 — 가격은 글에 적힌 것만, "참고용"으로 화면에 표시한다.
+ * 같은 장소·같은 구간은 모든 사용자가 한 번만 만든다(캐시 키가 장소 신원). PRO 전용이며 호출마다 사용 기록을 남긴다. */
+
+const STORY_STYLE =
+  '문체: 여행 블로그처럼 친근한 "~예요/~해요"체. "알아보겠습니다", "~입니다", "다양한", "풍부한" 같은 AI·안내문 투를 쓰지 말고, ' +
+  '독자가 가기 전에 "오, 가 보고 싶다" 하고 궁금해지게 구체적인 이름·숫자·장면으로 쓰세요. 이모지는 쓰지 마세요.';
+
+/** 줄 단위 "- 가 | 나 | 다"를 읽는다 — "-", "*", "•", "1." 어느 쪽으로 답해도 받는다 */
+export function parseStoryLines(body: string, max: number): string[][] {
+  const out: string[][] = [];
+  for (const raw of body.split('\n')) {
+    const line = raw.trim();
+    const bullet = line.match(/^(?:[-*•·]+|\d+[.)])\s*/);
+    if (!bullet) continue;
+    const parts = line.slice(bullet[0].length).replace(/\*\*/g, '').split('|').map((s) => s.trim());
+    if (!parts[0]) continue;
+    out.push(parts);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+function storySection(text: string, name: string): string {
+  const m = text.match(new RegExp('###' + name + '###([\\s\\S]*?)(?=###[A-Z]+###|$)'));
+  return m ? m[1].trim() : '';
+}
+const clip = (s: string | undefined, n: number) => String(s ?? '').replace(/\*\*/g, '').trim().slice(0, n);
+
+export interface PlaceStory {
+  mode: 'visit' | 'food';
+  headline: string;
+  intro: string;
+  /** visit: 역사 — 시기 | 이야기 */
+  history: Array<{ when: string; text: string }>;
+  /** visit: 관람 포인트 — 제목 | 설명 */
+  points: Array<{ title: string; text: string }>;
+  /** food: 대표 메뉴 — 이름 | 설명 | 가격(글에 적힌 경우만) */
+  menu: Array<{ name: string; text: string; price: string }>;
+  /** food: 1인 가격대(글에 적힌 경우만) */
+  priceRange: string;
+  tips: string[];
+  /** visit: 관람 시간·시간대 */
+  time: string;
+}
+
+export function parsePlaceStory(text: string, mode: 'visit' | 'food'): PlaceStory {
+  return {
+    mode,
+    headline: clip(storySection(text, 'HEAD').split('\n')[0], 40),
+    intro: clip(storySection(text, 'INTRO'), 220),
+    history: parseStoryLines(storySection(text, 'HISTORY'), 5).map((p) => ({ when: clip(p[0], 24), text: clip(p.slice(1).join(' '), 110) })).filter((h) => h.text),
+    points: parseStoryLines(storySection(text, 'POINTS'), 5).map((p) => ({ title: clip(p[0], 30), text: clip(p.slice(1).join(' '), 120) })).filter((h) => h.text),
+    menu: parseStoryLines(storySection(text, 'MENU'), 5).map((p) => ({
+      name: clip(p[0], 40),
+      text: clip(p[1], 90),
+      price: /^[-–—]$/.test(clip(p[2], 30)) ? '' : clip(p[2], 30),
+    })),
+    priceRange: /^[-–—]?$/.test(clip(storySection(text, 'PRICE'), 40)) ? '' : clip(storySection(text, 'PRICE'), 40),
+    tips: parseStoryLines(storySection(text, 'TIPS'), 5).map((p) => clip(p.join(' '), 90)).filter(Boolean),
+    time: clip(storySection(text, 'TIME'), 60),
+  };
+}
+
+export interface RouteStoryPoint {
+  name: string;
+  /** 어디쯤인지(예: "다리 건너 오른쪽") */
+  where: string;
+  story: string;
+}
+export function parseRouteStory(text: string): RouteStoryPoint[] {
+  return parseStoryLines(storySection(text, 'POINTS') || text, 3)
+    .filter((p) => p.length >= 3)
+    .map((p) => ({ name: clip(p[0], 60), where: clip(p[1], 40), story: clip(p.slice(2).join(' '), 150) }))
+    .filter((p) => p.name && p.story);
+}
+
+function groundingSources(cand: any): Array<{ title: string; uri: string }> {
+  const seen = new Set<string>();
+  return (Array.isArray(cand?.groundingMetadata?.groundingChunks) ? cand.groundingMetadata.groundingChunks : [])
+    .map((c: any) => c?.web)
+    .filter((w: any) => typeof w?.uri === 'string' && /^https:\/\//.test(w.uri) && !seen.has(w.uri) && seen.add(w.uri))
+    .slice(0, 4)
+    .map((w: any) => ({ title: String(w.title ?? safeHostname(w.uri)).slice(0, 80), uri: w.uri }));
+}
+
+/** 로그인 · PRO · 사용 기록 · 연타/하루 상한을 한 번에 — 통과하면 사용자, 아니면 이미 응답했으니 null */
+async function guardStory(req: VercelRequest, res: VercelResponse, kind: 'place-story' | 'route-story') {
+  const supabase = makeSupabase();
+  const token = bearerToken(req.headers?.authorization);
+  if (!token || !supabase) {
+    res.status(401).json({ error: '로그인이 필요해요.' });
+    return null;
+  }
+  const { data: authData, error: authError } = await supabase.auth.getUser(token);
+  if (authError || !authData?.user?.id) {
+    res.status(401).json({ error: '로그인이 만료됐어요. 다시 로그인해 주세요.' });
+    return null;
+  }
+  if ((await userPlan(supabase, authData.user)) !== 'pro') {
+    res.status(403).json({ error: '도슨트는 PRO 기능이에요.', code: 'pro_required' });
+    return null;
+  }
+  await recordProUse(supabase, authData.user.id);
+  return { supabase, user: authData.user, kind };
+}
+
+async function callGrounded(prompt: string, geminiKey: string): Promise<{ text: string; sources: Array<{ title: string; uri: string }> } | { error: string }> {
+  let geminiRes: Response;
+  try {
+    geminiRes = await fetch(GEMINI_ENDPOINT + 'gemini-2.5-flash-lite:generateContent?key=' + geminiKey, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], tools: [{ google_search: {} }] }),
+    });
+  } catch {
+    return { error: 'AI 응답을 받지 못했어요. 잠시 후 다시 시도해 주세요.' };
+  }
+  if (!geminiRes.ok) {
+    console.error('[ai] story Gemini 실패 (' + geminiRes.status + '):', (await geminiRes.text()).slice(0, 2000));
+    return { error: geminiFailMessage(geminiRes.status) };
+  }
+  const data: any = await geminiRes.json();
+  const cand = data?.candidates?.[0];
+  const text: string = Array.isArray(cand?.content?.parts)
+    ? cand.content.parts.map((p: any) => p?.text).filter((t: any) => typeof t === 'string').join('\n')
+    : '';
+  return { text, sources: groundingSources(cand) };
+}
+
+async function handlePlaceStory(req: VercelRequest, res: VercelResponse) {
+  const body = (req.body ?? {}) as Record<string, any>;
+  const mode: 'visit' | 'food' = body.mode === 'food' ? 'food' : 'visit';
+  const name = String(body.name ?? '').trim().slice(0, 120);
+  const address = String(body.address ?? '').trim().slice(0, 200);
+  const city = String(body.city ?? '').trim().slice(0, 60);
+  const googlePlaceId = String(body.googlePlaceId ?? '').trim().slice(0, 200);
+  const category = String(body.category ?? '').trim().slice(0, 40);
+  if (!name) {
+    res.status(400).json({ error: 'name이 필요해요.' });
+    return;
+  }
+  const g = await guardStory(req, res, 'place-story');
+  if (!g) return;
+
+  const identity = googlePlaceId || name + '|' + address;
+  const cacheKey = 'place-story:' + mode + ':' + stableHash(identity);
+  const cached = await readPlanCache(g.supabase, cacheKey);
+  if (cached) {
+    res.status(200).json({ ...cached, cached: true });
+    return;
+  }
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    res.status(500).json({ error: 'GEMINI_API_KEY가 설정되지 않았어요.' });
+    return;
+  }
+  if (replyIfBurstBlocked(res, await spendBurst(g.supabase, g.user, 'place-story'))) return;
+  if (!(await spendDailyQuota(req, 'ai'))) {
+    res.status(429).json({ error: QUOTA_EXCEEDED_MESSAGE, quotaExceeded: true });
+    return;
+  }
+
+  const where = [name, address, city].filter(Boolean).join(', ');
+  const prompt = mode === 'visit'
+    ? [
+        '여행자가 가기 전에 읽어 볼 "관광지 도슨트" 글을 써 주세요. 웹 검색으로 사실을 확인하고 쓰세요.',
+        '장소: ' + where + (category ? ' (' + category + ')' : ''),
+        STORY_STYLE,
+        '규칙:',
+        '- 검색으로 확인되지 않는 연도·숫자·이름은 쓰지 말고 그 줄을 빼세요. 추측으로 채우지 마세요.',
+        '- 역사는 시기 순으로 3~4줄, 관람 포인트는 "어디서 무엇을 어떻게 보면 좋은지" 3~4개, 팁은 2~3개(시간대·예약·복장·줄 서기)',
+        '형식(다른 말 없이 아래 머리말과 줄만):',
+        '###HEAD###',
+        '(흥미를 끄는 한 줄 제목, 20자 이내)',
+        '###INTRO###',
+        '(가기 전에 읽으면 설레는 소개 2문장)',
+        '###HISTORY###',
+        '- 시기 | 일어난 일 한 줄',
+        '###POINTS###',
+        '- 포인트 이름 | 어디서 무엇을 보면 좋은지',
+        '###TIPS###',
+        '- 팁 한 줄',
+        '###TIME###',
+        '(권장 관람 시간과 좋은 시간대 한 줄)',
+      ].join('\n')
+    : [
+        '여행자가 가기 전에 읽어 볼 "식당 안내" 글을 써 주세요. 웹 검색으로 사실을 확인하고 쓰세요.',
+        '장소: ' + where + (category ? ' (' + category + ')' : ''),
+        STORY_STYLE,
+        '규칙:',
+        '- 대표 메뉴는 검색 결과에서 실제로 대표로 꼽히는 것만 2~4개. 가격은 글에 적힌 값만 쓰고(통화 기호 포함), 모르면 "-"',
+        '- 1인 가격대도 근거가 있을 때만. 모르면 "-"',
+        '- 팁은 2~3개(주문 요령·자리·대기·예약·결제 방식 등 확인된 것만)',
+        '형식(다른 말 없이 아래 머리말과 줄만):',
+        '###HEAD###',
+        '(흥미를 끄는 한 줄 제목, 20자 이내)',
+        '###INTRO###',
+        '(어떤 가게인지 2문장)',
+        '###MENU###',
+        '- 메뉴 이름 | 어떤 메뉴인지 한 줄 | 가격 또는 -',
+        '###PRICE###',
+        '(1인 가격대 또는 -)',
+        '###TIPS###',
+        '- 팁 한 줄',
+      ].join('\n');
+
+  const r = await callGrounded(prompt, geminiKey);
+  if ('error' in r) {
+    res.status(502).json({ error: r.error });
+    return;
+  }
+  const story = parsePlaceStory(r.text, mode);
+  const enough = mode === 'visit' ? story.points.length + story.history.length > 0 : story.menu.length + story.tips.length > 0;
+  const result = { story, sources: r.sources };
+  // 비어 있는 답은 저장하지 않는다 — 저장하면 같은 빈 답이 계속 다시 나온다
+  if (enough) await writePlanCache(g.supabase, cacheKey, 'place-story', result);
+  res.status(enough ? 200 : 502).json(enough ? result : { error: '이 장소의 이야기를 찾지 못했어요.' });
+}
+
+async function handleRouteStory(req: VercelRequest, res: VercelResponse) {
+  const body = (req.body ?? {}) as Record<string, any>;
+  const pt = (v: any) => {
+    const lat = Number(v?.lat);
+    const lng = Number(v?.lng);
+    return { name: String(v?.name ?? '').trim().slice(0, 100), lat, lng, ok: Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 };
+  };
+  const from = pt(body.from);
+  const to = pt(body.to);
+  const mode = ['WALK', 'TRANSIT', 'TAXI'].includes(String(body.mode)) ? String(body.mode) : 'WALK';
+  const city = String(body.city ?? '').trim().slice(0, 60);
+  if (!from.ok || !to.ok || !from.name || !to.name) {
+    res.status(400).json({ error: '출발·도착 장소가 필요해요.' });
+    return;
+  }
+  const g = await guardStory(req, res, 'route-story');
+  if (!g) return;
+
+  const key = (p: { lat: number; lng: number }) => p.lat.toFixed(3) + ',' + p.lng.toFixed(3);
+  const cacheKey = 'route-story:' + stableHash(key(from) + '>' + key(to) + ':' + mode);
+  const cached = await readPlanCache(g.supabase, cacheKey);
+  if (cached) {
+    res.status(200).json({ ...cached, cached: true });
+    return;
+  }
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    res.status(500).json({ error: 'GEMINI_API_KEY가 설정되지 않았어요.' });
+    return;
+  }
+  if (replyIfBurstBlocked(res, await spendBurst(g.supabase, g.user, 'route-story'))) return;
+  if (!(await spendDailyQuota(req, 'ai'))) {
+    res.status(429).json({ error: QUOTA_EXCEEDED_MESSAGE, quotaExceeded: true });
+    return;
+  }
+
+  const prompt = [
+    '여행자가 두 곳 사이를 ' + (mode === 'WALK' ? '걸어서' : mode === 'TRANSIT' ? '대중교통으로' : '차로') + ' 이동해요. 가는 길에 스쳐 지나가기 쉬운, 알고 보면 재미있는 곳을 짚어 주세요. 웹 검색으로 확인하고 쓰세요.',
+    '출발: ' + from.name + ' (좌표 ' + from.lat.toFixed(4) + ',' + from.lng.toFixed(4) + ')' + (city ? ' · ' + city : ''),
+    '도착: ' + to.name + ' (좌표 ' + to.lat.toFixed(4) + ',' + to.lng.toFixed(4) + ')',
+    STORY_STYLE,
+    '규칙:',
+    '- 두 좌표를 잇는 길 양옆 약 300m 안에 실제로 있는 건물·광장·다리·동상·골목·가게만 최대 3곳. 이름은 Google 지도에서 검색되는 공식 이름으로',
+    '- 이름의 유래, 왜 유명한지, 거기에 무엇이 있는지를 한두 문장으로. 검색으로 확인되지 않으면 그 곳은 빼세요. 하나도 없으면 비워 두세요.',
+    '- 출발지·도착지 자체는 넣지 마세요.',
+    '형식(다른 말 없이):',
+    '###POINTS###',
+    '- 장소 이름 | 어디쯤인지 짧게(예: 다리를 건너면 오른쪽) | 유래·이야기',
+  ].join('\n');
+
+  const r = await callGrounded(prompt, geminiKey);
+  if ('error' in r) {
+    res.status(502).json({ error: r.error });
+    return;
+  }
+  const points = parseRouteStory(r.text);
+  const result = { points, sources: r.sources };
+  // 비어 있어도(가는 길에 짚을 곳이 없음) 정상이라 저장한다 — 같은 구간을 다시 검색하지 않게
+  await writePlanCache(g.supabase, cacheKey, 'route-story', result);
+  res.status(200).json(result);
 }
 
 /**

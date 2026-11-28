@@ -21,7 +21,7 @@ const user = { id: 'u1', email: 'a@b.com' };
 describe('PRO 기능 3분 연타 상한', () => {
   it('정한 값: 3분 창, 웹 검색 5 · 인생샷 4 · 영수증 6', () => {
     expect(BURST_WINDOW_SECONDS).toBe(180);
-    expect(BURST_LIMITS).toEqual({ web: 5, 'photo-spots': 4, receipt: 6 });
+    expect(BURST_LIMITS).toEqual({ web: 5, 'photo-spots': 4, receipt: 6, 'place-story': 10, 'route-story': 10 });
   });
 
   it('허용이면 0, 종류별 횟수·창 길이를 함께 보낸다', async () => {
