@@ -1952,7 +1952,7 @@ function pdReviewsTabHtml(stop: TlStop): string {
 
 const PD_TABS: Array<{ key: PdTab; label: string }> = [
   { key: 'overview', label: 'Overview' },
-  { key: 'guide', label: 'Guide' },
+  { key: 'guide', label: 'Info' },
   { key: 'reviews', label: 'Reviews' },
 ];
 

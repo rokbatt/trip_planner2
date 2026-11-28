@@ -4764,7 +4764,8 @@ function detailHtml(): string {
       .map(
         (t) =>
           '<button class="mb-pd-tab' + (detailTab === t ? ' active' : '') + '" data-pdtab="' + t + '">' +
-          t.toUpperCase() +
+          // 'guide'는 영업시간·위치 탭 — 하단 '가이드' 탭(PRO)과 헷갈리지 않게 INFO로 보인다
+          (t === 'guide' ? 'INFO' : t.toUpperCase()) +
           '</button>'
       )
       .join(''),
