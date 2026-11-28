@@ -1066,6 +1066,7 @@ function openSheet(item: TripChecklistItem | null): void {
     '  </div>',
     '</div>',
   ].join('\n');
+  layer.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(layer);
   sheetLayer = layer;
   requestAnimationFrame(() => layer.classList.add('is-open'));

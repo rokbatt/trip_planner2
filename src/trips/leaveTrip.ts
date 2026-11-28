@@ -127,12 +127,13 @@ function membersHtml(info: Info, me: string): string {
 /** 멤버 창 — 멤버 목록 + 나가기 */
 export async function openTripMembers(tripId: string): Promise<void> {
   const me = store.get('user')?.id;
-  if (!me || overlayEl) return;
+  if (!me || overlayEl?.isConnected) return;
   overlayEl = document.createElement('div');
   overlayEl.className = 'lv-backdrop';
   overlayEl.innerHTML = '<div class="lv-modal" role="dialog" aria-modal="true" aria-label="여행 멤버"><div class="lv-wait">불러오는 중…</div></div>';
   overlayEl.addEventListener('click', (e) => { if (e.target === overlayEl) close(); });
   document.addEventListener('keydown', onKey);
+  overlayEl.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(overlayEl);
 
   const info = await loadInfo(tripId, me);

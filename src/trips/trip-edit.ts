@@ -53,6 +53,7 @@ export function openDeleteConfirm(trip: Trip, onDeleted: () => void): void {
     '</div>',
   ].join('\n');
 
+  overlay.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('open'));
 
@@ -163,6 +164,7 @@ export function openEditTripModal(trip: Trip, onSaved: () => void): void {
     '</div>',
   ].join('\n');
 
+  overlay.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('open'));
 

@@ -812,6 +812,7 @@ function openCardSheet(placeId: string, el: HTMLElement): void {
     '  <button type="button" class="bd-msheet-cancel" data-sheet="close">닫기</button>',
     '</div>',
   ].join('');
+  sheet.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(sheet);
   cardSheetEl = sheet;
   requestAnimationFrame(() => sheet.classList.add('open'));
@@ -941,6 +942,7 @@ function openDestSwitcher(container: HTMLElement, tripId: string, anchor: HTMLEl
   const pop = document.createElement('div');
   pop.className = 'bd-dest-switcher';
   pop.innerHTML = '<div class="bd-dest-switch-title">여행지 변경</div><div class="bd-dest-switch-list">' + items + '</div>';
+  pop.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(pop);
   destSwitcherEl = pop;
 
@@ -1714,6 +1716,7 @@ function renderAcDropdown(input: HTMLInputElement, tripId: string): void {
     ].join('');
   }).join('');
 
+  dropdown.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(dropdown);
   acDropdownEl = dropdown;
   positionAcDropdown(dropdown, input);
@@ -1955,6 +1958,7 @@ function openAiExportModal(): void {
     '</div>',
   ].join('');
 
+  overlay.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(overlay);
   aiExportOverlayEl = overlay;
 

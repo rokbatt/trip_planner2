@@ -1048,6 +1048,7 @@ function openShortlistDestSwitcher(anchor: HTMLElement): void {
   const pop = document.createElement('div');
   pop.className = 'sl-dest-switcher';
   pop.innerHTML = '<div class="sl-dest-switch-title">여행지 변경</div><div class="sl-dest-switch-list">' + items + '</div>';
+  pop.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(pop);
   slDestSwitcherEl = pop;
 
@@ -1624,6 +1625,7 @@ function openDateRangeModal(opts: DateRangeModalOptions): void {
     '  </div>',
     '</div>',
   ].join('');
+  overlay.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(overlay);
   segPopoverEl = overlay;
 
@@ -2219,6 +2221,7 @@ function renderZoneSearchDropdown(input: HTMLInputElement, body: HTMLElement): v
       '</button>',
     ].join(''))
     .join('');
+  dropdown.dataset.transient = ''; // 화면이 바뀌면 닫는다(main.ts)
   document.body.appendChild(dropdown);
   zoneSearchDropdownEl = dropdown;
 

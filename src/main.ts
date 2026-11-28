@@ -210,11 +210,18 @@ async function handleAuthChange(event: string, session: { user: import('@supabas
 }
 
 // ─── 라우터 시작 ───
+/** 화면에 딸린 떠 있는 창(공유·확인·팝오버 등, data-transient)은 다른 화면으로 가면 닫는다 —
+ *  휴대폰 뒤로 가기로 화면만 바뀌고 창이 그 위에 남던 문제 */
+function closeTransientLayers(): void {
+  document.querySelectorAll('body > [data-transient]').forEach((el) => el.remove());
+}
 window.addEventListener('hashchange', () => {
+  closeTransientLayers();
   if (originalHandleRoute()) rerender();
 });
 // 약관·방침이 /terms · /privacy 경로로도 열리므로, 뒤로 가기로 경로만 바뀌는 이동도 화면을 따라가야 한다
 window.addEventListener('popstate', () => {
+  if (pathnameChangedSinceRender()) closeTransientLayers();
   if (pathnameChangedSinceRender() && originalHandleRoute()) rerender();
 });
 
