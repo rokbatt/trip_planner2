@@ -60,6 +60,9 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
+      // 매일 정리 작업은 Worker 예약 실행(scheduled)이 부른다. 밖에서 부를 땐 CRON_SECRET이 있어야 한다 —
+      // 비밀값을 안 넣은 채로 두면 누구나 정리 작업을 연달아 돌려 DB를 두드릴 수 있었다
+      if (url.pathname.replace(/\/$/, '') === '/api/cleanup-search-cache' && !env.CRON_SECRET) return notFound();
       // 로그인 확인 — 토큰이 없거나 틀리면 여기서 401(worker/auth.ts). 관리·정리·알림 주소는 자체 확인
       const edgeCache = typeof caches !== 'undefined' ? caches.default : undefined;
       const denied = await requireLogin(request, env, edgeCache);

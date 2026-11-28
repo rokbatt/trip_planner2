@@ -142,20 +142,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const providedSecret = req.headers?.['x-admin-secret'];
 
   if (!adminSecret || providedSecret !== adminSecret) {
-    res.status(401).json({
-      error: '인증 실패',
-      debug: {
-        envVarSet: !!adminSecret,
-        envVarLength: adminSecret?.length ?? 0,
-        headerReceived: typeof providedSecret === 'string',
-        headerLength: typeof providedSecret === 'string' ? providedSecret.length : 0,
-        hint: !adminSecret
-          ? 'Vercel에 ADMIN_SECRET 환경변수 자체가 안 잡힘 → Production 체크 + 재배포 확인'
-          : typeof providedSecret !== 'string'
-          ? '헤더가 아예 안 왔음 → fetch 코드의 헤더 이름/문법 확인'
-          : 'envVarLength와 headerLength가 다르면 공백/따옴표가 섞여 들어간 것',
-      },
-    });
+    // 왜 실패했는지(비밀값 길이 등)는 응답에 싣지 않는다 — 추측의 단서가 된다
+    res.status(401).json({ error: '인증 실패' });
     return;
   }
 

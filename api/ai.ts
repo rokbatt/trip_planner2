@@ -49,6 +49,8 @@ interface VercelResponse {
 }
 
 const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/';
+/** Gemini 응답을 기다리는 최대 시간 — 넘으면 끊고 사용자에게 다시 시도하라고 안내한다(응답이 안 와 요청이 매달리지 않게) */
+const GEMINI_TIMEOUT_MS = 45_000;
 
 /**
  * 캐시 키용 결정적 해시. Node 내장 crypto를 쓰지 않는 이유 — 이 프로젝트는 api/를
@@ -132,6 +134,7 @@ async function callGeminiJson(
   try {
     geminiRes = await fetch(GEMINI_ENDPOINT + model + ':generateContent?key=' + geminiKey, {
       method: 'POST',
+      signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts }],
@@ -391,6 +394,7 @@ async function handleHotelReview(req: VercelRequest, res: VercelResponse) {
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=' + geminiKey,
       {
         method: 'POST',
+        signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
@@ -1602,6 +1606,7 @@ async function handleDocQAWeb(
   try {
     geminiRes = await fetch(GEMINI_ENDPOINT + 'gemini-2.5-flash-lite:generateContent?key=' + geminiKey, {
       method: 'POST',
+      signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], tools: [{ google_search: {} }] }),
     });
@@ -1924,6 +1929,7 @@ async function callGrounded(prompt: string, geminiKey: string): Promise<{ text: 
   try {
     geminiRes = await fetch(GEMINI_ENDPOINT + 'gemini-2.5-flash-lite:generateContent?key=' + geminiKey, {
       method: 'POST',
+      signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], tools: [{ google_search: {} }] }),
     });
@@ -2185,6 +2191,7 @@ async function handlePhotoSpots(req: VercelRequest, res: VercelResponse) {
   try {
     geminiRes = await fetch(GEMINI_ENDPOINT + 'gemini-2.5-flash-lite:generateContent?key=' + geminiKey, {
       method: 'POST',
+      signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], tools: [{ google_search: {} }] }),
     });
