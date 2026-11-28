@@ -1,5 +1,5 @@
 /**
- * Companion "도슨트" 탭(PRO) — 오늘 갈 곳을 알고 가면 더 많이 보인다.
+ * Companion "가이드" 탭(PRO) — 오늘 갈 곳을 알고 가면 더 많이 보인다.
  *
  *  · 관광지(VISIT 등): 역사 · 관람 포인트 · 팁을 가이드처럼. 식당(FOOD): 대표 메뉴 · 가격대 · 팁.
  *  · 장소와 다음 장소 사이 "가는 길": 길 양옆에서 지나치기 쉬운 곳의 유래를 짚어 준다.
@@ -19,8 +19,8 @@ import { straightMeters } from './explore';
 import { fetchDetail, searchText, type ExplorePlace } from './exploreApi';
 
 /* ══════════════ 이름 — 한 곳에서 바꾼다 ══════════════ */
-export const GUIDE_TAB_LABEL = '도슨트';
-export const GUIDE_TITLE = '오늘의 도슨트';
+export const GUIDE_TAB_LABEL = '가이드';
+export const GUIDE_TITLE = '오늘의 가이드';
 export const GUIDE_TAGLINE = '아는 만큼 보이는 하루';
 
 /* ══════════════ 순수 계산 ══════════════ */

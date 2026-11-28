@@ -29,7 +29,7 @@ const FOOD = `###HEAD###
 ###TIPS###
 - 저녁은 예약이 안전해요`;
 
-describe('도슨트 파서', () => {
+describe('가이드 파서', () => {
   it('관광지: 머리말별로 읽고 번호·별표·하이픈 줄을 모두 받는다', () => {
     const s = parsePlaceStory(VISIT, 'visit');
     expect(s.headline).toBe('왕이 걸어 올라간 언덕');
@@ -63,7 +63,7 @@ describe('도슨트 파서', () => {
   it('줄 읽기: 글자 수 상한과 빈 줄 처리', () => {
     expect(parseStoryLines('\n- a | b\n\n- | x\n', 5)).toEqual([['a', 'b']]);
   });
-  it('연타 상한에 도슨트 두 종류가 들어 있다', () => {
+  it('연타 상한에 가이드 두 종류가 들어 있다', () => {
     expect(BURST_LIMITS['place-story']).toBeGreaterThan(0);
     expect(BURST_LIMITS['route-story']).toBeGreaterThan(0);
   });

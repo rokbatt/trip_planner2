@@ -165,7 +165,7 @@ const IC = {
   taxi: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M5 17a2 2 0 1 0 4 0M15 17a2 2 0 1 0 4 0M5 17l1.5-5h11L19 17M8 12V8h8v4"/></svg>',
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></svg>',
-  /* 도슨트 탭 — 펼친 책 */
+  /* 가이드 탭 — 펼친 책 */
   guide: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5C10.5 5.3 8 4.7 4 5v13c4-.3 6.5.3 8 1.5 1.5-1.2 4-1.8 8-1.5V5c-4-.3-6.5.3-8 1.5z"/><path d="M12 6.5v13"/></svg>',
   camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
   share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7M16 6l-4-4-4 4M12 2v13"/></svg>',
@@ -242,7 +242,7 @@ const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
  *   today  일정 : 오늘 뭐 하지?      → 하루 / 전체 / 지도 (일정 보기는 전부 여기, 그날 밤 숙소 포함)
  *   map    주변 : 근처에 뭐 있지?    → 장소 탐색만(급할 때·카테고리·인생샷)
  *   wallet 지갑 : 돈·예약은?         → 지출 / 서류 (자주 쓰는 지출이 먼저)
- *   guide  도슨트 : 알고 가면 더 보여요(PRO)
+ *   guide  가이드 : 알고 가면 더 보여요(PRO)
  *   crew   일행 : 같이 간 사람들은?  → 어디야? · 함께 챙길 준비물 · 초대 · 채팅
  * 설정·계정·PC로 넘기는 기능은 메뉴(☰) 한 곳에만 둔다 — 같은 버튼이 여러 곳에 있으면 찾기 더 어렵다.
  */
@@ -381,7 +381,7 @@ let savedDocs = new Map<string, string>();
 let docSaving: { done: number; total: number } | null = null;
 /** 지갑 안내 한 줄(오프라인이라 못 연 서류 등) */
 let walletNotice = '';
-/** 도슨트 탭 — 보고 있는 DAY(null이면 오늘, 여행 전이면 지금 고른 DAY) */
+/** 가이드 탭 — 보고 있는 DAY(null이면 오늘, 여행 전이면 지금 고른 DAY) */
 let guideDayIdx: number | null = null;
 /** 사진으로 추가 — 읽는 중 진행(몇 장 중 몇 장) / 확인 대기 중인 초안 */
 let photoBusy: { done: number; total: number } | null = null;
@@ -1035,7 +1035,7 @@ function fmtSavedAt(ms: number): string {
   return sameDay ? hm : (d.getMonth() + 1) + '월 ' + d.getDate() + '일 ' + hm;
 }
 
-/* ══════════════ 도슨트 탭 — 알고 가면 더 보이는 하루(PRO, guide.ts) ══════════════ */
+/* ══════════════ 가이드 탭 — 알고 가면 더 보이는 하루(PRO, guide.ts) ══════════════ */
 function guideIndex(): number {
   if (guideDayIdx != null && days[guideDayIdx]) return guideDayIdx;
   const t = todayDayIndex();
@@ -5482,7 +5482,7 @@ function bind(): void {
 
   // ── WALLET ──
   root.querySelector('#mb-wal-add')?.addEventListener('click', () => openPad());
-  // ── 도슨트 ──
+  // ── 가이드 ──
   if (activeTab === 'guide') bindGuide(root, guideCtx());
   // ── 지갑: 사진으로 추가 ──
   // 잠긴 PRO 기능의 안내 → 요금제 화면(#pro)

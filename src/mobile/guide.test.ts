@@ -10,7 +10,7 @@ const stop = (key: string, o: Partial<TlStop> = {}): TlStop => ({
 });
 const day = (stops: TlStop[]): TlDay => ({ dayIndex: 0, destId: null, destName: '프라하', dayNumber: 1, label: 'DAY 1', date: null, stops });
 
-describe('도슨트 — 이야기를 붙일 대상', () => {
+describe('가이드 — 이야기를 붙일 대상', () => {
   it('관광지·체험·쇼핑은 visit, 식당은 food, 숙소·공항·장소 미정은 없음', () => {
     expect(guideKind(stop('a'))).toBe('visit');
     expect(guideKind(stop('b', { cat: 'ACTIVITY' }))).toBe('visit');
@@ -23,7 +23,7 @@ describe('도슨트 — 이야기를 붙일 대상', () => {
   });
 });
 
-describe('도슨트 — 가는 길 구간', () => {
+describe('가이드 — 가는 길 구간', () => {
   const A = stop('a', { lat: 50.09, lng: 14.4 });
   const B = stop('b', { lat: 50.087, lng: 14.411 });
   const C = stop('c', { lat: 50.0871, lng: 14.4112 }); // B 바로 옆(수십 m)
@@ -39,7 +39,7 @@ describe('도슨트 — 가는 길 구간', () => {
   });
 });
 
-describe('도슨트 — 길 위 확인(원칙 3-1)', () => {
+describe('가이드 — 길 위 확인(원칙 3-1)', () => {
   const a = { lat: 50.0865, lng: 14.4114 }; // 카를교 쪽
   const b = { lat: 50.0875, lng: 14.4213 }; // 구시가 광장 쪽
   it('점과 선분 사이 거리와 진행 위치', () => {
@@ -64,7 +64,7 @@ describe('도슨트 — 길 위 확인(원칙 3-1)', () => {
   });
 });
 
-describe('도슨트 — 이 기기 저장', () => {
+describe('가이드 — 이 기기 저장', () => {
   const mem = () => {
     const m = new Map<string, string>();
     return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v) };
